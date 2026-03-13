@@ -1,0 +1,140 @@
+import json
+import re
+from typing import Any
+
+from .ir import IRDocument, IRRoute
+from .pipeline import Pipeline
+from .pipeline_builder import PipelineBuilder
+from .repositories import BaseRepository
+from .steps import ForbiddenError, NotFoundError, UnauthorizedError
+
+
+_RouteEntry = tuple[re.Pattern[str], Pipeline, IRRoute]
+
+
+def _compile_path(path: str) -> re.Pattern[str]:
+    regex = re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", path)
+    return re.compile(f"^{regex}$")
+
+
+class ASGIApp:
+    def __init__(self, document: IRDocument, repository: BaseRepository) -> None:
+        self._repository = repository
+        self._routes: dict[str, list[_RouteEntry]] = {}
+        builder = PipelineBuilder(document=document, repository=repository)
+
+        for route in document.routes:
+            pipeline = builder.build_for_route(route)
+            pattern = _compile_path(route.path)
+            entry: _RouteEntry = (pattern, pipeline, route)
+            self._routes.setdefault(route.method.upper(), []).append(entry)
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Any,
+        send: Any,
+    ) -> None:
+        if scope["type"] == "lifespan":
+            await self._handle_lifespan(scope, receive, send)
+            return
+
+        if scope["type"] == "http":
+            await self._handle_http(scope, receive, send)
+            return
+
+    async def _handle_lifespan(
+        self, scope: dict[str, Any], receive: Any, send: Any,
+    ) -> None:
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await send({"type": "lifespan.startup.complete"})
+            elif message["type"] == "lifespan.shutdown":
+                self._repository.close()
+                await send({"type": "lifespan.shutdown.complete"})
+                return
+
+    async def _handle_http(
+        self, scope: dict[str, Any], receive: Any, send: Any,
+    ) -> None:
+        method = scope["method"].upper()
+        path = scope["path"]
+
+        pipeline, route, url_params = self._match_route(method, path)
+        if pipeline is None:
+            await self._send_json(send, 404, {"detail": "Not found"})
+            return
+
+        body = await self._read_body(receive)
+        if body is _INVALID_JSON:
+            await self._send_json(send, 400, {"detail": "Invalid JSON body"})
+            return
+
+        headers = {
+            k.decode("latin-1"): v.decode("latin-1")
+            for k, v in scope.get("headers", [])
+        }
+
+        try:
+            ctx = await pipeline.run(
+                headers=headers,
+                url_params=url_params,
+                body=body,
+            )
+        except UnauthorizedError as exc:
+            await self._send_json(send, 401, {"detail": str(exc)})
+            return
+        except ForbiddenError as exc:
+            await self._send_json(send, 403, {"detail": str(exc)})
+            return
+        except NotFoundError as exc:
+            await self._send_json(send, 404, {"detail": str(exc)})
+            return
+        except ValueError as exc:
+            await self._send_json(send, 422, {"detail": str(exc)})
+            return
+
+        await self._send_json(send, 200, ctx.response)
+
+    def _match_route(
+        self, method: str, path: str,
+    ) -> tuple[Pipeline | None, IRRoute | None, dict[str, str]]:
+        entries = self._routes.get(method, [])
+        for pattern, pipeline, route in entries:
+            match = pattern.match(path)
+            if match:
+                return pipeline, route, match.groupdict()
+        return None, None, {}
+
+    @staticmethod
+    async def _read_body(receive: Any) -> dict[str, Any] | None:
+        body = b""
+        while True:
+            message = await receive()
+            body += message.get("body", b"")
+            if not message.get("more_body", False):
+                break
+        if not body:
+            return None
+        try:
+            return json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return _INVALID_JSON
+
+    @staticmethod
+    async def _send_json(send: Any, status: int, data: Any) -> None:
+        body = json.dumps(data, default=str).encode("utf-8")
+        await send({
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode("latin-1")],
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
+# Sentinel for invalid JSON (distinct from None which means empty body)
+_INVALID_JSON: Any = object()

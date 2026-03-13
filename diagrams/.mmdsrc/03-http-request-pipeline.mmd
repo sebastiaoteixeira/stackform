@@ -1,0 +1,23 @@
+sequenceDiagram
+    participant Client
+    participant Tx as Transport Adapter
+    participant Exec as Core Executor
+    participant Pipe as Compiled Step Pipeline
+    participant Pol as Policy Engine
+    participant Repo as Mongo Repository
+    participant RT as Realtime Engine
+
+    Client->>Tx: HTTP request
+    Tx->>Exec: CoreRequest(route_id, params, body, headers)
+    Exec->>Pipe: Run ordered steps
+    Pipe->>Pipe: require_auth? -> require_role?
+    Pipe->>Pipe: parse_body? -> validate_input?
+    Pipe->>Pol: authorize + row filters + writable fields
+    Pol-->>Pipe: allow/deny + filters
+    Pipe->>Repo: Execute CRUD with effective filters
+    Repo-->>Pipe: Result
+    Pipe-->>Exec: CoreResponse
+    Exec->>RT: Publish mutation event (if write)
+    RT-->>Exec: ack
+    Exec-->>Tx: CoreResponse
+    Tx-->>Client: HTTP response

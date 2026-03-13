@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yaml-api-generator"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml",
+  "jsonschema",
+  "fastapi",
+  "pydantic",
+  "uvicorn",
+  "pymongo",
+  "jinja2",
+  "click",
+  "pyjwt",
+]
+
+[project.scripts]
+yaml-api = "yaml_api_generator.cli:cli"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+yaml_api_generator = ["schemas/*.json", "compiler/generators/*/templates/*.j2", "compiler/generators/shared/templates/*.j2"]

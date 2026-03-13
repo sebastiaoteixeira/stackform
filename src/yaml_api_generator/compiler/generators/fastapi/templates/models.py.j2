@@ -1,0 +1,54 @@
+{% set ns = namespace(need_datetime=false, need_literal=false, need_any=false) %}
+{% for field in all_fields %}
+{% if field.type == "datetime" %}{% set ns.need_datetime = true %}{% endif %}
+{% if field.type == "enum" and field.enum_values %}{% set ns.need_literal = true %}{% endif %}
+{% if field.type == "object" %}{% set ns.need_any = true %}{% endif %}
+{% endfor %}
+{% if ns.need_datetime %}
+from datetime import datetime
+{% endif %}
+{% if ns.need_any or ns.need_literal %}
+from typing import {% if ns.need_any %}Any{% endif %}{% if ns.need_any and ns.need_literal %}, {% endif %}{% if ns.need_literal %}Literal{% endif %}
+
+{% endif %}
+
+from pydantic import BaseModel{% if all_fields | selectattr("constraints") | list %}, Field{% endif %}
+
+{% for model in models %}
+
+class {{ model.name }}(BaseModel):
+{% for field in model.fields %}
+{% set annotation = field | python_annotation %}
+{% if field.constraints %}
+{% set field_args = [] %}
+{% if field.required and not field.is_optional %}
+{% set _ = field_args.append("...") %}
+{% elif field.is_optional %}
+{% set _ = field_args.append("None") %}
+{% elif field.default is not none %}
+{% set _ = field_args.append(field.default.__repr__()) %}
+{% endif %}
+{% if field.constraints.get("min") is not none %}
+{% set _ = field_args.append("ge=" ~ field.constraints["min"]) %}
+{% endif %}
+{% if field.constraints.get("max") is not none %}
+{% set _ = field_args.append("le=" ~ field.constraints["max"]) %}
+{% endif %}
+{% if field.constraints.get("min_length") is not none %}
+{% set _ = field_args.append("min_length=" ~ field.constraints["min_length"]) %}
+{% endif %}
+{% if field.constraints.get("max_length") is not none %}
+{% set _ = field_args.append("max_length=" ~ field.constraints["max_length"]) %}
+{% endif %}
+    {{ field.name }}: {{ annotation }} = Field({{ field_args | join(", ") }})
+{% else %}
+{% if field.required and not field.is_optional %}
+    {{ field.name }}: {{ annotation }}
+{% elif field.is_optional %}
+    {{ field.name }}: {{ annotation }} = {{ field.default.__repr__() if field.default is not none else "None" }}
+{% else %}
+    {{ field.name }}: {{ annotation }} = {{ field.default.__repr__() }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endfor %}

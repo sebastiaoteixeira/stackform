@@ -1,0 +1,229 @@
+import base64
+from typing import Any
+
+from ..auth import verify_password
+from ..auth.jwt import decode_jwt_token
+from ..context import RequestContext
+from ..ir import IRIdentityCollection
+from ..repositories import BaseRepository
+from . import Step
+from .authorization import UnauthorizedError
+
+
+def ResolvePrincipalStep(
+    identity_collections: dict[str, IRIdentityCollection],
+    identity_id_fields: dict[str, str],
+    repository: BaseRepository,
+) -> Step:
+    async def step(ctx: RequestContext) -> RequestContext:
+        ctx.principal = await _resolve_identity_principal(
+            identity_collections=identity_collections,
+            identity_id_fields=identity_id_fields,
+            repository=repository,
+            headers=ctx.headers,
+        )
+        return ctx
+
+    return step
+
+
+def _extract_bearer_token(headers: dict[str, str]) -> str | None:
+    authorization = headers.get("Authorization") or headers.get("authorization")
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        if token:
+            return token
+    return None
+
+
+async def _resolve_jwt_principal(
+    token: str,
+    identity_collections: dict[str, IRIdentityCollection],
+    identity_id_fields: dict[str, str],
+    repository: BaseRepository,
+) -> dict[str, Any] | None:
+    claims = decode_jwt_token(token)
+    if claims is None:
+        return None
+
+    sub = claims.get("sub")
+    collection_name = claims.get("identity_collection")
+    if not sub or not collection_name:
+        return None
+
+    identity = identity_collections.get(collection_name)
+    if identity is None or "password" not in identity.via:
+        return None
+
+    id_field = identity_id_fields.get(collection_name)
+    if id_field is None:
+        return None
+
+    documents = await repository.list(collection_name)
+    for doc in documents:
+        if str(doc.get(id_field, "")) == sub:
+            return _build_principal(doc, id_field=id_field, identity_collection=collection_name)
+
+    return None
+
+
+async def _resolve_identity_principal(
+    identity_collections: dict[str, IRIdentityCollection],
+    identity_id_fields: dict[str, str],
+    repository: BaseRepository,
+    headers: dict[str, str],
+) -> dict[str, Any] | None:
+    bearer_token = _extract_bearer_token(headers)
+    if bearer_token is not None:
+        jwt_principal = await _resolve_jwt_principal(
+            bearer_token, identity_collections, identity_id_fields, repository,
+        )
+        if jwt_principal is not None:
+            return jwt_principal
+
+    for identity in identity_collections.values():
+        id_field = identity_id_fields.get(identity.name)
+        if id_field is None:
+            continue
+        principal = await _resolve_identity_for_collection(
+            identity,
+            id_field,
+            repository,
+            headers,
+        )
+        if principal is not None:
+            return principal
+    return None
+
+
+async def _resolve_identity_for_collection(
+    identity: IRIdentityCollection,
+    id_field: str,
+    repository: BaseRepository,
+    headers: dict[str, str],
+) -> dict[str, Any] | None:
+    if "apiKey" in identity.via:
+        token = _extract_api_key(headers)
+        if token is not None:
+            return await _find_principal(
+                repository,
+                collection_name=identity.name,
+                field_name="apiKey",
+                field_value=token,
+                id_field=id_field,
+            )
+
+    if "password" in identity.via and identity.identifier:
+        credentials = _extract_basic_credentials(headers)
+        if credentials is not None:
+            identifier, password = credentials
+            return await _find_principal_with_password(
+                repository=repository,
+                collection_name=identity.name,
+                identifier_field=identity.identifier,
+                identifier_value=identifier,
+                password=password,
+                id_field=id_field,
+            )
+
+    return None
+
+
+def _extract_api_key(headers: dict[str, str]) -> str | None:
+    api_key = headers.get("X-API-Key") or headers.get("x-api-key")
+    if api_key:
+        token = api_key.strip()
+        if token:
+            return token
+
+    authorization = headers.get("Authorization") or headers.get("authorization")
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        if token:
+            return token
+
+    return None
+
+
+def _extract_basic_credentials(headers: dict[str, str]) -> tuple[str, str] | None:
+    authorization = headers.get("Authorization") or headers.get("authorization")
+    if authorization is None or not authorization.startswith("Basic "):
+        return None
+
+    encoded = authorization.removeprefix("Basic ").strip()
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except Exception as exc:
+        raise UnauthorizedError("Invalid basic authorization") from exc
+
+    if ":" not in decoded:
+        raise UnauthorizedError("Invalid basic authorization")
+
+    username, password = decoded.split(":", 1)
+    if not username or not password:
+        raise UnauthorizedError("Invalid basic authorization")
+    return username, password
+
+
+async def _find_principal(
+    repository: BaseRepository,
+    collection_name: str,
+    field_name: str,
+    field_value: str,
+    id_field: str,
+) -> dict[str, Any] | None:
+    documents = await repository.list(collection_name)
+    for document in documents:
+        if str(document.get(field_name, "")) != field_value:
+            continue
+        return _build_principal(
+            document, id_field=id_field, identity_collection=collection_name
+        )
+    return None
+
+
+async def _find_principal_with_password(
+    repository: BaseRepository,
+    collection_name: str,
+    identifier_field: str,
+    identifier_value: str,
+    password: str,
+    id_field: str,
+) -> dict[str, Any] | None:
+    documents = await repository.list(collection_name)
+    for document in documents:
+        if str(document.get(identifier_field, "")) != identifier_value:
+            continue
+        stored_hash = document.get("passwordHash")
+        if not isinstance(stored_hash, str):
+            continue
+        if not verify_password(password, stored_hash):
+            continue
+        return _build_principal(
+            document, id_field=id_field, identity_collection=collection_name
+        )
+    return None
+
+
+def _build_principal(
+    document: dict[str, Any],
+    id_field: str,
+    identity_collection: str,
+) -> dict[str, Any]:
+    subject = document.get(id_field)
+    if subject is None:
+        raise UnauthorizedError(
+            f"Identity record missing canonical id field: {id_field}"
+        )
+
+    principal: dict[str, Any] = {
+        "sub": str(subject),
+        "identity_collection": identity_collection,
+        "record": document,
+    }
+    roles = document.get("roles") or document.get("role")
+    if isinstance(roles, list):
+        principal["roles"] = [str(role) for role in roles]
+    elif isinstance(roles, str):
+        principal["roles"] = [roles]
+    return principal

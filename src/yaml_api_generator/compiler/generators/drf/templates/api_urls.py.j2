@@ -1,0 +1,26 @@
+from django.urls import path
+
+{% for col_name in collections %}
+from api.views.{{ col_name }} import {{ col_name | capitalize_collection }}ListView, {{ col_name | capitalize_collection }}DetailView
+{% endfor %}
+{% if auth and auth.has_password_auth %}
+{% for identity in auth.identity_collections %}
+{% if "password" in identity.via and identity.identifier %}
+from api.views.login import {{ identity.name | capitalize_collection }}LoginView
+{% endif %}
+{% endfor %}
+{% endif %}
+
+urlpatterns = [
+{% if auth and auth.has_password_auth %}
+{% for identity in auth.identity_collections %}
+{% if "password" in identity.via and identity.identifier %}
+    path("{{ identity.name }}/login", {{ identity.name | capitalize_collection }}LoginView.as_view(), name="{{ identity.name }}-login"),
+{% endif %}
+{% endfor %}
+{% endif %}
+{% for col_name in collections %}
+    path("{{ col_name }}", {{ col_name | capitalize_collection }}ListView.as_view(), name="{{ col_name }}-list"),
+    path("{{ col_name }}/<str:pk>", {{ col_name | capitalize_collection }}DetailView.as_view(), name="{{ col_name }}-detail"),
+{% endfor %}
+]

@@ -1,0 +1,107 @@
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
+{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
+{% set ns = namespace(needs_models=false, model_imports=[]) %}
+{% for route in crud_routes %}
+{% if route.body_model %}
+{% set ns.needs_models = true %}
+{% if route.body_model not in ns.model_imports %}
+{% set _ = ns.model_imports.append(route.body_model) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if ns.needs_models %}
+from api.serializers.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
+{% endif %}
+from api.repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
+from api.services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
+from api.services.exceptions import NotFoundError, ValidationError
+from api.authentication.mongodb import get_database
+{% set needs_auth = crud_routes | selectattr("needs_auth") | list %}
+{% if needs_auth %}
+from api.authentication.auth import resolve_principal
+{% endif %}
+
+{% set class_name = collection_name | capitalize_collection %}
+{% set list_routes = crud_routes | selectattr("has_id_param", "false") | list %}
+{% set detail_routes = crud_routes | selectattr("has_id_param") | list %}
+
+{% macro security_decorator(route) %}
+    @extend_schema()
+{% endmacro %}
+
+{% macro auth_check(route) %}
+{% if route.needs_auth %}
+        db = get_database()
+        principal = resolve_principal(request, db)
+        if principal is None:
+            return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
+{% endif %}
+{% endmacro %}
+
+{% if list_routes %}
+class {{ class_name }}ListView(APIView):
+{% for route in list_routes %}
+
+{{ security_decorator(route) }}
+    def {{ route.method | lower }}(self, request):
+        db = get_database()
+        repo = {{ class_name }}Repository(db)
+        service = {{ class_name }}Service(repo)
+{{ auth_check(route) }}
+        try:
+{% if route.operation == "list" %}
+            documents = service.list()
+            return Response(documents)
+{% elif route.operation == "create" %}
+            serializer = {{ route.body_model }}(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+            document = service.create(data)
+            return Response(document, status=status.HTTP_201_CREATED)
+{% endif %}
+        except NotFoundError:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+{% endfor %}
+{% endif %}
+
+{% if detail_routes %}
+class {{ class_name }}DetailView(APIView):
+{% for route in detail_routes %}
+
+{{ security_decorator(route) }}
+    def {{ route.method | lower }}(self, request, pk):
+        db = get_database()
+        repo = {{ class_name }}Repository(db)
+        service = {{ class_name }}Service(repo)
+{{ auth_check(route) }}
+        try:
+{% if route.operation == "get" %}
+            document = service.get(pk)
+            return Response(document)
+{% elif route.operation == "update" %}
+            serializer = {{ route.body_model }}(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+            document = service.update(pk, data)
+            return Response(document)
+{% elif route.operation == "replace" %}
+            serializer = {{ route.body_model }}(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+            document = service.replace(pk, data)
+            return Response(document)
+{% elif route.operation == "delete" %}
+            document = service.delete(pk)
+            return Response(document)
+{% endif %}
+        except NotFoundError:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+{% endfor %}
+{% endif %}

@@ -1,0 +1,51 @@
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from dependencies.auth import verify_password
+from dependencies.jwt_utils import create_jwt_token
+from dependencies.mongodb import get_database
+
+router = APIRouter()
+
+{% for identity in auth.identity_collections %}
+{% if "password" in identity.via and identity.identifier %}
+{% set class_name = identity.name | capitalize_collection %}
+
+class {{ class_name }}LoginPayload(BaseModel):
+    {{ identity.identifier }}: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+@router.post("/{{ identity.name }}/login")
+async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> Any:
+    db = get_database()
+    col = db["{{ identity.name }}"]
+    cursor = col.find({})
+    docs = await cursor.to_list(length=None)
+
+    for doc in docs:
+        if str(doc.get("{{ identity.identifier }}", "")) != payload.{{ identity.identifier }}:
+            continue
+        stored_hash = doc.get("passwordHash")
+        if not isinstance(stored_hash, str):
+            continue
+        if not verify_password(payload.password, stored_hash):
+            continue
+
+        subject = doc.get("{{ identity.id_field }}")
+        if subject is None:
+            continue
+
+        token = create_jwt_token(str(subject), "{{ identity.name }}")
+        safe_user = {
+            k: v for k, v in doc.items()
+            if k not in ("password", "passwordHash", "_id")
+        }
+        return {"token": token, "user": safe_user}
+
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+{% endif %}
+{% endfor %}

@@ -1,0 +1,73 @@
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
+
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() in ("true", "1", "yes")
+
+ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+
+INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
+    "rest_framework",
+    "drf_spectacular",
+    "api",
+]
+
+MIDDLEWARE = [
+    "django.middleware.common.CommonMiddleware",
+]
+
+ROOT_URLCONF = "project.urls"
+
+APPEND_SLASH = False
+
+WSGI_APPLICATION = "project.wsgi.application"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "APP_DIRS": True,
+    },
+]
+
+DATABASES = {}
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "UNAUTHENTICATED_USER": None,
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Generated API",
+    "VERSION": "{{ ctx.app.api_version or '0.1.0' }}",
+{% if ctx.auth.enabled %}
+    "SECURITY": [],
+{% endif %}
+    "SERVE_INCLUDE_SCHEMA": False,
+{% if ctx.auth.enabled %}
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+{% if ctx.auth.has_api_key_auth %}
+            "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+            "BearerAuth": {"type": "http", "scheme": "bearer"},
+{% endif %}
+{% if ctx.auth.has_password_auth %}
+            "BasicAuth": {"type": "http", "scheme": "basic"},
+{% endif %}
+        },
+    },
+{% endif %}
+}
