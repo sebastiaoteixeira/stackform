@@ -1,0 +1,209 @@
+import os
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+from jsonschema import Draft202012Validator
+
+from ..ir import IRDocument
+
+INTERPOLATION_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
+
+
+@dataclass(frozen=True)
+class ConfigError:
+    code: str
+    message: str
+    path: str
+    hint: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "code": self.code,
+            "message": self.message,
+            "path": self.path,
+        }
+        if self.hint:
+            payload["hint"] = self.hint
+        return payload
+
+
+class ConfigErrors(Exception):
+    def __init__(self, errors: list[ConfigError]):
+        super().__init__("configuration has errors")
+        self.errors = errors
+
+
+def _join_path(parts: tuple[str, ...]) -> str:
+    return ".".join(parts) if parts else "$"
+
+
+def _interpolate_string(
+    value: str, path: tuple[str, ...], errors: list[ConfigError]
+) -> str:
+    def replace(match: re.Match[str]) -> str:
+        var_name = match.group(1)
+        default = match.group(2)
+        env_value = os.environ.get(var_name)
+        if env_value is not None:
+            return env_value
+        if default is not None:
+            return default
+
+        errors.append(
+            ConfigError(
+                code="INTERPOLATION_MISSING_VAR",
+                message=f"Environment variable '{var_name}' is required",
+                path=_join_path(path),
+                hint=f"Set {var_name} or use ${{{var_name}:-default}}",
+            )
+        )
+        return match.group(0)
+
+    return INTERPOLATION_PATTERN.sub(replace, value)
+
+
+def _resolve_interpolation(
+    node: Any, path: tuple[str, ...], errors: list[ConfigError]
+) -> Any:
+    if isinstance(node, dict):
+        return {
+            str(key): _resolve_interpolation(value, (*path, str(key)), errors)
+            for key, value in node.items()
+        }
+    if isinstance(node, list):
+        return [
+            _resolve_interpolation(item, (*path, str(index)), errors)
+            for index, item in enumerate(node)
+        ]
+    if isinstance(node, str):
+        return _interpolate_string(node, path, errors)
+    return node
+
+
+def _load_yaml(path: Path) -> Any:
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            return yaml.safe_load(file)
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None)
+        pointer = "$"
+        if mark is not None:
+            pointer = f"line:{mark.line + 1},col:{mark.column + 1}"
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="YAML_PARSE_ERROR",
+                    message=str(error),
+                    path=pointer,
+                )
+            ]
+        ) from error
+
+
+def _load_schema(schema_file: Path) -> dict[str, Any]:
+    try:
+        with schema_file.open("r", encoding="utf-8") as file:
+            schema = yaml.safe_load(file)
+    except (OSError, yaml.YAMLError) as error:
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="SCHEMA_LOAD_ERROR",
+                    message=str(error),
+                    path="$",
+                    hint="Provide a readable schema file",
+                )
+            ]
+        ) from error
+    if not isinstance(schema, dict):
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="SCHEMA_LOAD_ERROR",
+                    message="Schema root must be an object",
+                    path="$",
+                )
+            ]
+        )
+    return schema
+
+
+def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
+    validator = Draft202012Validator(schema)
+    errors = sorted(
+        validator.iter_errors(config), key=lambda item: (item.json_path, item.message)
+    )
+    return [
+        ConfigError(
+            code="SCHEMA_VALIDATION_ERROR",
+            message=error.message,
+            path=_join_path(tuple(str(part) for part in error.path)),
+        )
+        for error in errors
+    ]
+
+
+_VERSION_SCHEMA_MAP: dict[str, str] = {
+    "0.1": "yaml-spec-v0.1.schema.json",
+    "0.2": "yaml-spec-v0.2.schema.json",
+}
+
+
+def _resolve_schema_path(
+    version: str, explicit_schema: str | Path | None
+) -> Path:
+    if explicit_schema is not None:
+        return Path(explicit_schema)
+    schema_name = _VERSION_SCHEMA_MAP.get(version)
+    if schema_name is None:
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="UNSUPPORTED_VERSION",
+                    message=f"No built-in schema for version '{version}'",
+                    path="version",
+                    hint=f"Supported versions: {', '.join(sorted(_VERSION_SCHEMA_MAP))}",
+                )
+            ]
+        )
+    return Path(__file__).parent / "schemas" / schema_name
+
+
+def load_and_generate_ir(
+    yaml_file: str | Path, schema_file: str | Path | None = None
+) -> IRDocument:
+    yaml_path = Path(yaml_file)
+
+    raw_config = _load_yaml(yaml_path)
+    if raw_config is None:
+        raw_config = {}
+    if not isinstance(raw_config, dict):
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="YAML_ROOT_INVALID",
+                    message="Top-level YAML document must be an object",
+                    path="$",
+                )
+            ]
+        )
+
+    interpolation_errors: list[ConfigError] = []
+    resolved = _resolve_interpolation(raw_config, tuple(), interpolation_errors)
+    if interpolation_errors:
+        raise ConfigErrors(interpolation_errors)
+
+    version = str(resolved.get("version", "0.1"))
+    schema_path = _resolve_schema_path(version, schema_file)
+
+    schema = _load_schema(schema_path)
+    schema_errors = _validate_schema(resolved, schema)
+    if schema_errors:
+        raise ConfigErrors(schema_errors)
+
+    from .transformers.registry import transform_config
+
+    return transform_config(resolved)

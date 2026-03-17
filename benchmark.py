@@ -16,7 +16,7 @@ import pymongo
 
 HOST = "127.0.0.1"
 WARMUP_REQUESTS = 5
-TOTAL_REQUESTS = 200
+TOTAL_REQUESTS = 1000
 CONCURRENCY = 10
 YAML_PATH = "examples/auth-users.yaml"
 

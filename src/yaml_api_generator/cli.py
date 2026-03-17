@@ -1,17 +1,7 @@
 import json
 import sys
-from importlib.resources import as_file, files
-from pathlib import Path
 
 import click
-
-
-def _default_schema_path() -> Path:
-    schema_resource = files("yaml_api_generator.schemas").joinpath(
-        "yaml-spec-v0.1.schema.json"
-    )
-    with as_file(schema_resource) as schema_path:
-        return schema_path
 
 
 @click.group()
@@ -26,7 +16,7 @@ def cli():
     "schema_file",
     default=None,
     type=click.Path(exists=True),
-    help="Path to JSON schema file.",
+    help="Path to JSON schema file (auto-detected from spec version if omitted).",
 )
 @click.option(
     "--output",
@@ -42,14 +32,12 @@ def cli():
 def compile(yaml_file: str, schema_file: str | None, output_dir: str, target: str):
     """Compile a YAML API spec into source code."""
     from .compiler.compiler import compile_api
-    from .parser import ConfigErrors
-
-    schema = schema_file or str(_default_schema_path())
+    from .parsing.parser import ConfigErrors
 
     try:
         compile_api(
             yaml_file=yaml_file,
-            schema_file=schema,
+            schema_file=schema_file,
             output_dir=output_dir,
             target=target,
         )
@@ -71,7 +59,7 @@ def compile(yaml_file: str, schema_file: str | None, output_dir: str, target: st
     "schema_file",
     default=None,
     type=click.Path(exists=True),
-    help="Path to JSON schema file.",
+    help="Path to JSON schema file (auto-detected from spec version if omitted).",
 )
 @click.option("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1).")
 @click.option("--port", default=8000, type=int, help="Port to bind (default: 8000).")
@@ -80,13 +68,15 @@ def dev(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool
     """Run the YAML API development server."""
     import uvicorn
 
-    from .parser import ConfigErrors
-    from .server import build_app, build_raw_app
-
-    schema = schema_file or str(_default_schema_path())
+    from .parsing.parser import ConfigErrors
+    from .runtime.server import build_app, build_raw_app
 
     try:
-        app = build_raw_app(yaml_file, schema) if raw else build_app(yaml_file, schema)
+        app = (
+            build_raw_app(yaml_file, schema_file)
+            if raw
+            else build_app(yaml_file, schema_file)
+        )
     except ConfigErrors as error:
         payload = [item.to_dict() for item in error.errors]
         sys.stderr.write(json.dumps(payload, indent=2) + "\n")

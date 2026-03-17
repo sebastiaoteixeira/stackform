@@ -28,15 +28,16 @@ class RouteDescriptor:
     method: str
     path: str
     operation: str
-    collection: str
-    id_field: str
-    id_format: str
+    collection: str | None
+    id_field: str | None
+    id_format: str | None
     is_public: bool
     needs_auth: bool
     is_identity_create: bool
     body_model: str | None
     has_id_param: bool
     password_via: bool
+    handler: str | None = None
 
 
 @dataclass(frozen=True)

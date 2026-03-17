@@ -1,0 +1,128 @@
+import base64
+import hashlib
+import hmac
+import secrets
+from typing import Any
+
+from rest_framework.authentication import BaseAuthentication
+from rest_framework.request import Request
+
+from api.authentication.mongodb import get_database
+from api.authentication.jwt_utils import decode_jwt_token
+
+
+DEFAULT_PASSWORD_HASH_ROUNDS = 390000
+
+
+def hash_password(password: str, rounds: int = DEFAULT_PASSWORD_HASH_ROUNDS) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+    salt_b64 = base64.urlsafe_b64encode(salt).decode("ascii")
+    hash_b64 = base64.urlsafe_b64encode(digest).decode("ascii")
+    return f"pbkdf2$sha256${rounds}${salt_b64}${hash_b64}"
+
+
+def verify_password(password: str, encoded_hash: str) -> bool:
+    parts = encoded_hash.split("$")
+    if len(parts) != 5:
+        return False
+    algorithm, digest_name, rounds_text, salt_b64, hash_b64 = parts
+    if algorithm != "pbkdf2" or digest_name != "sha256":
+        return False
+    try:
+        rounds = int(rounds_text)
+        salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
+        expected = base64.urlsafe_b64decode(hash_b64.encode("ascii"))
+    except (ValueError, Exception):
+        return False
+    computed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+    return hmac.compare_digest(computed, expected)
+
+
+def _extract_api_key(headers: dict[str, str]) -> str | None:
+    api_key = headers.get("x-api-key")
+    if api_key:
+        token = api_key.strip()
+        if token:
+            return token
+    authorization = headers.get("authorization", "")
+    if authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        if token:
+            return token
+    return None
+
+
+def _extract_basic_credentials(headers: dict[str, str]) -> tuple[str, str] | None:
+    authorization = headers.get("authorization", "")
+    if not authorization.startswith("Basic "):
+        return None
+    encoded = authorization.removeprefix("Basic ").strip()
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return None
+    if ":" not in decoded:
+        return None
+    username, password = decoded.split(":", 1)
+    if not username or not password:
+        return None
+    return username, password
+
+
+def _extract_bearer_token(headers: dict[str, str]) -> str | None:
+    authorization = headers.get("authorization", "")
+    if authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        if token:
+            return token
+    return None
+
+
+def resolve_principal(request: Request, db) -> dict[str, Any] | None:
+    headers = {k.lower(): v for k, v in request.META.items() if k.startswith("HTTP_")}
+    raw_headers: dict[str, str] = {}
+    for meta_key, value in headers.items():
+        header_name = meta_key[5:].replace("_", "-").lower()
+        raw_headers[header_name] = value
+
+    bearer_token = _extract_bearer_token(raw_headers)
+    if bearer_token is not None:
+        claims = decode_jwt_token(bearer_token)
+        if claims is not None:
+            sub = claims.get("sub")
+            collection_name = claims.get("identity_collection")
+            if sub and collection_name:
+                col = db[collection_name]
+                for doc in col.find({}):
+                    if collection_name == "users" and str(doc.get("id", "")) == sub:
+                        return {"sub": sub, "identity_collection": collection_name, "record": doc}
+
+
+    # users identity resolution
+    credentials = _extract_basic_credentials(raw_headers)
+    if credentials is not None:
+        identifier_value, password = credentials
+        col = db["users"]
+        for doc in col.find({}):
+            if str(doc.get("email", "")) != identifier_value:
+                continue
+            stored_hash = doc.get("passwordHash")
+            if not isinstance(stored_hash, str):
+                continue
+            if not verify_password(password, stored_hash):
+                continue
+            subject = doc.get("id")
+            if subject is not None:
+                return {"sub": str(subject), "identity_collection": "users", "record": doc}
+
+    return None
+
+
+class MongoDBAuthentication(BaseAuthentication):
+    def authenticate(self, request):
+        db = get_database()
+        principal = resolve_principal(request, db)
+        if principal is None:
+            return None
+        return (principal, None)

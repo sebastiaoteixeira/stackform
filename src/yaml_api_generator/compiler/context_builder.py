@@ -166,9 +166,28 @@ def _build_routes(
     has_identity = bool(document.identityCollections)
 
     for ir_route in document.routes:
+        needs_auth = not ir_route.is_public and has_identity
+
+        if ir_route.handler is not None or ir_route.collection is None:
+            routes.append(RouteDescriptor(
+                method=ir_route.method,
+                path=ir_route.path,
+                operation=ir_route.operation,
+                collection=ir_route.collection,
+                id_field=None,
+                id_format=None,
+                is_public=ir_route.is_public,
+                needs_auth=needs_auth,
+                is_identity_create=False,
+                body_model=None,
+                has_id_param="{id}" in ir_route.path,
+                password_via=False,
+                handler=ir_route.handler,
+            ))
+            continue
+
         col = document.collections[ir_route.collection]
         identity = document.identityCollections.get(ir_route.collection)
-        needs_auth = not ir_route.is_public and has_identity
         is_identity_create = (
             identity is not None and ir_route.operation == "create"
         )

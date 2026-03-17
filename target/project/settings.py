@@ -23,6 +23,8 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "project.urls"
 
+APPEND_SLASH = False
+
 WSGI_APPLICATION = "project.wsgi.application"
 
 TEMPLATES = [
@@ -50,6 +52,12 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Generated API",
-    "VERSION": "0.1.0",
+    "VERSION": "v1",
+    "SECURITY": [],
     "SERVE_INCLUDE_SCHEMA": False,
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            "BasicAuth": {"type": "http", "scheme": "basic"},
+        },
+    },
 }

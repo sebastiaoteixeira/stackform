@@ -2,11 +2,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
-from api.serializers.posts import PostsCreatePayload, PostsUpdatePayload
+from api.serializers.posts import PostsCreatePayload, PostsUpdatePayload, PostsReplacePayload
 from api.repositories.posts import PostsRepository
 from api.services.posts import PostsService
 from api.services.exceptions import NotFoundError, ValidationError
 from api.authentication.mongodb import get_database
+from api.authentication.auth import resolve_principal
 
 
 
@@ -69,6 +70,10 @@ class PostsDetailView(APIView):
         db = get_database()
         repo = PostsRepository(db)
         service = PostsService(repo)
+        db = get_database()
+        principal = resolve_principal(request, db)
+        if principal is None:
+            return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
             serializer = PostsUpdatePayload(data=request.data)
@@ -83,10 +88,32 @@ class PostsDetailView(APIView):
 
     @extend_schema()
 
+    def put(self, request, pk):
+        db = get_database()
+        repo = PostsRepository(db)
+        service = PostsService(repo)
+
+        try:
+            serializer = PostsReplacePayload(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+            document = service.replace(pk, data)
+            return Response(document)
+        except NotFoundError:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+    @extend_schema()
+
     def delete(self, request, pk):
         db = get_database()
         repo = PostsRepository(db)
         service = PostsService(repo)
+        db = get_database()
+        principal = resolve_principal(request, db)
+        if principal is None:
+            return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
             document = service.delete(pk)

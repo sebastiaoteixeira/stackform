@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -29,12 +29,32 @@ class IRCollection:
 
 
 @dataclass(frozen=True)
+class IRAccessRule:
+    principal: str
+    when: str | None = None
+    filter: str | None = None
+    write_fields: list[str] = field(default_factory=list)
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class IRService:
+    name: str
+    repository: str | None = None
+    operation: str | None = None
+    handler: str | None = None
+
+
+@dataclass(frozen=True)
 class IRRoute:
     method: str
     path: str
     operation: str
-    collection: str
+    collection: str | None = None
+    service: str | None = None
     is_public: bool = True
+    access_rules: list[IRAccessRule] | None = None
+    handler: str | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +71,7 @@ class IRDocument:
     collections: dict[str, IRCollection]
     routes: list[IRRoute]
     identityCollections: dict[str, IRIdentityCollection]
+    services: dict[str, IRService] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

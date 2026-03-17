@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ..parser import load_and_generate_ir
+from ..parsing.parser import load_and_generate_ir
 from .context_builder import build_context
 from .generators.base import CodeGenerator
 from .generators.fastapi.generator import FastAPIGenerator
@@ -17,8 +17,8 @@ _GENERATORS: dict[str, type[CodeGenerator]] = {
 
 def compile_api(
     yaml_file: str | Path,
-    schema_file: str | Path,
-    output_dir: str | Path,
+    schema_file: str | Path | None = None,
+    output_dir: str | Path = "./target",
     target: str = "fastapi",
 ) -> None:
     generator_cls = _GENERATORS.get(target)
