@@ -14,3 +14,4 @@ env/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
+target/
