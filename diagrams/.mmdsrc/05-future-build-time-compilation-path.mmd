@@ -1,7 +1,0 @@
-flowchart LR
-    YAML[YAML] --> V[Validate]
-    V --> IR[Compile IR]
-    IR --> ART["Emit Artifact<br/>(JSON/code)"]
-    ART --> BOOT[Runtime Boot]
-    BOOT --> PLAN[Load RuntimePlan]
-    PLAN --> SERVE[Serve Requests]
