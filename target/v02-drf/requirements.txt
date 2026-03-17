@@ -1,6 +1,0 @@
-django
-djangorestframework
-drf-spectacular
-gunicorn
-pymongo
-pyjwt
