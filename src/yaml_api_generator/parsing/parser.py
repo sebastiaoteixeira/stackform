@@ -197,6 +197,11 @@ def load_and_generate_ir(
         raise ConfigErrors(interpolation_errors)
 
     version = str(resolved.get("version", "0.1"))
+
+    if version == "0.2":
+        from .desugar import desugar_v02
+        resolved = desugar_v02(resolved)
+
     schema_path = _resolve_schema_path(version, schema_file)
 
     schema = _load_schema(schema_path)
