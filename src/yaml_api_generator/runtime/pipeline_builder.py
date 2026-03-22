@@ -3,9 +3,11 @@ import importlib
 from .runtime_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import BaseRepository
+from .when_eval import needs_document
 from .steps import (
     AuthorizeRouteStep,
     LoginStep,
+    PostFetchAuthorizeStep,
     RepositoryCreateStep,
     RepositoryDeleteStep,
     RepositoryGetStep,
@@ -58,7 +60,17 @@ class PipelineBuilder:
         if identity_step is not None:
             steps.append(identity_step)
         steps.append(self._validate_body_step(route))
-        steps.append(self._repository_step(route.operation, route.collection))
+
+        post_fetch_step = self._post_fetch_authorize_step(route)
+        if post_fetch_step is not None and route.operation in ("update", "replace", "delete"):
+            steps.append(RepositoryGetStep(route.collection, self._ctx.collections[route.collection].id_field))
+            steps.append(post_fetch_step)
+            steps.append(self._repository_step(route.operation, route.collection))
+        else:
+            steps.append(self._repository_step(route.operation, route.collection))
+            if post_fetch_step is not None:
+                steps.append(post_fetch_step)
+
         return Pipeline(
             steps=steps,
             method=route.method,
@@ -96,7 +108,7 @@ class PipelineBuilder:
             )
 
         if not route.is_public:
-            steps.append(AuthorizeRouteStep())
+            steps.append(AuthorizeRouteStep(route.access_rules))
 
         return steps
 
@@ -110,6 +122,20 @@ class PipelineBuilder:
         if identity_collection is None or route.operation != "create":
             return None
         return ValidateIdentityCreateStep(identity_collection)
+
+    def _post_fetch_authorize_step(self, route: RuntimeRouteDescriptor) -> Step | None:
+        if route.is_public or not route.access_rules:
+            return None
+        has_doc_rules = any(
+            r.when is not None and needs_document(r.when)
+            for r in route.access_rules
+        )
+        if not has_doc_rules:
+            return None
+        # Only applies to operations that fetch a single document
+        if route.operation not in ("get", "update", "replace", "delete"):
+            return None
+        return PostFetchAuthorizeStep(route.access_rules)
 
     def _repository_step(self, operation: str, collection_name: str) -> Step:
         collection = self._ctx.collections[collection_name]

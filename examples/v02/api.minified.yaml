@@ -1,0 +1,116 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+    auth:
+      register: true
+      login: true
+
+imports:
+  posts: myapp.handlers.posts
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: myapp
+
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+    fields:
+      id:
+        type: id
+      email:
+        type: string
+        required: true
+        unique: true
+        format: email
+      displayName:
+        type: string
+        required: true
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
+
+  post:
+    fields:
+      id:
+        type: id
+      title:
+        type: string
+        required: true
+      content:
+        type: string
+      authorId:
+        type: ref
+        ref: user
+      published:
+        type: boolean
+        default: false
+    operations:
+      replace: true
+
+repositories:
+  users:
+    entity: user
+  posts:
+    entity: post
+
+services:
+  users: {}
+  posts:
+    operations:
+      publish: { handler: posts.publish }
+
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: authenticated
+    operations:
+      register: { access: public }
+      login:    { access: public }
+      delete:
+        access:
+          - given:
+              principal: identity:users
+              document: users
+            when: principal.sub equals document.id
+
+  posts:
+    service: posts
+    base_path: /posts
+    access: public
+    operations:
+      create: { access: authenticated }
+      update:
+        access:
+          - given:
+              principal: identity:users
+              document: posts
+            when: principal.sub not equals document.authorId
+            then: deny
+          - then: allow
+      replace: { access: authenticated }
+      publish: { method: POST, path: "/{id}/publish", access: authenticated }
+      delete:
+        access:
+          - given:
+              principal: identity:users
+              document: posts
+            when: principal.sub equals document.authorId
+          - given:
+              principal: identity:users
+            when: principal.record.role equals 'moderator'
