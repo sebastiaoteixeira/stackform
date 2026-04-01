@@ -1,10 +1,12 @@
 from typing import Any
 
-from ..ir import IRDocument, IRCollection, IRIdentityCollection
+from ..ir import IRDocument, IRCollection, IRDocumentBinding, IRIdentityCollection
 from .compile_context import (
+    AccessRuleDescriptor,
     AppConfig,
     AuthConfig,
     CompileContext,
+    DocumentBindingDescriptor,
     FieldDescriptor,
     IdentityCollectionDescriptor,
     ModelDescriptor,
@@ -42,6 +44,7 @@ def build_context(document: IRDocument) -> CompileContext:
         routes=routes,
         auth=auth,
         collections=raw_collections,
+        role_hierarchies=document.role_hierarchies,
     )
 
 
@@ -158,6 +161,17 @@ def _build_fields(
     return fields
 
 
+def _map_doc_binding(
+    binding: IRDocumentBinding | None,
+) -> DocumentBindingDescriptor | None:
+    if binding is None:
+        return None
+    return DocumentBindingDescriptor(
+        collection=binding.collection,
+        id_param=binding.id_param,
+    )
+
+
 def _build_routes(
     document: IRDocument,
     model_index: dict[str, ModelDescriptor],
@@ -167,6 +181,18 @@ def _build_routes(
 
     for ir_route in document.routes:
         needs_auth = not ir_route.is_public and has_identity
+
+        access_rules = None
+        if ir_route.access_rules:
+            access_rules = [
+                AccessRuleDescriptor(
+                    principal=rule.principal,
+                    when=rule.when,
+                    document=_map_doc_binding(rule.document),
+                    effect=rule.effect,
+                )
+                for rule in ir_route.access_rules
+            ]
 
         if ir_route.handler is not None or ir_route.collection is None:
             routes.append(RouteDescriptor(
@@ -183,6 +209,7 @@ def _build_routes(
                 has_id_param="{id}" in ir_route.path,
                 password_via=False,
                 handler=ir_route.handler,
+                access_rules=access_rules,
             ))
             continue
 
@@ -214,6 +241,7 @@ def _build_routes(
             body_model=body_model,
             has_id_param="{id}" in ir_route.path,
             password_via=uses_password,
+            access_rules=access_rules,
         ))
 
     return routes

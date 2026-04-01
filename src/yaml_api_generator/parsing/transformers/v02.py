@@ -5,27 +5,29 @@ from ...ir import (
     IRApi,
     IRCollection,
     IRDocument,
+    IRDocumentBinding,
     IRIdentityCollection,
     IROperations,
     IRRoute,
     IRService,
 )
 from ..parser import ConfigError, ConfigErrors
+from ..when_parser import parse_document_binding, parse_when_list
 
 OPERATION_NAMES = ("list", "get", "create", "update", "replace", "delete")
 
 
 def _normalize_operations(
-    global_defaults: dict[str, Any], entity_ops: dict[str, Any] | None
+    global_defaults: dict[str, Any], repo_ops: dict[str, Any] | None
 ) -> IROperations:
     defaults = {name: True for name in OPERATION_NAMES}
     for name in OPERATION_NAMES:
         if name in global_defaults:
             defaults[name] = bool(global_defaults[name])
-    if entity_ops:
+    if repo_ops:
         for name in OPERATION_NAMES:
-            if name in entity_ops:
-                defaults[name] = bool(entity_ops[name])
+            if name in repo_ops:
+                defaults[name] = bool(repo_ops[name])
     return IROperations(**defaults)
 
 
@@ -108,31 +110,188 @@ def _resolve_handler_path(
     return module
 
 
-def _parse_access_value(access: Any) -> tuple[bool, list[IRAccessRule] | None]:
+def _parse_access_value(
+    access: Any,
+    path: str,
+    auth_entities: set[str],
+    entity_to_collection: dict[str, str],
+) -> tuple[bool, list[IRAccessRule] | None, list[ConfigError]]:
     if access is None or access == "public":
-        return True, None
+        return True, None, []
+
+    if access == "*":
+        return False, None, []
+
     if access == "authenticated":
-        return False, None
-    if isinstance(access, str) and access.startswith("identity:"):
-        return False, [IRAccessRule(principal=access)]
+        return False, None, []
+
+    if isinstance(access, str):
+        rule, errors = _parse_access_string(access, path, auth_entities, entity_to_collection)
+        if errors:
+            return False, None, errors
+        if rule is not None:
+            return False, [rule], []
+        return False, None, []
+
     if isinstance(access, list):
-        rules = []
-        for rule in access:
-            if not isinstance(rule, dict):
-                continue
-            principal = rule.get("principal", "")
-            rules.append(
-                IRAccessRule(
-                    principal=principal,
-                    when=rule.get("when"),
-                    filter=rule.get("filter"),
-                    write_fields=rule.get("writeFields", []),
-                    reason=rule.get("reason"),
+        rules: list[IRAccessRule] = []
+        errors: list[ConfigError] = []
+        for i, item in enumerate(access):
+            item_path = f"{path}[{i}]"
+            if isinstance(item, str):
+                rule, str_errors = _parse_access_string(
+                    item, item_path, auth_entities, entity_to_collection
+                )
+                errors.extend(str_errors)
+                if rule is not None:
+                    rules.append(rule)
+            elif isinstance(item, dict):
+                rule, dict_errors = _parse_access_rule_object(
+                    item, item_path, auth_entities, entity_to_collection
+                )
+                errors.extend(dict_errors)
+                if rule is not None:
+                    rules.append(rule)
+        if errors:
+            return False, None, errors
+        if rules:
+            return False, rules, []
+        return False, None, []
+
+    return True, None, []
+
+
+def _parse_access_string(
+    value: str,
+    path: str,
+    auth_entities: set[str],
+    entity_to_collection: dict[str, str],
+) -> tuple[IRAccessRule | None, list[ConfigError]]:
+    if value == "public":
+        return None, []
+    if value in ("*", "authenticated"):
+        return None, []
+
+    # identity:entity format (from rule objects)
+    if value.startswith("identity:"):
+        entity_name = value[len("identity:"):]
+        collection = entity_to_collection.get(entity_name)
+        if collection is None:
+            return None, [
+                ConfigError(
+                    code="ACCESS_UNKNOWN_ENTITY",
+                    message=f"Unknown auth entity '{entity_name}' in access rule",
+                    path=path,
+                )
+            ]
+        return IRAccessRule(principal=f"identity:{collection}"), []
+
+    # entity:role or entity:* format
+    if ":" in value:
+        entity_part, role_part = value.split(":", 1)
+        if entity_part not in auth_entities:
+            return None, [
+                ConfigError(
+                    code="ACCESS_UNKNOWN_ENTITY",
+                    message=f"Unknown auth entity '{entity_part}' in access rule",
+                    path=path,
+                )
+            ]
+        collection = entity_to_collection[entity_part]
+        if role_part == "*":
+            return IRAccessRule(principal=f"identity:{collection}"), []
+        return IRAccessRule(
+            principal=f"identity:{collection}", required_role=role_part
+        ), []
+
+    # Unscoped role — only valid with single auth entity
+    if len(auth_entities) == 0:
+        return None, [
+            ConfigError(
+                code="ACCESS_NO_AUTH_ENTITY",
+                message=f"Cannot use role '{value}' without auth entities",
+                path=path,
+            )
+        ]
+    if len(auth_entities) > 1:
+        return None, [
+            ConfigError(
+                code="ACCESS_AMBIGUOUS_ROLE",
+                message=f"Unscoped role '{value}' is ambiguous with multiple auth entities; use 'entity:{value}'",
+                path=path,
+            )
+        ]
+    entity_name = next(iter(auth_entities))
+    collection = entity_to_collection[entity_name]
+    return IRAccessRule(
+        principal=f"identity:{collection}", required_role=value
+    ), []
+
+
+def _parse_access_rule_object(
+    rule: dict[str, Any],
+    path: str,
+    auth_entities: set[str],
+    entity_to_collection: dict[str, str],
+) -> tuple[IRAccessRule | None, list[ConfigError]]:
+    errors: list[ConfigError] = []
+
+    given = rule.get("given", {})
+    principal_raw = given.get("principal", "") if isinstance(given, dict) else ""
+    effect = rule.get("then", "allow")
+
+    # Resolve principal
+    principal = ""
+    required_role: str | None = None
+    if principal_raw.startswith("identity:"):
+        entity_name = principal_raw[len("identity:"):]
+        collection = entity_to_collection.get(entity_name)
+        if collection is None:
+            errors.append(
+                ConfigError(
+                    code="ACCESS_UNKNOWN_ENTITY",
+                    message=f"Unknown auth entity '{entity_name}' in access rule",
+                    path=f"{path}.given.principal",
                 )
             )
-        if rules:
-            return False, rules
-    return True, None
+        else:
+            principal = f"identity:{collection}"
+    else:
+        principal = principal_raw
+
+    doc_binding: IRDocumentBinding | None = None
+    doc_raw = given.get("document") if isinstance(given, dict) else None
+    if doc_raw is not None:
+        parsed, doc_errors = parse_document_binding(
+            doc_raw, f"{path}.given.document"
+        )
+        errors.extend(doc_errors)
+        if parsed is not None:
+            doc_binding = IRDocumentBinding(
+                collection=parsed[0], id_param=parsed[1]
+            )
+
+    when_expr = None
+    when_raw = rule.get("when")
+    if when_raw is not None:
+        when_expr, when_errors = parse_when_list(
+            when_raw, f"{path}.when"
+        )
+        errors.extend(when_errors)
+
+    if errors:
+        return None, errors
+
+    return IRAccessRule(
+        principal=principal,
+        required_role=required_role,
+        when=when_expr,
+        document=doc_binding,
+        effect=effect,
+        filter=rule.get("filter"),
+        write_fields=rule.get("writeFields", []),
+        reason=rule.get("reason"),
+    ), []
 
 
 def _validate_implicit_auth_fields(
@@ -165,6 +324,58 @@ def _validate_implicit_auth_fields(
     return errors
 
 
+def _validate_roles_field(
+    entity_name: str,
+    roles_field: str,
+    fields: dict[str, Any],
+) -> list[ConfigError]:
+    if roles_field not in fields:
+        return [
+            ConfigError(
+                code="AUTH_ROLES_FIELD_NOT_FOUND",
+                message=f"Roles field '{roles_field}' not found in entity '{entity_name}'",
+                path=f"entities.{entity_name}.auth.roles",
+            )
+        ]
+    field_cfg = fields[roles_field]
+    if not isinstance(field_cfg, dict) or field_cfg.get("type") != "enum":
+        return [
+            ConfigError(
+                code="AUTH_ROLES_FIELD_NOT_ENUM",
+                message=f"Roles field '{roles_field}' must be of type 'enum'",
+                path=f"entities.{entity_name}.fields.{roles_field}",
+            )
+        ]
+    return []
+
+
+def _parse_role_hierarchies(
+    roles_data: dict[str, Any],
+    auth_entities: set[str],
+) -> tuple[dict[str, dict[str, list[str]]], list[ConfigError]]:
+    errors: list[ConfigError] = []
+    hierarchies: dict[str, dict[str, list[str]]] = {}
+
+    for entity_name, role_map in roles_data.items():
+        if entity_name not in auth_entities:
+            errors.append(
+                ConfigError(
+                    code="ROLES_UNKNOWN_ENTITY",
+                    message=f"Role hierarchy references unknown auth entity '{entity_name}'",
+                    path=f"roles.{entity_name}",
+                )
+            )
+            continue
+        if not isinstance(role_map, dict):
+            continue
+        hierarchies[entity_name] = {
+            role: list(includes) if isinstance(includes, list) else []
+            for role, includes in role_map.items()
+        }
+
+    return hierarchies, errors
+
+
 class V02Transformer:
     def transform(self, resolved: dict[str, Any]) -> IRDocument:
         api_data: dict[str, Any] = resolved.get("api", {})
@@ -174,6 +385,7 @@ class V02Transformer:
         repos_data: dict[str, Any] = resolved.get("repositories", {})
         services_data: dict[str, Any] = resolved.get("services", {})
         controllers_data: dict[str, Any] = resolved.get("controllers", {})
+        roles_data: dict[str, Any] = resolved.get("roles", {})
 
         # repo name -> entity name
         repo_entity_map: dict[str, str] = {}
@@ -181,7 +393,20 @@ class V02Transformer:
             if isinstance(repo_cfg, dict):
                 repo_entity_map[repo_name] = repo_cfg["entity"]
 
-        collections, id_errors = self._build_collections(entities_data, defaults)
+        # entity name -> collection name (pluralized)
+        entity_to_collection: dict[str, str] = {}
+        for entity_name in entities_data:
+            entity_to_collection[entity_name] = entity_name + "s"
+
+        # Identify auth entities
+        auth_entities: set[str] = set()
+        for entity_name, entity_data in entities_data.items():
+            if isinstance(entity_data, dict) and entity_data.get("type") == "auth":
+                auth_entities.add(entity_name)
+
+        collections, id_errors = self._build_collections(
+            entities_data, repos_data, defaults
+        )
         if id_errors:
             raise ConfigErrors(id_errors)
 
@@ -193,11 +418,21 @@ class V02Transformer:
         if field_errors:
             raise ConfigErrors(field_errors)
 
+        # Parse role hierarchies
+        role_hierarchies: dict[str, dict[str, list[str]]] = {}
+        if roles_data:
+            role_hierarchies, role_errors = _parse_role_hierarchies(
+                roles_data, auth_entities
+            )
+            if role_errors:
+                raise ConfigErrors(role_errors)
+
         services = self._build_services(
             services_data, repo_entity_map, import_map
         )
         routes = self._build_routes(
-            controllers_data, services, api_data, repo_entity_map
+            controllers_data, services, api_data, repo_entity_map,
+            auth_entities, entity_to_collection,
         )
 
         return IRDocument(
@@ -210,33 +445,62 @@ class V02Transformer:
             routes=routes,
             identityCollections=identity_collections,
             services=services,
+            role_hierarchies=role_hierarchies,
         )
 
     def _build_collections(
         self,
         entities_data: dict[str, Any],
+        repos_data: dict[str, Any],
         defaults: dict[str, Any],
     ) -> tuple[dict[str, IRCollection], list[ConfigError]]:
         collections: dict[str, IRCollection] = {}
         errors: list[ConfigError] = []
 
+        # Build repo_name -> repo_cfg mapping for operation lookup
+        entity_repo_map: dict[str, dict[str, Any]] = {}
+        for repo_name, repo_cfg in repos_data.items():
+            if isinstance(repo_cfg, dict) and "entity" in repo_cfg:
+                entity_repo_map[repo_cfg["entity"]] = repo_cfg
+
         for name, entity_data in entities_data.items():
             entity_type = str(entity_data.get("type", "base"))
-            operations = _normalize_operations(defaults, entity_data.get("operations"))
-            fields = cast(dict[str, Any], entity_data["fields"])
+            fields = cast(dict[str, Any], entity_data.get("fields", {}))
 
-            id_field, id_errors = _extract_entity_id_field(name, fields)
-            errors.extend(id_errors)
+            # Operations from repository, not entity
+            repo_cfg = entity_repo_map.get(name, {})
+            repo_ops = repo_cfg.get("operations") if isinstance(repo_cfg, dict) else None
+            operations = _normalize_operations(defaults, repo_ops)
 
-            id_format: str | None = None
-            if id_field is not None:
-                id_format, fmt_errors = _resolve_id_format(name, id_field, fields)
-                errors.extend(fmt_errors)
+            pk_field = entity_data.get("pk")
+            if pk_field is not None:
+                # Natural key — use pk field as idField
+                if pk_field not in fields:
+                    errors.append(
+                        ConfigError(
+                            code="PK_FIELD_NOT_FOUND",
+                            message=f"pk field '{pk_field}' not found in entity '{name}'",
+                            path=f"entities.{name}.pk",
+                        )
+                    )
+                    continue
+                id_field = pk_field
+                id_format = "natural"
+            else:
+                id_field_result, id_errors = _extract_entity_id_field(name, fields)
+                errors.extend(id_errors)
 
-            if id_field is None or id_format is None:
-                continue
+                id_format_result: str | None = None
+                if id_field_result is not None:
+                    id_format_result, fmt_errors = _resolve_id_format(name, id_field_result, fields)
+                    errors.extend(fmt_errors)
 
-            # v0.2 uses singular entity names; pluralize for collection name
+                if id_field_result is None or id_format_result is None:
+                    continue
+
+                id_field = id_field_result
+                id_format = id_format_result
+
             plural = name + "s"
             collections[plural] = IRCollection(
                 name=plural,
@@ -264,10 +528,20 @@ class V02Transformer:
             auth_data = entity_data.get("auth", {})
             identifier = auth_data.get("identifier") if isinstance(auth_data, dict) else None
             via = _normalize_auth_via(auth_data.get("via") if isinstance(auth_data, dict) else None)
+            roles_field = auth_data.get("roles") if isinstance(auth_data, dict) else None
+
+            # Validate roles field if specified
+            if roles_field is not None:
+                fields = collections[plural].fields
+                role_errors = _validate_roles_field(name, roles_field, fields)
+                if role_errors:
+                    raise ConfigErrors(role_errors)
+
             identity_collections[plural] = IRIdentityCollection(
                 name=plural,
                 identifier=identifier,
                 via=via,
+                roles_field=roles_field,
             )
         return identity_collections
 
@@ -306,9 +580,12 @@ class V02Transformer:
         services: dict[str, IRService],
         api_data: dict[str, Any],
         repo_entity_map: dict[str, str],
+        auth_entities: set[str],
+        entity_to_collection: dict[str, str],
     ) -> list[IRRoute]:
         base_path = api_data.get("basePath", "/api")
         routes: list[IRRoute] = []
+        all_errors: list[ConfigError] = []
 
         for _ctrl_name, ctrl_cfg in controllers_data.items():
             if not isinstance(ctrl_cfg, dict):
@@ -326,11 +603,13 @@ class V02Transformer:
                 full_path = base_path + ctrl_base + path
 
                 service = services.get(svc_name)
-                is_public, access_rules = _parse_access_value(
-                    route_cfg.get("access")
+                access_path = f"controllers.{_ctrl_name}.routes.{_route_name}.access"
+                is_public, access_rules, access_errors = _parse_access_value(
+                    route_cfg.get("access"), access_path,
+                    auth_entities, entity_to_collection,
                 )
+                all_errors.extend(access_errors)
 
-                # Resolve collection from service -> repository -> entity
                 collection: str | None = None
                 handler: str | None = None
                 operation: str | None = None
@@ -356,5 +635,8 @@ class V02Transformer:
                         handler=handler,
                     )
                 )
+
+        if all_errors:
+            raise ConfigErrors(all_errors)
 
         return routes

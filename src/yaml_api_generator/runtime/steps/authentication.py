@@ -62,7 +62,7 @@ async def _resolve_jwt_principal(
     documents = await repository.list(collection_name)
     for doc in documents:
         if str(doc.get(id_field, "")) == sub:
-            return _build_principal(doc, id_field=id_field, identity_collection=collection_name)
+            return _build_principal(doc, id_field=id_field, identity_collection=collection_name, identity=identity)
 
     return None
 
@@ -108,9 +108,10 @@ async def _resolve_identity_for_collection(
             return await _find_principal(
                 repository,
                 collection_name=identity.name,
-                field_name="apiKey",
+                field_name="_auth.apiKey",
                 field_value=token,
                 id_field=id_field,
+                identity=identity,
             )
 
     if "password" in identity.via and identity.identifier:
@@ -124,6 +125,7 @@ async def _resolve_identity_for_collection(
                 identifier_value=identifier,
                 password=password,
                 id_field=id_field,
+                identity=identity,
             )
 
     return None
@@ -171,15 +173,28 @@ async def _find_principal(
     field_name: str,
     field_value: str,
     id_field: str,
+    identity: RuntimeIdentityDescriptor,
 ) -> dict[str, Any] | None:
     documents = await repository.list(collection_name)
     for document in documents:
-        if str(document.get(field_name, "")) != field_value:
+        # Support dotted field paths like _auth.apiKey
+        actual_value = _get_nested(document, field_name)
+        if str(actual_value or "") != field_value:
             continue
         return _build_principal(
-            document, id_field=id_field, identity_collection=collection_name
+            document, id_field=id_field, identity_collection=collection_name, identity=identity,
         )
     return None
+
+
+def _get_nested(document: dict[str, Any], path: str) -> Any:
+    parts = path.split(".")
+    current: Any = document
+    for part in parts:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
 
 
 async def _find_principal_with_password(
@@ -189,18 +204,24 @@ async def _find_principal_with_password(
     identifier_value: str,
     password: str,
     id_field: str,
+    identity: RuntimeIdentityDescriptor,
 ) -> dict[str, Any] | None:
     documents = await repository.list(collection_name)
     for document in documents:
         if str(document.get(identifier_field, "")) != identifier_value:
             continue
-        stored_hash = document.get("passwordHash")
+        # Read passwordHash from _auth namespace
+        auth_data = document.get("_auth", {})
+        stored_hash = auth_data.get("passwordHash") if isinstance(auth_data, dict) else None
+        # Fallback to flat field for backward compatibility
+        if not isinstance(stored_hash, str):
+            stored_hash = document.get("passwordHash")
         if not isinstance(stored_hash, str):
             continue
         if not verify_password(password, stored_hash):
             continue
         return _build_principal(
-            document, id_field=id_field, identity_collection=collection_name
+            document, id_field=id_field, identity_collection=collection_name, identity=identity,
         )
     return None
 
@@ -209,6 +230,7 @@ def _build_principal(
     document: dict[str, Any],
     id_field: str,
     identity_collection: str,
+    identity: RuntimeIdentityDescriptor | None = None,
 ) -> dict[str, Any]:
     subject = document.get(id_field)
     if subject is None:
@@ -216,12 +238,25 @@ def _build_principal(
             f"Identity record missing canonical id field: {id_field}"
         )
 
+    # Clean record: strip _auth namespace
+    record = {k: v for k, v in document.items() if k != "_auth"}
+    # Also strip legacy flat sensitive fields
+    record.pop("password", None)
+    record.pop("passwordHash", None)
+
     principal: dict[str, Any] = {
         "sub": str(subject),
         "identity_collection": identity_collection,
-        "record": document,
+        "record": record,
     }
-    roles = document.get("roles") or document.get("role")
+
+    # Use configured roles_field if available
+    roles_field = identity.roles_field if identity is not None else None
+    if roles_field is not None:
+        roles = document.get(roles_field)
+    else:
+        roles = document.get("roles") or document.get("role")
+
     if isinstance(roles, list):
         principal["roles"] = [str(role) for role in roles]
     elif isinstance(roles, str):

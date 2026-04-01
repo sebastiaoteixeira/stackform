@@ -3,6 +3,9 @@ from typing import Any
 
 
 class BaseRepository(ABC):
+    def register_id_field(self, collection_name: str, id_field: str) -> None:
+        pass
+
     @abstractmethod
     def connect(self) -> None:
         raise NotImplementedError

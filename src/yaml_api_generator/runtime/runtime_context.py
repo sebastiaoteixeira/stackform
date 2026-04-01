@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+
+from ..when_ast import WhenExpr
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,22 @@ class RuntimeIdentityDescriptor:
     identifier: str | None
     via: list[str]
     id_field: str
+    roles_field: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeDocumentBinding:
+    collection: str
+    id_param: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeAccessRule:
+    principal: str
+    required_role: str | None = None
+    when: WhenExpr | None = None
+    document: RuntimeDocumentBinding | None = None
+    effect: str = "allow"
 
 
 @dataclass(frozen=True)
@@ -27,6 +45,7 @@ class RuntimeRouteDescriptor:
     collection: str | None
     is_public: bool
     handler: str | None = None
+    access_rules: list[RuntimeAccessRule] | None = None
 
 
 @dataclass(frozen=True)
@@ -36,6 +55,7 @@ class RuntimeAuthConfig:
     identity_id_fields: dict[str, str]
     has_password_auth: bool
     has_api_key_auth: bool
+    role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -53,20 +53,17 @@ REST_FRAMEWORK = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "Generated API",
     "VERSION": "{{ ctx.app.api_version or '0.1.0' }}",
-{% if ctx.auth.enabled %}
-    "SECURITY": [],
-{% endif %}
     "SERVE_INCLUDE_SCHEMA": False,
 {% if ctx.auth.enabled %}
     "APPEND_COMPONENTS": {
         "securitySchemes": {
-{% if ctx.auth.has_api_key_auth %}
-            "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
-            "BearerAuth": {"type": "http", "scheme": "bearer"},
-{% endif %}
 {% if ctx.auth.has_password_auth %}
             "BasicAuth": {"type": "http", "scheme": "basic"},
 {% endif %}
+{% if ctx.auth.has_api_key_auth %}
+            "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+{% endif %}
+            "BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
         },
     },
 {% endif %}

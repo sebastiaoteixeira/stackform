@@ -40,6 +40,8 @@ def _inject_canonical_id(
         normalized[id_field] = str(normalized["_id"])
     if id_field != "_id":
         normalized.pop("_id", None)
+    # Strip _auth namespace and legacy sensitive fields
+    normalized.pop("_auth", None)
     normalized.pop("password", None)
     normalized.pop("passwordHash", None)
     return normalized
@@ -80,7 +82,12 @@ def _prepare_payload(
         return normalized
     if not isinstance(raw_password, str) or not raw_password.strip():
         raise ValueError("Password must be a non-empty string")
-    normalized["passwordHash"] = hash_password(raw_password)
+    # Store passwordHash under _auth namespace
+    auth_data = normalized.get("_auth", {})
+    if not isinstance(auth_data, dict):
+        auth_data = {}
+    auth_data["passwordHash"] = hash_password(raw_password)
+    normalized["_auth"] = auth_data
     return normalized
 
 
@@ -112,7 +119,8 @@ def RepositoryCreateStep(
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
         payload = _prepare_payload(_payload(ctx), password_via=password_via)
-        payload[id_field] = _generate_id(id_format)
+        if id_format != "natural":
+            payload[id_field] = _generate_id(id_format)
         result = await _repository(ctx).create(collection_name, payload)
         ctx.response = _inject_canonical_id(result, id_field)
         return ctx

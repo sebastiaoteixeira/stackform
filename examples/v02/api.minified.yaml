@@ -23,14 +23,20 @@ mongo:
   database: myapp
 
 entities:
+  base:
+    abstract: true
+    fields:
+      id: { type: id }
+      createdAt: { type: datetime }
+
   user:
+    extends: base
     type: auth
     auth:
       identifier: email
       via: password
+      roles: role
     fields:
-      id:
-        type: id
       email:
         type: string
         required: true
@@ -45,9 +51,8 @@ entities:
         default: user
 
   post:
+    extends: base
     fields:
-      id:
-        type: id
       title:
         type: string
         required: true
@@ -59,33 +64,47 @@ entities:
       published:
         type: boolean
         default: false
-    operations:
-      replace: true
+
+  country:
+    pk: code
+    fields:
+      code: { type: string }
+      name: { type: string }
+
+roles:
+  user:
+    admin: [moderator]
+    moderator: [user]
 
 repositories:
   users:
     entity: user
   posts:
     entity: post
+    operations:
+      replace: true
+  countries:
+    entity: country
 
 services:
   users: {}
   posts:
     operations:
       publish: { handler: posts.publish }
+  countries: {}
 
 controllers:
   users:
     service: users
     base_path: /users
-    access: authenticated
+    access: "*"
     operations:
       register: { access: public }
       login:    { access: public }
       delete:
         access:
           - given:
-              principal: identity:users
+              principal: identity:user
               document: users
             when: principal.sub equals document.id
 
@@ -94,23 +113,31 @@ controllers:
     base_path: /posts
     access: public
     operations:
-      create: { access: authenticated }
+      create: { access: "*" }
       update:
         access:
+          - admin
           - given:
-              principal: identity:users
+              principal: identity:user
               document: posts
             when: principal.sub not equals document.authorId
             then: deny
           - then: allow
-      replace: { access: authenticated }
-      publish: { method: POST, path: "/{id}/publish", access: authenticated }
+      replace: { access: "*" }
+      publish: { method: POST, path: "/{id}/publish", access: "*" }
       delete:
         access:
+          - moderator
           - given:
-              principal: identity:users
+              principal: identity:user
               document: posts
             when: principal.sub equals document.authorId
-          - given:
-              principal: identity:users
-            when: principal.record.role equals 'moderator'
+
+  countries:
+    service: countries
+    base_path: /countries
+    access: public
+    operations:
+      create: { access: admin }
+      update: { access: admin }
+      delete: { access: admin }

@@ -23,6 +23,9 @@
           "properties": {
             "defaults": {
               "$ref": "#/$defs/OperationFlags"
+            },
+            "auth": {
+              "$ref": "#/$defs/OperationFlags"
             }
           }
         }
@@ -49,6 +52,16 @@
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/EntityConfig"
+      }
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
     "repositories": {
@@ -79,17 +92,27 @@
         "create": { "type": "boolean" },
         "update": { "type": "boolean" },
         "replace": { "type": "boolean" },
-        "delete": { "type": "boolean" }
+        "delete": { "type": "boolean" },
+        "register": { "type": "boolean" },
+        "login": { "type": "boolean" }
       }
     },
     "EntityConfig": {
       "type": "object",
-      "required": ["fields"],
       "properties": {
         "type": {
           "type": "string",
           "enum": ["base", "auth"],
           "default": "base"
+        },
+        "extends": {
+          "type": "string"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "pk": {
+          "type": "string"
         },
         "fields": {
           "type": "object",
@@ -99,12 +122,17 @@
         },
         "auth": {
           "$ref": "#/$defs/AuthEntityConfig"
-        },
-        "operations": {
-          "$ref": "#/$defs/OperationFlags"
         }
       },
       "allOf": [
+        {
+          "if": {
+            "not": { "required": ["extends"] }
+          },
+          "then": {
+            "required": ["fields"]
+          }
+        },
         {
           "if": {
             "properties": { "type": { "const": "auth" } },
@@ -131,6 +159,9 @@
               "items": { "$ref": "#/$defs/AuthMethod" }
             }
           ]
+        },
+        "roles": {
+          "type": "string"
         }
       }
     },
@@ -188,35 +219,35 @@
       "properties": {
         "entity": {
           "type": "string"
+        },
+        "operations": {
+          "$ref": "#/$defs/OperationFlags"
         }
       }
     },
     "ServiceConfig": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "repository": { "type": "string" },
-            "operation": { "type": "string" },
-            "handler": { "type": "string" }
-          },
-          "required": ["repository"]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "handler": { "type": "string" }
-          },
-          "required": ["handler"]
-        }
-      ]
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string" },
+        "operation": { "type": "string" },
+        "handler": { "type": "string" },
+        "operations": { "type": "object" }
+      }
     },
     "ControllerConfig": {
       "type": "object",
-      "required": ["routes"],
       "properties": {
+        "service": {
+          "type": "string"
+        },
         "base_path": {
           "type": "string"
+        },
+        "access": {
+          "$ref": "#/$defs/AccessConfig"
+        },
+        "operations": {
+          "type": "object"
         },
         "routes": {
           "type": "object",
@@ -244,26 +275,51 @@
     "AccessConfig": {
       "oneOf": [
         {
-          "type": "string",
-          "enum": ["public", "authenticated"]
+          "type": "string"
         },
         {
           "type": "array",
-          "items": { "$ref": "#/$defs/AccessRule" }
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              { "$ref": "#/$defs/AccessRule" }
+            ]
+          }
         }
       ]
     },
     "AccessRule": {
       "type": "object",
-      "required": ["principal"],
+      "anyOf": [
+        { "required": ["given"] },
+        { "required": ["then"] }
+      ],
       "properties": {
-        "principal": {
+        "given": {
+          "type": "object",
+          "required": ["principal"],
+          "properties": {
+            "principal": {
+              "oneOf": [
+                { "type": "string", "enum": ["public", "authenticated"] },
+                { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" }
+              ]
+            },
+            "document": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "when": {
           "oneOf": [
-            { "type": "string", "enum": ["public", "authenticated"] },
-            { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" }
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" }, "minItems": 1 }
           ]
         },
-        "when": { "type": "string" },
+        "then": {
+          "type": "string",
+          "enum": ["allow", "deny"],
+          "default": "allow"
+        },
         "filter": { "type": "string" },
         "writeFields": {
           "type": "array",

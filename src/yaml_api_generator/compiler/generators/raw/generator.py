@@ -40,6 +40,8 @@ def _group_by_collection(context: CompileContext) -> dict[str, dict]:
     for model in context.models:
         groups[model.collection]["models"].append(model)
     for route in context.routes:
+        if route.collection is None:
+            continue
         groups[route.collection]["routes"].append(route)
 
     return groups
