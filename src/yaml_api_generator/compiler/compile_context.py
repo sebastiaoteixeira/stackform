@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..when_ast import WhenExpr
+
 
 @dataclass(frozen=True)
 class FieldDescriptor:
@@ -24,6 +26,21 @@ class ModelDescriptor:
 
 
 @dataclass(frozen=True)
+class DocumentBindingDescriptor:
+    collection: str
+    id_param: str | None = None
+
+
+@dataclass(frozen=True)
+class AccessRuleDescriptor:
+    principal: str
+    required_role: str | None = None
+    when: WhenExpr | None = None
+    document: DocumentBindingDescriptor | None = None
+    effect: str = "allow"
+
+
+@dataclass(frozen=True)
 class RouteDescriptor:
     method: str
     path: str
@@ -38,6 +55,7 @@ class RouteDescriptor:
     has_id_param: bool
     password_via: bool
     handler: str | None = None
+    access_rules: list[AccessRuleDescriptor] | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +64,7 @@ class IdentityCollectionDescriptor:
     identifier: str | None
     via: list[str]
     id_field: str
+    roles_field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,3 +88,4 @@ class CompileContext:
     routes: list[RouteDescriptor]
     auth: AuthConfig
     collections: dict[str, Any]
+    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)

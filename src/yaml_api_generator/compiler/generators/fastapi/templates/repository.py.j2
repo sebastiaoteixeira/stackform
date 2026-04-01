@@ -7,13 +7,7 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 
 {% set class_name = collection_name | capitalize_collection %}
-_SENSITIVE_FIELDS = {"password", "passwordHash"}
-
-
-def _generate_id(id_format: str) -> str:
-    if id_format == "uuidv7":
-        return str(uuid.uuid7())
-    return str(uuid.uuid4())
+_SENSITIVE_FIELDS = {"password", "passwordHash", "_auth"}
 
 
 def _match_filter(document_id: str) -> dict[str, Any]:
@@ -22,7 +16,7 @@ def _match_filter(document_id: str) -> dict[str, Any]:
         candidates.append(ObjectId(document_id))
     except InvalidId:
         pass
-    return {"$or": [{"_id": v} for v in candidates] + [{"id": document_id}]}
+    return {"$or": [{"_id": v} for v in candidates] + [{"{{ id_field }}": document_id}]}
 
 
 class {{ class_name }}Repository:
@@ -54,7 +48,13 @@ class {{ class_name }}Repository:
         return self._normalize(doc)
 
     async def create(self, data: dict[str, Any]) -> dict[str, Any]:
-        data[self.ID_FIELD] = _generate_id("{{ id_field_format | default('uuidv7') }}")
+{% if id_field_format == "natural" %}
+        pass  # natural key — no auto-generation
+{% elif id_field_format == "uuidv4" %}
+        data[self.ID_FIELD] = str(uuid.uuid4())
+{% else %}
+        data[self.ID_FIELD] = str(uuid.uuid7())
+{% endif %}
         await self._col.insert_one(data)
         return self._normalize(data)
 

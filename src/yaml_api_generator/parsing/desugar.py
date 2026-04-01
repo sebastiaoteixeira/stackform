@@ -35,15 +35,148 @@ def desugar_v02(config: dict[str, Any]) -> dict[str, Any]:
     services = config.get("services", {})
     controllers = config.get("controllers", {})
 
-    _desugar_repositories(repositories)
+    _desugar_entities(entities, repositories)
 
     expanded_services = _desugar_services(
         services, repositories, entities, defaults, auth_defaults
     )
 
+    _desugar_repositories(repositories)
+
     _desugar_controllers(controllers, expanded_services)
 
     return config
+
+
+def _desugar_entities(
+    entities: dict[str, Any], repositories: dict[str, Any]
+) -> None:
+    errors: list[ConfigError] = []
+
+    # Build dependency graph and detect cycles
+    dep_graph: dict[str, str | None] = {}
+    for name, entity in entities.items():
+        if not isinstance(entity, dict):
+            dep_graph[name] = None
+            continue
+        parent = entity.get("extends")
+        if parent is not None and parent not in entities:
+            errors.append(
+                ConfigError(
+                    code="ENTITY_EXTENDS_NOT_FOUND",
+                    message=f"Entity '{name}' extends unknown entity '{parent}'",
+                    path=f"entities.{name}.extends",
+                )
+            )
+            dep_graph[name] = None
+        else:
+            dep_graph[name] = parent
+
+    if errors:
+        raise ConfigErrors(errors)
+
+    # Detect circular extends
+    for name in dep_graph:
+        visited: set[str] = set()
+        current = name
+        while current is not None:
+            if current in visited:
+                errors.append(
+                    ConfigError(
+                        code="ENTITY_CIRCULAR_EXTENDS",
+                        message=f"Circular inheritance detected involving entity '{name}'",
+                        path=f"entities.{name}.extends",
+                    )
+                )
+                break
+            visited.add(current)
+            current = dep_graph.get(current)
+
+    if errors:
+        raise ConfigErrors(errors)
+
+    # Topological sort
+    order = _topological_sort(dep_graph)
+
+    # Merge fields from parent (parent first, child overrides)
+    for name in order:
+        entity = entities[name]
+        if not isinstance(entity, dict):
+            continue
+        parent_name = entity.get("extends")
+        if parent_name is None:
+            continue
+
+        parent = entities[parent_name]
+        if not isinstance(parent, dict):
+            continue
+
+        # Merge fields: parent fields first, child overrides
+        parent_fields = parent.get("fields", {})
+        child_fields = entity.get("fields", {})
+        merged = {**parent_fields, **child_fields}
+        entity["fields"] = merged
+
+        # Inherit type if not set
+        if "type" not in entity and "type" in parent:
+            entity["type"] = parent["type"]
+
+        # Inherit auth if not set
+        if "auth" not in entity and "auth" in parent:
+            entity["auth"] = copy.deepcopy(parent["auth"])
+
+        # Strip extends key
+        entity.pop("extends", None)
+
+    # Validate no repository references an abstract entity
+    abstract_entities = {
+        name
+        for name, entity in entities.items()
+        if isinstance(entity, dict) and entity.get("abstract")
+    }
+
+    for repo_name, repo in repositories.items():
+        if not isinstance(repo, dict):
+            continue
+        entity_name = repo.get("entity")
+        if entity_name in abstract_entities:
+            errors.append(
+                ConfigError(
+                    code="DESUGAR_ABSTRACT_REFERENCED",
+                    message=f"Repository '{repo_name}' references abstract entity '{entity_name}'",
+                    path=f"repositories.{repo_name}.entity",
+                )
+            )
+
+    if errors:
+        raise ConfigErrors(errors)
+
+    # Remove abstract entities
+    for name in list(entities.keys()):
+        entity = entities[name]
+        if isinstance(entity, dict) and entity.get("abstract"):
+            del entities[name]
+        elif isinstance(entity, dict):
+            entity.pop("abstract", None)
+
+
+def _topological_sort(dep_graph: dict[str, str | None]) -> list[str]:
+    visited: set[str] = set()
+    order: list[str] = []
+
+    def visit(node: str) -> None:
+        if node in visited:
+            return
+        visited.add(node)
+        parent = dep_graph.get(node)
+        if parent is not None:
+            visit(parent)
+        order.append(node)
+
+    for node in dep_graph:
+        visit(node)
+
+    return order
 
 
 def _desugar_repositories(repositories: dict[str, Any]) -> None:
@@ -62,7 +195,7 @@ def _is_minified_service(
 
 def _resolve_crud_ops(
     global_defaults: dict[str, Any],
-    entity_ops: dict[str, Any],
+    repo_ops: dict[str, Any],
     service_ops: dict[str, Any],
 ) -> dict[str, bool | dict[str, Any]]:
     resolved: dict[str, bool | dict[str, Any]] = {op: True for op in CRUD_OPERATIONS}
@@ -70,8 +203,8 @@ def _resolve_crud_ops(
     for op in CRUD_OPERATIONS:
         if op in global_defaults:
             resolved[op] = global_defaults[op]
-        if op in entity_ops:
-            resolved[op] = entity_ops[op]
+        if op in repo_ops:
+            resolved[op] = repo_ops[op]
         if op in service_ops:
             svc_override = service_ops[op]
             if isinstance(svc_override, bool):
@@ -163,10 +296,10 @@ def _desugar_services(
             continue
 
         entity = entities[entity_name]
-        entity_ops = entity.get("operations", {}) if isinstance(entity, dict) else {}
+        repo_ops = repo.get("operations", {}) if isinstance(repo, dict) else {}
         service_ops = entry.get("operations", {})
 
-        resolved = _resolve_crud_ops(defaults, entity_ops, service_ops)
+        resolved = _resolve_crud_ops(defaults, repo_ops, service_ops)
 
         for op_name, op_value in resolved.items():
             if op_value is False:

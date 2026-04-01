@@ -5,6 +5,17 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 from ...compile_context import CompileContext, IdentityCollectionDescriptor
 from ..base import CodeGenerator
 from . import type_mapper
+from ....when_ast import (
+    And,
+    Equals,
+    FieldRef,
+    Not,
+    NotEquals,
+    Or,
+    StringLiteral,
+    WhenExpr,
+    needs_document,
+)
 
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -24,6 +35,8 @@ class DRFGenerator(CodeGenerator):
         )
         env.filters["drf_field"] = type_mapper.drf_field
         env.filters["capitalize_collection"] = _capitalize_collection
+        env.filters["when_to_python"] = _when_to_python
+        env.tests["needs_document"] = _needs_document_test
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -256,6 +269,39 @@ def _find_identity(
         if ic.name == col_name:
             return ic
     return None
+
+
+def _operand_to_python(expr: WhenExpr) -> str:
+    if isinstance(expr, StringLiteral):
+        return f'"{expr.value}"'
+    if isinstance(expr, FieldRef):
+        if expr.root == "principal":
+            if len(expr.path) == 1 and expr.path[0] == "sub":
+                return 'principal.get("sub")'
+            if len(expr.path) >= 2 and expr.path[0] == "record":
+                return f'principal.get("record", {{}}).get("{expr.path[1]}")'
+        elif expr.root == "document":
+            if len(expr.path) == 1:
+                return f'document.get("{expr.path[0]}")'
+    return "None"
+
+
+def _when_to_python(expr: WhenExpr) -> str:
+    if isinstance(expr, Equals):
+        return f"{_operand_to_python(expr.left)} == {_operand_to_python(expr.right)}"
+    if isinstance(expr, NotEquals):
+        return f"{_operand_to_python(expr.left)} != {_operand_to_python(expr.right)}"
+    if isinstance(expr, And):
+        return f"({_when_to_python(expr.left)} and {_when_to_python(expr.right)})"
+    if isinstance(expr, Or):
+        return f"({_when_to_python(expr.left)} or {_when_to_python(expr.right)})"
+    if isinstance(expr, Not):
+        return f"(not {_when_to_python(expr.operand)})"
+    return "False"
+
+
+def _needs_document_test(expr: WhenExpr) -> bool:
+    return needs_document(expr)
 
 
 def _group_by_collection(context: CompileContext) -> dict[str, dict]:

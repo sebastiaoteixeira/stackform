@@ -1,4 +1,5 @@
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -25,7 +26,14 @@ async def lifespan(app: FastAPI):
     repository.close()
 
 
+def _ensure_spec_dir_importable(yaml_file: str) -> None:
+    spec_dir = str(Path(yaml_file).resolve().parent)
+    if spec_dir not in sys.path:
+        sys.path.insert(0, spec_dir)
+
+
 def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
+    _ensure_spec_dir_importable(yaml_file)
     ir = load_and_generate_ir(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
 
@@ -45,6 +53,7 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
 
 
 def build_raw_app(yaml_file: str, schema_file: str | Path | None = None) -> ASGIApp:
+    _ensure_spec_dir_importable(yaml_file)
     ir = load_and_generate_ir(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
 

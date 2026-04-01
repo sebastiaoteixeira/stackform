@@ -19,6 +19,10 @@ class MongoRepository(BaseRepository):
         self._config = config
         self._client: Any | None = None
         self._db: Any | None = None
+        self._id_fields: dict[str, str] = {}
+
+    def register_id_field(self, collection_name: str, id_field: str) -> None:
+        self._id_fields[collection_name] = id_field
 
     def connect(self) -> None:
         self._client = AsyncMongoClient(self._config.uri)
@@ -46,7 +50,7 @@ class MongoRepository(BaseRepository):
         self, collection_name: str, document_id: str
     ) -> dict[str, Any] | None:
         document = await self.collection(collection_name).find_one(
-            self._match_filter(document_id)
+            self._match_filter(document_id, collection_name)
         )
         return self._normalize_document(document)
 
@@ -65,7 +69,7 @@ class MongoRepository(BaseRepository):
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
         document = await self.collection(collection_name).find_one_and_update(
-            self._match_filter(document_id),
+            self._match_filter(document_id, collection_name),
             {"$set": payload},
             return_document=ReturnDocument.AFTER,
         )
@@ -78,7 +82,7 @@ class MongoRepository(BaseRepository):
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
         document = await self.collection(collection_name).find_one_and_replace(
-            self._match_filter(document_id),
+            self._match_filter(document_id, collection_name),
             payload,
             return_document=ReturnDocument.AFTER,
         )
@@ -88,7 +92,7 @@ class MongoRepository(BaseRepository):
         self, collection_name: str, document_id: str
     ) -> dict[str, Any] | None:
         document = await self.collection(collection_name).find_one_and_delete(
-            self._match_filter(document_id)
+            self._match_filter(document_id, collection_name)
         )
         return self._normalize_document(document)
 
@@ -108,11 +112,13 @@ class MongoRepository(BaseRepository):
             raise RuntimeError("Expected document")
         return normalized
 
-    @staticmethod
-    def _match_filter(document_id: str) -> dict[str, Any]:
+    def _match_filter(self, document_id: str, collection_name: str | None = None) -> dict[str, Any]:
+        id_field = self._id_fields.get(collection_name, "id") if collection_name else "id"
         candidates: list[Any] = [document_id]
         try:
             candidates.append(ObjectId(document_id))
         except InvalidId:
             pass
-        return {"$or": [{"_id": value} for value in candidates] + [{"id": document_id}]}
+        conditions = [{"_id": value} for value in candidates]
+        conditions.append({id_field: document_id})
+        return {"$or": conditions}

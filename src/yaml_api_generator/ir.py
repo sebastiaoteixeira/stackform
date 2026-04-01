@@ -1,6 +1,8 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from .when_ast import WhenExpr
+
 
 @dataclass(frozen=True)
 class IROperations:
@@ -29,9 +31,18 @@ class IRCollection:
 
 
 @dataclass(frozen=True)
+class IRDocumentBinding:
+    collection: str
+    id_param: str | None = None
+
+
+@dataclass(frozen=True)
 class IRAccessRule:
     principal: str
-    when: str | None = None
+    required_role: str | None = None
+    when: WhenExpr | None = None
+    document: IRDocumentBinding | None = None
+    effect: str = "allow"
     filter: str | None = None
     write_fields: list[str] = field(default_factory=list)
     reason: str | None = None
@@ -62,6 +73,7 @@ class IRIdentityCollection:
     name: str
     identifier: str | None
     via: list[str]
+    roles_field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +84,7 @@ class IRDocument:
     routes: list[IRRoute]
     identityCollections: dict[str, IRIdentityCollection]
     services: dict[str, IRService] = field(default_factory=dict)
+    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

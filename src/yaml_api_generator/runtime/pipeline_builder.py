@@ -34,6 +34,9 @@ class PipelineBuilder:
     def __init__(self, ctx: RuntimeContext, repository: BaseRepository) -> None:
         self._ctx = ctx
         self._repository = repository
+        # Register id_fields for all collections
+        for name, col in ctx.collections.items():
+            repository.register_id_field(name, col.id_field)
 
     def build_for_route(self, route: RuntimeRouteDescriptor) -> Pipeline:
         if route.handler is not None:
@@ -108,7 +111,7 @@ class PipelineBuilder:
             )
 
         if not route.is_public:
-            steps.append(AuthorizeRouteStep(route.access_rules))
+            steps.append(AuthorizeRouteStep(route.access_rules, self._ctx.auth))
 
         return steps
 
@@ -135,7 +138,7 @@ class PipelineBuilder:
         # Only applies to operations that fetch a single document
         if route.operation not in ("get", "update", "replace", "delete"):
             return None
-        return PostFetchAuthorizeStep(route.access_rules)
+        return PostFetchAuthorizeStep(route.access_rules, self._ctx.auth)
 
     def _repository_step(self, operation: str, collection_name: str) -> Step:
         collection = self._ctx.collections[collection_name]
