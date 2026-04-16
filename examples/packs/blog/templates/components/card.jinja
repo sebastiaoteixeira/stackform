@@ -1,0 +1,13 @@
+interface CardProps {
+  title: string
+  badge?: string
+}
+
+export function Card({ title, badge }: CardProps) {
+  return (
+    <div className="card">
+      <h3>{title}</h3>
+      {badge && <span className="badge">{badge}</span>}
+    </div>
+  )
+}

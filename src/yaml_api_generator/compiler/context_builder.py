@@ -6,6 +6,7 @@ from .compile_context import (
     AppConfig,
     AuthConfig,
     CompileContext,
+    CorsConfig,
     DocumentBindingDescriptor,
     FieldDescriptor,
     IdentityCollectionDescriptor,
@@ -18,9 +19,20 @@ WRITE_OPERATIONS = ("create", "update", "replace")
 
 
 def build_context(document: IRDocument) -> CompileContext:
+    cors = None
+    if document.api.cors:
+        cors = CorsConfig(
+            origins=document.api.cors.origins,
+            methods=document.api.cors.methods,
+            headers=document.api.cors.headers,
+            credentials=document.api.cors.credentials,
+        )
+
     app = AppConfig(
         base_path=document.api.basePath,
         api_version=document.api.version,
+        cors=cors,
+        port=document.api.port,
     )
 
     identity_map = document.identityCollections

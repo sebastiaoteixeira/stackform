@@ -18,6 +18,11 @@
         "version": {
           "type": "string"
         },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
         "operations": {
           "type": "object",
           "properties": {
@@ -26,6 +31,26 @@
             },
             "auth": {
               "$ref": "#/$defs/OperationFlags"
+            }
+          }
+        },
+        "cors": {
+          "type": "object",
+          "properties": {
+            "origins": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "methods": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "headers": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "credentials": {
+              "type": "boolean"
             }
           }
         }
@@ -81,6 +106,9 @@
       "additionalProperties": {
         "$ref": "#/$defs/ControllerConfig"
       }
+    },
+    "ui": {
+      "type": "object"
     }
   },
   "$defs": {

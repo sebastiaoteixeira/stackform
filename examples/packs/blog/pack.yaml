@@ -1,0 +1,50 @@
+name: blog
+version: 1.0.0
+language: typescript
+framework: react
+
+components:
+  grid:
+    props:
+      collection: { type: collection, required: true }
+      item: { type: component }
+      columns: { type: number, default: 3 }
+  card:
+    props:
+      title: { required: true }
+      badge: {}
+  badge:
+    props:
+      value: { required: true }
+      colors: { type: object }
+  article:
+    props:
+      collection: { type: collection, required: true }
+      title: { required: true }
+      body: { required: true }
+  form:
+    props:
+      collection: { type: collection, required: true }
+  auth:
+    props: {}
+
+scaffold:
+  - routing
+  - package.json
+  - vite.config.ts
+  - tsconfig.json
+  - index.html
+  - main
+  - App
+  - AuthProvider
+  - index.css
+  - tailwind.config.js
+  - postcss.config.js
+
+output:
+  extension: tsx
+  directory_structure:
+    generated: src/__generated__
+    components: src/components
+    pages: src/pages
+    hooks: src/__generated__/hooks

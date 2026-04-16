@@ -1,0 +1,55 @@
+import { getAuthToken } from "../AuthProvider"
+
+const BASE_URL = "{{ context.base_url }}"
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  const token = getAuthToken()
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  return headers
+}
+
+export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: { ...authHeaders(), ...options?.headers },
+  })
+}
+
+export async function fetchCollection(name: string) {
+  const res = await apiFetch(`/${name}`)
+  if (!res.ok) throw new Error(`Failed to fetch ${name}`)
+  return res.json()
+}
+
+export async function fetchDocument(collection: string, id: string) {
+  const res = await apiFetch(`/${collection}/${id}`)
+  if (!res.ok) throw new Error(`Failed to fetch ${collection}/${id}`)
+  return res.json()
+}
+
+export async function createDocument(collection: string, data: Record<string, unknown>) {
+  const res = await apiFetch(`/${collection}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`Failed to create in ${collection}`)
+  return res.json()
+}
+
+export async function updateDocument(collection: string, id: string, data: Record<string, unknown>) {
+  const res = await apiFetch(`/${collection}/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`Failed to update ${collection}/${id}`)
+  return res.json()
+}
+
+export async function deleteDocument(collection: string, id: string) {
+  const res = await apiFetch(`/${collection}/${id}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error(`Failed to delete ${collection}/${id}`)
+  return res.json()
+}

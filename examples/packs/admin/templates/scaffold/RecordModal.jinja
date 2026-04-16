@@ -1,0 +1,206 @@
+import { useState, useEffect } from "react"
+import { apiFetch } from "./lib/api"
+import { COLLECTION_SCHEMAS } from "./CollectionPage"
+
+interface RecordModalProps {
+  collection: string
+  record?: any
+  onClose: () => void
+  onSaved: () => void
+}
+
+export function RecordModal({ collection, record, onClose, onSaved }: RecordModalProps) {
+  const schema = COLLECTION_SCHEMAS[collection]
+  const pk = schema?.pk || "id"
+  const isEdit = !!record
+  const editableFields = (schema?.fields || []).filter(f => f.type !== "id")
+
+  const initialValues = () => {
+    const vals: Record<string, any> = {}
+    for (const f of editableFields) {
+      vals[f.name] = record?.[f.name] ?? (f.type === "boolean" ? false : "")
+    }
+    return vals
+  }
+
+  const [values, setValues] = useState<Record<string, any>>(initialValues)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setValues(initialValues())
+    setError(null)
+  }, [record, collection])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+
+    const body: Record<string, any> = {}
+    for (const f of editableFields) {
+      if (values[f.name] === "" && !f.required) continue
+      if (f.type === "number") {
+        body[f.name] = values[f.name] === "" ? null : Number(values[f.name])
+      } else {
+        body[f.name] = values[f.name]
+      }
+    }
+
+    try {
+      const path = isEdit
+        ? `/${collection}/${record[pk]}`
+        : `/${collection}`
+      const res = await apiFetch(path, {
+        method: isEdit ? "PATCH" : "POST",
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || `${res.status} ${res.statusText}`)
+      }
+      onSaved()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const set = (name: string, value: any) => setValues(v => ({ ...v, [name]: value }))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <div>
+            <h2 className="text-sm font-semibold text-white">
+              {isEdit ? "Edit record" : "New record"}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5 capitalize">{collection}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-800 rounded transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            {isEdit && (
+              <div>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">{pk}</label>
+                <input
+                  type="text"
+                  value={record[pk] ?? ""}
+                  readOnly
+                  className="w-full bg-slate-800/50 border border-slate-700/50 rounded px-3 py-2 text-xs text-slate-500 cursor-not-allowed"
+                />
+              </div>
+            )}
+
+            {editableFields.map(f => (
+              <div key={f.name}>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                  {f.name}
+                  {f.required && <span className="text-red-400 ml-1">*</span>}
+                  <span className="text-slate-700 ml-1 normal-case">{f.type}</span>
+                </label>
+
+                {f.type === "boolean" ? (
+                  <button
+                    type="button"
+                    onClick={() => set(f.name, !values[f.name])}
+                    className={`relative inline-flex h-5 w-9 rounded-full transition-colors ${
+                      values[f.name] ? "bg-blue-600" : "bg-slate-700"
+                    }`}
+                  >
+                    <span className={`inline-block w-3.5 h-3.5 bg-white rounded-full shadow transition-transform m-0.5 ${
+                      values[f.name] ? "translate-x-4" : "translate-x-0"
+                    }`} />
+                  </button>
+                ) : f.type === "enum" && f.enum_values ? (
+                  <select
+                    value={values[f.name] ?? ""}
+                    onChange={e => set(f.name, e.target.value)}
+                    required={f.required}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                  >
+                    {!f.required && <option value="">— none —</option>}
+                    {f.enum_values.map(v => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                ) : f.type === "number" ? (
+                  <input
+                    type="number"
+                    value={values[f.name] ?? ""}
+                    onChange={e => set(f.name, e.target.value)}
+                    required={f.required}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 placeholder:text-slate-600"
+                  />
+                ) : f.type === "datetime" ? (
+                  <input
+                    type="datetime-local"
+                    value={values[f.name] ? values[f.name].slice(0, 16) : ""}
+                    onChange={e => set(f.name, e.target.value ? new Date(e.target.value).toISOString() : "")}
+                    required={f.required}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                  />
+                ) : f.type === "object" || f.type === "array" ? (
+                  <textarea
+                    value={typeof values[f.name] === "string" ? values[f.name] : JSON.stringify(values[f.name] ?? (f.type === "array" ? [] : {}), null, 2)}
+                    onChange={e => {
+                      try { set(f.name, JSON.parse(e.target.value)) }
+                      catch { set(f.name, e.target.value) }
+                    }}
+                    rows={3}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono resize-none"
+                    placeholder={f.type === "array" ? "[]" : "{}"}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={values[f.name] ?? ""}
+                    onChange={e => set(f.name, e.target.value)}
+                    required={f.required}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 placeholder:text-slate-600"
+                    placeholder={f.name}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {error && (
+            <div className="mx-5 mb-4 px-3 py-2 bg-red-950/50 border border-red-900/50 rounded text-xs text-red-400">
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-medium rounded transition-colors"
+            >
+              {saving ? "Saving…" : isEdit ? "Save changes" : "Create record"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}

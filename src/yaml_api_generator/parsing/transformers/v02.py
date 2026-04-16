@@ -4,6 +4,7 @@ from ...ir import (
     IRAccessRule,
     IRApi,
     IRCollection,
+    IRCors,
     IRDocument,
     IRDocumentBinding,
     IRIdentityCollection,
@@ -437,10 +438,7 @@ class V02Transformer:
 
         return IRDocument(
             version=str(resolved["version"]),
-            api=IRApi(
-                basePath=api_data.get("basePath", "/api"),
-                version=api_data.get("version"),
-            ),
+            api=self._build_api(api_data),
             collections=collections,
             routes=routes,
             identityCollections=identity_collections,
@@ -574,6 +572,23 @@ class V02Transformer:
                 )
         return services
 
+    def _build_api(self, api_data: dict[str, Any]) -> IRApi:
+        cors_raw = api_data.get("cors")
+        cors = None
+        if isinstance(cors_raw, dict):
+            cors = IRCors(
+                origins=cors_raw.get("origins", ["*"]),
+                methods=cors_raw.get("methods", ["*"]),
+                headers=cors_raw.get("headers", ["*"]),
+                credentials=cors_raw.get("credentials", False),
+            )
+        return IRApi(
+            basePath=api_data.get("basePath", "/api"),
+            version=api_data.get("version"),
+            cors=cors,
+            port=int(api_data.get("port", 8000)),
+        )
+
     def _build_routes(
         self,
         controllers_data: dict[str, Any],
@@ -584,7 +599,11 @@ class V02Transformer:
         entity_to_collection: dict[str, str],
     ) -> list[IRRoute]:
         base_path = api_data.get("basePath", "/api")
+        version = api_data.get("version", "")
+        if version:
+            base_path = f"{base_path}/{version}"
         routes: list[IRRoute] = []
+
         all_errors: list[ConfigError] = []
 
         for _ctrl_name, ctrl_cfg in controllers_data.items():

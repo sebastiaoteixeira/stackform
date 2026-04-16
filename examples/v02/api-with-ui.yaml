@@ -1,0 +1,137 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+  port: 8010
+  cors:
+    origins: ["http://localhost:5173"]
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+    auth:
+      register: true
+      login: true
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: myapp
+
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+      roles: role
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      displayName: { type: string, required: true }
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
+
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      content: { type: string }
+      authorId: { type: ref, ref: user }
+      status:
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+
+roles:
+  user:
+    admin: [moderator]
+    moderator: [user]
+
+repositories:
+  users:
+    entity: user
+  posts:
+    entity: post
+
+services:
+  users: {}
+  posts: {}
+
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+    operations:
+      register: { access: public }
+      login: { access: public }
+
+  posts:
+    service: posts
+    base_path: /posts
+    access: public
+    operations:
+      create: { access: "*" }
+      update: { access: "*" }
+      delete: { access: admin }
+
+ui:
+  frontend:
+    pack: examples/packs/blog
+    output: ./frontend-output
+    overwrite: never
+
+  collections:
+    post-feed:
+      fields:
+        title: { from: post.title }
+        content: { from: post.content, format: rich_text }
+        authorName: { from: post.authorId.displayName }
+        status: { from: post.status }
+
+  components:
+    post-card:
+      props:
+        title: { required: true }
+        status: {}
+      render:
+        component: card
+        props:
+          title: $title
+          badge:
+            component: badge
+            props:
+              value: $status
+              colors: { draft: gray, published: green }
+
+  views:
+    posts-list:
+      path: /posts
+      component: grid
+      props:
+        collection: post-feed
+        item: post-card
+        columns: 3
+    read-post:
+      path: /posts/:id
+      component: article
+      props:
+        collection: post-feed[id]
+        title: $title
+        body: $content
+    write-post:
+      path: /posts/new
+      component: form
+      props:
+        collection: post
+    login:
+      path: /login
+      component: auth
+      props: {}

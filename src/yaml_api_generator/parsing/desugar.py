@@ -8,9 +8,9 @@ CRUD_OPERATIONS = ("list", "get", "create", "update", "replace", "delete")
 AUTH_OPERATIONS = ("register", "login")
 
 CRUD_ROUTE_CONVENTIONS = {
-    "list": ("GET", "/"),
+    "list": ("GET", ""),
     "get": ("GET", "/{id}"),
-    "create": ("POST", "/"),
+    "create": ("POST", ""),
     "update": ("PATCH", "/{id}"),
     "replace": ("PUT", "/{id}"),
     "delete": ("DELETE", "/{id}"),

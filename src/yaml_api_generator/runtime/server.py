@@ -34,10 +34,20 @@ def _ensure_spec_dir_importable(yaml_file: str) -> None:
 
 def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
     _ensure_spec_dir_importable(yaml_file)
-    ir = load_and_generate_ir(yaml_file, schema_file)
+    ir = load_and_generate_ir(yaml_file, schema_file).ir
     ctx = build_runtime_context(ir)
 
     app = FastAPI(lifespan=lifespan)
+
+    if ir.api.cors:
+        from fastapi.middleware.cors import CORSMiddleware
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=ir.api.cors.origins,
+            allow_methods=ir.api.cors.methods,
+            allow_headers=ir.api.cors.headers,
+            allow_credentials=ir.api.cors.credentials,
+        )
 
     repository = MongoRepository(
         MongoRepositoryConfig(
@@ -54,7 +64,7 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
 
 def build_raw_app(yaml_file: str, schema_file: str | Path | None = None) -> ASGIApp:
     _ensure_spec_dir_importable(yaml_file)
-    ir = load_and_generate_ir(yaml_file, schema_file)
+    ir = load_and_generate_ir(yaml_file, schema_file).ir
     ctx = build_runtime_context(ir)
 
     repository = MongoRepository(
