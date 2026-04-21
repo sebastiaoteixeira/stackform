@@ -1,6 +1,6 @@
 # Tutorial 03: Relationships
 
-**Concept introduced:** `type: ref` — linking entities with foreign key references.
+**Concept introduced:** `type: ref` -- linking entities with foreign key references.
 
 ## Adding an author entity and linking posts
 
@@ -68,7 +68,7 @@ The `note` entity now has `authorId: { type: ref, ref: author }`. This field:
 
 - Stores the `id` value of an `author` document
 - Is validated at the type level (must be a string matching UUID format)
-- Is not automatically joined — the API returns the raw ID
+- Is not automatically joined -- the API returns the raw ID
 
 ## Create a note with an author reference
 
@@ -84,6 +84,8 @@ curl -X POST http://127.0.0.1:8000/notes \
   -H 'Content-Type: application/json' \
   -d '{"title": "My note", "authorId": "019..."}'
 ```
+
+**Watch out:** `ref` fields do NOT enforce referential integrity. MongoDB has no foreign key constraints, so you can set `authorId` to a non-existent ID without error. Dangling references are possible if the referenced document is deleted.
 
 ## Key points
 

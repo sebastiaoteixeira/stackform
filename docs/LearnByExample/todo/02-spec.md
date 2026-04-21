@@ -17,9 +17,9 @@ entities:
   user:
     extends: base
     type: auth
-    via:
-      - provider: password
-        identifier: email
+    auth:
+      identifier: email
+      via: password
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
@@ -129,6 +129,6 @@ controllers:
 
 **`list` operation with document filter:** The `list` operation applies access rules per-document. All returned documents must pass the `when` condition. This means a `GET /lists` only returns lists owned by the authenticated user.
 
-**No admin role:** This app has no privileged roles. All access is strictly ownership-based. To add admin access later, add `roles: role` to the user entity and prepend `- admin` to each access list.
+**No admin role:** This app has no privileged roles. All access is strictly ownership-based. To add admin access later, add a `roles:` block to the user entity with `values`, `default`, and optionally `hierarchy`, then prepend `- admin` to each access list.
 
 **Creating items:** The client must send `ownerId` matching their own `sub`. The server does not auto-fill `ownerId` from the principal — the client is responsible for setting it correctly when creating items and lists.

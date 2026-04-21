@@ -86,12 +86,9 @@ GET /users/auth/google/callback    → handle Google callback
 entities:
   user:
     type: auth
-    via:
-      - provider: google
-        identifier: email
-        claim_mapping:
-          displayName: name
-        auto_provision: true
+    auth:
+      identifier: email
+      via: google
 ```
 
-See [claim-mapping](./../../auth/claim-mapping.md) for `claim_mapping` and `auto_provision` details.
+For `claim_mapping` and `auto_provision` configuration with external providers, see [claim-mapping](../auth/claim-mapping.md).

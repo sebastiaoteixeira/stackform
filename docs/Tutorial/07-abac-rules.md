@@ -1,6 +1,6 @@
 # Tutorial 07: ABAC Rules
 
-**Concept introduced:** Attribute-based access control using `given`/`when`/`then` — document-level rules.
+**Concept introduced:** Attribute-based access control using `given`/`when`/`then` -- document-level rules.
 
 ## Authors can edit their own notes
 
@@ -16,18 +16,19 @@ mongo:
 entities:
   user:
     type: auth
-    via:
-      - provider: password
-        identifier: email
-    roles: role
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
-      role:
-        type: enum
-        values: [admin, moderator, user]
-        default: user
 
   note:
     fields:
@@ -35,11 +36,6 @@ entities:
       title: { type: string, required: true }
       body: { type: string }
       authorId: { type: ref, ref: user }
-
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:
@@ -123,9 +119,11 @@ when: principal.record.role in ['admin', 'moderator']
 when: document.status not in ['deleted', 'archived']
 ```
 
-- `principal.sub` — the principal's unique identifier (the value of the identifier field)
-- `principal.record.fieldName` — any field on the authenticated user's record
-- `document.fieldName` — any field on the document being accessed
+- `principal.sub` -- the principal's unique identifier (primary key value)
+- `principal.record.fieldName` -- any field on the authenticated user's record
+- `document.fieldName` -- any field on the document being accessed
+
+**Note:** On `create` operations, there is no existing document yet. Rules with `document:` bindings are skipped for create. Use principal-only rules (like role checks) to control create access.
 
 ## Key points
 

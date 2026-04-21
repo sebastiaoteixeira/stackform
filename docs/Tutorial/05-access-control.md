@@ -16,9 +16,9 @@ mongo:
 entities:
   user:
     type: auth
-    via:
-      - provider: password
-        identifier: email
+    auth:
+      identifier: email
+      via: password
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }
@@ -96,3 +96,5 @@ curl -X POST http://127.0.0.1:8000/notes \
 | `user:admin` | User with the `admin` role (requires roles, covered in tutorial 06) |
 
 With only one auth entity, `user:*` and `"*"` are equivalent. The difference matters when you have multiple auth entities (e.g., users and API clients).
+
+**Note:** Per-operation `access:` completely replaces the controller-level default. There is no merging. If the controller has `access: public` and an operation has `access: "*"`, only `"*"` applies to that operation.

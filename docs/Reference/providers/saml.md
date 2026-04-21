@@ -41,15 +41,12 @@ providers:
 entities:
   user:
     type: auth
-    via:
-      - provider: okta
-        identifier: email
-        claim_mapping:
-          displayName: http://schemas.microsoft.com/identity/claims/displayname
-        auto_provision: true
+    auth:
+      identifier: email
+      via: okta
 ```
 
-SAML claim names are typically URNs or URLs. Use `claim_mapping` to map them to entity fields.
+SAML claim names are typically URNs or URLs. Use `claim_mapping` to map them to entity fields. See [claim-mapping](../auth/claim-mapping.md).
 
 ## Generated routes
 

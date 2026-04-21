@@ -63,9 +63,9 @@ controllers:
 
 ## Common field options
 
-- `required: true` — field must be present on create
-- `unique: true` — value must be unique across all documents (enforced by MongoDB index)
-- `default: value` — server-side default applied when field is omitted
+- `required: true` -- field must be present on create
+- `unique: true` -- value must be unique across all documents (enforced by MongoDB index)
+- `default: value` -- server-side default applied when field is omitted
 
 ## Create a note with all fields
 
@@ -83,4 +83,6 @@ curl -X POST http://127.0.0.1:8000/notes \
   }'
 ```
 
-Fields with defaults (`viewCount`, `pinned`, `status`) can be omitted. The `id` field is always omitted — it is generated server-side.
+Fields with defaults (`viewCount`, `pinned`, `status`) can be omitted. The `id` field is always omitted -- it is generated server-side.
+
+**Watch out:** Setting `unique: true` on an optional field means that multiple documents cannot have the same value, including `null`. If the field is omitted, it is stored as absent (not `null`), which avoids this issue. But explicitly sending `null` will trigger the uniqueness constraint.

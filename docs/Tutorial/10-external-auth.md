@@ -29,23 +29,18 @@ entities:
   user:
     extends: base
     type: auth
-    via:
-      - provider: password
-        identifier: email
-      - provider: google
-        identifier: email
-        claim_mapping:
-          email: email
-          displayName: name
-        auto_provision: true
-    roles: role
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
-      role:
-        type: enum
-        values: [admin, moderator, user]
-        default: user
 
   note:
     extends: base
@@ -54,11 +49,6 @@ entities:
       body: { type: string }
       authorId: { type: ref, ref: user }
       published: { type: boolean, default: false }
-
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:
@@ -142,16 +132,16 @@ providers:
     discovery_url: https://auth.example.com/.well-known/openid-configuration
 ```
 
-## `via:` binding options for external providers
+## External provider options in the `auth:` block
 
 ```yaml
-via:
-  - provider: google           # matches a key in top-level providers:
-    identifier: email          # which claim to use as the user identifier
-    claim_mapping:             # map OIDC claims to entity fields
-      email: email             # entity_field: oidc_claim
-      displayName: name
-    auto_provision: true       # create user record on first login if not found
+auth:
+  identifier: email          # which field to use as the user identifier
+  via: [password, google]    # list of auth methods; "google" references providers.google
+  claim_mapping:             # map OIDC claims to entity fields
+    email: email             # entity_field: oidc_claim
+    displayName: name
+  auto_provision: true       # create user record on first login if not found
 ```
 
 - `claim_mapping` is optional. Fields with the same name are mapped automatically.
@@ -168,9 +158,11 @@ export GOOGLE_CLIENT_SECRET=your-client-secret
 yaml-api dev myapp.yaml
 ```
 
+**Watch out:** If `auto_provision: true` and the provider returns claims that do not satisfy the entity's `required` fields, the auto-provisioned user may be created with missing data. Ensure `claim_mapping` covers all required fields, or set sensible defaults on them.
+
 ## Key points
 
 - The top-level `providers:` section defines external OIDC/SAML providers.
 - `via:` on an auth entity can list multiple bindings. Each generates its own login flow.
 - Well-known provider names (`google`, `microsoft`, `apple`) use built-in discovery URLs.
-- All auth methods produce the same JWT format — downstream access rules work identically.
+- All auth methods produce the same JWT format -- downstream access rules work identically.

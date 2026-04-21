@@ -18,17 +18,18 @@ entities:
   user:
     extends: base
     type: auth
-    via:
-      - provider: password
-        identifier: email
-    roles: role
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
-      role:
-        type: enum
-        values: [admin, moderator, user]
-        default: user
 
   post:
     extends: base
@@ -49,12 +50,6 @@ entities:
     fields:
       code: { type: string }
       name: { type: string, required: true }
-
-# admin includes moderator, moderator includes user
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:

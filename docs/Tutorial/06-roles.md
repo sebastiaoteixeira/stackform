@@ -4,7 +4,7 @@
 
 ## Adding roles to the user entity
 
-Roles are declared via an `enum` field. The auth entity points to that field with `roles:`.
+Roles are declared in a standalone `roles:` block on the entity, as a sibling to `auth:` and `fields:`. The `roles:` block defines the valid role values, a default role, and an optional hierarchy.
 
 ```yaml
 version: "0.2"
@@ -16,29 +16,25 @@ mongo:
 entities:
   user:
     type: auth
-    via:
-      - provider: password
-        identifier: email
-    roles: role
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
-      role:
-        type: enum
-        values: [admin, moderator, user]
-        default: user
 
   note:
     fields:
       id: { type: id }
       title: { type: string, required: true }
       body: { type: string }
-
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:
@@ -72,11 +68,13 @@ controllers:
 
 ## Role hierarchy
 
-The top-level `roles:` section defines which roles include other roles. This is transitive.
+The `hierarchy` inside the `roles:` block defines which roles include other roles. This is transitive.
 
 ```yaml
 roles:
-  user:
+  values: [admin, moderator, user]
+  default: user
+  hierarchy:
     admin: [moderator]
     moderator: [user]
 ```
@@ -96,9 +94,12 @@ access: admin           # same as access: user:admin
 
 With multiple auth entities, the prefix is required (covered in later tutorials).
 
+**Watch out:** There is currently no built-in endpoint for changing a user's role. New users always get the `default` role. To change a user's role, you must update the record directly in MongoDB.
+
 ## Key points
 
-- `roles: role` on the entity points to the name of the enum field used for role assignment.
-- New users get `default: user` automatically on register.
-- Role inheritance is defined separately in top-level `roles:`, not on the entity itself.
-- Roles are per-entity — different auth entities can have completely different role sets.
+- The `roles:` block is a standalone section on the entity (sibling to `auth:` and `fields:`).
+- It declares `values`, `default`, and optionally `hierarchy`. Roles are not a regular field in `fields:`.
+- New users get the `default` role automatically on register.
+- Role hierarchy is defined inside the entity's `roles:` block, not at the top level.
+- Roles are per-entity -- different auth entities can have completely different role sets.

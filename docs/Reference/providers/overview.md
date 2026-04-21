@@ -16,15 +16,15 @@ providers:
     sp_entity_id: ${APP_URL}
 ```
 
-Each key under `providers:` is a provider name. The name is used in `via:` bindings on auth entities:
+Each key under `providers:` is a provider name. The name is referenced in the `auth.via` field on auth entities:
 
 ```yaml
 entities:
   user:
     type: auth
-    via:
-      - provider: google      # references providers.google
-        identifier: email
+    auth:
+      identifier: email
+      via: google      # references providers.google
 ```
 
 ## Provider types

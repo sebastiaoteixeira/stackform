@@ -1,6 +1,6 @@
 # Tutorial 01: Hello World
 
-**Concept introduced:** Minimal spec — one entity, one repository, one controller with public access.
+**Concept introduced:** Minimal spec -- one entity, one repository, one controller with public access.
 
 ## The spec
 
@@ -61,6 +61,8 @@ curl -X POST http://127.0.0.1:8000/notes \
 ```
 
 The `id` field is auto-generated (uuidv7). You never send it in the request body.
+
+**Note:** If you omit the `id` field declaration entirely, the engine adds an implicit `id: { type: id }` with `format: uuidv7` automatically. Declaring it explicitly is optional but recommended for clarity.
 
 ## Key points
 

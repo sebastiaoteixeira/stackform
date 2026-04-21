@@ -14,32 +14,33 @@ entities:
       id: { type: id }
       createdAt: { type: datetime }
 
-  # Human users — password auth with org-scoped roles stored on membership
+  # Human users -- password auth with org-scoped roles stored on membership
   user:
     extends: base
     type: auth
-    via:
-      - provider: password
-        identifier: email
+    auth:
+      identifier: email
+      via: password
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
 
-  # Machine-to-machine clients — API key auth with tier-based roles
+  # Machine-to-machine clients -- API key auth with tier-based roles
   apiClient:
     extends: base
     type: auth
-    via:
-      - provider: apiKey
-        identifier: clientId
-    roles: tier
+    auth:
+      identifier: clientId
+      via: apiKey
+    roles:
+      values: [free, premium, enterprise]
+      default: free
+      hierarchy:
+        enterprise: [premium]
+        premium: [free]
     fields:
       clientId: { type: string, required: true, unique: true }
       name: { type: string, required: true }
-      tier:
-        type: enum
-        values: [free, premium, enterprise]
-        default: free
 
   org:
     extends: base
@@ -64,14 +65,6 @@ entities:
       name: { type: string, required: true }
       orgId: { type: ref, ref: org, required: true }
       data: { type: object }
-
-# Per-entity role hierarchies
-# With multiple auth entities, entity prefix is required in access rules
-roles:
-  user: {}       # user has no global roles; roles live on membership
-  apiClient:
-    enterprise: [premium]
-    premium: [free]
 
 repositories:
   users:

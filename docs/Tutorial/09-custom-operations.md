@@ -23,17 +23,18 @@ entities:
   user:
     extends: base
     type: auth
-    via:
-      - provider: password
-        identifier: email
-    roles: role
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
-      role:
-        type: enum
-        values: [admin, moderator, user]
-        default: user
 
   note:
     extends: base
@@ -43,11 +44,6 @@ entities:
       authorId: { type: ref, ref: user }
       published: { type: boolean, default: false }
       publishedAt: { type: datetime }
-
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:
@@ -135,9 +131,11 @@ Add this at the top level of your YAML file (after `version:`).
 
 The `method:` and `path:` on the controller operation override the defaults. Without them, the engine infers from the operation name.
 
+**Note:** Custom operations must specify both `method:` and `path:` in the controller. Unlike CRUD operations (`list`, `get`, `create`, `update`, `delete`), custom operations have no default HTTP method or path convention.
+
 ## Key points
 
 - `handler:` in a service operation points to `<import_key>.<function_name>`.
 - The `imports:` section maps keys to Python module paths.
 - Custom operations participate in the same access control system as CRUD operations.
-- Standard operations (`list`, `get`, `create`, `update`, `delete`) do not need handlers — they are built-in.
+- Standard operations (`list`, `get`, `create`, `update`, `delete`) do not need handlers -- they are built-in.

@@ -4,7 +4,7 @@
 
 ## Adding a user entity with password auth
 
-Mark an entity with `type: auth` and add a `via:` binding to make it an identity provider.
+Mark an entity with `type: auth` and add an `auth:` block to make it an identity provider.
 
 ```yaml
 version: "0.2"
@@ -16,9 +16,9 @@ mongo:
 entities:
   user:
     type: auth
-    via:
-      - provider: password
-        identifier: email
+    auth:
+      identifier: email
+      via: password
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }
@@ -94,11 +94,13 @@ curl -X POST http://127.0.0.1:8000/users/login \
 # Returns: {"token": "eyJ..."}
 ```
 
+**Watch out:** The default `JWT_SECRET` is an insecure placeholder. Always set the `JWT_SECRET` environment variable to a strong random value before deploying to production.
+
 ## Key points
 
 - `type: auth` on an entity enables identity provider behavior.
-- `via:` is a list of provider bindings. `provider: password` enables username/password auth.
+- The `auth:` block configures authentication. `via: password` enables username/password auth.
 - `identifier: email` sets which field is used as the login username.
 - Passwords are hashed with PBKDF2-SHA256. The raw password is never stored.
-- The `password` field in the register payload is implicit — you do not declare it in `fields:`.
+- The `password` field in the register payload is implicit -- you do not declare it in `fields:`.
 - The JWT token from `/login` is passed as `Authorization: Bearer <token>` on protected routes.

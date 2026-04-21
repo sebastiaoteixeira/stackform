@@ -1,10 +1,12 @@
 # Reference: When Expression Operators
 
-## Comparison operators
+Defines all operators available in `when:` expressions for ABAC access rules.
+
+## Comparison Operators
 
 ### `equals`
 
-True when the left operand equals the right operand.
+Returns `true` if the left operand equals the right operand.
 
 ```yaml
 when: principal.sub equals document.authorId
@@ -14,18 +16,18 @@ when: principal.record.active equals true
 
 ### `not equals`
 
-True when the left operand does not equal the right operand.
+Returns `true` if the left operand does not equal the right operand.
 
 ```yaml
 when: principal.sub not equals document.authorId
 when: document.status not equals 'archived'
 ```
 
-## Membership operators
+## Membership Operators
 
 ### `in`
 
-True when the left operand is a member of the right-hand list.
+Returns `true` if the left operand is a member of the right-hand list.
 
 ```yaml
 when: principal.record.role in ['admin', 'moderator']
@@ -34,18 +36,18 @@ when: document.status in ['draft', 'published']
 
 ### `not in`
 
-True when the left operand is not a member of the right-hand list.
+Returns `true` if the left operand is not a member of the right-hand list.
 
 ```yaml
 when: document.status not in ['deleted', 'archived']
 when: principal.record.plan not in ['free']
 ```
 
-## Logical operators
+## Logical Operators
 
 ### `and`
 
-True when both operands are true.
+Returns `true` if both operands are true.
 
 ```yaml
 when: principal.sub equals document.ownerId and document.active equals true
@@ -53,7 +55,7 @@ when: principal.sub equals document.ownerId and document.active equals true
 
 ### `or`
 
-True when either operand is true.
+Returns `true` if either operand is true.
 
 ```yaml
 when: principal.record.role equals 'admin' or principal.record.role equals 'moderator'
@@ -68,11 +70,19 @@ when: not document.published
 when: not principal.record.active equals true
 ```
 
-## Operator precedence
+## Operator Precedence
 
-`not` binds tightest, then `and`, then `or`. Use parentheses for explicit grouping (if supported by the expression parser).
+From highest to lowest:
 
-## List syntax (implicit AND)
+1. `not` (tightest binding)
+2. `and`
+3. `or` (loosest binding)
+
+So `A or B and C` is parsed as `A or (B and C)`.
+
+## List Syntax (Implicit AND)
+
+A YAML list of expressions is ANDed together:
 
 ```yaml
 when:
@@ -86,12 +96,46 @@ Is equivalent to:
 when: principal.sub equals document.authorId and document.status not in ['deleted']
 ```
 
-## Operand types
+## Operand Types
 
-Left operands are field paths (`principal.sub`, `document.authorId`, `principal.record.role`).
+### Left operands
 
-Right operands are:
-- Field paths: `document.ownerId`, `principal.sub`
-- String literals: `'admin'`, `'published'` (single quotes)
-- Boolean literals: `true`, `false`
-- List literals: `['admin', 'moderator']` (for `in` / `not in`)
+Field paths referencing bound values:
+
+| Path | Description |
+|------|-------------|
+| `principal.sub` | Principal's primary key value (string). |
+| `principal.record.fieldName` | Field on the principal's entity record. |
+| `document.fieldName` | Field on the loaded document. |
+
+### Right operands
+
+| Type | Syntax | Example |
+|------|--------|---------|
+| Field path | `document.ownerId` | `principal.sub equals document.ownerId` |
+| String literal | `'admin'` (single quotes only) | `document.status equals 'published'` |
+| Boolean literal | `true`, `false` | `principal.record.active equals true` |
+| List literal | `['a', 'b']` (single-quoted items) | `principal.record.role in ['admin', 'moderator']` |
+
+## Edge Cases
+
+- **Keywords are case-sensitive.** `equals`, `not`, `and`, `or`, `in` must be lowercase. Uppercase variants are not recognized.
+
+- **String literals require single quotes.** `'admin'` is valid. `"admin"` is NOT valid and causes a parse error.
+
+- **`null` comparisons.** If a field path resolves to a non-existent field, the value is `null`. `null equals null` returns `true`. `null equals 'anything'` returns `false`.
+
+- **`in []` (empty list).** Always returns `false`. No value is a member of an empty list.
+
+- **`not in []` (empty list).** Always returns `true`. Every value is not in an empty list.
+
+- **`in` list items must be single-quoted strings.** `['admin', 'moderator']` is valid. `[admin, moderator]` without quotes is not valid.
+
+- **Boolean `true`/`false` in comparisons.** `equals true` and `equals false` compare against boolean values. The literal keywords `true` and `false` are recognized without quotes.
+
+- **`not` placement.** `not` precedes the expression it negates: `not document.published`, `not principal.record.active equals true`.
+
+## See Also
+
+- [When expressions overview](./overview.md)
+- [Access control](../controllers/access-control.md)

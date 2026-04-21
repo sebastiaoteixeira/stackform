@@ -23,17 +23,18 @@ entities:
   user:
     extends: base
     type: auth
-    via:
-      - provider: password
-        identifier: email
-    roles: role
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
-      role:
-        type: enum
-        values: [admin, moderator, user]
-        default: user
 
   note:
     extends: base
@@ -41,11 +42,6 @@ entities:
       title: { type: string, required: true }
       body: { type: string }
       authorId: { type: ref, ref: user }
-
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:
@@ -91,15 +87,17 @@ controllers:
 
 - `extends: base` copies all fields from `base` into the child entity.
 - Fields declared in the child entity are merged after inherited fields.
-- `abstract: true` marks an entity as a template. Abstract entities are removed after desugaring — they have no repository, no collection, and cannot be referenced in `ref:` fields.
+- `abstract: true` marks an entity as a template. Abstract entities are removed after desugaring -- they have no repository, no collection, and cannot be referenced in `ref:` fields.
 
 ## What each entity ends up with
 
-After desugaring, `user` has: `id`, `createdAt`, `email`, `displayName`, `role`.
+After desugaring, `user` has: `id`, `createdAt`, `email`, `displayName`.
 
 After desugaring, `note` has: `id`, `createdAt`, `title`, `body`, `authorId`.
 
 The `base` entity itself is stripped and does not produce a MongoDB collection.
+
+**Watch out:** If the child declares a field with the same name as an inherited field, the child's definition silently overrides the parent's. There is no warning or error. Double-check field names when extending entities.
 
 ## Key points
 
