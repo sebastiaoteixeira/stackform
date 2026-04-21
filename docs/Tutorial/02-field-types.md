@@ -86,3 +86,7 @@ curl -X POST http://127.0.0.1:8000/notes \
 Fields with defaults (`viewCount`, `pinned`, `status`) can be omitted. The `id` field is always omitted -- it is generated server-side.
 
 **Watch out:** Setting `unique: true` on an optional field means that multiple documents cannot have the same value, including `null`. If the field is omitted, it is stored as absent (not `null`), which avoids this issue. But explicitly sending `null` will trigger the uniqueness constraint.
+
+---
+
+[Previous: Hello World](./01-hello-world.md) | [Next: Relationships](./03-relationships.md)

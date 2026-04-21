@@ -92,3 +92,7 @@ curl -X POST http://127.0.0.1:8000/notes \
 - `ref: author` points to the entity name (singular), not the repository or collection name.
 - `ref` fields are optional by default. Add `required: true` to enforce the relationship.
 - No cascading deletes or joins are performed automatically.
+
+---
+
+[Previous: Field Types](./02-field-types.md) | [Next: Authentication](./04-authentication.md)

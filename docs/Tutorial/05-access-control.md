@@ -72,6 +72,8 @@ The controller-level `access:` is the default for all operations. Per-operation 
 
 ## Calling a protected route
 
+**Note:** This example uses `jq` to extract the token from the JSON response. If you don't have `jq` installed, copy the token value manually from the JSON output.
+
 ```bash
 # Get a token first
 TOKEN=$(curl -s -X POST http://127.0.0.1:8000/users/login \
@@ -98,3 +100,7 @@ curl -X POST http://127.0.0.1:8000/notes \
 With only one auth entity, `user:*` and `"*"` are equivalent. The difference matters when you have multiple auth entities (e.g., users and API clients).
 
 **Note:** Per-operation `access:` completely replaces the controller-level default. There is no merging. If the controller has `access: public` and an operation has `access: "*"`, only `"*"` applies to that operation.
+
+---
+
+[Previous: Authentication](./04-authentication.md) | [Next: Roles](./06-roles.md)

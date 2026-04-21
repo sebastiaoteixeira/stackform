@@ -6,8 +6,34 @@
 
 Standard CRUD covers most cases. Custom operations handle domain-specific actions that don't map to a simple create/update/delete.
 
+**Project structure for custom handlers:**
+
+```
+myproject/
+  myapp.yaml
+  myapp/
+    __init__.py         # empty file, makes myapp a Python package
+    handlers/
+      __init__.py       # empty file
+      notes.py          # your handler functions
+```
+
+The `imports:` block in the YAML spec maps aliases to Python module paths:
+
+```yaml
+imports:
+  notes: myapp.handlers.notes
+```
+
+Then `handler: notes.publish` means: call the `publish` function from `myapp.handlers.notes`.
+
+## Full spec
+
 ```yaml
 version: "0.2"
+
+imports:
+  notes: myapp.handlers.notes
 
 mongo:
   uri: mongodb://localhost:27017
@@ -100,6 +126,14 @@ controllers:
 
 The `handler: notes.publish` value points to a Python module path. The handler receives the request context and can run arbitrary logic.
 
+**Context object:** The handler receives a `context` object with:
+
+- `context.repository` -- the MongoDB repository for this service's entity
+- `context.params` -- route parameters (e.g., `context.params["id"]`)
+- `context.body` -- the parsed request body (dict)
+- `context.principal` -- the authenticated user (if any), with `sub`, `roles`, `record`
+- `context.now()` -- current UTC datetime
+
 ```python
 # myapp/handlers/notes.py
 async def publish(context):
@@ -139,3 +173,7 @@ The `method:` and `path:` on the controller operation override the defaults. Wit
 - The `imports:` section maps keys to Python module paths.
 - Custom operations participate in the same access control system as CRUD operations.
 - Standard operations (`list`, `get`, `create`, `update`, `delete`) do not need handlers -- they are built-in.
+
+---
+
+[Previous: Entity Inheritance](./08-entity-inheritance.md) | [Next: External Auth](./10-external-auth.md)

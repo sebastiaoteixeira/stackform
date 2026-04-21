@@ -105,3 +105,7 @@ The `base` entity itself is stripped and does not produce a MongoDB collection.
 - `extends:` accepts only one parent. There is no multiple inheritance.
 - Inheritance also copies `type:` and `auth:` config from the parent, if present. A child can override these.
 - Abstract entities can extend other abstract entities.
+
+---
+
+[Previous: ABAC Rules](./07-abac-rules.md) | [Next: Custom Operations](./09-custom-operations.md)

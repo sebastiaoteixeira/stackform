@@ -91,6 +91,12 @@ access:
     # then: allow                       # default when omitted
 ```
 
+Key terms:
+
+- `identity:user` -- The `identity:` prefix tells the system this is an auth entity principal. The value after the colon is the entity name.
+- `principal.sub` -- `sub` (short for "subject") is the authenticated user's primary key value (their `id`).
+- `document: notes` -- This is the **repository name** (plural), not the entity name. The system fetches the target document from this collection to evaluate the rule.
+
 - `then: allow` is the default. You can write `then: deny` to invert the logic.
 - If no rule matches, the request is denied.
 
@@ -130,3 +136,7 @@ when: document.status not in ['deleted', 'archived']
 - Rules are evaluated in order. Put broad role rules first, document-specific rules after.
 - `document:` in `given:` references the repository name (`notes`), not the entity name.
 - `then: deny` combined with a fallback `then: allow` is a common pattern for inverse logic.
+
+---
+
+[Previous: Roles](./06-roles.md) | [Next: Entity Inheritance](./08-entity-inheritance.md)

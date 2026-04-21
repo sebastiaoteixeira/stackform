@@ -70,6 +70,12 @@ controllers:
     access: public
 ```
 
+## How password auth works
+
+When an entity uses `via: password`, a `password` field is automatically added to the register payload. You do not declare it in `fields:` -- it is implicit. The engine hashes the password and stores it in the `_auth` namespace internally; the raw password is never persisted.
+
+A JWT (JSON Web Token) is a signed string that encodes the user's identity. After login, include it in the `Authorization: Bearer <token>` header on subsequent requests to authenticate. Access control using the token is covered in [Tutorial 05: Access Control](./05-access-control.md).
+
 ## Generated auth endpoints
 
 | Method | Path | Description |
@@ -104,3 +110,7 @@ curl -X POST http://127.0.0.1:8000/users/login \
 - Passwords are hashed with PBKDF2-SHA256. The raw password is never stored.
 - The `password` field in the register payload is implicit -- you do not declare it in `fields:`.
 - The JWT token from `/login` is passed as `Authorization: Bearer <token>` on protected routes.
+
+---
+
+[Previous: Relationships](./03-relationships.md) | [Next: Access Control](./05-access-control.md)

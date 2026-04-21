@@ -31,7 +31,11 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password
+      via: [password, google]
+      claim_mapping:
+        email: email
+        displayName: name
+      auto_provision: true
     roles:
       values: [admin, moderator, user]
       default: user
@@ -148,6 +152,8 @@ auth:
 - `auto_provision: true` means the first Google login creates a user record automatically.
 - Without `auto_provision`, the user must already exist (matched by `identifier`) to log in via OIDC.
 
+**Note:** Testing OIDC locally requires a real OAuth app registered with the provider. For Google, create one at https://console.cloud.google.com/apis/credentials and set the redirect URI to `http://localhost:8000/api/v1/users/auth/google/callback`.
+
 ## Environment variables
 
 Provider secrets should always use `${VAR}` interpolation. Never hardcode credentials:
@@ -166,3 +172,7 @@ yaml-api dev myapp.yaml
 - `via:` on an auth entity can list multiple bindings. Each generates its own login flow.
 - Well-known provider names (`google`, `microsoft`, `apple`) use built-in discovery URLs.
 - All auth methods produce the same JWT format -- downstream access rules work identically.
+
+---
+
+[Previous: Custom Operations](./09-custom-operations.md)
