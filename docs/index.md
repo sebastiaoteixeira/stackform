@@ -2,9 +2,11 @@
 
 A YAML-driven REST API engine that generates fully functional CRUD APIs backed by MongoDB. Write a declarative YAML spec, get a FastAPI server with authentication, authorization, and data validation -- zero hand-written server code.
 
+yaml-api-generator is a local code generator you run on your own machine. You own the generated output and can deploy it anywhere. It is not a hosted backend-as-a-service (like Supabase or Firebase), and it is not a low-code admin panel. It produces standard Python (FastAPI) code that you can inspect, extend, and version-control.
+
 ## Architecture
 
-```
+```text
 YAML Spec --> Parser --> Intermediate Representation --> Code Generator --> FastAPI + MongoDB
 ```
 
@@ -76,6 +78,7 @@ YAML Spec --> Parser --> Intermediate Representation --> Code Generator --> Fast
 **Services**
 - [Overview](./Reference/services/overview.md)
 - [Custom Operations](./Reference/services/custom-operations.md)
+- [Handler Context](./Reference/services/handler-context.md)
 
 **Controllers**
 - [Overview](./Reference/controllers/overview.md)

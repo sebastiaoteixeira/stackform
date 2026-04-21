@@ -91,10 +91,18 @@ entities:
       values: [admin, moderator, user]
       default: user
       hierarchy:
-        admin: [moderator]
-        moderator: [user]
+        admin: [moderator]    # admin users inherit moderator permissions
+        moderator: [user]     # moderator users inherit user permissions
     fields:
       email: { type: string, required: true, unique: true }
+```
+
+The hierarchy flows from higher privilege to lower:
+
+```text
+admin  (highest privilege)
+  includes moderator
+    includes user  (lowest privilege)
 ```
 
 - `admin` includes `moderator`, which includes `user`.

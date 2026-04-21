@@ -54,6 +54,8 @@ controllers:
 
 2. Start MongoDB:
 
+A `docker-compose.yml` is included in the project root. No extra setup needed.
+
 ```bash
 docker-compose up -d
 ```
@@ -74,9 +76,17 @@ yaml-api dev myapp.yaml
 curl http://localhost:8000/api/v1/notes
 ```
 
+Expected output:
+
+```json
+[]
+```
+
+An empty list means the server is running and connected to MongoDB. There are no notes yet.
+
 ## Project structure
 
-```
+```text
 myproject/
   myapp.yaml          # your spec file
   myapp/              # custom handlers (only if using custom operations)
@@ -94,7 +104,7 @@ yaml-api compile myapp.yaml --output ./target
 
 Produces:
 
-```
+```text
 target/
   app.py              # FastAPI application entry point
   dependencies/       # auth, JWT, MongoDB connection

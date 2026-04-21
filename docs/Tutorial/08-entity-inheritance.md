@@ -2,6 +2,8 @@
 
 **Concept introduced:** Abstract base entities with shared fields, and `extends:` to inherit them.
 
+When multiple entities share common fields like `id` and `createdAt`, an abstract base entity avoids repeating them on each entity. This is optional -- you can declare the fields on each entity instead -- but it reduces duplication and keeps specs consistent as they grow.
+
 ## Extracting common fields into a base entity
 
 Multiple entities share `id` and `createdAt`. Rather than repeating them, define an abstract base.
@@ -99,12 +101,35 @@ The `base` entity itself is stripped and does not produce a MongoDB collection.
 
 **Watch out:** If the child declares a field with the same name as an inherited field, the child's definition silently overrides the parent's. There is no warning or error. Double-check field names when extending entities.
 
+## Natural primary keys with `pk:`
+
+By default, every entity gets an auto-generated UUID as its primary key. For entities where a natural identifier already exists (like ISO country codes or currency codes), you can use `pk:` instead.
+
+```yaml
+entities:
+  country:
+    pk: code
+    fields:
+      code: { type: string }
+      name: { type: string, required: true }
+```
+
+Why use a natural PK:
+
+- The identifier is already well-known and stable (e.g., `US`, `EUR`, `en-US`).
+- Clients can construct URLs directly (`GET /countries/US`) without needing to look up a UUID first.
+
+When `pk: code` is set, the URL path parameter uses the pk field value: `GET /countries/US` instead of `GET /countries/019...`. The client must provide the pk field value on create.
+
+You cannot combine `pk:` with a separate `type: id` field. When `pk:` is declared, it replaces the auto-generated id entirely.
+
 ## Key points
 
 - `abstract: true` prevents a collection from being created for the base entity.
 - `extends:` accepts only one parent. There is no multiple inheritance.
 - Inheritance also copies `type:` and `auth:` config from the parent, if present. A child can override these.
 - Abstract entities can extend other abstract entities.
+- `pk:` lets you use a natural key (like a country code) instead of an auto-generated UUID.
 
 ---
 

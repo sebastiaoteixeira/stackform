@@ -2,9 +2,13 @@
 
 **Concept introduced:** Attribute-based access control using `given`/`when`/`then` -- document-level rules.
 
+ABAC (Attribute-Based Access Control) is access control based on attributes of the request, the user, and the document being accessed.
+
+A key concept used throughout ABAC rules is `principal.sub`. The `sub` (short for "subject") is the authenticated user's primary key value -- their `id`. It is available on every authenticated request and is the main way to compare "who is making this request" against "who owns this document."
+
 ## Authors can edit their own notes
 
-Role-based rules (`admin`, `moderator`) cover broad access. ABAC rules cover ownership and record-level conditions.
+Role-based rules cover broad access (e.g., all moderators can edit any note), but they cannot express "only the author can edit their own note." ABAC rules solve this by comparing attributes of the authenticated user against attributes of the document being accessed.
 
 ```yaml
 version: "0.2"

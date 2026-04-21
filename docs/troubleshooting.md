@@ -2,7 +2,7 @@
 
 ## MongoDB connection refused
 
-```
+```text
 ConnectionError: Connection refused on localhost:27017
 ```
 
@@ -10,7 +10,7 @@ MongoDB is not running. Start it with `docker-compose up -d` or install and star
 
 ## YAML parse error
 
-```
+```json
 {"code": "YAML_PARSE_ERROR", "message": "...", "path": "...", "hint": "..."}
 ```
 
@@ -18,7 +18,7 @@ Check your YAML syntax. Common issues: wrong indentation, missing colons, tabs i
 
 ## Schema validation error
 
-```
+```json
 {"code": "SCHEMA_VALIDATION_ERROR", "message": "...", "path": "..."}
 ```
 
@@ -28,11 +28,36 @@ Your spec is valid YAML but does not match the expected structure. Check the fie
 
 The request body does not match the expected schema. Check required fields and types. For enum fields, the value must be one of the declared `values`.
 
+Example bad request (missing a required `title` field):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/notes \
+  -H 'Content-Type: application/json' \
+  -d '{"body": "Hello"}'
+```
+
+Example error response:
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "title"],
+      "msg": "Field required",
+      "input": {"body": "Hello"}
+    }
+  ]
+}
+```
+
+The `detail[].loc` array tells you where the problem is. In this case, `["body", "title"]` means the `title` field is missing from the request body. Fix the request by including all required fields.
+
 ## 401 Unauthorized
 
 The endpoint requires authentication. Include a valid JWT token:
 
-```
+```text
 Authorization: Bearer <token>
 ```
 
@@ -44,7 +69,7 @@ You are authenticated but do not have the required role or permissions. Check th
 
 ## Missing environment variable
 
-```
+```json
 {"code": "INTERPOLATION_MISSING_VAR", "message": "..."}
 ```
 

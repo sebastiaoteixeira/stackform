@@ -6,6 +6,10 @@
 
 Mark an entity with `type: auth` and add an `auth:` block to make it an identity provider.
 
+The `identifier` field tells the engine which field uniquely identifies a user at login time. In this example, `identifier: email` means the user logs in with their email address.
+
+The `via` field tells the engine how the user proves their identity. `via: password` means username/password authentication. The engine automatically adds a `password` field to the register payload -- you do not declare it in `fields:`. The password is hashed before storage and never persisted in plain text.
+
 ```yaml
 version: "0.2"
 

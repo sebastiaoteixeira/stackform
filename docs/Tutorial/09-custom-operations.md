@@ -8,7 +8,7 @@ Standard CRUD covers most cases. Custom operations handle domain-specific action
 
 **Project structure for custom handlers:**
 
-```
+```text
 myproject/
   myapp.yaml
   myapp/
@@ -173,6 +173,10 @@ The `method:` and `path:` on the controller operation override the defaults. Wit
 - The `imports:` section maps keys to Python module paths.
 - Custom operations participate in the same access control system as CRUD operations.
 - Standard operations (`list`, `get`, `create`, `update`, `delete`) do not need handlers -- they are built-in.
+
+## See Also
+
+- [Handler Context Reference](../Reference/services/handler-context.md) -- full documentation of the `context` object, `principal` attributes, and error handling.
 
 ---
 

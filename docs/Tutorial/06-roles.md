@@ -75,8 +75,16 @@ roles:
   values: [admin, moderator, user]
   default: user
   hierarchy:
-    admin: [moderator]
-    moderator: [user]
+    admin: [moderator]    # admin users inherit moderator permissions
+    moderator: [user]     # moderator users inherit user permissions
+```
+
+The hierarchy flows from higher privilege to lower:
+
+```text
+admin  (highest privilege)
+  includes moderator
+    includes user  (lowest privilege)
 ```
 
 - `admin` includes `moderator`, `moderator` includes `user`
@@ -92,7 +100,7 @@ access: moderator       # same as access: user:moderator
 access: admin           # same as access: user:admin
 ```
 
-With multiple auth entities, the prefix is required (covered in later tutorials).
+With multiple auth entities, the prefix is required. When you have both `user` and `apiClient` entities that each define an `admin` role, writing `access: admin` is ambiguous -- the engine does not know which entity you mean. `user:admin` eliminates the ambiguity. This is covered in later tutorials.
 
 **Watch out:** There is currently no built-in endpoint for changing a user's role. New users always get the `default` role. To change a user's role, you must update the record directly in MongoDB.
 

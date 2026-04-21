@@ -8,7 +8,7 @@ Your spec is the single source of truth. It declares entities (data models), rep
 
 ## The data flow
 
-```
+```text
 YAML Spec
   |
   v
@@ -41,6 +41,16 @@ FastAPI Server --> GET /api/v1/notes, POST /api/v1/notes, etc.
 3. Subsequent requests include the JWT in the `Authorization: Bearer <token>` header.
 4. The server decodes the JWT, resolves the principal (identity + roles).
 5. Access rules on the controller are checked against the principal. The request is allowed or denied.
+
+## Glossary
+
+- **Principal** -- The authenticated identity making a request. Contains the user's ID (`sub`), their database record, and their roles.
+- **JWT** -- JSON Web Token. A signed string that encodes a user's identity so the server can authenticate requests without a database lookup on every call.
+- **Repository** -- The data access layer that maps an entity to a MongoDB collection and provides CRUD operations.
+- **Service** -- The business logic layer between controllers and repositories. By default it passes through to the repository; custom handlers go here.
+- **Controller** -- The HTTP layer that exposes service operations as routes, sets base paths, and declares access rules.
+- **Pipeline** -- An ordered sequence of steps that processes each incoming request (authentication, authorization, then the repository operation).
+- **Step** -- A single unit of work in a pipeline, such as resolving the principal, checking access rules, or executing a database operation.
 
 ## Next steps
 

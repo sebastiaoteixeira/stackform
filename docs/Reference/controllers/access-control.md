@@ -144,6 +144,8 @@ Rule 1: admins pass immediately. Rule 2: non-authors are denied. Rule 3: everyon
 
 ### Multiple auth entities
 
+When multiple auth entities exist (e.g., `user` and `apiClient`), the entity prefix is required on role-based access rules. If both entities define an `admin` role, writing `access: admin` is ambiguous -- the engine does not know which entity you mean. `user:admin` eliminates the ambiguity. Using an unscoped role name with multiple auth entities raises `ACCESS_AMBIGUOUS_ROLE` at parse time.
+
 ```yaml
 controllers:
   resources:
