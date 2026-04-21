@@ -1,3 +1,7 @@
+---
+title: "Blog App: Access Rules Walkthrough"
+---
+
 # Blog App: Access Rules Walkthrough
 
 ## Design goals

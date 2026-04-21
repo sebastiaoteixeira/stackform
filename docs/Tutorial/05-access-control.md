@@ -1,3 +1,8 @@
+---
+title: "Tutorial 05: Access Control"
+description: Protecting routes with `"*"` (any authenticated user) and per-operation access overrides.
+---
+
 # Tutorial 05: Access Control
 
 **Concept introduced:** Protecting routes with `"*"` (any authenticated user) and per-operation access overrides.

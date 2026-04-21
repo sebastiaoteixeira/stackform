@@ -1,3 +1,8 @@
+---
+title: "Tutorial 02: Field Types"
+description: All available field types with their options.
+---
+
 # Tutorial 02: Field Types
 
 **Concept introduced:** All available field types with their options.

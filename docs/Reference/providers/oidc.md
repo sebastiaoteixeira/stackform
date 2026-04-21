@@ -1,3 +1,8 @@
+---
+title: "Reference: OIDC Provider"
+description: OpenID Connect provider configuration for external SSO login.
+---
+
 # Reference: OIDC Provider
 
 OpenID Connect provider configuration for external SSO login.

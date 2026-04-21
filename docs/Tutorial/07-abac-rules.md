@@ -1,3 +1,8 @@
+---
+title: "Tutorial 07: ABAC Rules"
+description: Attribute-based access control using `given`/`when`/`then` -- document-level rules.
+---
+
 # Tutorial 07: ABAC Rules
 
 **Concept introduced:** Attribute-based access control using `given`/`when`/`then` -- document-level rules.

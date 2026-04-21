@@ -1,3 +1,8 @@
+---
+title: "Tutorial 08: Entity Inheritance"
+description: Abstract base entities with shared fields, and `extends:` to inherit them.
+---
+
 # Tutorial 08: Entity Inheritance
 
 **Concept introduced:** Abstract base entities with shared fields, and `extends:` to inherit them.

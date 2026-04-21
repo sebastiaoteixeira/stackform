@@ -1,3 +1,7 @@
+---
+title: "Reference: Repository Operations"
+---
+
 # Reference: Repository Operations
 
 ## Built-in operations

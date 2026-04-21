@@ -1,3 +1,8 @@
+---
+title: "Reference: `yaml-api compile`"
+description: Compiles a YAML spec into a standalone project (FastAPI, Django REST Framework, or raw IR).
+---
+
 # Reference: `yaml-api compile`
 
 Compiles a YAML spec into a standalone project (FastAPI, Django REST Framework, or raw IR).

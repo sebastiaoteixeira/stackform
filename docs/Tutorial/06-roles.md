@@ -1,3 +1,8 @@
+---
+title: "Tutorial 06: Roles"
+description: Declaring roles on an auth entity and using role-based access control.
+---
+
 # Tutorial 06: Roles
 
 **Concept introduced:** Declaring roles on an auth entity and using role-based access control.

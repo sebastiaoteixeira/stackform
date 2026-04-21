@@ -1,3 +1,8 @@
+---
+title: "Reference: API Key Provider"
+description: Enables machine-to-machine authentication via a static API key passed in a request header.
+---
+
 # Reference: API Key Provider
 
 Enables machine-to-machine authentication via a static API key passed in a request header.

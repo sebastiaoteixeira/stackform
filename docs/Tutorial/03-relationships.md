@@ -1,3 +1,8 @@
+---
+title: "Tutorial 03: Relationships"
+description: "`type: ref` -- linking entities with foreign key references."
+---
+
 # Tutorial 03: Relationships
 
 **Concept introduced:** `type: ref` -- linking entities with foreign key references.

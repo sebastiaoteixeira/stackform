@@ -1,3 +1,8 @@
+---
+title: "Reference: Roles Overview"
+description: Declares per-entity roles with valid values, a default, and an optional hierarchy for role-based access control.
+---
+
 # Reference: Roles Overview
 
 Declares per-entity roles with valid values, a default, and an optional hierarchy for role-based access control.

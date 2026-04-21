@@ -1,3 +1,8 @@
+---
+title: "Tutorial 04: Authentication"
+description: Auth entities with password-based login and register endpoints.
+---
+
 # Tutorial 04: Authentication
 
 **Concept introduced:** Auth entities with password-based login and register endpoints.

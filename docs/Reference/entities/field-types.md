@@ -1,3 +1,8 @@
+---
+title: "Reference: Field Types"
+description: Declares the type and constraints for each field in an entity's `fields:` map.
+---
+
 # Reference: Field Types
 
 Declares the type and constraints for each field in an entity's `fields:` map.

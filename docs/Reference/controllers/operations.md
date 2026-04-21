@@ -1,3 +1,8 @@
+---
+title: "Reference: Controller Operations"
+description: Each key under `controllers.<name>.operations` configures one HTTP route.
+---
+
 # Reference: Controller Operations
 
 Each key under `controllers.<name>.operations` configures one HTTP route.

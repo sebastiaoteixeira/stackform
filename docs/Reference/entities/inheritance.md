@@ -1,3 +1,8 @@
+---
+title: "Reference: Entity Inheritance"
+description: Copies fields and configuration from a parent entity into a child entity via `extends:`.
+---
+
 # Reference: Entity Inheritance
 
 Copies fields and configuration from a parent entity into a child entity via `extends:`.

@@ -1,3 +1,8 @@
+---
+title: "Reference: Primary Keys"
+description: Controls how entities are uniquely identified -- either via an auto-generated UUID or a client-provided natural key.
+---
+
 # Reference: Primary Keys
 
 Controls how entities are uniquely identified -- either via an auto-generated UUID or a client-provided natural key.

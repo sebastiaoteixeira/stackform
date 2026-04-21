@@ -1,3 +1,8 @@
+---
+title: yaml-api-generator
+description: A YAML-driven REST API engine that generates fully functional CRUD APIs backed by MongoDB. Write a declarative YAML spec, get a FastAPI server with authentication, authorization, and data validation -- zero hand-written server code.
+---
+
 # yaml-api-generator
 
 A YAML-driven REST API engine that generates fully functional CRUD APIs backed by MongoDB. Write a declarative YAML spec, get a FastAPI server with authentication, authorization, and data validation -- zero hand-written server code.

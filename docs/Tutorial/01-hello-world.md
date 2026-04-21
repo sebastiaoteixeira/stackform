@@ -1,3 +1,8 @@
+---
+title: "Tutorial 01: Hello World"
+description: Minimal spec -- one entity, one repository, one controller with public access.
+---
+
 # Tutorial 01: Hello World
 
 **Concept introduced:** Minimal spec -- one entity, one repository, one controller with public access.

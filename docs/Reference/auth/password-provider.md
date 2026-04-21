@@ -1,3 +1,8 @@
+---
+title: "Reference: Password Provider"
+description: Enables username/password authentication with secure hashing for an auth entity.
+---
+
 # Reference: Password Provider
 
 Enables username/password authentication with secure hashing for an auth entity.
