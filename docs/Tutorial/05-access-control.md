@@ -104,6 +104,3 @@ With only one auth entity, `user:*` and `"*"` are equivalent. The difference mat
 
 **Note:** Per-operation `access:` completely replaces the controller-level default. There is no merging. If the controller has `access: public` and an operation has `access: "*"`, only `"*"` applies to that operation.
 
----
-
-[Previous: Authentication](./04-authentication.md) | [Next: Roles](./06-roles.md)

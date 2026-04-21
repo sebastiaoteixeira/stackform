@@ -144,6 +144,3 @@ when: document.status not in ['deleted', 'archived']
 - `document:` in `given:` references the repository name (`notes`), not the entity name.
 - `then: deny` combined with a fallback `then: allow` is a common pattern for inverse logic.
 
----
-
-[Previous: Roles](./06-roles.md) | [Next: Entity Inheritance](./08-entity-inheritance.md)

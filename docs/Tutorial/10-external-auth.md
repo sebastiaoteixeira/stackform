@@ -176,6 +176,3 @@ yaml-api dev myapp.yaml
 - Well-known provider names (`google`, `microsoft`, `apple`) use built-in discovery URLs.
 - All auth methods produce the same JWT format -- downstream access rules work identically.
 
----
-
-[Previous: Custom Operations](./09-custom-operations.md)

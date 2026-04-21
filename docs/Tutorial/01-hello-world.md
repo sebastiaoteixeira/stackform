@@ -75,6 +75,3 @@ The `id` field is auto-generated (uuidv7). You never send it in the request body
 - `access: public` at the controller level means all operations on this controller require no authentication.
 - The `services:` section is a thin wiring layer between controllers and repositories. An empty `{}` value means use all default operations from the bound repository.
 
----
-
-[Next: Field Types](./02-field-types.md)

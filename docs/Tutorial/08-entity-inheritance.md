@@ -134,6 +134,3 @@ You cannot combine `pk:` with a separate `type: id` field. When `pk:` is declare
 - Abstract entities can extend other abstract entities.
 - `pk:` lets you use a natural key (like a country code) instead of an auto-generated UUID.
 
----
-
-[Previous: ABAC Rules](./07-abac-rules.md) | [Next: Custom Operations](./09-custom-operations.md)

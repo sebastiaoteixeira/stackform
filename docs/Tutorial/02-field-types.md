@@ -90,6 +90,3 @@ Fields with defaults (`viewCount`, `pinned`, `status`) can be omitted. The `id` 
 
 **Watch out:** Setting `unique: true` on an optional field means that multiple documents cannot have the same value, including `null`. If the field is omitted, it is stored as absent (not `null`), which avoids this issue. But explicitly sending `null` will trigger the uniqueness constraint.
 
----
-
-[Previous: Hello World](./01-hello-world.md) | [Next: Relationships](./03-relationships.md)

@@ -118,6 +118,3 @@ curl -X POST http://127.0.0.1:8000/users/login \
 - The `password` field in the register payload is implicit -- you do not declare it in `fields:`.
 - The JWT token from `/login` is passed as `Authorization: Bearer <token>` on protected routes.
 
----
-
-[Previous: Relationships](./03-relationships.md) | [Next: Access Control](./05-access-control.md)

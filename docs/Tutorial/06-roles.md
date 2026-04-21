@@ -115,6 +115,3 @@ With multiple auth entities, the prefix is required. When you have both `user` a
 - Role hierarchy is defined inside the entity's `roles:` block, not at the top level.
 - Roles are per-entity -- different auth entities can have completely different role sets.
 
----
-
-[Previous: Access Control](./05-access-control.md) | [Next: ABAC Rules](./07-abac-rules.md)

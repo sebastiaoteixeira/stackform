@@ -181,6 +181,3 @@ The `method:` and `path:` on the controller operation override the defaults. Wit
 
 - [Handler Context Reference](../Reference/services/handler-context.md) -- full documentation of the `context` object, `principal` attributes, and error handling.
 
----
-
-[Previous: Entity Inheritance](./08-entity-inheritance.md) | [Next: External Auth](./10-external-auth.md)
