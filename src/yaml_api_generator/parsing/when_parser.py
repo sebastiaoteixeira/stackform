@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+
 from ..when_ast import (
     And,
     Equals,
@@ -43,7 +44,7 @@ def parse_when_expr(raw: str, path: str) -> tuple[WhenExpr | None, list[ConfigEr
     idx = raw.find(sep)
     if idx != -1:
         lhs_raw = raw[:idx]
-        rhs_raw = raw[idx + len(sep):]
+        rhs_raw = raw[idx + len(sep) :]
         lhs, err = _parse_operand(lhs_raw, path)
         if err:
             errors.append(err)
@@ -58,7 +59,7 @@ def parse_when_expr(raw: str, path: str) -> tuple[WhenExpr | None, list[ConfigEr
     idx = raw.find(sep)
     if idx != -1:
         lhs_raw = raw[:idx]
-        rhs_raw = raw[idx + len(sep):]
+        rhs_raw = raw[idx + len(sep) :]
         lhs, err = _parse_operand(lhs_raw, path)
         if err:
             errors.append(err)

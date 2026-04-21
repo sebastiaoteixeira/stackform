@@ -1,6 +1,13 @@
 from typing import Any
 
-from ..ir import IRDocument, IRCollection, IRDocumentBinding, IRIdentityCollection
+from ..ir import (
+    IRDocument,
+    IRCollection,
+    IRDocumentBinding,
+    IRIdentityCollection,
+    IROIDCProvider,
+    IRSAMLProvider,
+)
 from .compile_context import (
     AccessRuleDescriptor,
     AppConfig,
@@ -39,7 +46,6 @@ def build_context(document: IRDocument) -> CompileContext:
     models = _build_models(document.collections, identity_map)
     model_index = {m.name: m for m in models}
     routes = _build_routes(document, model_index)
-    auth = _build_auth_config(identity_map, document.collections)
 
     raw_collections: dict[str, Any] = {}
     for name, col in document.collections.items():
@@ -49,6 +55,8 @@ def build_context(document: IRDocument) -> CompileContext:
             "type": col.type,
             "fields": col.fields,
         }
+
+    auth = _build_auth_config(identity_map, document.collections, document.providers)
 
     return CompileContext(
         app=app,
@@ -159,7 +167,7 @@ def _build_fields(
             )
         )
 
-    if identity is not None and operation == "create" and "password" in identity.via:
+    if identity is not None and operation == "create" and identity.has_password:
         has_password_field = any(f.name == "password" for f in fields)
         if not has_password_field:
             fields.append(
@@ -232,7 +240,7 @@ def _build_routes(
         col = document.collections[ir_route.collection]
         identity = document.identityCollections.get(ir_route.collection)
         is_identity_create = identity is not None and ir_route.operation == "create"
-        uses_password = identity is not None and "password" in identity.via
+        uses_password = identity is not None and identity.has_password
 
         body_model: str | None = None
         if ir_route.operation in WRITE_OPERATIONS or ir_route.operation == "login":
@@ -264,6 +272,7 @@ def _build_routes(
 def _build_auth_config(
     identity_map: dict[str, IRIdentityCollection],
     collections: dict[str, IRCollection],
+    providers: dict[str, Any],
 ) -> AuthConfig:
     if not identity_map:
         return AuthConfig(
@@ -271,25 +280,28 @@ def _build_auth_config(
             identity_collections=[],
             has_password_auth=False,
             has_api_key_auth=False,
+            providers=providers,
         )
 
     descriptors: list[IdentityCollectionDescriptor] = []
     has_password = False
     has_api_key = False
+    has_oidc = any(isinstance(p, IROIDCProvider) for p in providers.values())
+    has_saml = any(isinstance(p, IRSAMLProvider) for p in providers.values())
 
     for name, identity in identity_map.items():
         col = collections[name]
         descriptors.append(
             IdentityCollectionDescriptor(
                 name=name,
-                identifier=identity.identifier,
-                via=list(identity.via),
+                bindings=list(identity.bindings),
                 id_field=col.idField,
+                roles_field=identity.roles_field,
             )
         )
-        if "password" in identity.via:
+        if identity.has_password:
             has_password = True
-        if "apiKey" in identity.via:
+        if identity.has_api_key:
             has_api_key = True
 
     return AuthConfig(
@@ -297,4 +309,7 @@ def _build_auth_config(
         identity_collections=descriptors,
         has_password_auth=has_password,
         has_api_key_auth=has_api_key,
+        has_oidc_auth=has_oidc,
+        has_saml_auth=has_saml,
+        providers=providers,
     )

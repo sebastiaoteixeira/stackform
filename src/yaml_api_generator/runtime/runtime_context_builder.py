@@ -131,17 +131,16 @@ def _build_auth_config(
 
         identity_descriptors[name] = RuntimeIdentityDescriptor(
             name=identity.name,
-            identifier=identity.identifier,
-            via=identity.via,
+            bindings=identity.bindings,
             id_field=id_field,
             roles_field=identity.roles_field,
         )
 
         identity_id_fields[name] = id_field
 
-        if "password" in identity.via:
+        if identity.has_password:
             has_password = True
-        if "apiKey" in identity.via:
+        if identity.has_api_key:
             has_api_key = True
 
     # Flatten role hierarchies and rekey by collection name (what the principal carries)

@@ -55,6 +55,7 @@ def needs_document(expr: WhenExpr) -> bool:
         return False
     if isinstance(expr, (Equals, NotEquals, And, Or)):
         return needs_document(expr.left) or needs_document(expr.right)
+
     if isinstance(expr, Not):
         return needs_document(expr.operand)
     return False

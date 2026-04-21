@@ -15,7 +15,9 @@ from ..when_ast import (
 __all__ = ["evaluate_when", "needs_document"]
 
 
-def _resolve_field(ref: FieldRef, principal: dict | None, document: dict | None) -> object:
+def _resolve_field(
+    ref: FieldRef, principal: dict | None, document: dict | None
+) -> object:
     if ref.root == "principal" and principal is not None:
         if len(ref.path) == 1 and ref.path[0] == "sub":
             return principal.get("sub")
@@ -30,13 +32,22 @@ def _resolve_field(ref: FieldRef, principal: dict | None, document: dict | None)
 
 def _evaluate(expr: WhenExpr, principal: dict | None, document: dict | None) -> bool:
     if isinstance(expr, Equals):
-        return _resolve(expr.left, principal, document) == _resolve(expr.right, principal, document)
+        return _resolve(expr.left, principal, document) == _resolve(
+            expr.right, principal, document
+        )
     if isinstance(expr, NotEquals):
-        return _resolve(expr.left, principal, document) != _resolve(expr.right, principal, document)
+        return _resolve(expr.left, principal, document) != _resolve(
+            expr.right, principal, document
+        )
+
     if isinstance(expr, And):
-        return _evaluate(expr.left, principal, document) and _evaluate(expr.right, principal, document)
+        return _evaluate(expr.left, principal, document) and _evaluate(
+            expr.right, principal, document
+        )
     if isinstance(expr, Or):
-        return _evaluate(expr.left, principal, document) or _evaluate(expr.right, principal, document)
+        return _evaluate(expr.left, principal, document) or _evaluate(
+            expr.right, principal, document
+        )
     if isinstance(expr, Not):
         return not _evaluate(expr.operand, principal, document)
     return False

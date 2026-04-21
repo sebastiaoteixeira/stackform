@@ -11,10 +11,15 @@ from ...ir import (
     IRDockerDeployConfig,
     IRIdentityCollection,
     IRMongo,
+    IROIDCProvider,
+    IRProvider,
+    IRProviderBinding,
+    IRSAMLProvider,
     IROperations,
     IRRoute,
     IRService,
     IRSystemdDeployConfig,
+    WELL_KNOWN_OIDC_DISCOVERY,
 )
 from ..parser import ConfigError, ConfigErrors
 from ..when_parser import parse_document_binding, parse_when_list
@@ -88,14 +93,6 @@ def _resolve_id_format(
             path=f"entities.{entity_name}.fields.{id_field}.format",
         )
     ]
-
-
-def _normalize_auth_via(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return cast(list[str], list(value))
-    return []
 
 
 def _resolve_imports(imports: dict[str, str]) -> dict[str, str]:
@@ -297,14 +294,14 @@ def _validate_implicit_auth_fields(
 ) -> list[ConfigError]:
     errors: list[ConfigError] = []
     for name, identity in identity_collections.items():
-        if "password" not in identity.via:
+        if not identity.has_password:
             continue
         fields = collections[name].fields
         if "password" in fields:
             errors.append(
                 ConfigError(
                     code="AUTH_PASSWORD_FIELD_FORBIDDEN",
-                    message="Password input is implicit when auth.via includes password",
+                    message="Password input is implicit when password provider is configured",
                     path=f"entities.{name}.fields.password",
                     hint="Remove the password field from YAML",
                 )
@@ -313,7 +310,7 @@ def _validate_implicit_auth_fields(
             errors.append(
                 ConfigError(
                     code="AUTH_PASSWORD_HASH_FIELD_FORBIDDEN",
-                    message="passwordHash is implicit storage when auth.via includes password",
+                    message="passwordHash is implicit storage when password provider is configured",
                     path=f"entities.{name}.fields.passwordHash",
                     hint="Remove the passwordHash field from YAML",
                 )
@@ -331,7 +328,7 @@ def _validate_roles_field(
             ConfigError(
                 code="AUTH_ROLES_FIELD_NOT_FOUND",
                 message=f"Roles field '{roles_field}' not found in entity '{entity_name}'",
-                path=f"entities.{entity_name}.auth.roles",
+                path=f"entities.{entity_name}.roles",
             )
         ]
     field_cfg = fields[roles_field]
@@ -400,6 +397,53 @@ def _parse_deploy(raw: dict[str, Any] | None, spec_name: str) -> IRDeployConfig 
     )
 
 
+def _parse_providers(
+    raw: dict[str, Any],
+) -> tuple[dict[str, IRProvider], list[ConfigError]]:
+    errors: list[ConfigError] = []
+    result: dict[str, IRProvider] = {}
+    for name, cfg in raw.items():
+        provider_type = cfg.get("type")
+        if provider_type == "oidc":
+            discovery_url = cfg.get("discovery_url") or WELL_KNOWN_OIDC_DISCOVERY.get(name)
+            if not discovery_url:
+                errors.append(ConfigError(
+                    code="OIDC_UNKNOWN_PROVIDER",
+                    message=f"Unknown OIDC provider '{name}' — add a discovery_url or use a well-known name",
+                    path=f"providers.{name}",
+                    hint=f"Well-known names: {', '.join(WELL_KNOWN_OIDC_DISCOVERY)}",
+                ))
+                continue
+            result[name] = IROIDCProvider(
+                name=name,
+                client_id=cfg["client_id"],
+                client_secret=cfg["client_secret"],
+                discovery_url=discovery_url,
+            )
+        elif provider_type == "saml":
+            result[name] = IRSAMLProvider(
+                name=name,
+                idp_metadata_url=cfg["idp_metadata_url"],
+                sp_entity_id=cfg["sp_entity_id"],
+            )
+        else:
+            errors.append(ConfigError(
+                code="PROVIDER_UNKNOWN_TYPE",
+                message=f"Provider '{name}' has unknown type '{provider_type}'",
+                path=f"providers.{name}.type",
+                hint="Supported types: oidc, saml",
+            ))
+    return result, errors
+
+
+def _normalize_auth_via(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return cast(list[str], list(value))
+    return []
+
+
 class V02Transformer:
     def transform(self, resolved: dict[str, Any]) -> IRDocument:
         api_data: dict[str, Any] = resolved.get("api", {})
@@ -410,6 +454,7 @@ class V02Transformer:
         services_data: dict[str, Any] = resolved.get("services", {})
         controllers_data: dict[str, Any] = resolved.get("controllers", {})
         roles_data: dict[str, Any] = resolved.get("roles", {})
+        providers_data: dict[str, Any] = resolved.get("providers", {})
 
         # repo name -> entity name
         repo_entity_map: dict[str, str] = {}
@@ -428,6 +473,12 @@ class V02Transformer:
             if isinstance(entity_data, dict) and entity_data.get("type") == "auth":
                 auth_entities.add(entity_name)
 
+        providers: dict[str, IRProvider] = {}
+        if providers_data:
+            providers, provider_errors = _parse_providers(providers_data)
+            if provider_errors:
+                raise ConfigErrors(provider_errors)
+
         collections, id_errors = self._build_collections(
             entities_data, repos_data, defaults
         )
@@ -435,7 +486,7 @@ class V02Transformer:
             raise ConfigErrors(id_errors)
 
         identity_collections = self._build_identity_collections(
-            entities_data, collections, repo_entity_map
+            entities_data, collections, repo_entity_map, providers
         )
 
         field_errors = _validate_implicit_auth_fields(collections, identity_collections)
@@ -469,6 +520,7 @@ class V02Transformer:
             identityCollections=identity_collections,
             services=services,
             role_hierarchies=role_hierarchies,
+            providers=providers,
             mongo=self._build_mongo(resolved.get("mongo", {})),
             deploy=_parse_deploy(resolved.get("deploy"), ""),
         )
@@ -556,8 +608,11 @@ class V02Transformer:
         entities_data: dict[str, Any],
         collections: dict[str, IRCollection],
         repo_entity_map: dict[str, str],
+        providers: dict[str, IRProvider],
     ) -> dict[str, IRIdentityCollection]:
+        _BUILTIN_PROVIDERS = {"password", "apiKey"}
         identity_collections: dict[str, IRIdentityCollection] = {}
+
         for repo_name, entity_name in repo_entity_map.items():
             entity_data = entities_data.get(entity_name)
             if not isinstance(entity_data, dict):
@@ -566,16 +621,11 @@ class V02Transformer:
                 continue
             if repo_name not in collections:
                 continue
+
             auth_data = entity_data.get("auth", {})
-            identifier = (
-                auth_data.get("identifier") if isinstance(auth_data, dict) else None
-            )
-            via = _normalize_auth_via(
-                auth_data.get("via") if isinstance(auth_data, dict) else None
-            )
-            roles_field = (
-                auth_data.get("roles") if isinstance(auth_data, dict) else None
-            )
+            identifier = auth_data.get("identifier") if isinstance(auth_data, dict) else None
+            via = _normalize_auth_via(auth_data.get("via") if isinstance(auth_data, dict) else None)
+            roles_field = auth_data.get("roles") if isinstance(auth_data, dict) else None
 
             if roles_field is not None:
                 fields = collections[repo_name].fields
@@ -583,12 +633,43 @@ class V02Transformer:
                 if role_errors:
                     raise ConfigErrors(role_errors)
 
+            raw_mapping = auth_data.get("claim_mapping") if isinstance(auth_data, dict) else None
+            shared_claim_mapping: dict[str, str] = {}
+            if isinstance(raw_mapping, dict):
+                shared_claim_mapping = {str(k): str(v) for k, v in raw_mapping.items()}
+
+            raw_ap = auth_data.get("auto_provision") if isinstance(auth_data, dict) else None
+            shared_auto_provision: bool = True if raw_ap is None else bool(raw_ap)
+
+            bindings: list[IRProviderBinding] = []
+            binding_errors: list[ConfigError] = []
+
+            for provider in via:
+                if provider not in _BUILTIN_PROVIDERS and provider not in providers:
+                    binding_errors.append(ConfigError(
+                        code="VIA_UNKNOWN_PROVIDER",
+                        message=f"'{provider}' in auth.via is not a built-in method and not defined in providers",
+                        path=f"entities.{entity_name}.auth.via",
+                        hint="Define it under the top-level 'providers:' section",
+                    ))
+                    continue
+                if identifier:
+                    bindings.append(IRProviderBinding(
+                        provider=provider,
+                        identifier=identifier,
+                        claim_mapping=shared_claim_mapping,
+                        auto_provision=shared_auto_provision,
+                    ))
+
+            if binding_errors:
+                raise ConfigErrors(binding_errors)
+
             identity_collections[repo_name] = IRIdentityCollection(
                 name=repo_name,
-                identifier=identifier,
-                via=via,
+                bindings=tuple(bindings),
                 roles_field=roles_field,
             )
+
         return identity_collections
 
     def _build_services(

@@ -10,11 +10,12 @@ from dependencies.mongodb import get_database
 router = APIRouter()
 
 {% for identity in auth.identity_collections %}
-{% if "password" in identity.via and identity.identifier %}
+{% set pw_binding = identity.bindings | selectattr('provider', 'equalto', 'password') | first | default(none) %}
+{% if pw_binding %}
 {% set class_name = identity.name | capitalize_collection %}
 
 class {{ class_name }}LoginPayload(BaseModel):
-    {{ identity.identifier }}: str = Field(..., min_length=1)
+    {{ pw_binding.identifier }}: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
 
 
@@ -26,7 +27,7 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
     docs = await cursor.to_list(length=None)
 
     for doc in docs:
-        if str(doc.get("{{ identity.identifier }}", "")) != payload.{{ identity.identifier }}:
+        if str(doc.get("{{ pw_binding.identifier }}", "")) != payload.{{ pw_binding.identifier }}:
             continue
         stored_hash = doc["_auth"]["passwordHash"]
         if not isinstance(stored_hash, str):

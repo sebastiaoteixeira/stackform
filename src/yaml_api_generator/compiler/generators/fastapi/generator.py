@@ -95,13 +95,15 @@ class FastAPIGenerator(CodeGenerator):
         for col_name in collections_by_name:
             identity = _find_identity(context, col_name)
             is_identity = identity is not None
-            password_via = is_identity and "password" in identity.via
+            password_via = is_identity and identity.has_password
 
             identity_fields: list[str] = []
             if is_identity:
-                if identity.identifier:
-                    identity_fields.append(identity.identifier)
-                identity_fields.extend(identity.via)
+                seen: set[str] = set()
+                for b in identity.bindings:
+                    if b.identifier not in seen:
+                        identity_fields.append(b.identifier)
+                        seen.add(b.identifier)
 
             content = svc_template.render(
                 collection_name=col_name,
@@ -161,6 +163,22 @@ class FastAPIGenerator(CodeGenerator):
             (routes_dir / "login.py").write_text(login_content)
             init_imports.append(
                 "from .login import router as login_router"
+            )
+
+        if context.auth.has_oidc_auth:
+            oidc_template = env.get_template("oidc_routes.py.j2")
+            oidc_content = oidc_template.render(auth=context.auth)
+            (routes_dir / "oidc_routes.py").write_text(oidc_content)
+            init_imports.append(
+                "from .oidc_routes import router as oidc_router"
+            )
+
+        if context.auth.has_saml_auth:
+            saml_template = env.get_template("saml_routes.py.j2")
+            saml_content = saml_template.render(auth=context.auth)
+            (routes_dir / "saml_routes.py").write_text(saml_content)
+            init_imports.append(
+                "from .saml_routes import router as saml_router"
             )
 
         init_content = "\n".join(init_imports) + "\n" if init_imports else ""
