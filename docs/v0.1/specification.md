@@ -1,5 +1,5 @@
 ---
-title: YAML Specification v0.1 (Practical)
+title: Specification
 ---
 
 Status: Draft v0.1  

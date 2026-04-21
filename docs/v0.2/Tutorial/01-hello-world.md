@@ -5,7 +5,7 @@ description: Minimal spec -- one entity, one repository, one controller with pub
 
 **Concept introduced:** Minimal spec -- one entity, one repository, one controller with public access.
 
-**Prerequisites:** Complete the [Getting Started](../getting-started.md) guide first. You need `yaml-api-generator` installed and MongoDB running.
+**Prerequisites:** Complete the [Getting Started](../../getting-started.md) guide first. You need `yaml-api-generator` installed and MongoDB running.
 
 ## The spec
 
