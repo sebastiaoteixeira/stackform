@@ -6,6 +6,7 @@ from ...ir import (
     IRDocument,
     IRIdentityCollection,
     IROperations,
+    IRRolesConfig,
     IRRoute,
 )
 from ..parser import ConfigError, ConfigErrors
@@ -296,10 +297,29 @@ class V01Transformer:
                 continue
             collection_data = collections_data.get(name, {})
             identifier, via = _extract_identity_auth(collection_data)
+
+            roles_config: IRRolesConfig | None = None
+            roles_raw = collection_data.get("roles")
+            if isinstance(roles_raw, dict):
+                values = tuple(str(v) for v in roles_raw.get("values", []))
+                default = str(roles_raw.get("default", ""))
+                hierarchy_raw = roles_raw.get("hierarchy", {})
+                hierarchy: dict[str, tuple[str, ...]] = {}
+                if isinstance(hierarchy_raw, dict):
+                    hierarchy = {
+                        k: tuple(str(r) for r in v)
+                        for k, v in hierarchy_raw.items()
+                        if isinstance(v, list)
+                    }
+                roles_config = IRRolesConfig(
+                    values=values, default=default, hierarchy=hierarchy
+                )
+
             identity_collections[name] = IRIdentityCollection(
                 name=name,
                 identifier=identifier,
                 via=via,
+                roles=roles_config,
             )
 
         implicit_field_errors = _validate_implicit_auth_fields(

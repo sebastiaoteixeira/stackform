@@ -44,7 +44,6 @@ def build_context(document: IRDocument) -> CompileContext:
         routes=routes,
         auth=auth,
         collections=raw_collections,
-        role_hierarchies=document.role_hierarchies,
     )
 
 
@@ -270,6 +269,7 @@ def _build_auth_config(
             identifier=identity.identifier,
             via=list(identity.via),
             id_field=col.idField,
+            roles=identity.roles,
         ))
         if "password" in identity.via:
             has_password = True

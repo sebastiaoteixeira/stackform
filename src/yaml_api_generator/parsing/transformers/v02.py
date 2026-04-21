@@ -8,6 +8,7 @@ from ...ir import (
     IRDocumentBinding,
     IRIdentityCollection,
     IROperations,
+    IRRolesConfig,
     IRRoute,
     IRService,
 )
@@ -324,56 +325,43 @@ def _validate_implicit_auth_fields(
     return errors
 
 
-def _validate_roles_field(
+def _parse_roles_config(
     entity_name: str,
-    roles_field: str,
-    fields: dict[str, Any],
-) -> list[ConfigError]:
-    if roles_field not in fields:
-        return [
-            ConfigError(
-                code="AUTH_ROLES_FIELD_NOT_FOUND",
-                message=f"Roles field '{roles_field}' not found in entity '{entity_name}'",
-                path=f"entities.{entity_name}.auth.roles",
-            )
-        ]
-    field_cfg = fields[roles_field]
-    if not isinstance(field_cfg, dict) or field_cfg.get("type") != "enum":
-        return [
-            ConfigError(
-                code="AUTH_ROLES_FIELD_NOT_ENUM",
-                message=f"Roles field '{roles_field}' must be of type 'enum'",
-                path=f"entities.{entity_name}.fields.{roles_field}",
-            )
-        ]
-    return []
-
-
-def _parse_role_hierarchies(
-    roles_data: dict[str, Any],
-    auth_entities: set[str],
-) -> tuple[dict[str, dict[str, list[str]]], list[ConfigError]]:
+    raw: dict[str, Any],
+) -> tuple[IRRolesConfig | None, list[ConfigError]]:
     errors: list[ConfigError] = []
-    hierarchies: dict[str, dict[str, list[str]]] = {}
+    values = tuple(str(v) for v in raw.get("values", []))
+    default = str(raw.get("default", ""))
+    hierarchy_raw = raw.get("hierarchy", {})
 
-    for entity_name, role_map in roles_data.items():
-        if entity_name not in auth_entities:
-            errors.append(
-                ConfigError(
-                    code="ROLES_UNKNOWN_ENTITY",
-                    message=f"Role hierarchy references unknown auth entity '{entity_name}'",
-                    path=f"roles.{entity_name}",
-                )
-            )
-            continue
-        if not isinstance(role_map, dict):
-            continue
-        hierarchies[entity_name] = {
-            role: list(includes) if isinstance(includes, list) else []
-            for role, includes in role_map.items()
-        }
+    if default not in values:
+        errors.append(ConfigError(
+            code="ROLES_DEFAULT_NOT_IN_VALUES",
+            message=f"roles.default '{default}' is not in roles.values",
+            path=f"entities.{entity_name}.roles.default",
+        ))
 
-    return hierarchies, errors
+    hierarchy: dict[str, tuple[str, ...]] = {}
+    if isinstance(hierarchy_raw, dict):
+        for role, includes in hierarchy_raw.items():
+            if role not in values:
+                errors.append(ConfigError(
+                    code="ROLES_HIERARCHY_KEY_INVALID",
+                    message=f"Hierarchy role '{role}' is not in roles.values",
+                    path=f"entities.{entity_name}.roles.hierarchy",
+                ))
+            bad = [r for r in (includes or []) if r not in values]
+            for b in bad:
+                errors.append(ConfigError(
+                    code="ROLES_HIERARCHY_VALUE_INVALID",
+                    message=f"Hierarchy includes role '{b}' which is not in roles.values",
+                    path=f"entities.{entity_name}.roles.hierarchy.{role}",
+                ))
+            hierarchy[role] = tuple(str(r) for r in (includes or []))
+
+    if errors:
+        return None, errors
+    return IRRolesConfig(values=values, default=default, hierarchy=hierarchy), []
 
 
 class V02Transformer:
@@ -385,7 +373,6 @@ class V02Transformer:
         repos_data: dict[str, Any] = resolved.get("repositories", {})
         services_data: dict[str, Any] = resolved.get("services", {})
         controllers_data: dict[str, Any] = resolved.get("controllers", {})
-        roles_data: dict[str, Any] = resolved.get("roles", {})
 
         # repo name -> entity name
         repo_entity_map: dict[str, str] = {}
@@ -410,22 +397,15 @@ class V02Transformer:
         if id_errors:
             raise ConfigErrors(id_errors)
 
-        identity_collections = self._build_identity_collections(
+        identity_collections, identity_errors = self._build_identity_collections(
             entities_data, collections
         )
+        if identity_errors:
+            raise ConfigErrors(identity_errors)
 
         field_errors = _validate_implicit_auth_fields(collections, identity_collections)
         if field_errors:
             raise ConfigErrors(field_errors)
-
-        # Parse role hierarchies
-        role_hierarchies: dict[str, dict[str, list[str]]] = {}
-        if roles_data:
-            role_hierarchies, role_errors = _parse_role_hierarchies(
-                roles_data, auth_entities
-            )
-            if role_errors:
-                raise ConfigErrors(role_errors)
 
         services = self._build_services(
             services_data, repo_entity_map, import_map
@@ -445,7 +425,6 @@ class V02Transformer:
             routes=routes,
             identityCollections=identity_collections,
             services=services,
-            role_hierarchies=role_hierarchies,
         )
 
     def _build_collections(
@@ -517,10 +496,19 @@ class V02Transformer:
         self,
         entities_data: dict[str, Any],
         collections: dict[str, IRCollection],
-    ) -> dict[str, IRIdentityCollection]:
+    ) -> tuple[dict[str, IRIdentityCollection], list[ConfigError]]:
         identity_collections: dict[str, IRIdentityCollection] = {}
+        errors: list[ConfigError] = []
+
         for name, entity_data in entities_data.items():
             if str(entity_data.get("type", "base")) != "auth":
+                roles_raw = entity_data.get("roles")
+                if roles_raw is not None:
+                    errors.append(ConfigError(
+                        code="ROLES_ON_NON_AUTH_ENTITY",
+                        message="roles: section is only valid on type: auth entities",
+                        path=f"entities.{name}.roles",
+                    ))
                 continue
             plural = name + "s"
             if plural not in collections:
@@ -528,22 +516,23 @@ class V02Transformer:
             auth_data = entity_data.get("auth", {})
             identifier = auth_data.get("identifier") if isinstance(auth_data, dict) else None
             via = _normalize_auth_via(auth_data.get("via") if isinstance(auth_data, dict) else None)
-            roles_field = auth_data.get("roles") if isinstance(auth_data, dict) else None
 
-            # Validate roles field if specified
-            if roles_field is not None:
-                fields = collections[plural].fields
-                role_errors = _validate_roles_field(name, roles_field, fields)
-                if role_errors:
-                    raise ConfigErrors(role_errors)
+            roles_config: IRRolesConfig | None = None
+            roles_raw = entity_data.get("roles")
+            if isinstance(roles_raw, dict):
+                parsed_roles, role_errors = _parse_roles_config(name, roles_raw)
+                errors.extend(role_errors)
+                if parsed_roles is not None:
+                    roles_config = parsed_roles
 
             identity_collections[plural] = IRIdentityCollection(
                 name=plural,
                 identifier=identifier,
                 via=via,
-                roles_field=roles_field,
+                roles=roles_config,
             )
-        return identity_collections
+
+        return identity_collections, errors
 
     def _build_services(
         self,

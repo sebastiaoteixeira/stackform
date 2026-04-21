@@ -250,12 +250,8 @@ def _build_principal(
         "record": record,
     }
 
-    # Use configured roles_field if available
-    roles_field = identity.roles_field if identity is not None else None
-    if roles_field is not None:
-        roles = document.get(roles_field)
-    else:
-        roles = document.get("roles") or document.get("role")
+    auth_namespace = document.get("_auth", {})
+    roles = auth_namespace.get("roles") if isinstance(auth_namespace, dict) else None
 
     if isinstance(roles, list):
         principal["roles"] = [str(role) for role in roles]

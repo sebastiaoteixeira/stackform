@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..ir import IRRolesConfig
 from ..when_ast import WhenExpr
 
 
@@ -64,7 +65,7 @@ class IdentityCollectionDescriptor:
     identifier: str | None
     via: list[str]
     id_field: str
-    roles_field: str | None = None
+    roles: IRRolesConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -88,4 +89,3 @@ class CompileContext:
     routes: list[RouteDescriptor]
     auth: AuthConfig
     collections: dict[str, Any]
-    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)

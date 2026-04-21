@@ -69,11 +69,19 @@ class IRRoute:
 
 
 @dataclass(frozen=True)
+class IRRolesConfig:
+    values: tuple[str, ...]
+    default: str
+    # Direct role inclusions (not yet transitively expanded)
+    hierarchy: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class IRIdentityCollection:
     name: str
     identifier: str | None
     via: list[str]
-    roles_field: str | None = None
+    roles: IRRolesConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -84,7 +92,6 @@ class IRDocument:
     routes: list[IRRoute]
     identityCollections: dict[str, IRIdentityCollection]
     services: dict[str, IRService] = field(default_factory=dict)
-    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

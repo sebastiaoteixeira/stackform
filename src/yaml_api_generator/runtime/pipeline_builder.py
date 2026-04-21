@@ -153,11 +153,13 @@ class PipelineBuilder:
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field)
         if operation == "create":
+            roles_config = identity_collection.roles if identity_collection is not None else None
             return RepositoryCreateStep(
                 collection_name,
                 id_field,
                 collection.id_format,
                 uses_password,
+                roles_config=roles_config,
             )
         if operation == "update":
             return RepositoryUpdateStep(collection_name, id_field, uses_password)

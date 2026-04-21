@@ -22,7 +22,6 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
     auth = _build_auth_config(
         document.identityCollections,
         document.collections,
-        document.role_hierarchies,
     )
 
     return RuntimeContext(
@@ -118,7 +117,6 @@ def _flatten_hierarchy(
 def _build_auth_config(
     identity_collections: dict[str, IRIdentityCollection],
     collections: dict[str, IRCollection],
-    role_hierarchies: dict[str, dict[str, list[str]]],
 ) -> RuntimeAuthConfig:
     identity_descriptors: dict[str, RuntimeIdentityDescriptor] = {}
     identity_id_fields: dict[str, str] = {}
@@ -134,7 +132,7 @@ def _build_auth_config(
             identifier=identity.identifier,
             via=identity.via,
             id_field=id_field,
-            roles_field=identity.roles_field,
+            roles=identity.roles,
         )
 
         identity_id_fields[name] = id_field
@@ -144,10 +142,15 @@ def _build_auth_config(
         if "apiKey" in identity.via:
             has_api_key = True
 
-    # Flatten role hierarchies transitively
+    # Derive flattened hierarchies from per-entity roles config
     flattened_hierarchies: dict[str, dict[str, set[str]]] = {}
-    for entity_name, hierarchy in role_hierarchies.items():
-        flattened_hierarchies[entity_name] = _flatten_hierarchy(hierarchy)
+    for name, identity in identity_collections.items():
+        if identity.roles is not None and identity.roles.hierarchy:
+            raw: dict[str, list[str]] = {
+                role: list(includes)
+                for role, includes in identity.roles.hierarchy.items()
+            }
+            flattened_hierarchies[name] = _flatten_hierarchy(raw)
 
     return RuntimeAuthConfig(
         enabled=bool(identity_collections),

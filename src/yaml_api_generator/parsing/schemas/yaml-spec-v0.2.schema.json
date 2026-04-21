@@ -54,16 +54,6 @@
         "$ref": "#/$defs/EntityConfig"
       }
     },
-    "roles": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      }
-    },
     "repositories": {
       "type": "object",
       "additionalProperties": {
@@ -122,6 +112,9 @@
         },
         "auth": {
           "$ref": "#/$defs/AuthEntityConfig"
+        },
+        "roles": {
+          "$ref": "#/$defs/RolesConfig"
         }
       },
       "allOf": [
@@ -159,11 +152,29 @@
               "items": { "$ref": "#/$defs/AuthMethod" }
             }
           ]
-        },
-        "roles": {
-          "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
+    },
+    "RolesConfig": {
+      "type": "object",
+      "required": ["values", "default"],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "default": { "type": "string" },
+        "hierarchy": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "AuthMethod": {
       "type": "string",
