@@ -3,8 +3,6 @@ title: "Reference: When Expressions"
 description: Evaluates conditions against the authenticated principal and/or a loaded document inside ABAC access rules.
 ---
 
-# Reference: When Expressions
-
 Evaluates conditions against the authenticated principal and/or a loaded document inside ABAC access rules.
 
 ## Syntax

@@ -3,8 +3,6 @@ title: Concepts
 description: This page explains the architecture of yaml-api-generator for beginners.
 ---
 
-# Concepts
-
 This page explains the architecture of yaml-api-generator for beginners.
 
 ## The YAML spec

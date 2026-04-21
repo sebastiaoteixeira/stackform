@@ -2,8 +2,6 @@
 title: Getting Started
 ---
 
-# Getting Started
-
 ## Prerequisites
 
 - Python 3.11 or later

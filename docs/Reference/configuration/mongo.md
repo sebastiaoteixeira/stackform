@@ -3,8 +3,6 @@ title: "Reference: `mongo:`"
 description: The `mongo:` section configures the MongoDB connection.
 ---
 
-# Reference: `mongo:`
-
 The `mongo:` section configures the MongoDB connection.
 
 ## Schema

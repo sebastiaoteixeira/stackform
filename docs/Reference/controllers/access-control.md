@@ -3,8 +3,6 @@ title: "Reference: Access Control"
 description: Determines who is allowed to call each route, declared on controllers and individual operations.
 ---
 
-# Reference: Access Control
-
 Determines who is allowed to call each route, declared on controllers and individual operations.
 
 ## Syntax

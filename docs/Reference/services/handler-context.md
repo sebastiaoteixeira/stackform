@@ -3,8 +3,6 @@ title: "Reference: Handler Context"
 description: The `context` object is passed to every custom handler function. It provides access to the repository, request data, and the authenticated principal.
 ---
 
-# Reference: Handler Context
-
 The `context` object is passed to every custom handler function. It provides access to the repository, request data, and the authenticated principal.
 
 ## `context` attributes

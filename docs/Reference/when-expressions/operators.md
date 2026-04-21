@@ -3,8 +3,6 @@ title: "Reference: When Expression Operators"
 description: Defines all operators available in `when:` expressions for ABAC access rules.
 ---
 
-# Reference: When Expression Operators
-
 Defines all operators available in `when:` expressions for ABAC access rules.
 
 ## Comparison Operators

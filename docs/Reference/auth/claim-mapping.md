@@ -3,8 +3,6 @@ title: "Reference: Claim Mapping and Auto-Provision"
 description: Controls how external provider (OIDC, SAML) identity data maps to entity fields and whether new records are created automatically on first login.
 ---
 
-# Reference: Claim Mapping and Auto-Provision
-
 Controls how external provider (OIDC, SAML) identity data maps to entity fields and whether new records are created automatically on first login.
 
 ## Syntax

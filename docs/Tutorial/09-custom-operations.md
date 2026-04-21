@@ -3,8 +3,6 @@ title: "Tutorial 09: Custom Operations"
 description: Custom service operations with handler functions (e.g., publishing a note).
 ---
 
-# Tutorial 09: Custom Operations
-
 **Concept introduced:** Custom service operations with handler functions (e.g., publishing a note).
 
 ## Adding a publish operation

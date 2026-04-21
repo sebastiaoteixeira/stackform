@@ -3,8 +3,6 @@ title: "Tutorial 08: Entity Inheritance"
 description: Abstract base entities with shared fields, and `extends:` to inherit them.
 ---
 
-# Tutorial 08: Entity Inheritance
-
 **Concept introduced:** Abstract base entities with shared fields, and `extends:` to inherit them.
 
 When multiple entities share common fields like `id` and `createdAt`, an abstract base entity avoids repeating them on each entity. This is optional -- you can declare the fields on each entity instead -- but it reduces duplication and keeps specs consistent as they grow.

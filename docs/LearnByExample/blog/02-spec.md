@@ -2,8 +2,6 @@
 title: "Blog App: Full Spec"
 ---
 
-# Blog App: Full Spec
-
 ```yaml
 version: "0.2"
 

@@ -3,8 +3,6 @@ title: "Reference: Role Hierarchy"
 description: Defines which roles subsume other roles, so that a principal with a higher role automatically satisfies access checks for lower roles.
 ---
 
-# Reference: Role Hierarchy
-
 Defines which roles subsume other roles, so that a principal with a higher role automatically satisfies access checks for lower roles.
 
 ## Syntax

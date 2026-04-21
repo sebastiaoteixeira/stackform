@@ -2,8 +2,6 @@
 title: "Todo App: Full Spec"
 ---
 
-# Todo App: Full Spec
-
 ```yaml
 version: "0.2"
 

@@ -3,8 +3,6 @@ title: "Reference: Services Overview"
 description: Services are the business logic layer. Controllers reference services; services reference repositories. Controllers never reference repositories directly.
 ---
 
-# Reference: Services Overview
-
 Services are the business logic layer. Controllers reference services; services reference repositories. Controllers never reference repositories directly.
 
 ## Structure

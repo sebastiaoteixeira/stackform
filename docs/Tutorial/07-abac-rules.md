@@ -3,8 +3,6 @@ title: "Tutorial 07: ABAC Rules"
 description: Attribute-based access control using `given`/`when`/`then` -- document-level rules.
 ---
 
-# Tutorial 07: ABAC Rules
-
 **Concept introduced:** Attribute-based access control using `given`/`when`/`then` -- document-level rules.
 
 ABAC (Attribute-Based Access Control) is access control based on attributes of the request, the user, and the document being accessed.

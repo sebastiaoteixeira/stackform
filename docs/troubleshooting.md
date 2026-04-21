@@ -2,8 +2,6 @@
 title: Troubleshooting
 ---
 
-# Troubleshooting
-
 ## MongoDB connection refused
 
 ```text

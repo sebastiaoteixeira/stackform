@@ -3,8 +3,6 @@ title: "Reference: Environment Variable Interpolation"
 description: Substitutes environment variable values into YAML string values at parse time, before schema validation.
 ---
 
-# Reference: Environment Variable Interpolation
-
 Substitutes environment variable values into YAML string values at parse time, before schema validation.
 
 ## Syntax

@@ -3,8 +3,6 @@ title: "Tutorial 01: Hello World"
 description: Minimal spec -- one entity, one repository, one controller with public access.
 ---
 
-# Tutorial 01: Hello World
-
 **Concept introduced:** Minimal spec -- one entity, one repository, one controller with public access.
 
 **Prerequisites:** Complete the [Getting Started](../getting-started.md) guide first. You need `yaml-api-generator` installed and MongoDB running.

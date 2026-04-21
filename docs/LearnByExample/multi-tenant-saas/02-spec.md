@@ -2,8 +2,6 @@
 title: "Multi-Tenant SaaS: Full Spec"
 ---
 
-# Multi-Tenant SaaS: Full Spec
-
 ```yaml
 version: "0.2"
 

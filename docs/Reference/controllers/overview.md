@@ -3,8 +3,6 @@ title: "Reference: Controllers Overview"
 description: Controllers define HTTP route configuration. They bind services to HTTP methods and paths, and declare access rules.
 ---
 
-# Reference: Controllers Overview
-
 Controllers define HTTP route configuration. They bind services to HTTP methods and paths, and declare access rules.
 
 ## Structure

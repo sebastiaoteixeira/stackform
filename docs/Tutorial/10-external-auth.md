@@ -3,8 +3,6 @@ title: "Tutorial 10: External Auth Providers"
 description: Adding Google OIDC as an auth provider alongside password login.
 ---
 
-# Tutorial 10: External Auth Providers
-
 **Concept introduced:** Adding Google OIDC as an auth provider alongside password login.
 
 ## Adding Google OIDC to the user entity

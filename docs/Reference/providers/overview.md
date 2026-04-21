@@ -3,8 +3,6 @@ title: "Reference: Providers Overview"
 description: The top-level `providers:` section declares external identity providers (OIDC, SAML) that can be referenced in entity `via:` bindings.
 ---
 
-# Reference: Providers Overview
-
 The top-level `providers:` section declares external identity providers (OIDC, SAML) that can be referenced in entity `via:` bindings.
 
 ## Structure

@@ -2,8 +2,6 @@
 title: "Blog App: Access Rules Walkthrough"
 ---
 
-# Blog App: Access Rules Walkthrough
-
 ## Design goals
 
 1. Public read -- anyone can browse posts and countries without logging in.
