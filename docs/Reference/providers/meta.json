@@ -1,0 +1,8 @@
+{
+  "title": "Providers",
+  "pages": [
+    "overview",
+    "oidc",
+    "saml"
+  ]
+}
