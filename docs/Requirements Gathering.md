@@ -1,3 +1,7 @@
+---
+title: YAML-Driven API Engine
+---
+
 ## YAML-Driven API Engine
 
 _v0.1 — Initial Draft_

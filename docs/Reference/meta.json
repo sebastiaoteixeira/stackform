@@ -1,0 +1,15 @@
+{
+  "title": "Reference",
+  "pages": [
+    "configuration",
+    "entities",
+    "auth",
+    "roles",
+    "repositories",
+    "services",
+    "controllers",
+    "providers",
+    "when-expressions",
+    "cli"
+  ]
+}
