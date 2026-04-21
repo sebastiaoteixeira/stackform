@@ -121,9 +121,11 @@ def _desugar_entities(
         if "type" not in entity and "type" in parent:
             entity["type"] = parent["type"]
 
-        # Inherit auth if not set
-        if "auth" not in entity and "auth" in parent:
-            entity["auth"] = copy.deepcopy(parent["auth"])
+        # Inherit via/roles if not set
+        if "via" not in entity and "via" in parent:
+            entity["via"] = copy.deepcopy(parent["via"])
+        if "roles" not in entity and "roles" in parent:
+            entity["roles"] = parent["roles"]
 
         # Strip extends key
         entity.pop("extends", None)

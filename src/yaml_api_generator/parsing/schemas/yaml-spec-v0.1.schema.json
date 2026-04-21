@@ -91,6 +91,12 @@
         "$ref": "#/$defs/CollectionConfig"
       }
     },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderConfig"
+      }
+    },
     "options": {
       "type": "object",
       "properties": {
@@ -203,22 +209,46 @@
         },
         "via": {
           "oneOf": [
-            {
-              "$ref": "#/$defs/AuthMethod"
-            },
+            { "type": "string" },
             {
               "type": "array",
-              "items": {
-                "$ref": "#/$defs/AuthMethod"
-              }
+              "items": { "type": "string" }
             }
           ]
-        }
+        },
+        "claim_mapping": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "auto_provision": { "type": "boolean" }
       }
     },
-    "AuthMethod": {
-      "type": "string",
-      "enum": ["password", "apiKey"]
+    "ProviderConfig": {
+      "oneOf": [
+        { "$ref": "#/$defs/OIDCProviderConfig" },
+        { "$ref": "#/$defs/SAMLProviderConfig" }
+      ]
+    },
+    "OIDCProviderConfig": {
+      "type": "object",
+      "required": ["type", "client_id", "client_secret"],
+      "properties": {
+        "type": { "type": "string", "const": "oidc" },
+        "client_id": { "type": "string" },
+        "client_secret": { "type": "string" },
+        "discovery_url": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "SAMLProviderConfig": {
+      "type": "object",
+      "required": ["type", "idp_metadata_url", "sp_entity_id"],
+      "properties": {
+        "type": { "type": "string", "const": "saml" },
+        "idp_metadata_url": { "type": "string" },
+        "sp_entity_id": { "type": "string" }
+      },
+      "additionalProperties": false
     },
     "FieldConfig": {
       "type": "object",

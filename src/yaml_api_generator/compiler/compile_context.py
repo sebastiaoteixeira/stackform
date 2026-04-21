@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..ir import IRProvider, IRProviderBinding
 from ..when_ast import WhenExpr
 
 
@@ -61,10 +62,20 @@ class RouteDescriptor:
 @dataclass(frozen=True)
 class IdentityCollectionDescriptor:
     name: str
-    identifier: str | None
-    via: list[str]
+    bindings: list[IRProviderBinding]
     id_field: str
     roles_field: str | None = None
+
+    @property
+    def has_password(self) -> bool:
+        return any(b.provider == "password" for b in self.bindings)
+
+    @property
+    def has_api_key(self) -> bool:
+        return any(b.provider == "apiKey" for b in self.bindings)
+
+    def get_binding(self, provider: str) -> "IRProviderBinding | None":
+        return next((b for b in self.bindings if b.provider == provider), None)
 
 
 @dataclass(frozen=True)
@@ -73,6 +84,9 @@ class AuthConfig:
     identity_collections: list[IdentityCollectionDescriptor]
     has_password_auth: bool
     has_api_key_auth: bool
+    has_oidc_auth: bool = False
+    has_saml_auth: bool = False
+    providers: dict[str, IRProvider] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

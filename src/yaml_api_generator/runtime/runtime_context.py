@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..ir import IRProviderBinding
 from ..when_ast import WhenExpr
 
 
@@ -16,10 +17,20 @@ class RuntimeCollectionDescriptor:
 @dataclass(frozen=True)
 class RuntimeIdentityDescriptor:
     name: str
-    identifier: str | None
-    via: list[str]
+    bindings: tuple[IRProviderBinding, ...]
     id_field: str
     roles_field: str | None = None
+
+    @property
+    def has_password(self) -> bool:
+        return any(b.provider == "password" for b in self.bindings)
+
+    @property
+    def has_api_key(self) -> bool:
+        return any(b.provider == "apiKey" for b in self.bindings)
+
+    def get_binding(self, provider: str) -> "IRProviderBinding | None":
+        return next((b for b in self.bindings if b.provider == provider), None)
 
 
 @dataclass(frozen=True)

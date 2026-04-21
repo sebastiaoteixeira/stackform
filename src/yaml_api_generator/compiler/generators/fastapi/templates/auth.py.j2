@@ -96,7 +96,7 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
                 docs = await cursor.to_list(length=None)
                 for doc in docs:
 {% for identity in auth.identity_collections %}
-{% if "password" in identity.via %}
+{% if identity.has_password %}
                     if collection_name == "{{ identity.name }}" and str(doc.get("{{ identity.id_field }}", "")) == sub:
                         return {"sub": sub, "identity_collection": collection_name, "record": doc}
 {% endif %}
@@ -106,7 +106,7 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 {% for identity in auth.identity_collections %}
 
     # {{ identity.name }} identity resolution
-{% if "apiKey" in identity.via %}
+{% if identity.has_api_key %}
     token = _extract_api_key(headers)
     if token is not None:
         col = db["{{ identity.name }}"]
@@ -118,7 +118,8 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
                 if subject is not None:
                     return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc}
 {% endif %}
-{% if "password" in identity.via and identity.identifier %}
+{% set pw_binding = identity.bindings | selectattr('provider', 'equalto', 'password') | first | default(none) %}
+{% if pw_binding %}
     credentials = _extract_basic_credentials(headers)
     if credentials is not None:
         identifier_value, password = credentials
@@ -126,7 +127,7 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
         cursor = col.find({})
         docs = await cursor.to_list(length=None)
         for doc in docs:
-            if str(doc.get("{{ identity.identifier }}", "")) != identifier_value:
+            if str(doc.get("{{ pw_binding.identifier }}", "")) != identifier_value:
                 continue
             stored_hash = doc.get("passwordHash")
             if not isinstance(stored_hash, str):

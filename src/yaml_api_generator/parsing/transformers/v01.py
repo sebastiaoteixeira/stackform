@@ -5,8 +5,13 @@ from ...ir import (
     IRCollection,
     IRDocument,
     IRIdentityCollection,
+    IROIDCProvider,
+    IRProvider,
+    IRProviderBinding,
+    IRSAMLProvider,
     IROperations,
     IRRoute,
+    WELL_KNOWN_OIDC_DISCOVERY,
 )
 from ..parser import ConfigError, ConfigErrors
 
@@ -194,6 +199,45 @@ def _build_routes_with_access_policy(
     return routes
 
 
+def _parse_providers(
+    raw: dict[str, Any],
+) -> tuple[dict[str, IRProvider], list[ConfigError]]:
+    errors: list[ConfigError] = []
+    result: dict[str, IRProvider] = {}
+    for name, cfg in raw.items():
+        provider_type = cfg.get("type")
+        if provider_type == "oidc":
+            discovery_url = cfg.get("discovery_url") or WELL_KNOWN_OIDC_DISCOVERY.get(name)
+            if not discovery_url:
+                errors.append(ConfigError(
+                    code="OIDC_UNKNOWN_PROVIDER",
+                    message=f"Unknown OIDC provider '{name}' — add a discovery_url or use a well-known name",
+                    path=f"providers.{name}",
+                    hint=f"Well-known names: {', '.join(WELL_KNOWN_OIDC_DISCOVERY)}",
+                ))
+                continue
+            result[name] = IROIDCProvider(
+                name=name,
+                client_id=cfg["client_id"],
+                client_secret=cfg["client_secret"],
+                discovery_url=discovery_url,
+            )
+        elif provider_type == "saml":
+            result[name] = IRSAMLProvider(
+                name=name,
+                idp_metadata_url=cfg["idp_metadata_url"],
+                sp_entity_id=cfg["sp_entity_id"],
+            )
+        else:
+            errors.append(ConfigError(
+                code="PROVIDER_UNKNOWN_TYPE",
+                message=f"Provider '{name}' has unknown type '{provider_type}'",
+                path=f"providers.{name}.type",
+                hint="Supported types: oidc, saml",
+            ))
+    return result, errors
+
+
 def _normalize_auth_via(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -202,14 +246,52 @@ def _normalize_auth_via(value: Any) -> list[str]:
     return []
 
 
-def _extract_identity_auth(
+def _extract_identity_bindings(
+    collection_name: str,
     collection_data: dict[str, Any],
-) -> tuple[str | None, list[str]]:
+    fields: dict[str, Any],
+    providers: dict[str, IRProvider],
+) -> tuple[list[IRProviderBinding], list[ConfigError]]:
+    """Build IRProviderBinding list from v0.1 flat auth.identifier + auth.via format."""
+    _BUILTIN_VIA = {"password", "apiKey"}
     auth_data = collection_data.get("auth")
-    if isinstance(auth_data, dict):
-        return auth_data.get("identifier"), _normalize_auth_via(auth_data.get("via"))
+    if not isinstance(auth_data, dict):
+        return [], []
 
-    return None, []
+    identifier: str | None = auth_data.get("identifier")
+    via = _normalize_auth_via(auth_data.get("via"))
+
+    if not identifier or not via:
+        return [], []
+
+    errors: list[ConfigError] = []
+    bindings: list[IRProviderBinding] = []
+
+    raw_mapping = auth_data.get("claim_mapping")
+    shared_claim_mapping: dict[str, str] = {}
+    if isinstance(raw_mapping, dict):
+        shared_claim_mapping = {str(k): str(v) for k, v in raw_mapping.items()}
+
+    raw_ap = auth_data.get("auto_provision")
+    shared_auto_provision: bool = True if raw_ap is None else bool(raw_ap)
+
+    for provider in via:
+        if provider not in _BUILTIN_VIA and provider not in providers:
+            errors.append(ConfigError(
+                code="VIA_UNKNOWN_PROVIDER",
+                message=f"'{provider}' in auth.via is not a built-in method and not defined in providers",
+                path=f"collections.{collection_name}.auth.via",
+                hint="Define it under the top-level 'providers:' section",
+            ))
+            continue
+        bindings.append(IRProviderBinding(
+            provider=provider,
+            identifier=identifier,
+            claim_mapping=shared_claim_mapping,
+            auto_provision=shared_auto_provision,
+        ))
+
+    return bindings, errors
 
 
 def _validate_implicit_auth_fields(
@@ -218,7 +300,7 @@ def _validate_implicit_auth_fields(
 ) -> list[ConfigError]:
     errors: list[ConfigError] = []
     for name, identity in identity_collections.items():
-        if "password" not in identity.via:
+        if not identity.has_password:
             continue
 
         fields = collections[name].fields
@@ -226,9 +308,7 @@ def _validate_implicit_auth_fields(
             errors.append(
                 ConfigError(
                     code="AUTH_PASSWORD_FIELD_FORBIDDEN",
-                    message=(
-                        "Password input is implicit when auth.via includes password"
-                    ),
+                    message="Password input is implicit when password provider is configured",
                     path=f"collections.{name}.fields.password",
                     hint="Remove the password field from YAML",
                 )
@@ -237,9 +317,7 @@ def _validate_implicit_auth_fields(
             errors.append(
                 ConfigError(
                     code="AUTH_PASSWORD_HASH_FIELD_FORBIDDEN",
-                    message=(
-                        "passwordHash is implicit storage when auth.via includes password"
-                    ),
+                    message="passwordHash is implicit storage when password provider is configured",
                     path=f"collections.{name}.fields.passwordHash",
                     hint="Remove the passwordHash field from YAML",
                 )
@@ -252,6 +330,13 @@ class V01Transformer:
         api: dict[str, Any] = resolved.get("api", {})
         collections_data: dict[str, Any] = resolved["collections"]
         defaults = api.get("operations", {}).get("defaults", {})
+        providers_data: dict[str, Any] = resolved.get("providers", {})
+
+        providers: dict[str, IRProvider] = {}
+        if providers_data:
+            providers, provider_errors = _parse_providers(providers_data)
+            if provider_errors:
+                raise ConfigErrors(provider_errors)
 
         collections: dict[str, IRCollection] = {}
         collection_access_policies: dict[str, dict[str, Any]] = {}
@@ -291,16 +376,21 @@ class V01Transformer:
             raise ConfigErrors(id_field_errors)
 
         identity_collections: dict[str, IRIdentityCollection] = {}
+        auth_errors: list[ConfigError] = []
         for name, collection in collections.items():
             if collection.type != "auth":
                 continue
             collection_data = collections_data.get(name, {})
-            identifier, via = _extract_identity_auth(collection_data)
+            bindings, id_auth_errors = _extract_identity_bindings(
+                name, collection_data, collection.fields, providers
+            )
+            auth_errors.extend(id_auth_errors)
             identity_collections[name] = IRIdentityCollection(
                 name=name,
-                identifier=identifier,
-                via=via,
+                bindings=tuple(bindings),
             )
+        if auth_errors:
+            raise ConfigErrors(auth_errors)
 
         implicit_field_errors = _validate_implicit_auth_fields(
             collections,
@@ -320,7 +410,7 @@ class V01Transformer:
             )
 
         for name, identity in identity_collections.items():
-            if "password" in identity.via:
+            if identity.has_password:
                 routes.append(
                     IRRoute(
                         method="POST",
@@ -337,4 +427,5 @@ class V01Transformer:
             collections=collections,
             routes=routes,
             identityCollections=identity_collections,
+            providers=providers,
         )

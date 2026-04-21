@@ -120,13 +120,15 @@ class RawASGIGenerator(CodeGenerator):
         for col_name in collections_by_name:
             identity = _find_identity(context, col_name)
             is_identity = identity is not None
-            password_via = is_identity and "password" in identity.via
+            password_via = is_identity and identity.has_password
 
             identity_fields: list[str] = []
             if is_identity:
-                if identity.identifier:
-                    identity_fields.append(identity.identifier)
-                identity_fields.extend(identity.via)
+                seen: set[str] = set()
+                for b in identity.bindings:
+                    if b.identifier not in seen:
+                        identity_fields.append(b.identifier)
+                        seen.add(b.identifier)
 
             content = svc_template.render(
                 collection_name=col_name,

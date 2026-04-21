@@ -32,10 +32,10 @@ entities:
   user:
     extends: base
     type: auth
-    auth:
-      identifier: email
-      via: password
-      roles: role
+    via:
+      - provider: password
+        identifier: email
+    roles: role
     fields:
       email:
         type: string
