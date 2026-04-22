@@ -81,7 +81,8 @@
       "additionalProperties": {
         "$ref": "#/$defs/ControllerConfig"
       }
-    }
+    },
+    "deploy": { "$ref": "#/$defs/DeployConfig" }
   },
   "$defs": {
     "OperationFlags": {
@@ -287,6 +288,34 @@
           }
         }
       ]
+    },
+    "DeployConfig": {
+      "type": "object",
+      "required": ["runtime"],
+      "properties": {
+        "name": { "type": "string" },
+        "port": { "type": "integer", "default": 8000 },
+        "runtime": { "type": "string", "enum": ["docker", "systemd"] },
+        "mongo": {
+          "type": "object",
+          "properties": {
+            "local": { "type": "boolean", "default": false }
+          }
+        },
+        "docker": {
+          "type": "object",
+          "properties": {
+            "image": { "type": "string" }
+          }
+        },
+        "systemd": {
+          "type": "object",
+          "properties": {
+            "user": { "type": "string" },
+            "restart": { "type": "string" }
+          }
+        }
+      }
     },
     "AccessRule": {
       "type": "object",

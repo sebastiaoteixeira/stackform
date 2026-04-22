@@ -87,3 +87,44 @@ def dev(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool
         raise SystemExit(1)
 
     uvicorn.run(app, host=host, port=port)
+
+
+@cli.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.option("--host", required=True, help="Target server hostname or IP.")
+@click.option("--user", default="ubuntu", help="SSH user (default: ubuntu).")
+@click.option("--key", default="~/.ssh/id_rsa", help="Path to SSH private key.")
+@click.option(
+    "--output",
+    "output_dir",
+    default="./deploy",
+    help="Output directory (default: ./deploy).",
+)
+@click.option(
+    "--schema",
+    "schema_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to JSON schema file (auto-detected from spec version if omitted).",
+)
+def deploy(yaml_file: str, host: str, user: str, key: str, output_dir: str, schema_file: str | None) -> None:
+    """Generate Ansible deployment artifacts from a YAML API spec."""
+    import sys
+
+    from .deploy.deployer import deploy_api
+    from .parsing.parser import ConfigErrors
+
+    try:
+        deploy_api(
+            yaml_file=yaml_file,
+            schema_file=schema_file,
+            host=host,
+            ssh_user=user,
+            ssh_key=key,
+            output_dir=output_dir,
+        )
+    except (ConfigErrors, ValueError, OSError) as error:
+        sys.stderr.write(f"Error: {error}\n")
+        raise SystemExit(1)
+
+    click.echo(f"Generated deploy artifacts in {output_dir}")

@@ -4,12 +4,16 @@ from ...ir import (
     IRAccessRule,
     IRApi,
     IRCollection,
+    IRDeployConfig,
     IRDocument,
     IRDocumentBinding,
+    IRDockerDeployConfig,
     IRIdentityCollection,
+    IRMongo,
     IROperations,
     IRRoute,
     IRService,
+    IRSystemdDeployConfig,
 )
 from ..parser import ConfigError, ConfigErrors
 from ..when_parser import parse_document_binding, parse_when_list
@@ -376,6 +380,33 @@ def _parse_role_hierarchies(
     return hierarchies, errors
 
 
+def _parse_mongo(raw: dict[str, Any] | None) -> IRMongo | None:
+    if raw is None:
+        return None
+    return IRMongo(
+        uri=raw.get("uri", "mongodb://localhost:27017"),
+        database=raw.get("database", "app"),
+    )
+
+
+def _parse_deploy(raw: dict[str, Any] | None, spec_name: str) -> IRDeployConfig | None:
+    if raw is None:
+        return None
+    docker_raw = raw.get("docker")
+    systemd_raw = raw.get("systemd")
+    return IRDeployConfig(
+        name=raw.get("name") or spec_name,
+        port=raw.get("port", 8000),
+        runtime=raw["runtime"],
+        mongo_local=raw.get("mongo", {}).get("local", False),
+        docker=IRDockerDeployConfig(image=docker_raw.get("image")) if docker_raw else None,
+        systemd=IRSystemdDeployConfig(
+            user=systemd_raw.get("user", "ubuntu"),
+            restart=systemd_raw.get("restart", "on-failure"),
+        ) if systemd_raw else None,
+    )
+
+
 class V02Transformer:
     def transform(self, resolved: dict[str, Any]) -> IRDocument:
         api_data: dict[str, Any] = resolved.get("api", {})
@@ -446,6 +477,8 @@ class V02Transformer:
             identityCollections=identity_collections,
             services=services,
             role_hierarchies=role_hierarchies,
+            mongo=_parse_mongo(resolved.get("mongo")),
+            deploy=_parse_deploy(resolved.get("deploy"), ""),
         )
 
     def _build_collections(

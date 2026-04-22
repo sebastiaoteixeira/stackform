@@ -1,0 +1,23 @@
+- name: Create app directory
+  file:
+    path: /opt/{{ ctx.name }}
+    state: directory
+    mode: '0755'
+
+- name: Copy app files
+  synchronize:
+    src: "{{ '{{' }} playbook_dir {{ '}}' }}/"
+    dest: /opt/{{ ctx.name }}/
+    delete: true
+    rsync_opts:
+      - "--exclude=roles"
+      - "--exclude=playbook.yml"
+      - "--exclude=inventory.yml"
+
+- name: Start app
+  community.docker.docker_compose_v2:
+    project_src: /opt/{{ ctx.name }}
+    state: present
+    pull: {% if ctx.image %}always{% else %}never{% endif %}
+
+    build: {% if ctx.image %}never{% else %}always{% endif %}

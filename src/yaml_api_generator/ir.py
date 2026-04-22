@@ -5,6 +5,33 @@ from .when_ast import WhenExpr
 
 
 @dataclass(frozen=True)
+class IRMongo:
+    uri: str
+    database: str
+
+
+@dataclass(frozen=True)
+class IRDockerDeployConfig:
+    image: str | None = None
+
+
+@dataclass(frozen=True)
+class IRSystemdDeployConfig:
+    user: str = "ubuntu"
+    restart: str = "on-failure"
+
+
+@dataclass(frozen=True)
+class IRDeployConfig:
+    name: str | None
+    port: int
+    runtime: str
+    mongo_local: bool
+    docker: IRDockerDeployConfig | None
+    systemd: IRSystemdDeployConfig | None
+
+
+@dataclass(frozen=True)
 class IROperations:
     list: bool
     get: bool
@@ -85,6 +112,8 @@ class IRDocument:
     identityCollections: dict[str, IRIdentityCollection]
     services: dict[str, IRService] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    mongo: IRMongo | None = None
+    deploy: IRDeployConfig | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
