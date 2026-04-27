@@ -1,0 +1,39 @@
+name: Auto-Generate Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run AI Documentation Agent
+        uses: sebastiaoteixeira/docs-bot@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          # Using the requested preview model
+          gemini_model: "gemini-3.1-pro-preview"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: docs/auto-update
+          commit-message: "docs: automatic update from AI agent"
+          title: ${{ env.AI_PR_TITLE }}
+          body: ${{ env.AI_PR_BODY }}
+          labels: |
+            documentation
+            automated-pr
+            ai-generated
