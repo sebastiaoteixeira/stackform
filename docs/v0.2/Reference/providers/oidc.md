@@ -94,4 +94,4 @@ entities:
       via: google
 ```
 
-For `claim_mapping` and `auto_provision` configuration with external providers, see [claim-mapping](../auth/claim-mapping.md).
+For `claim_mapping` and `auto_provision` configuration with external providers, see [claim-mapping](../../auth/claim-mapping.md).

@@ -49,7 +49,7 @@ entities:
       via: okta
 ```
 
-SAML claim names are typically URNs or URLs. Use `claim_mapping` to map them to entity fields. See [claim-mapping](../auth/claim-mapping.md).
+SAML claim names are typically URNs or URLs. Use `claim_mapping` to map them to entity fields. See [claim-mapping](../../auth/claim-mapping.md).
 
 ## Generated routes
 
