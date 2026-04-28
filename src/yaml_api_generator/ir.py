@@ -33,6 +33,7 @@ class IRApi:
 @dataclass(frozen=True)
 class IRCollection:
     name: str
+    entity_name: str
     type: str
     idField: str
     idFormat: str

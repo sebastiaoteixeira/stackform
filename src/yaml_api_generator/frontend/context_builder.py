@@ -34,7 +34,7 @@ def build_generator_context(
 
     entities = _build_entities(ir)
     identity_entities = [
-        _collection_to_entity(k) for k in ir.identityCollections.keys()
+        ir.collections[k].entity_name for k in ir.identityCollections.keys()
     ]
     collections = _parse_collections(ui_block.get("collections", {}), entities, ir)
     pack_components = _parse_pack_components(manifest)
@@ -69,11 +69,11 @@ def build_generator_context(
 def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
     entities: dict[str, EntityInfo] = {}
     identity_names = {
-        _collection_to_entity(k) for k in ir.identityCollections.keys()
+        ir.collections[k].entity_name for k in ir.identityCollections.keys()
     }
 
     for col_name, ir_col in ir.collections.items():
-        entity_name = _collection_to_entity(col_name)
+        entity_name = ir_col.entity_name
         fields: dict[str, EntityFieldInfo] = {}
         for field_name, field_config in ir_col.fields.items():
             if not isinstance(field_config, dict):
@@ -132,8 +132,9 @@ def _parse_collections(
             source_entity = parts[0]
             source_field_path = parts[1:]
 
-            _validate_from_path(col_name, field_name, source_entity,
-                                source_field_path, entities, ir)
+            _validate_from_path(
+                col_name, field_name, source_entity, source_field_path, entities, ir
+            )
 
             resolved_type = _resolve_field_type(
                 source_entity, source_field_path, entities, ir
@@ -232,9 +233,7 @@ def _parse_components(
 
         _validate_component_refs(comp_name, render, props)
 
-        result[comp_name] = UIComponent(
-            name=comp_name, props=props, render=render
-        )
+        result[comp_name] = UIComponent(name=comp_name, props=props, render=render)
     return result
 
 
@@ -351,24 +350,3 @@ def _to_label(name: str) -> str:
     spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
     spaced = spaced.replace("_", " ")
     return spaced.strip().title()
-
-
-def _singularize(label: str) -> str:
-    if label.endswith("ies"):
-        return label[:-3] + "y"
-    if label.endswith("ses") or label.endswith("xes"):
-        return label[:-2]
-    if label.endswith("s") and not label.endswith("ss"):
-        return label[:-1]
-    return label
-
-
-def _collection_to_entity(col_name: str) -> str:
-    """Map collection name (plural) to entity name (singular)."""
-    if col_name.endswith("ies"):
-        return col_name[:-3] + "y"
-    if col_name.endswith("ses") or col_name.endswith("xes"):
-        return col_name[:-2]
-    if col_name.endswith("s") and not col_name.endswith("ss"):
-        return col_name[:-1]
-    return col_name

@@ -37,19 +37,27 @@ def _render_scaffold(
 
     # Items with their own extension go to project root
     _ROOT_ITEMS = {
-        "package.json", "index.html", "vite.config.ts", "tsconfig.json",
-        "tailwind.config.js", "postcss.config.js",
+        "package.json",
+        "index.html",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tailwind.config.js",
+        "postcss.config.js",
     }
 
     for item in context.pack_scaffold:
         template_path = f"scaffold/{item}.jinja"
-        content = _try_render(env, template_path, {
-            "context": context,
-            "views": context.views,
-            "entities": context.entities,
-            "collections": context.collections,
-            "pack_config": context.pack_config,
-        })
+        content = _try_render(
+            env,
+            template_path,
+            {
+                "context": context,
+                "views": context.views,
+                "entities": context.entities,
+                "collections": context.collections,
+                "pack_config": context.pack_config,
+            },
+        )
         if content is not None:
             if item in _ROOT_ITEMS:
                 out_path = item
@@ -57,11 +65,13 @@ def _render_scaffold(
                 out_path = f"{output.generated_dir}/{item}"
             else:
                 out_path = f"{output.generated_dir}/{item}.{ext}"
-            files.append(OutputFile(
-                path=out_path,
-                content=content,
-                zone="generated",
-            ))
+            files.append(
+                OutputFile(
+                    path=out_path,
+                    content=content,
+                    zone="generated",
+                )
+            )
 
     return files
 
@@ -77,31 +87,43 @@ def _render_data_layer(
     ext = output.extension
 
     # Types index
-    content = _try_render(env, "types/index.jinja", {
-        "context": context,
-        "entities": context.entities,
-        "collections": context.collections,
-        "pack_config": context.pack_config,
-    })
+    content = _try_render(
+        env,
+        "types/index.jinja",
+        {
+            "context": context,
+            "entities": context.entities,
+            "collections": context.collections,
+            "pack_config": context.pack_config,
+        },
+    )
     if content is not None:
-        files.append(OutputFile(
-            path=f"{output.generated_dir}/types/index.{ext}",
-            content=content,
-            zone="generated",
-        ))
+        files.append(
+            OutputFile(
+                path=f"{output.generated_dir}/types/index.{ext}",
+                content=content,
+                zone="generated",
+            )
+        )
 
     # API client
-    content = _try_render(env, "lib/api.jinja", {
-        "context": context,
-        "entities": context.entities,
-        "pack_config": context.pack_config,
-    })
+    content = _try_render(
+        env,
+        "lib/api.jinja",
+        {
+            "context": context,
+            "entities": context.entities,
+            "pack_config": context.pack_config,
+        },
+    )
     if content is not None:
-        files.append(OutputFile(
-            path=f"{output.generated_dir}/lib/api.{ext}",
-            content=content,
-            zone="generated",
-        ))
+        files.append(
+            OutputFile(
+                path=f"{output.generated_dir}/lib/api.{ext}",
+                content=content,
+                zone="generated",
+            )
+        )
 
     # useCollection hook per UI collection
     for col_name, collection in context.collections.items():
@@ -110,51 +132,69 @@ def _render_data_layer(
             source_entity = context.entities.get(field.source_entity)
             if source_entity:
                 break
-        content = _try_render(env, "hooks/useCollection.jinja", {
-            "collection": collection,
-            "entity": source_entity,
-            "context": context,
-            "pack_config": context.pack_config,
-        })
+        content = _try_render(
+            env,
+            "hooks/useCollection.jinja",
+            {
+                "collection": collection,
+                "entity": source_entity,
+                "context": context,
+                "pack_config": context.pack_config,
+            },
+        )
         if content is not None:
-            files.append(OutputFile(
-                path=f"{output.hooks_dir}/use{_pascal(col_name)}.{ext}",
-                content=content,
-                zone="generated",
-            ))
+            files.append(
+                OutputFile(
+                    path=f"{output.hooks_dir}/use{_pascal(col_name)}.{ext}",
+                    content=content,
+                    zone="generated",
+                )
+            )
 
     # useMutation hook per entity with repository
     for entity_name, entity in context.entities.items():
         if not entity.repository_name:
             continue
-        content = _try_render(env, "hooks/useMutation.jinja", {
-            "entity": entity,
-            "context": context,
-            "pack_config": context.pack_config,
-        })
+        content = _try_render(
+            env,
+            "hooks/useMutation.jinja",
+            {
+                "entity": entity,
+                "context": context,
+                "pack_config": context.pack_config,
+            },
+        )
         if content is not None:
-            files.append(OutputFile(
-                path=f"{output.hooks_dir}/use{_pascal(entity_name)}Mutation.{ext}",
-                content=content,
-                zone="generated",
-            ))
+            files.append(
+                OutputFile(
+                    path=f"{output.hooks_dir}/use{_pascal(entity_name)}Mutation.{ext}",
+                    content=content,
+                    zone="generated",
+                )
+            )
 
     # useAuth hook per identity entity
     for entity_name in context.identity_entities:
         entity = context.entities.get(entity_name)
         if not entity:
             continue
-        content = _try_render(env, "hooks/useAuth.jinja", {
-            "entity": entity,
-            "context": context,
-            "pack_config": context.pack_config,
-        })
+        content = _try_render(
+            env,
+            "hooks/useAuth.jinja",
+            {
+                "entity": entity,
+                "context": context,
+                "pack_config": context.pack_config,
+            },
+        )
         if content is not None:
-            files.append(OutputFile(
-                path=f"{output.hooks_dir}/use{_pascal(entity_name)}Auth.{ext}",
-                content=content,
-                zone="generated",
-            ))
+            files.append(
+                OutputFile(
+                    path=f"{output.hooks_dir}/use{_pascal(entity_name)}Auth.{ext}",
+                    content=content,
+                    zone="generated",
+                )
+            )
 
     return files
 
@@ -202,21 +242,27 @@ def _render_views(
                     break
 
         template_path = f"components/{pack_component}.jinja"
-        content = _try_render(env, template_path, {
-            "view": view,
-            "collection": collection,
-            "entity": entity,
-            "context": context,
-            "pack_config": context.pack_config,
-            "component_tree": component_tree,
-            "props": view.props,
-        })
+        content = _try_render(
+            env,
+            template_path,
+            {
+                "view": view,
+                "collection": collection,
+                "entity": entity,
+                "context": context,
+                "pack_config": context.pack_config,
+                "component_tree": component_tree,
+                "props": view.props,
+            },
+        )
         if content is not None:
-            files.append(OutputFile(
-                path=f"{output.pages_dir}/{_pascal(view_name)}.{ext}",
-                content=content,
-                zone="editable",
-            ))
+            files.append(
+                OutputFile(
+                    path=f"{output.pages_dir}/{_pascal(view_name)}.{ext}",
+                    content=content,
+                    zone="editable",
+                )
+            )
 
     return files
 
@@ -250,6 +296,7 @@ def _build_component_tree(view: UIView, context: GeneratorContext) -> dict[str, 
 
 def _component_node_to_dict(node: Any) -> dict[str, Any]:
     from .generator_context import ComponentNode
+
     if not isinstance(node, ComponentNode):
         return {}
     result: dict[str, Any] = {"component": node.component, "props": {}}
@@ -260,6 +307,7 @@ def _component_node_to_dict(node: Any) -> dict[str, Any]:
 
 def _prop_value_to_dict(prop_val: Any) -> dict[str, Any]:
     from .generator_context import PropValue, ComponentNode
+
     if not isinstance(prop_val, PropValue):
         return {"kind": "literal", "value": prop_val}
     if prop_val.kind == "component" and isinstance(prop_val.value, ComponentNode):
@@ -292,8 +340,6 @@ def _create_jinja_env(templates_dir: Path) -> Environment:
     env.filters["camel_case"] = _camel
     env.filters["snake_case"] = _snake
     env.filters["kebab_case"] = _kebab
-    env.filters["plural"] = _plural
-    env.filters["singular"] = _singular
     return env
 
 
@@ -333,23 +379,3 @@ def _snake(name: str) -> str:
 
 def _kebab(name: str) -> str:
     return _snake(name).replace("_", "-")
-
-
-def _plural(name: str) -> str:
-    if not name:
-        return name
-    if name.endswith("y") and name[-2:] not in ("ay", "ey", "oy", "uy"):
-        return name[:-1] + "ies"
-    if name.endswith(("s", "x", "z", "sh", "ch")):
-        return name + "es"
-    return name + "s"
-
-
-def _singular(name: str) -> str:
-    if name.endswith("ies"):
-        return name[:-3] + "y"
-    if name.endswith("ses") or name.endswith("xes"):
-        return name[:-2]
-    if name.endswith("s") and not name.endswith("ss"):
-        return name[:-1]
-    return name

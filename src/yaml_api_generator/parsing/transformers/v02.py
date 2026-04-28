@@ -98,9 +98,7 @@ def _resolve_imports(imports: dict[str, str]) -> dict[str, str]:
     return dict(imports)
 
 
-def _resolve_handler_path(
-    handler_ref: str, import_map: dict[str, str]
-) -> str:
+def _resolve_handler_path(handler_ref: str, import_map: dict[str, str]) -> str:
     parts = handler_ref.split(".", 1)
     alias = parts[0]
     module = import_map.get(alias)
@@ -127,7 +125,9 @@ def _parse_access_value(
         return False, None, []
 
     if isinstance(access, str):
-        rule, errors = _parse_access_string(access, path, auth_entities, entity_to_collection)
+        rule, errors = _parse_access_string(
+            access, path, auth_entities, entity_to_collection
+        )
         if errors:
             return False, None, errors
         if rule is not None:
@@ -175,7 +175,7 @@ def _parse_access_string(
 
     # identity:entity format (from rule objects)
     if value.startswith("identity:"):
-        entity_name = value[len("identity:"):]
+        entity_name = value[len("identity:") :]
         collection = entity_to_collection.get(entity_name)
         if collection is None:
             return None, [
@@ -224,9 +224,7 @@ def _parse_access_string(
         ]
     entity_name = next(iter(auth_entities))
     collection = entity_to_collection[entity_name]
-    return IRAccessRule(
-        principal=f"identity:{collection}", required_role=value
-    ), []
+    return IRAccessRule(principal=f"identity:{collection}", required_role=value), []
 
 
 def _parse_access_rule_object(
@@ -245,7 +243,7 @@ def _parse_access_rule_object(
     principal = ""
     required_role: str | None = None
     if principal_raw.startswith("identity:"):
-        entity_name = principal_raw[len("identity:"):]
+        entity_name = principal_raw[len("identity:") :]
         collection = entity_to_collection.get(entity_name)
         if collection is None:
             errors.append(
@@ -263,21 +261,15 @@ def _parse_access_rule_object(
     doc_binding: IRDocumentBinding | None = None
     doc_raw = given.get("document") if isinstance(given, dict) else None
     if doc_raw is not None:
-        parsed, doc_errors = parse_document_binding(
-            doc_raw, f"{path}.given.document"
-        )
+        parsed, doc_errors = parse_document_binding(doc_raw, f"{path}.given.document")
         errors.extend(doc_errors)
         if parsed is not None:
-            doc_binding = IRDocumentBinding(
-                collection=parsed[0], id_param=parsed[1]
-            )
+            doc_binding = IRDocumentBinding(collection=parsed[0], id_param=parsed[1])
 
     when_expr = None
     when_raw = rule.get("when")
     if when_raw is not None:
-        when_expr, when_errors = parse_when_list(
-            when_raw, f"{path}.when"
-        )
+        when_expr, when_errors = parse_when_list(when_raw, f"{path}.when")
         errors.extend(when_errors)
 
     if errors:
@@ -391,13 +383,13 @@ class V02Transformer:
         # repo name -> entity name
         repo_entity_map: dict[str, str] = {}
         for repo_name, repo_cfg in repos_data.items():
-            if isinstance(repo_cfg, dict):
+            if isinstance(repo_cfg, dict) and "entity" in repo_cfg:
                 repo_entity_map[repo_name] = repo_cfg["entity"]
 
-        # entity name -> collection name (pluralized)
+        # entity name -> repo name (collection name)
         entity_to_collection: dict[str, str] = {}
-        for entity_name in entities_data:
-            entity_to_collection[entity_name] = entity_name + "s"
+        for repo_name, entity_name in repo_entity_map.items():
+            entity_to_collection[entity_name] = repo_name
 
         # Identify auth entities
         auth_entities: set[str] = set()
@@ -412,7 +404,7 @@ class V02Transformer:
             raise ConfigErrors(id_errors)
 
         identity_collections = self._build_identity_collections(
-            entities_data, collections
+            entities_data, collections, repo_entity_map
         )
 
         field_errors = _validate_implicit_auth_fields(collections, identity_collections)
@@ -428,12 +420,14 @@ class V02Transformer:
             if role_errors:
                 raise ConfigErrors(role_errors)
 
-        services = self._build_services(
-            services_data, repo_entity_map, import_map
-        )
+        services = self._build_services(services_data, repo_entity_map, import_map)
         routes = self._build_routes(
-            controllers_data, services, api_data, repo_entity_map,
-            auth_entities, entity_to_collection,
+            controllers_data,
+            services,
+            api_data,
+            repo_entity_map,
+            auth_entities,
+            entity_to_collection,
         )
 
         return IRDocument(
@@ -455,42 +449,55 @@ class V02Transformer:
         collections: dict[str, IRCollection] = {}
         errors: list[ConfigError] = []
 
-        # Build repo_name -> repo_cfg mapping for operation lookup
-        entity_repo_map: dict[str, dict[str, Any]] = {}
         for repo_name, repo_cfg in repos_data.items():
-            if isinstance(repo_cfg, dict) and "entity" in repo_cfg:
-                entity_repo_map[repo_cfg["entity"]] = repo_cfg
+            if not isinstance(repo_cfg, dict):
+                continue
 
-        for name, entity_data in entities_data.items():
+            entity_name = repo_cfg.get("entity")
+            if not entity_name:
+                continue
+
+            entity_data = entities_data.get(entity_name)
+            if not isinstance(entity_data, dict):
+                errors.append(
+                    ConfigError(
+                        code="ENTITY_NOT_FOUND",
+                        message=f"Repository '{repo_name}' references unknown entity '{entity_name}'",
+                        path=f"repositories.{repo_name}.entity",
+                    )
+                )
+                continue
+
             entity_type = str(entity_data.get("type", "base"))
             fields = cast(dict[str, Any], entity_data.get("fields", {}))
 
-            # Operations from repository, not entity
-            repo_cfg = entity_repo_map.get(name, {})
-            repo_ops = repo_cfg.get("operations") if isinstance(repo_cfg, dict) else None
+            repo_ops = repo_cfg.get("operations")
             operations = _normalize_operations(defaults, repo_ops)
 
             pk_field = entity_data.get("pk")
             if pk_field is not None:
-                # Natural key — use pk field as idField
                 if pk_field not in fields:
                     errors.append(
                         ConfigError(
                             code="PK_FIELD_NOT_FOUND",
-                            message=f"pk field '{pk_field}' not found in entity '{name}'",
-                            path=f"entities.{name}.pk",
+                            message=f"pk field '{pk_field}' not found in entity '{entity_name}'",
+                            path=f"entities.{entity_name}.pk",
                         )
                     )
                     continue
                 id_field = pk_field
                 id_format = "natural"
             else:
-                id_field_result, id_errors = _extract_entity_id_field(name, fields)
+                id_field_result, id_errors = _extract_entity_id_field(
+                    entity_name, fields
+                )
                 errors.extend(id_errors)
 
                 id_format_result: str | None = None
                 if id_field_result is not None:
-                    id_format_result, fmt_errors = _resolve_id_format(name, id_field_result, fields)
+                    id_format_result, fmt_errors = _resolve_id_format(
+                        entity_name, id_field_result, fields
+                    )
                     errors.extend(fmt_errors)
 
                 if id_field_result is None or id_format_result is None:
@@ -499,9 +506,9 @@ class V02Transformer:
                 id_field = id_field_result
                 id_format = id_format_result
 
-            plural = name + "s"
-            collections[plural] = IRCollection(
-                name=plural,
+            collections[repo_name] = IRCollection(
+                name=repo_name,
+                entity_name=entity_name,
                 type=entity_type,
                 idField=id_field,
                 idFormat=id_format,
@@ -515,28 +522,36 @@ class V02Transformer:
         self,
         entities_data: dict[str, Any],
         collections: dict[str, IRCollection],
+        repo_entity_map: dict[str, str],
     ) -> dict[str, IRIdentityCollection]:
         identity_collections: dict[str, IRIdentityCollection] = {}
-        for name, entity_data in entities_data.items():
+        for repo_name, entity_name in repo_entity_map.items():
+            entity_data = entities_data.get(entity_name)
+            if not isinstance(entity_data, dict):
+                continue
             if str(entity_data.get("type", "base")) != "auth":
                 continue
-            plural = name + "s"
-            if plural not in collections:
+            if repo_name not in collections:
                 continue
             auth_data = entity_data.get("auth", {})
-            identifier = auth_data.get("identifier") if isinstance(auth_data, dict) else None
-            via = _normalize_auth_via(auth_data.get("via") if isinstance(auth_data, dict) else None)
-            roles_field = auth_data.get("roles") if isinstance(auth_data, dict) else None
+            identifier = (
+                auth_data.get("identifier") if isinstance(auth_data, dict) else None
+            )
+            via = _normalize_auth_via(
+                auth_data.get("via") if isinstance(auth_data, dict) else None
+            )
+            roles_field = (
+                auth_data.get("roles") if isinstance(auth_data, dict) else None
+            )
 
-            # Validate roles field if specified
             if roles_field is not None:
-                fields = collections[plural].fields
-                role_errors = _validate_roles_field(name, roles_field, fields)
+                fields = collections[repo_name].fields
+                role_errors = _validate_roles_field(entity_name, roles_field, fields)
                 if role_errors:
                     raise ConfigErrors(role_errors)
 
-            identity_collections[plural] = IRIdentityCollection(
-                name=plural,
+            identity_collections[repo_name] = IRIdentityCollection(
+                name=repo_name,
                 identifier=identifier,
                 via=via,
                 roles_field=roles_field,
@@ -624,8 +639,10 @@ class V02Transformer:
                 service = services.get(svc_name)
                 access_path = f"controllers.{_ctrl_name}.routes.{_route_name}.access"
                 is_public, access_rules, access_errors = _parse_access_value(
-                    route_cfg.get("access"), access_path,
-                    auth_entities, entity_to_collection,
+                    route_cfg.get("access"),
+                    access_path,
+                    auth_entities,
+                    entity_to_collection,
                 )
                 all_errors.extend(access_errors)
 
@@ -636,8 +653,7 @@ class V02Transformer:
                 if service is not None:
                     handler = service.handler
                     if service.repository is not None:
-                        entity_name = repo_entity_map.get(service.repository, "")
-                        collection = entity_name + "s" if entity_name else service.repository
+                        collection = service.repository
                         operation = service.operation or svc_name
                     else:
                         operation = svc_name
