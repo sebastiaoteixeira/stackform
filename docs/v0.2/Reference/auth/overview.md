@@ -1,5 +1,5 @@
 ---
-title: "Reference: Auth Overview"
+title: "Auth Overview"
 description: Declares an entity as an identity provider, enabling authentication, token issuance, and role-based access control.
 ---
 

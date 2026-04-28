@@ -1,5 +1,5 @@
 ---
-title: "Reference: Environment Variable Interpolation"
+title: "Environment Variable Interpolation"
 description: Substitutes environment variable values into YAML string values at parse time, before schema validation.
 ---
 

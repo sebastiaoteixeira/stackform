@@ -1,5 +1,5 @@
 ---
-title: "Multi-Tenant SaaS: Overview"
+title: "Overview"
 description: A SaaS API with users, organizations, and per-organization roles. Users belong to one or more organizations with different roles in each.
 ---
 

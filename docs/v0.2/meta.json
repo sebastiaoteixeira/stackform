@@ -2,8 +2,11 @@
   "title": "v0.2",
   "root": true,
   "pages": [
+    "getting-started",
+    "concepts",
     "Tutorial",
     "Reference",
-    "LearnByExample"
+    "LearnByExample",
+    "troubleshooting"
   ]
 }

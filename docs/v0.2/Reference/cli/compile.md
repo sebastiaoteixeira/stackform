@@ -1,5 +1,5 @@
 ---
-title: "Reference: `yaml-api compile`"
+title: "`yaml-api compile`"
 description: Compiles a YAML spec into a standalone project (FastAPI, Django REST Framework, or raw IR).
 ---
 

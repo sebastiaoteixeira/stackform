@@ -1,5 +1,5 @@
 ---
-title: "Reference: API Key Provider"
+title: "API Key Provider"
 description: Enables machine-to-machine authentication via a static API key passed in a request header.
 ---
 

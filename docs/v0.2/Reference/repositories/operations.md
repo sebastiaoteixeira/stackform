@@ -1,5 +1,5 @@
 ---
-title: "Reference: Repository Operations"
+title: "Repository Operations"
 ---
 
 ## Built-in operations

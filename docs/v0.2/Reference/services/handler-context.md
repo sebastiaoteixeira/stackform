@@ -1,5 +1,5 @@
 ---
-title: "Reference: Handler Context"
+title: "Handler Context"
 description: The `context` object is passed to every custom handler function. It provides access to the repository, request data, and the authenticated principal.
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: "Reference: When Expression Operators"
+title: "When Expression Operators"
 description: Defines all operators available in `when:` expressions for ABAC access rules.
 ---
 

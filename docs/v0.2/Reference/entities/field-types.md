@@ -1,5 +1,5 @@
 ---
-title: "Reference: Field Types"
+title: "Field Types"
 description: Declares the type and constraints for each field in an entity's `fields:` map.
 ---
 

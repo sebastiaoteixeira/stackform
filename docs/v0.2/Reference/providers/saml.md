@@ -1,5 +1,5 @@
 ---
-title: "Reference: SAML Provider"
+title: "SAML Provider"
 description: SAML 2.0 Service Provider configuration for enterprise SSO.
 ---
 
