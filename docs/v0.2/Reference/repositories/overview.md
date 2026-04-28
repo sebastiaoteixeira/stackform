@@ -1,5 +1,5 @@
 ---
-title: "Reference: Repositories Overview"
+title: "Repositories Overview"
 description: Repositories bind an entity to a MongoDB collection and define what storage operations are available.
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: "Reference: `api:`"
+title: "`api:`"
 description: The `api:` section controls global API settings, URL prefixes, and default operation flags.
 ---
 

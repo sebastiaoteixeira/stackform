@@ -1,5 +1,5 @@
 ---
-title: "Reference: Access Control"
+title: "Access Control"
 description: Determines who is allowed to call each route, declared on controllers and individual operations.
 ---
 

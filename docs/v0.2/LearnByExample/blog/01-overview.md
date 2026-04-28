@@ -1,5 +1,5 @@
 ---
-title: "Blog App: Overview"
+title: "Overview"
 description: A multi-user blog API with role-based moderation and author ownership rules.
 ---
 

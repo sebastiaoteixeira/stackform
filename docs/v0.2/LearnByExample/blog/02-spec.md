@@ -1,5 +1,5 @@
 ---
-title: "Blog App: Full Spec"
+title: "Full Spec"
 ---
 
 ```yaml

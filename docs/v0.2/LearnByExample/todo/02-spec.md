@@ -1,5 +1,5 @@
 ---
-title: "Todo App: Full Spec"
+title: "Full Spec"
 ---
 
 ```yaml

@@ -15,90 +15,91 @@ YAML Spec --> Parser --> Intermediate Representation --> Code Generator --> Fast
 
 ## Reading order
 
-1. [Getting Started](./getting-started.md) -- install and run your first API
-2. Tutorial (10 parts) -- build a complete API step by step
-3. [Learn by Example](./LearnByExample/) -- full working projects
-4. [Reference](./Reference/) -- detailed spec documentation
+1. [Getting Started](./v0.2/getting-started) -- install and run your first API
+2. [Concepts](./v0.2/concepts) -- core concepts
+3. Tutorial (10 parts) -- build a complete API step by step
+4. [Learn by Example](./v0.2/LearnByExample/) -- full working projects
+5. [Reference](./v0.2/Reference/) -- detailed spec documentation
 
 ## Table of contents
 
 ### Getting Started
 
-- [Getting Started](./getting-started.md)
-- [Concepts](./concepts.md)
+- [Getting Started](./v0.2/getting-started)
+- [Concepts](./v0.2/concepts)
 
 ### Tutorial
 
-1. [Hello World](./Tutorial/01-hello-world.md)
-2. [Field Types](./Tutorial/02-field-types.md)
-3. [Relationships](./Tutorial/03-relationships.md)
-4. [Authentication](./Tutorial/04-authentication.md)
-5. [Access Control](./Tutorial/05-access-control.md)
-6. [Roles](./Tutorial/06-roles.md)
-7. [ABAC Rules](./Tutorial/07-abac-rules.md)
-8. [Entity Inheritance](./Tutorial/08-entity-inheritance.md)
-9. [Custom Operations](./Tutorial/09-custom-operations.md)
-10. [External Auth](./Tutorial/10-external-auth.md)
+1. [Hello World](./v0.2/Tutorial/01-hello-world)
+2. [Field Types](./v0.2/Tutorial/02-field-types)
+3. [Relationships](./v0.2/Tutorial/03-relationships)
+4. [Authentication](./v0.2/Tutorial/04-authentication)
+5. [Access Control](./v0.2/Tutorial/05-access-control)
+6. [Roles](./v0.2/Tutorial/06-roles)
+7. [ABAC Rules](./v0.2/Tutorial/07-abac-rules)
+8. [Entity Inheritance](./v0.2/Tutorial/08-entity-inheritance)
+9. [Custom Operations](./v0.2/Tutorial/09-custom-operations)
+10. [External Auth](./v0.2/Tutorial/10-external-auth)
 
 ### Learn by Example
 
-- [Blog](./LearnByExample/blog/01-overview.md)
-- [Todo App](./LearnByExample/todo/01-overview.md)
-- [Multi-tenant SaaS](./LearnByExample/multi-tenant-saas/01-overview.md)
+- [Blog](./v0.2/LearnByExample/blog/01-overview)
+- [Todo App](./v0.2/LearnByExample/todo/01-overview)
+- [Multi-tenant SaaS](./v0.2/LearnByExample/multi-tenant-saas/01-overview)
 
 ### Reference
 
 **CLI**
-- [dev](./Reference/cli/dev.md)
-- [compile](./Reference/cli/compile.md)
+- [dev](./v0.2/Reference/cli/dev)
+- [compile](./v0.2/Reference/cli/compile)
 
 **Configuration**
-- [api](./Reference/configuration/api.md)
-- [mongo](./Reference/configuration/mongo.md)
-- [Environment Variables](./Reference/configuration/environment-variables.md)
+- [api](./v0.2/Reference/configuration/api)
+- [mongo](./v0.2/Reference/configuration/mongo)
+- [Environment Variables](./v0.2/Reference/configuration/environment-variables)
 
 **Entities**
-- [Overview](./Reference/entities/overview.md)
-- [Field Types](./Reference/entities/field-types.md)
-- [Primary Keys](./Reference/entities/primary-keys.md)
-- [Inheritance](./Reference/entities/inheritance.md)
+- [Overview](./v0.2/Reference/entities/overview)
+- [Field Types](./v0.2/Reference/entities/field-types)
+- [Primary Keys](./v0.2/Reference/entities/primary-keys)
+- [Inheritance](./v0.2/Reference/entities/inheritance)
 
 **Auth**
-- [Overview](./Reference/auth/overview.md)
-- [Password Provider](./Reference/auth/password-provider.md)
-- [API Key Provider](./Reference/auth/apikey-provider.md)
-- [Claim Mapping](./Reference/auth/claim-mapping.md)
+- [Overview](./v0.2/Reference/auth/overview)
+- [Password Provider](./v0.2/Reference/auth/password-provider)
+- [API Key Provider](./v0.2/Reference/auth/apikey-provider)
+- [Claim Mapping](./v0.2/Reference/auth/claim-mapping)
 
 **Providers**
-- [Overview](./Reference/providers/overview.md)
-- [OIDC](./Reference/providers/oidc.md)
-- [SAML](./Reference/providers/saml.md)
+- [Overview](./v0.2/Reference/providers/overview)
+- [OIDC](./v0.2/Reference/providers/oidc)
+- [SAML](./v0.2/Reference/providers/saml)
 
 **Repositories**
-- [Overview](./Reference/repositories/overview.md)
-- [Operations](./Reference/repositories/operations.md)
+- [Overview](./v0.2/Reference/repositories/overview)
+- [Operations](./v0.2/Reference/repositories/operations)
 
 **Services**
-- [Overview](./Reference/services/overview.md)
-- [Custom Operations](./Reference/services/custom-operations.md)
-- [Handler Context](./Reference/services/handler-context.md)
+- [Overview](./v0.2/Reference/services/overview)
+- [Custom Operations](./v0.2/Reference/services/custom-operations)
+- [Handler Context](./v0.2/Reference/services/handler-context)
 
 **Controllers**
-- [Overview](./Reference/controllers/overview.md)
-- [Operations](./Reference/controllers/operations.md)
-- [Access Control](./Reference/controllers/access-control.md)
+- [Overview](./v0.2/Reference/controllers/overview)
+- [Operations](./v0.2/Reference/controllers/operations)
+- [Access Control](./v0.2/Reference/controllers/access-control)
 
 **Roles**
-- [Overview](./Reference/roles/overview.md)
-- [Hierarchy](./Reference/roles/hierarchy.md)
+- [Overview](./v0.2/Reference/roles/overview)
+- [Hierarchy](./v0.2/Reference/roles/hierarchy)
 
 **When Expressions**
-- [Overview](./Reference/when-expressions/overview.md)
-- [Operators](./Reference/when-expressions/operators.md)
+- [Overview](./v0.2/Reference/when-expressions/overview)
+- [Operators](./v0.2/Reference/when-expressions/operators)
 
 ### Troubleshooting
 
-- [Troubleshooting](./troubleshooting.md)
+- [Troubleshooting](./v0.2/troubleshooting)
 
 ### Spec Documents
 

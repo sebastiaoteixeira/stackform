@@ -1,5 +1,5 @@
 ---
-title: "Reference: `mongo:`"
+title: "`mongo:`"
 description: The `mongo:` section configures the MongoDB connection.
 ---
 

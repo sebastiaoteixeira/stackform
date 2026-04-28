@@ -1,5 +1,5 @@
 ---
-title: "Reference: Controllers Overview"
+title: "Controllers Overview"
 description: Controllers define HTTP route configuration. They bind services to HTTP methods and paths, and declare access rules.
 ---
 
