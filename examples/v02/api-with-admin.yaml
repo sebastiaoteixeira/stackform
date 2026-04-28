@@ -60,8 +60,10 @@ repositories:
     entity: post
 
 services:
-  users: {}
-  posts: {}
+  users:
+    repository: users
+  posts:
+    repository: posts
 
 controllers:
   users:

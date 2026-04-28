@@ -257,9 +257,20 @@
       "type": "object",
       "properties": {
         "repository": { "type": "string" },
-        "operation": { "type": "string" },
-        "handler": { "type": "string" },
-        "operations": { "type": "object" }
+        "operations": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "boolean" },
+              {
+                "type": "object",
+                "properties": {
+                  "handler": { "type": "string" }
+                }
+              }
+            ]
+          }
+        }
       }
     },
     "ControllerConfig": {

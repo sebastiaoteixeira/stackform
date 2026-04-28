@@ -28,7 +28,7 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
     for doc in docs:
         if str(doc.get("{{ identity.identifier }}", "")) != payload.{{ identity.identifier }}:
             continue
-        stored_hash = doc.get("passwordHash")
+        stored_hash = doc["_auth"]["passwordHash"]
         if not isinstance(stored_hash, str):
             continue
         if not verify_password(payload.password, stored_hash):
@@ -41,7 +41,7 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
         token = create_jwt_token(str(subject), "{{ identity.name }}")
         safe_user = {
             k: v for k, v in doc.items()
-            if k not in ("password", "passwordHash", "_id")
+            if k not in ("password", "_id", "_auth")
         }
         return {"token": token, "user": safe_user}
 

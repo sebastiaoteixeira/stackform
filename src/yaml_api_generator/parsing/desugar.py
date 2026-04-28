@@ -190,7 +190,7 @@ def _is_minified_service(
 ) -> bool:
     if "operation" in entry or "handler" in entry:
         return False
-    return key in repositories or "operations" in entry
+    return "repository" in entry or key in repositories
 
 
 def _resolve_crud_ops(
