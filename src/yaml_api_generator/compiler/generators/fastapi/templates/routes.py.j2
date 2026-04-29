@@ -40,9 +40,9 @@ router = APIRouter()
 {% set _ = security_schemes.append({"BasicAuth": []}) %}
 {% set _ = security_schemes.append({"BearerAuth": []}) %}
 {% endif %}
-@router.{{ route.method | lower }}("/{{ collection_name }}{% if route.has_id_param %}/{id}{% endif %}", openapi_extra={"security": {{ security_schemes }}})
+@router.{{ route.method | lower }}("{{ route.path }}", openapi_extra={"security": {{ security_schemes }}})
 {% else %}
-@router.{{ route.method | lower }}("/{{ collection_name }}{% if route.has_id_param %}/{id}{% endif %}")
+@router.{{ route.method | lower }}("{{ route.path }}")
 {% endif %}
 async def {{ handler_name }}(request: Request{% if route.has_id_param %}, id: str{% endif %}{% if route.body_model %}, payload: {{ route.body_model }}{% endif %}) -> Any:
     db = get_database()

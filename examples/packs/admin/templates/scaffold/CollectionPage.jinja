@@ -1,0 +1,316 @@
+import { useState, useEffect, useCallback } from "react"
+import { apiFetch } from "./lib/api"
+import { RecordModal } from "./RecordModal"
+import { useAuth } from "./AuthProvider"
+
+type FieldDef = {
+  name: string
+  type: string
+  required: boolean
+  enum_values?: string[]
+  ref?: string
+}
+
+export type CollectionSchema = {
+  pk: string
+  fields: FieldDef[]
+}
+
+export const COLLECTION_SCHEMAS: Record<string, CollectionSchema> = {
+  {% for entity_name, entity in entities.items() %}
+  "{{ entity.repository_name }}": {
+    pk: "{{ entity.pk_field }}",
+    fields: [
+      { name: "{{ entity.pk_field }}", type: "id", required: false },
+      {% for field_name, field in entity.fields.items() %}
+      {
+        name: "{{ field_name }}",
+        type: "{{ field.type }}",
+        required: {{ 'true' if field.required else 'false' }},
+        {% if field.enum_values %}
+        enum_values: [{% for v in field.enum_values %}"{{ v }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+        {% endif %}
+        {% if field.ref_entity %}
+        ref: "{{ field.ref_entity }}",
+        {% endif %}
+      },
+      {% endfor %}
+    ],
+  },
+  {% endfor %}
+}
+
+const PAGE_SIZE = 20
+
+function formatValue(value: unknown, type: string): string {
+  if (value == null) return ""
+  if (type === "boolean") return value ? "true" : "false"
+  if (type === "datetime") {
+    try { return new Date(value as string).toLocaleString() } catch { return String(value) }
+  }
+  if (type === "object" || type === "array") {
+    try { return JSON.stringify(value) } catch { return String(value) }
+  }
+  const s = String(value)
+  return s.length > 60 ? s.slice(0, 60) + "…" : s
+}
+
+interface CollectionPageProps {
+  collection: string
+  onSignIn?: () => void
+}
+
+export function CollectionPage({ collection, onSignIn }: CollectionPageProps) {
+  const { isAuthenticated } = useAuth()
+  const [records, setRecords] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState("")
+  const [modal, setModal] = useState<{ mode: "create" | "edit"; record?: any } | null>(null)
+
+  const schema = COLLECTION_SCHEMAS[collection]
+  const pk = schema?.pk || "id"
+  const fields = schema?.fields || []
+  const visibleFields = fields.filter(f => f.type !== "id" || f.name === pk).slice(0, 8)
+
+  const fetchRecords = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await apiFetch(`/${collection}`)
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      const data = await res.json()
+      setRecords(Array.isArray(data) ? data : [])
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [collection])
+
+  useEffect(() => {
+    setPage(1)
+    setSearch("")
+    fetchRecords()
+  }, [collection, fetchRecords])
+
+  const handleDelete = async (id: string) => {
+    if (!isAuthenticated) { onSignIn?.(); return }
+    if (!confirm("Delete this record?")) return
+    try {
+      const res = await apiFetch(`/${collection}/${id}`, { method: "DELETE" })
+      if (res.status === 401 || res.status === 403) { onSignIn?.(); return }
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      setRecords(prev => prev.filter(r => r[pk] !== id))
+    } catch (e: any) {
+      alert(`Delete failed: ${e.message}`)
+    }
+  }
+
+  const handleNewRecord = () => {
+    if (!isAuthenticated) { onSignIn?.(); return }
+    setModal({ mode: "create" })
+  }
+
+  const handleEditRecord = (record: any) => {
+    if (!isAuthenticated) { onSignIn?.(); return }
+    setModal({ mode: "edit", record })
+  }
+
+  const filtered = search
+    ? records.filter(r =>
+        Object.values(r).some(v =>
+          String(v).toLowerCase().includes(search.toLowerCase())
+        )
+      )
+    : records
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageRecords = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="border-b border-slate-800 px-6 py-3 flex items-center justify-between bg-slate-900/50">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold text-white capitalize">{collection}</h1>
+          <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+            {loading ? "…" : filtered.length} records
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+              className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+              className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded px-8 py-1.5 w-48 placeholder:text-slate-600 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <button
+            onClick={handleNewRecord}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+            </svg>
+            New record
+          </button>
+          <button
+            onClick={fetchRecords}
+            className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-800 rounded transition-colors"
+            title="Refresh"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+              <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.389zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        {loading ? (
+          <div className="flex items-center justify-center h-32">
+            <svg className="animate-spin w-5 h-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center h-32">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        ) : pageRecords.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 gap-2">
+            <p className="text-slate-500 text-sm">{search ? "No matching records" : "No records yet"}</p>
+            {!search && (
+              <button
+                onClick={handleNewRecord}
+                className="text-blue-400 hover:text-blue-300 text-xs underline underline-offset-2"
+              >
+                Create the first record
+              </button>
+            )}
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-900 z-10">
+              <tr className="border-b border-slate-800">
+                {visibleFields.map(f => (
+                  <th key={f.name} className="text-left text-slate-400 font-medium px-3 py-2 first:pl-6 whitespace-nowrap">
+                    {f.name}
+                    {f.type !== "string" && (
+                      <span className="ml-1 text-slate-600">{f.type}</span>
+                    )}
+                  </th>
+                ))}
+                <th className="w-16 px-3 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {pageRecords.map((record, i) => (
+                <tr
+                  key={record[pk] ?? i}
+                  className="border-b border-slate-800/50 hover:bg-slate-900/50 group cursor-pointer"
+                  onClick={() => handleEditRecord(record)}
+                >
+                  {visibleFields.map(f => (
+                    <td key={f.name} className="px-3 py-2 first:pl-6 text-slate-300 max-w-[200px]">
+                      {f.type === "boolean" ? (
+                        <span className={`inline-block w-2 h-2 rounded-full ${record[f.name] ? "bg-green-500" : "bg-slate-600"}`} />
+                      ) : f.type === "enum" ? (
+                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+                          {record[f.name] ?? "—"}
+                        </span>
+                      ) : (
+                        <span className="truncate block">{formatValue(record[f.name], f.type)}</span>
+                      )}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2 text-right" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => handleDelete(record[pk])}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-red-400 transition-all rounded"
+                      title="Delete"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 000 1.5h.3l.815 8.15A1.5 1.5 0 005.357 15h5.285a1.5 1.5 0 001.493-1.35l.815-8.15h.3a.75.75 0 000-1.5H11v-.75A2.25 2.25 0 008.75 1h-1.5A2.25 2.25 0 005 3.25zm2.25-.75a.75.75 0 00-.75.75V4h3v-.75a.75.75 0 00-.75-.75h-1.5zM6.05 6a.75.75 0 01.787.713l.275 5.5a.75.75 0 01-1.498.075l-.275-5.5A.75.75 0 016.05 6zm3.9 0a.75.75 0 01.712.787l-.275 5.5a.75.75 0 01-1.498-.075l.275-5.5a.75.75 0 01.786-.711z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {!loading && !error && filtered.length > PAGE_SIZE && (
+        <div className="border-t border-slate-800 px-6 py-2 flex items-center justify-between bg-slate-900/30">
+          <p className="text-xs text-slate-500">
+            {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(1)}
+              disabled={currentPage === 1}
+              className="p-1 text-slate-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M3.22 7.595a.75.75 0 000 1.06l3.25 3.25a.75.75 0 001.06-1.06L5.06 8.125l2.47-2.47a.75.75 0 00-1.06-1.06l-3.25 3.25zm6 0a.75.75 0 000 1.06l3.25 3.25a.75.75 0 001.06-1.06l-2.72-2.72 2.72-2.72a.75.75 0 00-1.06-1.06l-3.25 3.25z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-1 text-slate-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 010 1.06L7.06 8l2.72 2.72a.75.75 0 11-1.06 1.06L5.47 8.53a.75.75 0 010-1.06l3.25-3.25a.75.75 0 011.06 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <span className="text-xs text-slate-400 px-2">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="p-1 text-slate-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 011.06 0l3.25 3.25a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-1 text-slate-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M12.78 7.595a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L10.94 8.125 8.47 5.655a.75.75 0 011.06-1.06l3.25 3.25zm-6 0a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L4.94 8.125 2.47 5.655a.75.75 0 011.06-1.06l3.25 3.25z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {modal && (
+        <RecordModal
+          collection={collection}
+          record={modal.mode === "edit" ? modal.record : undefined}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); fetchRecords() }}
+        />
+      )}
+    </div>
+  )
+}

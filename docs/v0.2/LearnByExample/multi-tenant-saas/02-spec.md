@@ -1,5 +1,5 @@
 ---
-title: "Multi-Tenant SaaS: Full Spec"
+title: "Full Spec"
 ---
 
 ```yaml

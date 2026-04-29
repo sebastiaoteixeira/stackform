@@ -1,5 +1,5 @@
 ---
-title: "Reference: Custom Service Operations"
+title: "Custom Service Operations"
 description: Custom operations let you attach arbitrary Python handler functions to a service, exposing them as HTTP routes through a controller.
 ---
 

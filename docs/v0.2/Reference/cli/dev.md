@@ -1,5 +1,5 @@
 ---
-title: "Reference: `yaml-api dev`"
+title: "`yaml-api dev`"
 description: Starts a live FastAPI development server directly from a YAML spec. No compilation step required.
 ---
 

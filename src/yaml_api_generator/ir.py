@@ -42,14 +42,31 @@ class IROperations:
 
 
 @dataclass(frozen=True)
+class IRCors:
+    origins: list[str] = field(default_factory=lambda: ["*"])
+    methods: list[str] = field(default_factory=lambda: ["*"])
+    headers: list[str] = field(default_factory=lambda: ["*"])
+    credentials: bool = False
+
+
+@dataclass(frozen=True)
 class IRApi:
     basePath: str
     version: str | None
+    cors: IRCors | None = None
+    port: int = 8000
+
+
+@dataclass(frozen=True)
+class IRMongo:
+    uri: str = "mongodb://localhost:27017"
+    database: str = "yaml_api"
 
 
 @dataclass(frozen=True)
 class IRCollection:
     name: str
+    entity_name: str
     type: str
     idField: str
     idFormat: str

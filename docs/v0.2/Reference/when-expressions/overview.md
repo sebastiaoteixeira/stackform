@@ -1,5 +1,5 @@
 ---
-title: "Reference: When Expressions"
+title: "When Expressions"
 description: Evaluates conditions against the authenticated principal and/or a loaded document inside ABAC access rules.
 ---
 

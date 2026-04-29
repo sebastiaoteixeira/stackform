@@ -128,3 +128,38 @@ def deploy(yaml_file: str, host: str, user: str, key: str, output_dir: str, sche
         raise SystemExit(1)
 
     click.echo(f"Generated deploy artifacts in {output_dir}")
+
+@click.option(
+    "--output",
+    "output_dir",
+    default=None,
+    help="Override output directory from ui.frontend.output.",
+)
+def frontend(yaml_file: str, schema_file: str | None, output_dir: str | None):
+    """Generate frontend from a YAML API spec."""
+    from .frontend.pipeline import generate_frontend
+    from .parsing.parser import ConfigErrors
+
+    try:
+        from .parsing.parser import load_and_generate_ir
+
+        result = load_and_generate_ir(yaml_file, schema_file)
+        if result.ui_block is None:
+            click.echo("Error: No 'ui' block found in the YAML spec.", err=True)
+            raise SystemExit(1)
+
+        generate_frontend(
+            ir=result.ir,
+            ui_block=result.ui_block,
+            output_override=output_dir,
+        )
+    except ConfigErrors as error:
+        import json
+        import sys
+
+        payload = [item.to_dict() for item in error.errors]
+        sys.stderr.write(json.dumps(payload, indent=2) + "\n")
+        raise SystemExit(1)
+    except (FileNotFoundError, ValueError) as error:
+        click.echo(f"Error: {error}", err=True)
+        raise SystemExit(1)

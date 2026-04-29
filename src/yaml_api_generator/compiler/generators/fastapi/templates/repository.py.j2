@@ -7,7 +7,7 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 
 {% set class_name = collection_name | capitalize_collection %}
-_SENSITIVE_FIELDS = {"password", "passwordHash", "_auth"}
+_SENSITIVE_FIELDS = {"password", "_auth"}
 
 
 def _match_filter(document_id: str) -> dict[str, Any]:

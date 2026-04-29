@@ -1,5 +1,5 @@
 ---
-title: "Reference: `yaml-api compile`"
+title: "`yaml-api compile`"
 description: Compiles a YAML spec into a standalone project (FastAPI, Django REST Framework, or raw IR).
 ---
 
@@ -24,6 +24,13 @@ yaml-api compile <file.yaml> [options]
 | `--target` | `fastapi` | Output framework. Values: `fastapi`, `drf`, `raw`. |
 | `--output` | `./target` | Output directory for generated project files. |
 | `--schema` | auto-detected | Path to a custom JSON Schema for spec validation. Auto-detected from `version:` if omitted. |
+
+## Output Structure
+
+The `compile` command creates nested directories within your chosen `--output` location:
+
+- `<output>/backend`: Contains the compiled backend application (`FastAPI` or `DRF`).
+- `<output>/frontend`: (Generated only if a `ui:` block is present in the spec) Contains the generated frontend client.
 
 ## Targets
 

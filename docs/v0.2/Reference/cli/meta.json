@@ -2,6 +2,7 @@
   "title": "CLI",
   "pages": [
     "compile",
-    "dev"
+    "dev",
+    "frontend"
   ]
 }

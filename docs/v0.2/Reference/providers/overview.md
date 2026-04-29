@@ -1,5 +1,5 @@
 ---
-title: "Reference: Providers Overview"
+title: "Providers Overview"
 description: The top-level `providers:` section declares external identity providers (OIDC, SAML) that can be referenced in entity `via:` bindings.
 ---
 

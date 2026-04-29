@@ -1,5 +1,5 @@
 ---
-title: "Reference: OIDC Provider"
+title: "OIDC Provider"
 description: OpenID Connect provider configuration for external SSO login.
 ---
 

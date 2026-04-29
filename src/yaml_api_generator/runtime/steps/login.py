@@ -41,9 +41,7 @@ def LoginStep(
         token = create_jwt_token(str(subject), identity_collection.name)
 
         safe_user = {
-            k: v
-            for k, v in user.items()
-            if k not in ("password", "passwordHash", "_id")
+            k: v for k, v in user.items() if k not in ("password", "_id", "_auth")
         }
 
         ctx.response = {"token": token, "user": safe_user}
@@ -61,7 +59,7 @@ def _find_user(
     for doc in documents:
         if str(doc.get(identifier_field, "")) != identifier_value:
             continue
-        stored_hash = doc.get("passwordHash")
+        stored_hash = doc["_auth"]["passwordHash"]
         if not isinstance(stored_hash, str):
             continue
         if not verify_password(password, stored_hash):

@@ -1,5 +1,5 @@
 ---
-title: "Todo App: Overview"
+title: "Overview"
 description: A multi-user todo API where each user owns their own lists and items.
 ---
 

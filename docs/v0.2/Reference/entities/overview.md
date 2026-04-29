@@ -1,5 +1,5 @@
 ---
-title: "Reference: Entities Overview"
+title: "Entities Overview"
 description: Entities define data shapes -- the fields, types, and relationships that make up the application's domain model. Entities have no HTTP or storage behavior; that belongs to repositories and controllers.
 ---
 

@@ -6,7 +6,13 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, Field, create_model
 
-from .runtime_context import RuntimeAuthConfig, RuntimeCollectionDescriptor, RuntimeContext, RuntimeIdentityDescriptor, RuntimeRouteDescriptor
+from .runtime_context import (
+    RuntimeAuthConfig,
+    RuntimeCollectionDescriptor,
+    RuntimeContext,
+    RuntimeIdentityDescriptor,
+    RuntimeRouteDescriptor,
+)
 from .pipeline import Pipeline
 from .pipeline_builder import PipelineBuilder
 from .repositories import BaseRepository
@@ -29,7 +35,7 @@ def create_pydantic_model_fields(
             continue
         if raw_config.get("type") == "id":
             continue
-        if field_name == "passwordHash":
+        if field_name == "_auth":
             continue
 
         annotation = _field_annotation(raw_config)
@@ -279,7 +285,11 @@ def _openapi_security_schemes(auth: RuntimeAuthConfig) -> dict[str, Any]:
         schemes["BearerAuth"] = {"type": "http", "scheme": "bearer"}
     if "password" in methods:
         schemes["BasicAuth"] = {"type": "http", "scheme": "basic"}
-        schemes["BearerAuth"] = {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+        schemes["BearerAuth"] = {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+        }
     return schemes
 
 

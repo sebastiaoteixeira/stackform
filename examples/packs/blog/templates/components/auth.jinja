@@ -1,0 +1,153 @@
+import { useState } from "react"
+import { useNavigate, Link } from "react-router-dom"
+import { useAuth } from "@/__generated__/AuthProvider"
+
+export function {{ view.name | pascal_case }}Page() {
+  const [mode, setMode] = useState<"login" | "register">("login")
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const { login, register } = useAuth()
+  const navigate = useNavigate()
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+
+    const form = new FormData(e.currentTarget)
+    const data: Record<string, string> = {}
+    form.forEach((value, key) => { data[key] = value as string })
+
+    try {
+      if (mode === "login") {
+        await login(data)
+        navigate("/")
+      } else {
+        await register(data)
+        setMode("login")
+        setError(null)
+      }
+    } catch (err: any) {
+      setError(err.message || "Something went wrong")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="min-h-[80vh] flex items-center justify-center px-6">
+      <div className="w-full max-w-sm">
+        <h1 className="text-2xl font-serif font-bold text-gray-900 text-center mb-2">
+          {mode === "login" ? "Welcome back" : "Create an account"}
+        </h1>
+        <p className="text-sm text-gray-400 text-center mb-8">
+          {mode === "login"
+            ? "Sign in to continue"
+            : "Join to start writing"}
+        </p>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-6">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {% if entity %}
+          {% for field_name, field in entity.fields.items() %}
+          {% if field.type != "id" and field.type != "datetime" and field.type != "ref" and (field.default is none or field.required) %}
+          {% if field_name == entity.auth_identifier %}
+          <div>
+            <label htmlFor="{{ field_name }}" className="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ field_name | pascal_case }}
+            </label>
+            <input
+              type="{{ 'email' if field_name == 'email' else 'text' }}"
+              name="{{ field_name }}"
+              id="{{ field_name }}"
+              required
+              autoComplete="{{ field_name }}"
+              className="block w-full rounded-xl border-0 ring-1 ring-gray-200 px-4 py-2.5 text-gray-900 placeholder:text-gray-300 focus:ring-2 focus:ring-gray-900 transition-shadow text-sm"
+              placeholder="{{ field_name }}"
+            />
+          </div>
+          {% elif field_name != entity.auth_identifier %}
+          {mode === "register" && (
+            <div>
+              <label htmlFor="{{ field_name }}" className="block text-sm font-medium text-gray-700 mb-1.5">
+                {{ field_name | pascal_case }}
+              </label>
+              {% if field.type == "enum" and field.enum_values %}
+              <select
+                name="{{ field_name }}"
+                id="{{ field_name }}"
+                className="block w-full rounded-xl border-0 ring-1 ring-gray-200 px-4 py-2.5 text-gray-900 focus:ring-2 focus:ring-gray-900 transition-shadow text-sm"
+              >
+                {% for val in field.enum_values %}
+                <option value="{{ val }}">{{ val | pascal_case }}</option>
+                {% endfor %}
+              </select>
+              {% else %}
+              <input
+                type="text"
+                name="{{ field_name }}"
+                id="{{ field_name }}"
+                {% if field.required %}required{% endif %}
+                className="block w-full rounded-xl border-0 ring-1 ring-gray-200 px-4 py-2.5 text-gray-900 placeholder:text-gray-300 focus:ring-2 focus:ring-gray-900 transition-shadow text-sm"
+                placeholder="{{ field_name | pascal_case }}"
+              />
+              {% endif %}
+            </div>
+          )}
+          {% endif %}
+          {% endif %}
+          {% endfor %}
+          {% endif %}
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
+              Password
+            </label>
+            <input
+              type="password"
+              name="password"
+              id="password"
+              required
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              className="block w-full rounded-xl border-0 ring-1 ring-gray-200 px-4 py-2.5 text-gray-900 placeholder:text-gray-300 focus:ring-2 focus:ring-gray-900 transition-shadow text-sm"
+              placeholder="Password"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors mt-2"
+          >
+            {submitting
+              ? (mode === "login" ? "Signing in..." : "Creating account...")
+              : (mode === "login" ? "Sign in" : "Create account")}
+          </button>
+        </form>
+
+        <p className="text-sm text-center text-gray-400 mt-6">
+          {mode === "login" ? (
+            <>
+              Don't have an account?{" "}
+              <button onClick={() => { setMode("register"); setError(null) }} className="text-gray-900 font-medium hover:underline">
+                Sign up
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <button onClick={() => { setMode("login"); setError(null) }} className="text-gray-900 font-medium hover:underline">
+                Sign in
+              </button>
+            </>
+          )}
+        </p>
+      </div>
+    </div>
+  )
+}

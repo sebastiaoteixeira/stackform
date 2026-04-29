@@ -1,5 +1,5 @@
 ---
-title: "Reference: Primary Keys"
+title: "Primary Keys"
 description: Controls how entities are uniquely identified -- either via an auto-generated UUID or a client-provided natural key.
 ---
 

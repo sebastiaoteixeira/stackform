@@ -40,10 +40,8 @@ def _inject_canonical_id(
         normalized[id_field] = str(normalized["_id"])
     if id_field != "_id":
         normalized.pop("_id", None)
-    # Strip _auth namespace and legacy sensitive fields
     normalized.pop("_auth", None)
     normalized.pop("password", None)
-    normalized.pop("passwordHash", None)
     return normalized
 
 
@@ -82,7 +80,6 @@ def _prepare_payload(
         return normalized
     if not isinstance(raw_password, str) or not raw_password.strip():
         raise ValueError("Password must be a non-empty string")
-    # Store passwordHash under _auth namespace
     auth_data = normalized.get("_auth", {})
     if not isinstance(auth_data, dict):
         auth_data = {}
