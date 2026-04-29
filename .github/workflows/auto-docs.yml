@@ -1,10 +1,7 @@
 name: Auto-Generate Documentation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
+  workflow_dispatch:
 
 permissions:
   contents: write
