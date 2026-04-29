@@ -24,7 +24,7 @@ def _resolve_field(
         return None
     if not ref.path:
         return binding.get("sub")
-    current: object = binding.get("record", binding)
+    current: object = binding
     for part in ref.path:
         if isinstance(current, dict):
             current = current.get(part)

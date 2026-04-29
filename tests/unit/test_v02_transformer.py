@@ -395,8 +395,8 @@ def test_111_rule_object_document_binding_parsed():
     )
     assert errors == []
     assert rule is not None
-    assert rule.document is not None
-    assert rule.document.collection == "posts"
+    assert rule.document_symbols
+    assert rule.document_symbols["document"].collection == "posts"
 
 
 # ---- Role Hierarchy (113-114) ----

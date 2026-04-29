@@ -198,7 +198,7 @@ def test_routes_mapped_with_access_rules():
                     IRAccessRule(
                         principal="identity:user",
                         required_role="admin",
-                        document=IRDocumentBinding(collection="posts", id_param="id"),
+                        document_symbols={"document": IRDocumentBinding(collection="posts", id_param="id")},
                         effect="allow",
                     ),
                 ],
