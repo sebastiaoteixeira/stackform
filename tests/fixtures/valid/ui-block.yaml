@@ -1,0 +1,13 @@
+version: "0.1"
+ui:
+  dashboard:
+    title: My Dashboard
+    widgets:
+      - type: chart
+      - type: table
+  theme: dark
+collections:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string }

@@ -1,0 +1,14 @@
+version: "0.2"
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+      roles: nonexistentRole
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+repositories:
+  users:
+    entity: user

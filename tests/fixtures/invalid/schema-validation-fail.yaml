@@ -1,0 +1,5 @@
+version: "0.1"
+collections:
+  posts:
+    type: 123
+    fields: "not an object"

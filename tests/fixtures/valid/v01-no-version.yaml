@@ -1,0 +1,5 @@
+collections:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string }
