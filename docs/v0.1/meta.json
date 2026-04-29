@@ -1,0 +1,8 @@
+{
+  "title": "v0.1",
+  "root": true,
+  "pages": [
+    "specification",
+    "structure"
+  ]
+}

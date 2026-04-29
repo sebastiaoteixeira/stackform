@@ -102,7 +102,11 @@ class {{ collection_name | capitalize_collection }}Service:
         if raw_password is not None:
             if not isinstance(raw_password, str) or not raw_password.strip():
                 raise ValidationError("password", "Password must be a non-empty string")
-            data["passwordHash"] = hash_password(raw_password)
+            auth_data = data.get("_auth", {})
+            if not isinstance(auth_data, dict):
+                auth_data = {}
+            auth_data["passwordHash"] = hash_password(raw_password)
+            data["_auth"] = auth_data
 {% endif %}
 {% if is_identity_collection %}
 

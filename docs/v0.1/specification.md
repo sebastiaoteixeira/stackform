@@ -1,4 +1,6 @@
-# YAML Specification v0.1 (Practical)
+---
+title: Specification
+---
 
 Status: Draft v0.1  
 Target: YAML-driven API engine with a transport-agnostic core and compiled step pipelines.

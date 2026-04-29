@@ -1,0 +1,9 @@
+{
+  "title": "Entities",
+  "pages": [
+    "overview",
+    "field-types",
+    "primary-keys",
+    "inheritance"
+  ]
+}

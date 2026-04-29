@@ -41,10 +41,8 @@ def _inject_canonical_id(
         normalized[id_field] = str(normalized["_id"])
     if id_field != "_id":
         normalized.pop("_id", None)
-    # Strip _auth namespace and legacy sensitive fields
     normalized.pop("_auth", None)
     normalized.pop("password", None)
-    normalized.pop("passwordHash", None)
     return normalized
 
 

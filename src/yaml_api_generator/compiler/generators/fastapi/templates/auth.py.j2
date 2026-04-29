@@ -128,7 +128,7 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
         for doc in docs:
             if str(doc.get("{{ identity.identifier }}", "")) != identifier_value:
                 continue
-            stored_hash = doc.get("passwordHash")
+            stored_hash = doc["_auth"]["passwordHash"]
             if not isinstance(stored_hash, str):
                 continue
             if not verify_password(password, stored_hash):

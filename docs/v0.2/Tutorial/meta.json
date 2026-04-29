@@ -1,0 +1,15 @@
+{
+  "title": "Tutorial",
+  "pages": [
+    "01-hello-world",
+    "02-field-types",
+    "03-relationships",
+    "04-authentication",
+    "05-access-control",
+    "06-roles",
+    "07-abac-rules",
+    "08-entity-inheritance",
+    "09-custom-operations",
+    "10-external-auth"
+  ]
+}

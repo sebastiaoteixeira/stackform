@@ -1,0 +1,82 @@
+import { BrowserRouter, Link } from "react-router-dom"
+import { AppRouter } from "./routing"
+import { AuthProvider, useAuth } from "./AuthProvider"
+
+function Nav() {
+  const { isAuthenticated, user, logout } = useAuth()
+
+  return (
+    <header className="border-b border-gray-200">
+      <div className="max-w-5xl mx-auto px-6">
+        <div className="flex items-center justify-between h-16">
+          <Link to="/" className="text-2xl font-serif font-bold tracking-tight text-gray-900">
+            {{ context.api_name | pascal_case }}
+          </Link>
+          <nav className="hidden md:flex items-center gap-8">
+            {% for view_name, view in views.items() %}
+            {% if ':' not in view.path and view_name != 'login' %}
+            <Link
+              to="{{ view.path }}"
+              className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              {{ view_name | pascal_case | singular }}s
+            </Link>
+            {% endif %}
+            {% endfor %}
+          </nav>
+          <div className="flex items-center gap-4">
+            {isAuthenticated ? (
+              <>
+                <Link
+                  to="/posts/new"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-full hover:bg-gray-700 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                  </svg>
+                  Write
+                </Link>
+                <button
+                  onClick={logout}
+                  className="text-sm text-gray-400 hover:text-gray-900 transition-colors"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-full hover:bg-gray-700 transition-colors"
+              >
+                Sign in
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="min-h-screen bg-white flex flex-col">
+          <Nav />
+          <main className="flex-1">
+            <AppRouter />
+          </main>
+          <footer className="border-t border-gray-200 mt-auto">
+            <div className="max-w-5xl mx-auto px-6 py-8">
+              <div className="flex items-center justify-between text-sm text-gray-400">
+                <span className="font-serif font-semibold text-gray-500">{{ context.api_name | pascal_case }}</span>
+                <span>Built with YAML API Generator</span>
+              </div>
+            </div>
+          </footer>
+        </div>
+      </AuthProvider>
+    </BrowserRouter>
+  )
+}

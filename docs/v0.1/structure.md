@@ -1,4 +1,6 @@
-# YAML Structure Spec v0.1
+---
+title: Structure
+---
 
 Notation:
 

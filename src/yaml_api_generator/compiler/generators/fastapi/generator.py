@@ -154,7 +154,10 @@ class FastAPIGenerator(CodeGenerator):
 
         if context.auth.has_password_auth:
             login_template = env.get_template("login_routes.py.j2")
-            login_content = login_template.render(auth=context.auth)
+            base_prefix = context.app.base_path
+            if context.app.api_version:
+                base_prefix = f"{base_prefix}/{context.app.api_version}"
+            login_content = login_template.render(auth=context.auth, base_prefix=base_prefix)
             (routes_dir / "login.py").write_text(login_content)
             init_imports.append(
                 "from .login import router as login_router"

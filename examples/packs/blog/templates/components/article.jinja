@@ -1,0 +1,143 @@
+{% set col_name = props.collection.value if props.collection else "items" %}
+{% set col_ref = col_name.split("[")[0] if "[" in col_name else col_name %}
+{% set lookup_field = col_name.split("[")[1].rstrip("]") if "[" in col_name else "id" %}
+import { useParams, Link } from "react-router-dom"
+import { use{{ col_ref | pascal_case }} } from "@/__generated__/hooks/use{{ col_ref | pascal_case }}"
+
+function formatDate(dateString: string) {
+  try {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    })
+  } catch {
+    return ""
+  }
+}
+
+function estimateReadingTime(text: string) {
+  if (!text) return "1 min read"
+  const words = text.trim().split(/\s+/).length
+  const minutes = Math.max(1, Math.ceil(words / 200))
+  return `${minutes} min read`
+}
+
+export function {{ view.name | pascal_case }}Page() {
+  const { {{ lookup_field }} } = useParams()
+  const { data: doc, loading, error } = use{{ col_ref | pascal_case }}({{ lookup_field }})
+
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-20">
+        <div className="animate-pulse space-y-6">
+          <div className="h-3 w-20 bg-gray-100 rounded" />
+          <div className="h-10 w-3/4 bg-gray-100 rounded" />
+          <div className="flex gap-3">
+            <div className="h-10 w-10 bg-gray-100 rounded-full" />
+            <div className="space-y-2">
+              <div className="h-3 w-24 bg-gray-100 rounded" />
+              <div className="h-3 w-32 bg-gray-100 rounded" />
+            </div>
+          </div>
+          <div className="space-y-3 pt-8">
+            <div className="h-4 bg-gray-100 rounded" />
+            <div className="h-4 bg-gray-100 rounded w-5/6" />
+            <div className="h-4 bg-gray-100 rounded w-4/6" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !doc) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-20 text-center">
+        <h2 className="text-xl font-serif font-bold text-gray-900 mb-2">
+          {error ? "Something went wrong" : "Post not found"}
+        </h2>
+        <p className="text-gray-400 mb-6">{error?.message || "This post may have been removed or the link is incorrect."}</p>
+        <Link to="{{ view.path.rsplit('/', 1)[0] if '/' in view.path else '/' }}" className="text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors">
+          &larr; Back to all posts
+        </Link>
+      </div>
+    )
+  }
+
+  return (
+    <article className="max-w-3xl mx-auto px-6 py-12">
+      <Link
+        to="{{ view.path.rsplit('/', 1)[0] if '/' in view.path else '/' }}"
+        className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-900 transition-colors mb-8"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+          <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 010 1.06L7.06 8l2.72 2.72a.75.75 0 11-1.06 1.06L5.47 8.53a.75.75 0 010-1.06l3.25-3.25a.75.75 0 011.06 0z" clipRule="evenodd" />
+        </svg>
+        All posts
+      </Link>
+
+      <header className="mb-10">
+        {% if collection %}
+        <div className="flex gap-2 mb-4">
+          {% for field_name, field in collection.fields.items() %}
+          {% if field.resolved_type == "enum" %}
+          <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+            {doc.{{ field.source_field_path[0] }}}
+          </span>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if props.title and props.title.kind == "ref" %}
+        <h1 className="text-4xl md:text-5xl font-serif font-bold text-gray-900 leading-tight mb-6">
+          {doc.{{ props.title.value }}}
+        </h1>
+        {% endif %}
+
+        <div className="flex items-center gap-4">
+          <div className="h-10 w-10 rounded-full bg-gray-900 flex items-center justify-center text-white font-medium text-sm">
+            {(doc.authorName || "A").charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-900">{doc.authorName || "Anonymous"}</p>
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <time>{formatDate(doc.createdAt)}</time>
+              {% if props.body and props.body.kind == "ref" %}
+              <span aria-hidden="true">&middot;</span>
+              <span>{estimateReadingTime(doc.{{ props.body.value }})}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="border-t border-gray-100" />
+
+      {% if props.body and props.body.kind == "ref" %}
+      <div className="py-10 prose prose-lg prose-gray max-w-none
+        prose-headings:font-serif prose-headings:font-bold
+        prose-p:text-gray-600 prose-p:leading-relaxed
+        prose-a:text-gray-900 prose-a:underline prose-a:decoration-gray-300 hover:prose-a:decoration-gray-900
+      ">
+        <p className="text-xl text-gray-600 leading-relaxed whitespace-pre-wrap">
+          {doc.{{ props.body.value }}}
+        </p>
+      </div>
+      {% endif %}
+
+      <footer className="border-t border-gray-100 pt-8 mt-8">
+        <Link
+          to="{{ view.path.rsplit('/', 1)[0] if '/' in view.path else '/' }}"
+          className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+            <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 010 1.06L7.06 8l2.72 2.72a.75.75 0 11-1.06 1.06L5.47 8.53a.75.75 0 010-1.06l3.25-3.25a.75.75 0 011.06 0z" clipRule="evenodd" />
+          </svg>
+          Back to all posts
+        </Link>
+      </footer>
+    </article>
+  )
+}

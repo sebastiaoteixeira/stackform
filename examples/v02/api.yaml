@@ -11,6 +11,9 @@ api:
       update: true
       replace: false
       delete: true
+    auth:
+      register: true
+      login: true
 
 imports:
   posts: myapp.handlers.posts
@@ -62,47 +65,28 @@ entities:
 repositories:
   users:
     entity: user
-
   posts:
     entity: post
     operations:
       replace: true
 
 services:
-  register:     { repository: users, operation: create }
-  login:
+  users:
     repository: users
-
-  list-users:   { repository: users, operation: list }
-  get-user:     { repository: users, operation: get }
-  update-user:  { repository: users, operation: update }
-  delete-user:  { repository: users, operation: delete }
-
-  list-posts:   { repository: posts, operation: list }
-  get-post:     { repository: posts, operation: get }
-  create-post:  { repository: posts, operation: create }
-  update-post:  { repository: posts, operation: update }
-  delete-post:  { repository: posts, operation: delete }
-  publish-post:
-    handler: posts.publish
+  posts:
+    repository: posts
+    operations:
+      publish: { handler: posts.publish }
 
 controllers:
-  auth:
-    base_path: /auth
-    routes:
-      register: { service: register, method: POST, path: /register, access: public }
-      login:    { service: login,    method: POST, path: /login,    access: public }
-
   users:
+    service: users
     base_path: /users
-    routes:
-      list:   { service: list-users,  method: GET,    path: /,       access: "*" }
-      get:    { service: get-user,    method: GET,    path: "/{id}", access: "*" }
-      update: { service: update-user, method: PATCH,  path: "/{id}", access: "*" }
+    access: "*"
+    operations:
+      register: { access: public }
+      login: { access: public }
       delete:
-        service: delete-user
-        method: DELETE
-        path: /{id}
         access:
           - given:
               principal: identity:user
@@ -110,32 +94,26 @@ controllers:
             when: principal.sub equals document.id
 
   posts:
+    service: posts
     base_path: /posts
-    routes:
-      list:    { service: list-posts,   method: GET,  path: /,                access: public }
-      get:     { service: get-post,     method: GET,  path: "/{id}",          access: public }
-      create:  { service: create-post,  method: POST, path: /,               access: "*" }
+    access: public
+    operations:
+      create: { access: "*" }
       update:
-        service: update-post
-        method: PATCH
-        path: "/{id}"
         access:
+          - admin
           - given:
               principal: identity:user
               document: posts
             when: principal.sub not equals document.authorId
             then: deny
           - then: allow
-      publish: { service: publish-post, method: POST, path: "/{id}/publish", access: "*" }
+      replace: { access: "*" }
+      publish: { method: POST, path: "/{id}/publish", access: "*" }
       delete:
-        service: delete-post
-        method: DELETE
-        path: /{id}
         access:
+          - moderator
           - given:
               principal: identity:user
               document: posts
             when: principal.sub equals document.authorId
-          - given:
-              principal: identity:user
-            when: principal.record.role equals 'moderator'

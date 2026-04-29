@@ -83,11 +83,14 @@ repositories:
     entity: country
 
 services:
-  users: {}
+  users:
+    repository: users
   posts:
+    repository: posts
     operations:
       publish: { handler: posts.publish }
-  countries: {}
+  countries:
+    repository: countries
 
 controllers:
   users:

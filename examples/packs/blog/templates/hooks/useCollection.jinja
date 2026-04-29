@@ -1,0 +1,26 @@
+import { useState, useEffect } from "react"
+import { apiFetch } from "../lib/api"
+
+export function use{{ collection.name | pascal_case }}(id?: string) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+
+  const path = id
+    ? `/{{ entity.repository_name }}/${id}`
+    : `/{{ entity.repository_name }}`
+
+  useEffect(() => {
+    setLoading(true)
+    apiFetch(path)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`)
+        return res.json()
+      })
+      .then(setData)
+      .catch(setError)
+      .finally(() => setLoading(false))
+  }, [path])
+
+  return { data, loading, error }
+}

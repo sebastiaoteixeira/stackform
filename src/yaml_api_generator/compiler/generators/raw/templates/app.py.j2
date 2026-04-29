@@ -89,7 +89,7 @@ async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, 
     for doc in docs:
         if str(doc.get("{{ identity.identifier }}", "")) != data[{{ identity.identifier | tojson }}]:
             continue
-        stored_hash = doc.get("passwordHash")
+        stored_hash = doc["_auth"]["passwordHash"]
         if not isinstance(stored_hash, str):
             continue
         if not verify_password(data["password"], stored_hash):
@@ -102,7 +102,7 @@ async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, 
         token = create_jwt_token(str(subject), "{{ identity.name }}")
         safe_user = {
             k: v for k, v in doc.items()
-            if k not in ("password", "passwordHash", "_id")
+            if k not in ("password", "_id", "_auth")
         }
         return 200, {"token": token, "user": safe_user}
 

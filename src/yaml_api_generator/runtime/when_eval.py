@@ -8,6 +8,8 @@ from ..when_ast import (
     Not,
     NotEquals,
     NotIn,
+    Not,
+    NotEquals,
     Or,
     StringLiteral,
     WhenExpr,

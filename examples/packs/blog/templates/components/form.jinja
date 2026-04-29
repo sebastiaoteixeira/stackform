@@ -1,0 +1,168 @@
+{% if entity %}
+import { useState, useEffect } from "react"
+import { useNavigate, Link } from "react-router-dom"
+import { use{{ entity.name | pascal_case }}Mutation } from "@/__generated__/hooks/use{{ entity.name | pascal_case }}Mutation"
+import { useAuth } from "@/__generated__/AuthProvider"
+
+export function {{ view.name | pascal_case }}Page() {
+  const { create } = use{{ entity.name | pascal_case }}Mutation()
+  const { isAuthenticated } = useAuth()
+  const navigate = useNavigate()
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isAuthenticated) navigate("/login", { replace: true })
+  }, [isAuthenticated, navigate])
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    try {
+      const form = new FormData(e.currentTarget)
+      const data: Record<string, unknown> = {}
+      form.forEach((value, key) => { data[key] = value })
+      {% for field_name, field in entity.fields.items() %}
+      {% if field.type == "boolean" %}
+      data["{{ field_name }}"] = form.has("{{ field_name }}")
+      {% endif %}
+      {% endfor %}
+      const res = await create(data)
+      if (res.ok) navigate(-1)
+      else setError("Failed to publish. Please try again.")
+    } catch {
+      setError("Something went wrong. Please try again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-6 py-12">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-900 transition-colors mb-8"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+          <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 010 1.06L7.06 8l2.72 2.72a.75.75 0 11-1.06 1.06L5.47 8.53a.75.75 0 010-1.06l3.25-3.25a.75.75 0 011.06 0z" clipRule="evenodd" />
+        </svg>
+        Back
+      </Link>
+
+      <h1 className="text-3xl font-serif font-bold text-gray-900 mb-2">Create a new post</h1>
+      <p className="text-gray-400 mb-10">Share your thoughts with the world.</p>
+
+      {error && (
+        <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-8">
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-8">
+        {% for field_name, field in entity.fields.items() %}
+        {% if field.type != "id" and field.type != "ref" and field.type != "datetime" and (field.required or field.default is none) %}
+        <div>
+          {% if field.type == "boolean" %}
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <div className="relative">
+              <input
+                type="checkbox"
+                name="{{ field_name }}"
+                id="{{ field_name }}"
+                className="peer sr-only"
+              />
+              <div className="w-10 h-6 bg-gray-200 rounded-full peer-checked:bg-gray-900 transition-colors" />
+              <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm peer-checked:translate-x-4 transition-transform" />
+            </div>
+            <span className="text-sm text-gray-600 group-hover:text-gray-900 transition-colors">{{ field_name | pascal_case }}</span>
+          </label>
+          {% elif field.type == "enum" and field.enum_values %}
+          <label htmlFor="{{ field_name }}" className="block text-sm font-medium text-gray-700 mb-2">
+            {{ field_name | pascal_case }}
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {% for val in field.enum_values %}
+            <label className="cursor-pointer">
+              <input
+                type="radio"
+                name="{{ field_name }}"
+                value="{{ val }}"
+                className="peer sr-only"
+                {% if loop.first %}defaultChecked{% endif %}
+              />
+              <span className="inline-block px-4 py-2 text-sm rounded-full border border-gray-200 text-gray-600 peer-checked:border-gray-900 peer-checked:bg-gray-900 peer-checked:text-white transition-all">
+                {{ val | pascal_case }}
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+          {% elif field_name == "content" or field_name == "body" or field_name == "description" %}
+          <label htmlFor="{{ field_name }}" className="block text-sm font-medium text-gray-700 mb-2">
+            {{ field_name | pascal_case }}{% if field.required %} <span className="text-red-400">*</span>{% endif %}
+          </label>
+          <textarea
+            name="{{ field_name }}"
+            id="{{ field_name }}"
+            rows={12}
+            {% if field.required %}required{% endif %}
+            className="block w-full rounded-xl border-0 ring-1 ring-gray-200 px-4 py-3 text-gray-900 placeholder:text-gray-300 focus:ring-2 focus:ring-gray-900 transition-shadow resize-none text-base leading-relaxed"
+            placeholder="Start writing..."
+          />
+          {% elif field_name == "title" %}
+          <label htmlFor="{{ field_name }}" className="sr-only">Title</label>
+          <input
+            type="text"
+            name="{{ field_name }}"
+            id="{{ field_name }}"
+            {% if field.required %}required{% endif %}
+            className="block w-full border-0 text-3xl font-serif font-bold text-gray-900 placeholder:text-gray-300 focus:ring-0 focus:outline-none py-2"
+            placeholder="Title"
+            autoFocus
+          />
+          {% else %}
+          <label htmlFor="{{ field_name }}" className="block text-sm font-medium text-gray-700 mb-2">
+            {{ field_name | pascal_case }}{% if field.required %} <span className="text-red-400">*</span>{% endif %}
+          </label>
+          <input
+            type="text"
+            name="{{ field_name }}"
+            id="{{ field_name }}"
+            {% if field.required %}required{% endif %}
+            className="block w-full rounded-xl border-0 ring-1 ring-gray-200 px-4 py-3 text-gray-900 placeholder:text-gray-300 focus:ring-2 focus:ring-gray-900 transition-shadow text-sm"
+            placeholder="{{ field_name | snake_case | replace('_', ' ') | capitalize }}"
+          />
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+
+        <div className="flex items-center gap-4 pt-4 border-t border-gray-100">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-6 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting ? "Publishing..." : "Publish"}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="px-6 py-2.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+{% else %}
+export function {{ view.name | pascal_case }}Page() {
+  return (
+    <div className="max-w-2xl mx-auto px-6 py-32 text-center">
+      <p className="text-gray-400">No entity bound to this form.</p>
+    </div>
+  )
+}
+{% endif %}

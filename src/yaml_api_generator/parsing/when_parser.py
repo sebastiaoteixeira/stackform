@@ -274,7 +274,10 @@ def parse_when_list(
 def parse_document_binding(
     raw: str, path: str
 ) -> tuple[tuple[str, str | None] | None, list[ConfigError]]:
-    """Parse document binding: '<collection>' or '<collection> by <param>'."""
+    """Parse document binding: '<collection>' or '<collection> by <param>'.
+
+    Returns (collection, id_param) or None on error.
+    """
     raw = raw.strip()
     parts = raw.split(" by ", 1)
     if len(parts) == 2:

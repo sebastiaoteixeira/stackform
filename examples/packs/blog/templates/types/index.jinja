@@ -1,0 +1,34 @@
+// Auto-generated types -- do not edit
+
+{% for entity_name, entity in entities.items() %}
+export interface {{ entity_name | pascal_case }} {
+  {{ entity.pk_field }}: string
+  {% for field_name, field in entity.fields.items() %}
+  {% if field.type == "string" %}
+  {{ field_name }}{% if not field.required %}?{% endif %}: string
+  {% elif field.type == "number" %}
+  {{ field_name }}{% if not field.required %}?{% endif %}: number
+  {% elif field.type == "boolean" %}
+  {{ field_name }}{% if not field.required %}?{% endif %}: boolean
+  {% elif field.type == "enum" and field.enum_values %}
+  {{ field_name }}{% if not field.required %}?{% endif %}: {{ field.enum_values | map('tojson') | join(' | ') }}
+  {% elif field.type == "ref" %}
+  {{ field_name }}{% if not field.required %}?{% endif %}: string
+  {% elif field.type == "datetime" %}
+  {{ field_name }}{% if not field.required %}?{% endif %}: string
+  {% else %}
+  {{ field_name }}{% if not field.required %}?{% endif %}: unknown
+  {% endif %}
+  {% endfor %}
+}
+
+{% endfor %}
+
+{% for col_name, collection in collections.items() %}
+export interface {{ col_name | pascal_case }}Item {
+  {% for field_name, field in collection.fields.items() %}
+  {{ field_name }}: {{ field.resolved_type or "unknown" | replace("string", "string") | replace("number", "number") | replace("boolean", "boolean") | replace("enum", "string") | replace("ref", "string") | replace("datetime", "string") }}
+  {% endfor %}
+}
+
+{% endfor %}

@@ -1,0 +1,9 @@
+{
+  "title": "Auth",
+  "pages": [
+    "overview",
+    "password-provider",
+    "apikey-provider",
+    "claim-mapping"
+  ]
+}

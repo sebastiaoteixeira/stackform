@@ -15,14 +15,31 @@ class IROperations:
 
 
 @dataclass(frozen=True)
+class IRCors:
+    origins: list[str] = field(default_factory=lambda: ["*"])
+    methods: list[str] = field(default_factory=lambda: ["*"])
+    headers: list[str] = field(default_factory=lambda: ["*"])
+    credentials: bool = False
+
+
+@dataclass(frozen=True)
 class IRApi:
     basePath: str
     version: str | None
+    cors: IRCors | None = None
+    port: int = 8000
+
+
+@dataclass(frozen=True)
+class IRMongo:
+    uri: str = "mongodb://localhost:27017"
+    database: str = "yaml_api"
 
 
 @dataclass(frozen=True)
 class IRCollection:
     name: str
+    entity_name: str
     type: str
     idField: str
     idFormat: str
@@ -92,6 +109,8 @@ class IRDocument:
     routes: list[IRRoute]
     identityCollections: dict[str, IRIdentityCollection]
     services: dict[str, IRService] = field(default_factory=dict)
+    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    mongo: IRMongo = field(default_factory=IRMongo)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

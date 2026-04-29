@@ -1,0 +1,58 @@
+name: Auto-Generate Documentation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get source PR info
+        id: pr-info
+        run: |
+          PR_NUMBER=$(gh pr list --state merged --search "${{ github.sha }}" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          PR_LABEL="${PR_NUMBER:-${SHORT_SHA}}"
+          echo "branch_name=docs/auto-update-pr${PR_LABEL}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run AI Documentation Agent
+        uses: sebastiaoteixeira/docs-bot@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: "gemini-3.1-flash-preview"
+          prompt: |
+            Docs are versioned by spec version. Each version folder
+            can contain things like: getting-started, concepts, Tutorial, Reference, LearnByExample, troubleshooting.
+            All relevant pages should be updated. If there is an whole new big feature, it may require new Tutorial and LearnByExample pages.
+            The existing examples should be updated to reflect the new feature, independently of the size of the change.
+            The documentation should never be outdated with the respective code.
+            The documentation should be evaluated so that it is clear and concise.
+            It should be focused on begginners and students, but also be useful for more experienced users.
+            In that way, all concepts (even smaller details) should be explained in a simple way, with examples and analogies if possible.
+            The reference should include all the new features.
+            So, Tutorial for big features, LearnByExample should be updated and complete, and Reference should be updated with all the new features and changes.
+            Keep pages in the correct version folder. Update meta.json page ordering when adding new pages.
+            You should be efficient. Don't document things that are not relevant for the current changes.
+            Focus on the new features and changes, and how they affect the users. Don't add unnecessary information or explanations about things that haven't changed.
+            Avoid doing too many tool calls. Only the ones that ar really necessary to understand the changes and update the documentation accordingly.
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: ${{ steps.pr-info.outputs.branch_name }}
+          commit-message: "docs: automatic update from AI agent"
+          title: ${{ env.AI_PR_TITLE }}
+          body: ${{ env.AI_PR_BODY }}
+          labels: |
+            documentation

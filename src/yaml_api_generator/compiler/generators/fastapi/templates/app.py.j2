@@ -25,11 +25,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+{% if ctx.app.cors %}
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins={{ ctx.app.cors.origins }},
+    allow_methods={{ ctx.app.cors.methods }},
+    allow_headers={{ ctx.app.cors.headers }},
+    allow_credentials={{ ctx.app.cors.credentials }},
+)
+{% endif %}
+
 {% for col_name in ctx.collections %}
-app.include_router({{ col_name }}_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
+app.include_router({{ col_name }}_router)
 {% endfor %}
 {% if ctx.auth.has_password_auth %}
-app.include_router(login_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
+app.include_router(login_router)
 {% endif %}
 
 {% if ctx.auth.enabled %}
@@ -66,6 +78,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app:app",
         host=os.environ.get("HOST", "127.0.0.1"),
-        port=int(os.environ.get("PORT", "8000")),
+        port=int(os.environ.get("PORT", "{{ ctx.app.port }}")),
         reload=True,
     )

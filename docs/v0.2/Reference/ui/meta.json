@@ -1,0 +1,10 @@
+{
+  "title": "UI Generation",
+  "pages": [
+    "overview",
+    "frontend",
+    "collections",
+    "components",
+    "views"
+  ]
+}

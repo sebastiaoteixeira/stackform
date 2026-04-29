@@ -77,9 +77,19 @@ class AuthConfig:
 
 
 @dataclass(frozen=True)
+class CorsConfig:
+    origins: list[str] = field(default_factory=lambda: ["*"])
+    methods: list[str] = field(default_factory=lambda: ["*"])
+    headers: list[str] = field(default_factory=lambda: ["*"])
+    credentials: bool = False
+
+
+@dataclass(frozen=True)
 class AppConfig:
     base_path: str
     api_version: str | None
+    cors: CorsConfig | None = None
+    port: int = 8000
 
 
 @dataclass(frozen=True)
