@@ -1,6 +1,5 @@
 import os
 import sys
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,32 +11,27 @@ from .repositories import MongoRepository, MongoRepositoryConfig
 from .runtime_context_builder import build_runtime_context
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    repository = MongoRepository(
-        MongoRepositoryConfig(
-            uri=os.environ.get("YAML_API_MONGO_URI", "mongodb://localhost:27017"),
-            database=os.environ.get("YAML_API_MONGO_DB", "yaml_api"),
-        )
-    )
-    repository.connect()
-    app.state.repository = repository
-    yield
-    repository.close()
-
-
 def _ensure_spec_dir_importable(yaml_file: str) -> None:
     spec_dir = str(Path(yaml_file).resolve().parent)
     if spec_dir not in sys.path:
         sys.path.insert(0, spec_dir)
 
 
+def _make_repository(yaml_file: str, schema_file: str | Path | None = None):
+    ir = load_and_generate_ir(yaml_file, schema_file).ir
+    uri = os.environ.get("YAML_API_MONGO_URI", ir.mongo.uri)
+    database = os.environ.get("YAML_API_MONGO_DB", ir.mongo.database)
+    repo = MongoRepository(MongoRepositoryConfig(uri=uri, database=database))
+    repo.connect()
+    return ir, repo
+
+
 def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
     _ensure_spec_dir_importable(yaml_file)
-    ir = load_and_generate_ir(yaml_file, schema_file).ir
+    ir, repository = _make_repository(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
 
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI()
 
     if ir.api.cors:
         from fastapi.middleware.cors import CORSMiddleware
@@ -49,14 +43,6 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
             allow_credentials=ir.api.cors.credentials,
         )
 
-    repository = MongoRepository(
-        MongoRepositoryConfig(
-            uri=os.environ.get("YAML_API_MONGO_URI", "mongodb://localhost:27017"),
-            database=os.environ.get("YAML_API_MONGO_DB", "yaml_api"),
-        )
-    )
-    repository.connect()
-
     register_fastapi_routes(app, ctx, repository)
 
     return app
@@ -64,15 +50,7 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
 
 def build_raw_app(yaml_file: str, schema_file: str | Path | None = None) -> ASGIApp:
     _ensure_spec_dir_importable(yaml_file)
-    ir = load_and_generate_ir(yaml_file, schema_file).ir
+    ir, repository = _make_repository(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
-
-    repository = MongoRepository(
-        MongoRepositoryConfig(
-            uri=os.environ.get("YAML_API_MONGO_URI", "mongodb://localhost:27017"),
-            database=os.environ.get("YAML_API_MONGO_DB", "yaml_api"),
-        )
-    )
-    repository.connect()
 
     return ASGIApp(ctx, repository)

@@ -5,6 +5,7 @@ from ...ir import (
     IRCollection,
     IRDocument,
     IRIdentityCollection,
+    IRMongo,
     IROperations,
     IRRoute,
 )
@@ -334,10 +335,15 @@ class V01Transformer:
                     )
                 )
 
+        mongo_data = resolved.get("mongo", {})
         return IRDocument(
             version=str(resolved["version"]),
             api=IRApi(basePath=api.get("basePath", "/api"), version=api.get("version")),
             collections=collections,
             routes=routes,
             identityCollections=identity_collections,
+            mongo=IRMongo(
+                uri=mongo_data.get("uri", "mongodb://localhost:27017"),
+                database=mongo_data.get("database", "yaml_api"),
+            ),
         )

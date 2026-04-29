@@ -8,6 +8,7 @@ from ...ir import (
     IRDocument,
     IRDocumentBinding,
     IRIdentityCollection,
+    IRMongo,
     IROperations,
     IRRoute,
     IRService,
@@ -438,6 +439,7 @@ class V02Transformer:
             identityCollections=identity_collections,
             services=services,
             role_hierarchies=role_hierarchies,
+            mongo=self._build_mongo(resolved.get("mongo", {})),
         )
 
     def _build_collections(
@@ -602,6 +604,12 @@ class V02Transformer:
             version=api_data.get("version"),
             cors=cors,
             port=int(api_data.get("port", 8000)),
+        )
+
+    def _build_mongo(self, mongo_data: dict[str, Any]) -> IRMongo:
+        return IRMongo(
+            uri=mongo_data.get("uri", "mongodb://localhost:27017"),
+            database=mongo_data.get("database", "yaml_api"),
         )
 
     def _build_routes(
