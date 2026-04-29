@@ -46,6 +46,9 @@ jobs:
             The reference should include all the new features.
             So, Tutorial for big features, LearnByExample should be updated and complete, and Reference should be updated with all the new features and changes.
             Keep pages in the correct version folder. Update meta.json page ordering when adding new pages.
+            You should be efficient. Don't document things that are not relevant for the current changes.
+            Focus on the new features and changes, and how they affect the users. Don't add unnecessary information or explanations about things that haven't changed.
+            Avoid doing too many tool calls. Only the ones that ar really necessary to understand the changes and update the documentation accordingly.
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
