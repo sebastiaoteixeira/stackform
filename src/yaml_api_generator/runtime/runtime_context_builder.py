@@ -5,7 +5,6 @@ from .runtime_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
     RuntimeContext,
-    RuntimeDocumentBinding,
     RuntimeIdentityDescriptor,
     RuntimeRouteDescriptor,
 )
@@ -34,7 +33,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
 
 
 def _build_collections(
-    ir_collections: dict[str, IRCollection]
+    ir_collections: dict[str, IRCollection],
 ) -> dict[str, RuntimeCollectionDescriptor]:
     return {
         name: RuntimeCollectionDescriptor(
@@ -48,17 +47,6 @@ def _build_collections(
     }
 
 
-def _map_document_binding(
-    binding: IRDocumentBinding | None,
-) -> RuntimeDocumentBinding | None:
-    if binding is None:
-        return None
-    return RuntimeDocumentBinding(
-        collection=binding.collection,
-        id_param=binding.id_param,
-    )
-
-
 def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
     routes = []
     for route in document.routes:
@@ -68,8 +56,9 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                 RuntimeAccessRule(
                     principal=rule.principal,
                     required_role=rule.required_role,
+                    identity_symbols=rule.identity_symbols,
+                    document_symbols=rule.document_symbols,
                     when=rule.when,
-                    document=_map_document_binding(rule.document),
                     effect=rule.effect,
                 )
                 for rule in route.access_rules

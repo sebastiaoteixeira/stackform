@@ -58,3 +58,15 @@ def needs_document(expr: WhenExpr) -> bool:
     if isinstance(expr, Not):
         return needs_document(expr.operand)
     return False
+
+
+def collect_roots(expr: WhenExpr) -> set[str]:
+    if isinstance(expr, FieldRef):
+        return {expr.root}
+    if isinstance(expr, StringLiteral):
+        return set()
+    if isinstance(expr, (Equals, NotEquals, And, Or)):
+        return collect_roots(expr.left) | collect_roots(expr.right)
+    if isinstance(expr, Not):
+        return collect_roots(expr.operand)
+    return set()
