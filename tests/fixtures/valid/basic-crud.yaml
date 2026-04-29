@@ -1,0 +1,32 @@
+version: "0.2"
+api:
+  basePath: /api
+  version: v1
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+mongo:
+  uri: mongodb://localhost:27017
+  database: testdb
+entities:
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      content: { type: string }
+repositories:
+  posts:
+    entity: post
+services:
+  posts:
+    repository: posts
+controllers:
+  posts:
+    service: posts
+    base_path: /posts
+    access: public

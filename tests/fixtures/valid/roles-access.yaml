@@ -1,0 +1,67 @@
+version: "0.2"
+api:
+  basePath: /api
+  version: v1
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+    auth:
+      register: true
+      login: true
+mongo:
+  uri: mongodb://localhost:27017
+  database: testdb
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+      roles: role
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      authorId: { type: ref, ref: user }
+roles:
+  user:
+    admin: [moderator]
+    moderator: [user]
+repositories:
+  users:
+    entity: user
+  posts:
+    entity: post
+services:
+  users:
+    repository: users
+  posts:
+    repository: posts
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+    operations:
+      register: { access: public }
+      login: { access: public }
+  posts:
+    service: posts
+    base_path: /posts
+    access: public
+    operations:
+      create: { access: "*" }
+      update: { access: moderator }
+      delete: { access: admin }

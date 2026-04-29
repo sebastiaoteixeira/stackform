@@ -1,0 +1,9 @@
+version: "0.2"
+entities:
+  post:
+    fields:
+      id: { type: id, format: email }
+      title: { type: string }
+repositories:
+  posts:
+    entity: post

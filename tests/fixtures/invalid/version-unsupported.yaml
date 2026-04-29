@@ -1,0 +1,5 @@
+version: "0.3"
+collections:
+  posts:
+    fields:
+      id: { type: id }
