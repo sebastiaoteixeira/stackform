@@ -33,7 +33,7 @@ jobs:
         uses: sebastiaoteixeira/docs-bot@main
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          gemini_model: "gemini-3.1-pro-preview"
+          gemini_model: "gemini-3.1-flash-preview"
           prompt: |
             Docs are versioned by spec version. Each version folder
             can contain things like: getting-started, concepts, Tutorial, Reference, LearnByExample, troubleshooting.
