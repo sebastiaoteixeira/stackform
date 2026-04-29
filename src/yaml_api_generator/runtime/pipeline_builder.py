@@ -3,7 +3,6 @@ import importlib
 from .runtime_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import BaseRepository
-from .when_eval import needs_document
 from .steps import (
     AuthorizeRouteStep,
     LoginStep,
@@ -65,8 +64,16 @@ class PipelineBuilder:
         steps.append(self._validate_body_step(route))
 
         post_fetch_step = self._post_fetch_authorize_step(route)
-        if post_fetch_step is not None and route.operation in ("update", "replace", "delete"):
-            steps.append(RepositoryGetStep(route.collection, self._ctx.collections[route.collection].id_field))
+        if post_fetch_step is not None and route.operation in (
+            "update",
+            "replace",
+            "delete",
+        ):
+            steps.append(
+                RepositoryGetStep(
+                    route.collection, self._ctx.collections[route.collection].id_field
+                )
+            )
             steps.append(post_fetch_step)
             steps.append(self._repository_step(route.operation, route.collection))
         else:
@@ -129,10 +136,7 @@ class PipelineBuilder:
     def _post_fetch_authorize_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         if route.is_public or not route.access_rules:
             return None
-        has_doc_rules = any(
-            r.when is not None and needs_document(r.when)
-            for r in route.access_rules
-        )
+        has_doc_rules = any(bool(r.document_symbols) for r in route.access_rules)
         if not has_doc_rules:
             return None
         # Only applies to operations that fetch a single document

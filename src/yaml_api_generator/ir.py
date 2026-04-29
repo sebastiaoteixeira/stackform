@@ -103,11 +103,18 @@ class IRDocumentBinding:
 
 
 @dataclass(frozen=True)
+class IRIdentityBinding:
+    entity_name: str
+    collection_name: str
+
+
+@dataclass(frozen=True)
 class IRAccessRule:
     principal: str
     required_role: str | None = None
+    identity_symbols: dict[str, IRIdentityBinding] = field(default_factory=dict)
+    document_symbols: dict[str, IRDocumentBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
-    document: IRDocumentBinding | None = None
     effect: str = "allow"
     filter: str | None = None
     write_fields: list[str] = field(default_factory=list)

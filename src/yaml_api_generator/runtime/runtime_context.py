@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..ir import IRProviderBinding
+from ..ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
 from ..when_ast import WhenExpr
 
 
@@ -34,17 +34,12 @@ class RuntimeIdentityDescriptor:
 
 
 @dataclass(frozen=True)
-class RuntimeDocumentBinding:
-    collection: str
-    id_param: str | None = None
-
-
-@dataclass(frozen=True)
 class RuntimeAccessRule:
     principal: str
     required_role: str | None = None
+    identity_symbols: dict[str, IRIdentityBinding] = field(default_factory=dict)
+    document_symbols: dict[str, IRDocumentBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
-    document: RuntimeDocumentBinding | None = None
     effect: str = "allow"
 
 

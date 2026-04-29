@@ -3,7 +3,6 @@ from typing import Any
 from ..ir import (
     IRDocument,
     IRCollection,
-    IRDocumentBinding,
     IRIdentityCollection,
     IROIDCProvider,
     IRSAMLProvider,
@@ -14,7 +13,6 @@ from .compile_context import (
     AuthConfig,
     CompileContext,
     CorsConfig,
-    DocumentBindingDescriptor,
     FieldDescriptor,
     IdentityCollectionDescriptor,
     ModelDescriptor,
@@ -183,17 +181,6 @@ def _build_fields(
     return fields
 
 
-def _map_doc_binding(
-    binding: IRDocumentBinding | None,
-) -> DocumentBindingDescriptor | None:
-    if binding is None:
-        return None
-    return DocumentBindingDescriptor(
-        collection=binding.collection,
-        id_param=binding.id_param,
-    )
-
-
 def _build_routes(
     document: IRDocument,
     model_index: dict[str, ModelDescriptor],
@@ -210,7 +197,6 @@ def _build_routes(
                 AccessRuleDescriptor(
                     principal=rule.principal,
                     when=rule.when,
-                    document=_map_doc_binding(rule.document),
                     effect=rule.effect,
                 )
                 for rule in ir_route.access_rules

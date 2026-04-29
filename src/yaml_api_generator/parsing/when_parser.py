@@ -15,7 +15,7 @@ from .parser import ConfigError
 
 
 _STRING_LITERAL_RE = re.compile(r"^'([^']*)'$")
-_FIELD_REF_RE = re.compile(r"^(principal|document)(\.\w+)+$")
+_FIELD_REF_RE = re.compile(r"^([a-zA-Z_]\w*)(\.\w+)*$")
 
 
 def _parse_operand(raw: str, path: str) -> tuple[WhenExpr | None, ConfigError | None]:
@@ -31,7 +31,7 @@ def _parse_operand(raw: str, path: str) -> tuple[WhenExpr | None, ConfigError | 
 
     return None, ConfigError(
         code="WHEN_OPERAND_INVALID",
-        message=f"Invalid operand: '{raw}'. Expected a field reference (principal.*/document.*) or a string literal ('...')",
+        message=f"Invalid operand: '{raw}'. Expected a field reference (symbol.field) or a string literal ('...')",
         path=path,
     )
 

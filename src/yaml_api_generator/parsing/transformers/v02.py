@@ -9,6 +9,7 @@ from ...ir import (
     IRDocument,
     IRDocumentBinding,
     IRDockerDeployConfig,
+    IRIdentityBinding,
     IRIdentityCollection,
     IRMongo,
     IROIDCProvider,
@@ -237,35 +238,40 @@ def _parse_access_rule_object(
     errors: list[ConfigError] = []
 
     given = rule.get("given", {})
-    principal_raw = given.get("principal", "") if isinstance(given, dict) else ""
     effect = rule.get("then", "allow")
 
-    # Resolve principal
-    principal = ""
-    required_role: str | None = None
-    if principal_raw.startswith("identity:"):
-        entity_name = principal_raw[len("identity:") :]
-        collection = entity_to_collection.get(entity_name)
-        if collection is None:
-            errors.append(
-                ConfigError(
-                    code="ACCESS_UNKNOWN_ENTITY",
-                    message=f"Unknown auth entity '{entity_name}' in access rule",
-                    path=f"{path}.given.principal",
-                )
-            )
-        else:
-            principal = f"identity:{collection}"
-    else:
-        principal = principal_raw
+    identity_symbols: dict[str, IRIdentityBinding] = {}
+    document_symbols: dict[str, IRDocumentBinding] = {}
 
-    doc_binding: IRDocumentBinding | None = None
-    doc_raw = given.get("document") if isinstance(given, dict) else None
-    if doc_raw is not None:
-        parsed, doc_errors = parse_document_binding(doc_raw, f"{path}.given.document")
-        errors.extend(doc_errors)
-        if parsed is not None:
-            doc_binding = IRDocumentBinding(collection=parsed[0], id_param=parsed[1])
+    if isinstance(given, dict):
+        for symbol_name, symbol_value in given.items():
+            if not isinstance(symbol_value, str):
+                continue
+            if symbol_value.startswith("identity:"):
+                entity_name = symbol_value[len("identity:") :]
+                collection = entity_to_collection.get(entity_name)
+                if collection is None:
+                    errors.append(
+                        ConfigError(
+                            code="ACCESS_UNKNOWN_ENTITY",
+                            message=f"Unknown auth entity '{entity_name}' in access rule",
+                            path=f"{path}.given.{symbol_name}",
+                        )
+                    )
+                else:
+                    identity_symbols[symbol_name] = IRIdentityBinding(
+                        entity_name=entity_name,
+                        collection_name=collection,
+                    )
+            else:
+                parsed, doc_errors = parse_document_binding(
+                    symbol_value, f"{path}.given.{symbol_name}"
+                )
+                errors.extend(doc_errors)
+                if parsed is not None:
+                    document_symbols[symbol_name] = IRDocumentBinding(
+                        collection=parsed[0], id_param=parsed[1]
+                    )
 
     when_expr = None
     when_raw = rule.get("when")
@@ -276,11 +282,18 @@ def _parse_access_rule_object(
     if errors:
         return None, errors
 
+    principal = ""
+    required_role: str | None = None
+    first_identity = next(iter(identity_symbols.values()), None)
+    if first_identity is not None:
+        principal = f"identity:{first_identity.collection_name}"
+
     return IRAccessRule(
         principal=principal,
         required_role=required_role,
+        identity_symbols=identity_symbols,
+        document_symbols=document_symbols,
         when=when_expr,
-        document=doc_binding,
         effect=effect,
         filter=rule.get("filter"),
         write_fields=rule.get("writeFields", []),

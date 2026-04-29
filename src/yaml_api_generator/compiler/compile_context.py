@@ -37,7 +37,6 @@ class AccessRuleDescriptor:
     principal: str
     required_role: str | None = None
     when: WhenExpr | None = None
-    document: DocumentBindingDescriptor | None = None
     effect: str = "allow"
 
 
