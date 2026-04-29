@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from ..frontend.pipeline import generate_frontend
 from ..parsing.parser import load_and_generate_ir
 from .context_builder import build_context
 from .generators.base import CodeGenerator
@@ -26,7 +27,15 @@ def compile_api(
         supported = ", ".join(_GENERATORS)
         raise ValueError(f"Unknown target '{target}'. Supported: {supported}")
 
-    ir = load_and_generate_ir(yaml_file, schema_file)
-    context = build_context(ir)
+    result = load_and_generate_ir(yaml_file, schema_file)
+    out = Path(output_dir)
+    context = build_context(result.ir)
     generator = generator_cls()
-    generator.generate(context, Path(output_dir))
+    generator.generate(context, out / "backend")
+
+    if result.ui_block is not None:
+        generate_frontend(
+            ir=result.ir,
+            ui_block=result.ui_block,
+            output_override=str(out / "frontend"),
+        )

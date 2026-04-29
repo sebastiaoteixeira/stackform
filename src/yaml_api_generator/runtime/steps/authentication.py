@@ -62,7 +62,12 @@ async def _resolve_jwt_principal(
     documents = await repository.list(collection_name)
     for doc in documents:
         if str(doc.get(id_field, "")) == sub:
-            return _build_principal(doc, id_field=id_field, identity_collection=collection_name, identity=identity)
+            return _build_principal(
+                doc,
+                id_field=id_field,
+                identity_collection=collection_name,
+                identity=identity,
+            )
 
     return None
 
@@ -76,7 +81,10 @@ async def _resolve_identity_principal(
     bearer_token = _extract_bearer_token(headers)
     if bearer_token is not None:
         jwt_principal = await _resolve_jwt_principal(
-            bearer_token, identity_collections, identity_id_fields, repository,
+            bearer_token,
+            identity_collections,
+            identity_id_fields,
+            repository,
         )
         if jwt_principal is not None:
             return jwt_principal
@@ -183,7 +191,10 @@ async def _find_principal(
         if str(actual_value or "") != field_value:
             continue
         return _build_principal(
-            document, id_field=id_field, identity_collection=collection_name, identity=identity,
+            document,
+            id_field=id_field,
+            identity_collection=collection_name,
+            identity=identity,
         )
     return None
 
@@ -211,18 +222,16 @@ async def _find_principal_with_password(
     for document in documents:
         if str(document.get(identifier_field, "")) != identifier_value:
             continue
-        # Read passwordHash from _auth namespace
-        auth_data = document.get("_auth", {})
-        stored_hash = auth_data.get("passwordHash") if isinstance(auth_data, dict) else None
-        # Fallback to flat field for backward compatibility
-        if not isinstance(stored_hash, str):
-            stored_hash = document.get("passwordHash")
+        stored_hash = document["_auth"]["passwordHash"]
         if not isinstance(stored_hash, str):
             continue
         if not verify_password(password, stored_hash):
             continue
         return _build_principal(
-            document, id_field=id_field, identity_collection=collection_name, identity=identity,
+            document,
+            id_field=id_field,
+            identity_collection=collection_name,
+            identity=identity,
         )
     return None
 
@@ -239,11 +248,8 @@ def _build_principal(
             f"Identity record missing canonical id field: {id_field}"
         )
 
-    # Clean record: strip _auth namespace
     record = {k: v for k, v in document.items() if k != "_auth"}
-    # Also strip legacy flat sensitive fields
     record.pop("password", None)
-    record.pop("passwordHash", None)
 
     principal: dict[str, Any] = {
         "sub": str(subject),

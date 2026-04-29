@@ -1,0 +1,92 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+  cors:
+    origins: ["http://localhost:5173"]
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+    auth:
+      register: true
+      login: true
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: myapp
+
+entities:
+  user:
+    type: auth
+    via:
+      - provider: password
+        identifier: email
+    roles: role
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      displayName: { type: string, required: true }
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
+
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      content: { type: string }
+      authorId: { type: ref, ref: user }
+      status:
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+
+roles:
+  user:
+    admin: [moderator]
+    moderator: [user]
+
+repositories:
+  users:
+    entity: user
+  posts:
+    entity: post
+
+services:
+  users:
+    repository: users
+  posts:
+    repository: posts
+
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+    operations:
+      register: { access: public }
+      login: { access: public }
+
+  posts:
+    service: posts
+    base_path: /posts
+    access: "*"
+    operations:
+      list: { access: public }
+      get: { access: public }
+      create: { access: "*" }
+      update: { access: "*" }
+      delete: { access: admin }
+
+ui:
+  frontend:
+    pack: examples/packs/admin
+    output: ./admin-output
+    overwrite: never

@@ -9,7 +9,7 @@ from ...ir import (
     IRProvider,
     IRProviderBinding,
     IRSAMLProvider,
-    IROperations,
+    IRMongo,
     IRRoute,
     WELL_KNOWN_OIDC_DISCOVERY,
 )
@@ -343,7 +343,9 @@ class V01Transformer:
         id_field_errors: list[ConfigError] = []
         for name, collection_data in collections_data.items():
             collection_type = str(collection_data.get("type", "base"))
-            operations = _normalize_operations(defaults, collection_data.get("operations"))
+            operations = _normalize_operations(
+                defaults, collection_data.get("operations")
+            )
             fields = cast(dict[str, Any], collection_data["fields"])
             id_field, errors = _extract_collection_id_field(name, fields)
             id_field_errors.extend(errors)
@@ -365,6 +367,7 @@ class V01Transformer:
 
             collections[name] = IRCollection(
                 name=name,
+                entity_name=name,
                 type=collection_type,
                 idField=id_field,
                 idFormat=id_format,
@@ -421,6 +424,7 @@ class V01Transformer:
                     )
                 )
 
+        mongo_data = resolved.get("mongo", {})
         return IRDocument(
             version=str(resolved["version"]),
             api=IRApi(basePath=api.get("basePath", "/api"), version=api.get("version")),
@@ -428,4 +432,8 @@ class V01Transformer:
             routes=routes,
             identityCollections=identity_collections,
             providers=providers,
+            mongo=IRMongo(
+                uri=mongo_data.get("uri", "mongodb://localhost:27017"),
+                database=mongo_data.get("database", "yaml_api"),
+            ),
         )

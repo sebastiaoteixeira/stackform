@@ -19,7 +19,7 @@ class {{ class_name }}LoginPayload(BaseModel):
     password: str = Field(..., min_length=1)
 
 
-@router.post("/{{ identity.name }}/login")
+@router.post("{{ base_prefix }}/{{ identity.name }}/login")
 async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> Any:
     db = get_database()
     col = db["{{ identity.name }}"]
@@ -29,7 +29,7 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
     for doc in docs:
         if str(doc.get("{{ pw_binding.identifier }}", "")) != payload.{{ pw_binding.identifier }}:
             continue
-        stored_hash = doc.get("passwordHash")
+        stored_hash = doc["_auth"]["passwordHash"]
         if not isinstance(stored_hash, str):
             continue
         if not verify_password(payload.password, stored_hash):
@@ -42,7 +42,7 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
         token = create_jwt_token(str(subject), "{{ identity.name }}")
         safe_user = {
             k: v for k, v in doc.items()
-            if k not in ("password", "passwordHash", "_id")
+            if k not in ("password", "_id", "_auth")
         }
         return {"token": token, "user": safe_user}
 

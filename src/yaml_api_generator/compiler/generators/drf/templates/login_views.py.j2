@@ -29,7 +29,7 @@ class {{ class_name }}LoginView(APIView):
         for doc in col.find({}):
             if str(doc.get("{{ identity.identifier }}", "")) != str(identifier_value):
                 continue
-            stored_hash = doc.get("passwordHash")
+            stored_hash = doc["_auth"]["passwordHash"]
             if not isinstance(stored_hash, str):
                 continue
             if not verify_password(str(password), stored_hash):
@@ -42,7 +42,7 @@ class {{ class_name }}LoginView(APIView):
             token = create_jwt_token(str(subject), "{{ identity.name }}")
             safe_user = {
                 k: v for k, v in doc.items()
-                if k not in ("password", "passwordHash", "_id")
+                if k not in ("password", "_id", "_auth")
             }
             return Response({"token": token, "user": safe_user})
 

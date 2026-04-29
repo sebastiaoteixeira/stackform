@@ -1,0 +1,19 @@
+// Auto-generated router -- do not edit
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+
+{% for view_name, view in views.items() %}
+import { {{ view_name | pascal_case }}Page } from "../pages/{{ view_name | pascal_case }}"
+{% endfor %}
+
+export function AppRouter() {
+  return (
+    <Routes>
+      {% for view_name, view in views.items() %}
+      <Route path="{{ view.path }}" element={<{{ view_name | pascal_case }}Page />} />
+      {% if loop.first %}
+      <Route path="/" element={<Navigate to="{{ view.path }}" replace />} />
+      {% endif %}
+      {% endfor %}
+    </Routes>
+  )
+}

@@ -143,10 +143,16 @@ def _build_auth_config(
         if identity.has_api_key:
             has_api_key = True
 
-    # Flatten role hierarchies transitively
+    # Flatten role hierarchies and rekey by collection name (what the principal carries)
+    entity_to_collection: dict[str, str] = {
+        collections[name].entity_name: name
+        for name in identity_collections
+        if name in collections and collections[name].entity_name
+    }
     flattened_hierarchies: dict[str, dict[str, set[str]]] = {}
     for entity_name, hierarchy in role_hierarchies.items():
-        flattened_hierarchies[entity_name] = _flatten_hierarchy(hierarchy)
+        collection_name = entity_to_collection.get(entity_name, entity_name)
+        flattened_hierarchies[collection_name] = _flatten_hierarchy(hierarchy)
 
     return RuntimeAuthConfig(
         enabled=bool(identity_collections),

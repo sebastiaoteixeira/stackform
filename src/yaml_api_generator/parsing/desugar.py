@@ -8,9 +8,9 @@ CRUD_OPERATIONS = ("list", "get", "create", "update", "replace", "delete")
 AUTH_OPERATIONS = ("register", "login")
 
 CRUD_ROUTE_CONVENTIONS = {
-    "list": ("GET", "/"),
+    "list": ("GET", ""),
     "get": ("GET", "/{id}"),
-    "create": ("POST", "/"),
+    "create": ("POST", ""),
     "update": ("PATCH", "/{id}"),
     "replace": ("PUT", "/{id}"),
     "delete": ("DELETE", "/{id}"),
@@ -192,7 +192,7 @@ def _is_minified_service(
 ) -> bool:
     if "operation" in entry or "handler" in entry:
         return False
-    return key in repositories or "operations" in entry
+    return "repository" in entry or key in repositories
 
 
 def _resolve_crud_ops(
