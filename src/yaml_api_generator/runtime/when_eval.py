@@ -15,42 +15,61 @@ from ..when_ast import (
 __all__ = ["evaluate_when", "needs_document"]
 
 
-def _resolve_field(ref: FieldRef, principal: dict | None, document: dict | None) -> object:
-    if ref.root == "principal" and principal is not None:
-        if len(ref.path) == 1 and ref.path[0] == "sub":
-            return principal.get("sub")
-        if len(ref.path) >= 2 and ref.path[0] == "record":
-            record = principal.get("record", {})
-            return record.get(ref.path[1]) if isinstance(record, dict) else None
-    elif ref.root == "document" and document is not None:
-        if len(ref.path) == 1:
-            return document.get(ref.path[0])
-    return None
+def _resolve_field(
+    ref: FieldRef,
+    symbols: dict[str, dict | None],
+) -> object:
+    binding = symbols.get(ref.root)
+    if binding is None:
+        return None
+    if not ref.path:
+        return binding.get("sub")
+    current: object = binding.get("record", binding)
+    for part in ref.path:
+        if isinstance(current, dict):
+            current = current.get(part)
+        else:
+            return None
+    return current
 
 
-def _evaluate(expr: WhenExpr, principal: dict | None, document: dict | None) -> bool:
+def _evaluate(expr: WhenExpr, symbols: dict[str, dict | None]) -> bool:
     if isinstance(expr, Equals):
-        return _resolve(expr.left, principal, document) == _resolve(expr.right, principal, document)
+        return _resolve(expr.left, symbols) == _resolve(expr.right, symbols)
     if isinstance(expr, NotEquals):
-        return _resolve(expr.left, principal, document) != _resolve(expr.right, principal, document)
+        return _resolve(expr.left, symbols) != _resolve(expr.right, symbols)
     if isinstance(expr, And):
-        return _evaluate(expr.left, principal, document) and _evaluate(expr.right, principal, document)
+        return _evaluate(expr.left, symbols) and _evaluate(expr.right, symbols)
     if isinstance(expr, Or):
-        return _evaluate(expr.left, principal, document) or _evaluate(expr.right, principal, document)
+        return _evaluate(expr.left, symbols) or _evaluate(expr.right, symbols)
     if isinstance(expr, Not):
-        return not _evaluate(expr.operand, principal, document)
+        return not _evaluate(expr.operand, symbols)
     return False
 
 
-def _resolve(expr: WhenExpr, principal: dict | None, document: dict | None) -> object:
+def _resolve(expr: WhenExpr, symbols: dict[str, dict | None]) -> object:
     if isinstance(expr, FieldRef):
-        return _resolve_field(expr, principal, document)
+        return _resolve_field(expr, symbols)
     if isinstance(expr, StringLiteral):
         return expr.value
     return None
 
 
 def evaluate_when(
-    expr: WhenExpr, principal: dict | None, document: dict | None
+    expr: WhenExpr,
+    principal: dict | None,
+    document: dict | None,
 ) -> bool:
-    return _evaluate(expr, principal, document)
+    symbols: dict[str, dict | None] = {}
+    if principal is not None:
+        symbols["principal"] = principal
+    if document is not None:
+        symbols["document"] = document
+    return _evaluate(expr, symbols)
+
+
+def evaluate_when_with_symbols(
+    expr: WhenExpr,
+    symbols: dict[str, dict | None],
+) -> bool:
+    return _evaluate(expr, symbols)

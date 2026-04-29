@@ -2,8 +2,13 @@ from . import Step
 
 from ..context import RequestContext
 
-from ..runtime_context import RuntimeAccessRule, RuntimeAuthConfig, RuntimeIdentityDescriptor
-from ..when_eval import evaluate_when, needs_document
+from ..runtime_context import (
+    RuntimeAccessRule,
+    RuntimeAuthConfig,
+    RuntimeIdentityDescriptor,
+)
+from ..when_eval import evaluate_when, evaluate_when_with_symbols
+from ...when_ast import collect_roots
 
 
 class UnauthorizedError(ValueError):
@@ -60,7 +65,11 @@ def ValidateIdentityCreateStep(
 
 
 def _rule_needs_document(rule: RuntimeAccessRule) -> bool:
-    return rule.when is not None and needs_document(rule.when)
+    if not rule.when:
+        return False
+    if rule.document_symbols:
+        return True
+    return False
 
 
 def _principal_has_role(
@@ -68,7 +77,6 @@ def _principal_has_role(
     required_role: str,
     auth_config: RuntimeAuthConfig | None,
 ) -> bool:
-    """Check if principal has the required role, considering hierarchy."""
     principal_roles = principal.get("roles", [])
     if required_role in principal_roles:
         return True
@@ -76,7 +84,6 @@ def _principal_has_role(
     if auth_config is None:
         return False
 
-    # Check hierarchy: principal's roles may include required_role transitively
     identity_collection = principal.get("identity_collection", "")
     entity_hierarchy = auth_config.role_hierarchies.get(identity_collection, {})
 
@@ -93,22 +100,57 @@ def _rule_matches_principal(
     principal: dict | None,
     auth_config: RuntimeAuthConfig | None,
 ) -> bool:
-    """Check if the rule's principal/role constraints match the current principal."""
     if principal is None:
         return False
 
-    # If rule has a principal constraint (e.g. identity:users), check it
     if rule.principal and rule.principal.startswith("identity:"):
-        expected_collection = rule.principal[len("identity:"):]
+        expected_collection = rule.principal[len("identity:") :]
         if principal.get("identity_collection") != expected_collection:
             return False
 
-    # If rule requires a specific role, check it
     if rule.required_role is not None:
         if not _principal_has_role(principal, rule.required_role, auth_config):
             return False
 
     return True
+
+
+def _resolve_identity_symbols(
+    rule: RuntimeAccessRule,
+    principal: dict | None,
+) -> dict[str, dict | None]:
+    symbols: dict[str, dict | None] = {}
+    for symbol_name in rule.identity_symbols:
+        symbols[symbol_name] = principal
+    return symbols
+
+
+def _resolve_document_symbols(
+    rule: RuntimeAccessRule,
+    document: dict | None,
+) -> dict[str, dict | None]:
+    symbols: dict[str, dict | None] = {}
+    for symbol_name in rule.document_symbols:
+        symbols[symbol_name] = document
+    return symbols
+
+
+def _evaluate_rule(
+    rule: RuntimeAccessRule,
+    principal: dict | None,
+    document: dict | None,
+) -> bool:
+    if rule.when is None:
+        return True
+
+    if rule.identity_symbols or rule.document_symbols:
+        symbols = {
+            **_resolve_identity_symbols(rule, principal),
+            **_resolve_document_symbols(rule, document),
+        }
+        return evaluate_when_with_symbols(rule.when, symbols)
+
+    return evaluate_when(rule.when, principal, document)
 
 
 def AuthorizeRouteStep(
@@ -124,16 +166,16 @@ def AuthorizeRouteStep(
 
         for rule in access_rules:
             if _rule_needs_document(rule):
-                return ctx  # defer to PostFetchAuthorizeStep
+                return ctx
 
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
-            matched = rule.when is None or evaluate_when(rule.when, ctx.principal, None)
+            matched = _evaluate_rule(rule, ctx.principal, None)
             if matched:
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
-                return ctx  # allow
+                return ctx
 
         raise ForbiddenError("Forbidden")
 
@@ -154,11 +196,11 @@ def PostFetchAuthorizeStep(
                 continue
 
             doc = document if _rule_needs_document(rule) else None
-            matched = rule.when is None or evaluate_when(rule.when, ctx.principal, doc)
+            matched = _evaluate_rule(rule, ctx.principal, doc)
             if matched:
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
-                return ctx  # allow
+                return ctx
 
         raise ForbiddenError("Forbidden")
 
