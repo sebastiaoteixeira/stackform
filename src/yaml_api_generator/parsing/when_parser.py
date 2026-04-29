@@ -14,7 +14,7 @@ from .parser import ConfigError
 
 
 _STRING_LITERAL_RE = re.compile(r"^'([^']*)'$")
-_FIELD_REF_RE = re.compile(r"^([a-zA-Z_]\w*)(\.\w+)*$")
+_FIELD_REF_RE = re.compile(r"^([a-zA-Z_]\w*)(\.\w+)+$")
 
 
 def _parse_operand(raw: str, path: str) -> tuple[WhenExpr | None, ConfigError | None]:

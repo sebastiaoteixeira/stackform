@@ -8,7 +8,7 @@ from ..runtime_context import (
     RuntimeIdentityDescriptor,
 )
 from ..when_eval import evaluate_when, evaluate_when_with_symbols
-from ...when_ast import collect_roots
+from ...when_ast import collect_roots, needs_document as _when_needs_document
 
 
 class UnauthorizedError(ValueError):
@@ -65,9 +65,9 @@ def ValidateIdentityCreateStep(
 
 
 def _rule_needs_document(rule: RuntimeAccessRule) -> bool:
-    if not rule.when:
-        return False
     if rule.document_symbols:
+        return True
+    if rule.when and _when_needs_document(rule.when):
         return True
     return False
 
