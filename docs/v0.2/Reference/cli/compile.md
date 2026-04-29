@@ -25,6 +25,13 @@ yaml-api compile <file.yaml> [options]
 | `--output` | `./target` | Output directory for generated project files. |
 | `--schema` | auto-detected | Path to a custom JSON Schema for spec validation. Auto-detected from `version:` if omitted. |
 
+## Output Structure
+
+The `compile` command creates nested directories within your chosen `--output` location:
+
+- `<output>/backend`: Contains the compiled backend application (`FastAPI` or `DRF`).
+- `<output>/frontend`: (Generated only if a `ui:` block is present in the spec) Contains the generated frontend client.
+
 ## Targets
 
 ### `fastapi`

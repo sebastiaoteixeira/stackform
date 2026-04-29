@@ -11,6 +11,12 @@ The `api:` section controls global API settings, URL prefixes, and default opera
 api:
   basePath: /api          # optional, default: ""
   version: v1             # optional, default: ""
+  port: 8000              # optional, default: 8000
+  cors:                   # optional
+    origins: ["*"]
+    methods: ["*"]
+    headers: ["*"]
+    credentials: false
   operations:
     defaults:
       list: true
@@ -37,6 +43,25 @@ Prepended to all route paths. Example: `basePath: /api` + `base_path: /posts` = 
 Type: string. Default: `""`.
 
 API version segment inserted after `basePath`. Example: `basePath: /api`, `version: v1` → `/api/v1/posts`.
+
+### `port`
+
+Type: integer. Default: `8000`.
+
+The default port the generated application will listen on. This value can be overridden at runtime using the `PORT` environment variable.
+
+### `cors`
+
+Type: object. Optional.
+
+Configures Cross-Origin Resource Sharing (CORS) for the API.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `origins` | list of strings | `["*"]` | Allowed origins. |
+| `methods` | list of strings | `["*"]` | Allowed HTTP methods. |
+| `headers` | list of strings | `["*"]` | Allowed HTTP headers. |
+| `credentials` | boolean | `false` | Whether to allow credentials (cookies, authorization headers, or TLS client certificates). |
 
 ### `operations.defaults`
 
@@ -80,6 +105,9 @@ This enables exactly the listed operations and disables all others.
 api:
   basePath: /api
   version: v1
+  port: 8080
+  cors:
+    origins: ["http://localhost:3000"]
   operations:
     defaults:
       list: true

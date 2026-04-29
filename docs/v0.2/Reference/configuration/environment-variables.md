@@ -69,6 +69,8 @@ These environment variables are read directly by the runtime, not via YAML inter
 |----------|---------|-------------|
 | `JWT_SECRET` | `"yaml-api-dev-secret-change-me"` | HMAC key for JWT signing (HS256). |
 | `JWT_EXPIRATION_HOURS` | `24` | JWT token lifetime in hours. |
+| `HOST` | `"127.0.0.1"` | Host to bind the development server to. |
+| `PORT` | `8000` (or `api.port`) | Port to bind the development server to. |
 
 **Warning:** The default `JWT_SECRET` is insecure. Always set it to a strong random value in production.
 
