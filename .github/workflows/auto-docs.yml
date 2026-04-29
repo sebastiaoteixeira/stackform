@@ -22,7 +22,7 @@ jobs:
       - name: Get source PR info
         id: pr-info
         run: |
-          PR_NUMBER=$(gh pr list --state merged --head "${{ github.ref_name }}" --json number --jq '.[0].number' || echo "")
+          PR_NUMBER=$(gh pr list --state merged --search "${{ github.sha }}" --json number --jq '.[0].number' 2>/dev/null || echo "")
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           PR_LABEL="${PR_NUMBER:-${SHORT_SHA}}"
           echo "branch_name=docs/auto-update-pr${PR_LABEL}" >> "$GITHUB_OUTPUT"
