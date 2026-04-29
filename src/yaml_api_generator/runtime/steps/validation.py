@@ -35,20 +35,22 @@ def _build_field_schemas(
             continue
         if raw_config.get("type") == "id":
             continue
-        if field_name == "passwordHash":
+        if field_name == "_auth":
             continue
 
         required = not make_optional and bool(raw_config.get("required", False))
-        schemas.append(_FieldSchema(
-            name=field_name,
-            field_type=raw_config.get("type", "string"),
-            required=required,
-            min=raw_config.get("min"),
-            max=raw_config.get("max"),
-            min_length=raw_config.get("minLength"),
-            max_length=raw_config.get("maxLength"),
-            enum_values=raw_config.get("values"),
-        ))
+        schemas.append(
+            _FieldSchema(
+                name=field_name,
+                field_type=raw_config.get("type", "string"),
+                required=required,
+                min=raw_config.get("min"),
+                max=raw_config.get("max"),
+                min_length=raw_config.get("minLength"),
+                max_length=raw_config.get("maxLength"),
+                enum_values=raw_config.get("values"),
+            )
+        )
 
     if (
         identity_collection is not None
@@ -56,9 +58,14 @@ def _build_field_schemas(
         and "password" in identity_collection.via
         and not any(s.name == "password" for s in schemas)
     ):
-        schemas.append(_FieldSchema(
-            name="password", field_type="string", required=True, min_length=1,
-        ))
+        schemas.append(
+            _FieldSchema(
+                name="password",
+                field_type="string",
+                required=True,
+                min_length=1,
+            )
+        )
 
     return schemas
 
@@ -68,15 +75,22 @@ def _build_login_schemas(
 ) -> list[_FieldSchema]:
     schemas: list[_FieldSchema] = []
     if identity_collection.identifier:
-        schemas.append(_FieldSchema(
-            name=identity_collection.identifier,
+        schemas.append(
+            _FieldSchema(
+                name=identity_collection.identifier,
+                field_type="string",
+                required=True,
+                min_length=1,
+            )
+        )
+    schemas.append(
+        _FieldSchema(
+            name="password",
             field_type="string",
             required=True,
             min_length=1,
-        ))
-    schemas.append(_FieldSchema(
-        name="password", field_type="string", required=True, min_length=1,
-    ))
+        )
+    )
     return schemas
 
 
@@ -158,7 +172,9 @@ def ValidateBodyStep(
             raise ValueError(f"Unknown fields: {', '.join(sorted(unknown))}")
 
         if operation != "update":
-            missing = [s.name for s in field_schemas if s.required and s.name not in body]
+            missing = [
+                s.name for s in field_schemas if s.required and s.name not in body
+            ]
             if missing:
                 raise ValueError(f"Missing required fields: {', '.join(missing)}")
 

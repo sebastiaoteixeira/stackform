@@ -1,0 +1,26 @@
+const BASE_URL = "{{ context.base_url }}"
+
+export function use{{ entity.name | pascal_case }}Auth() {
+  const url = `${BASE_URL}/{{ entity.repository_name }}`
+
+  return {
+    login: async (credentials: Record<string, string>) => {
+      const response = await fetch(`${url}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credentials),
+      })
+      if (!response.ok) throw new Error("Login failed")
+      return response.json()
+    },
+    register: async (data: Record<string, unknown>) => {
+      const response = await fetch(`${url}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      if (!response.ok) throw new Error("Registration failed")
+      return response.json()
+    },
+  }
+}

@@ -36,6 +36,12 @@ class ConfigErrors(Exception):
         self.errors = errors
 
 
+@dataclass(frozen=True)
+class ParseResult:
+    ir: IRDocument
+    ui_block: dict | None = None
+
+
 def _join_path(parts: tuple[str, ...]) -> str:
     return ".".join(parts) if parts else "$"
 
@@ -174,7 +180,7 @@ def _resolve_schema_path(
 
 def load_and_generate_ir(
     yaml_file: str | Path, schema_file: str | Path | None = None
-) -> IRDocument:
+) -> ParseResult:
     yaml_path = Path(yaml_file)
 
     raw_config = _load_yaml(yaml_path)
@@ -202,6 +208,8 @@ def load_and_generate_ir(
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
 
+    ui_block = resolved.pop("ui", None)
+
     schema_path = _resolve_schema_path(version, schema_file)
 
     schema = _load_schema(schema_path)
@@ -211,4 +219,4 @@ def load_and_generate_ir(
 
     from .transformers.registry import transform_config
 
-    return transform_config(resolved)
+    return ParseResult(ir=transform_config(resolved), ui_block=ui_block)

@@ -1,0 +1,162 @@
+{% set col_name = props.collection.value if props.collection else "items" %}
+{% set columns = props.columns.value if props.columns else 3 %}
+import { Link } from "react-router-dom"
+import { use{{ col_name | pascal_case }} } from "@/__generated__/hooks/use{{ col_name | pascal_case }}"
+
+function formatDate(dateString: string) {
+  try {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+  } catch {
+    return ""
+  }
+}
+
+const statusColors: Record<string, string> = {
+  draft: "bg-yellow-50 text-yellow-700",
+  published: "bg-green-50 text-green-700",
+  archived: "bg-gray-100 text-gray-500",
+}
+
+export function {{ view.name | pascal_case }}Page() {
+  const { data, loading, error } = use{{ col_name | pascal_case }}()
+
+  if (loading) {
+    return (
+      <div className="max-w-5xl mx-auto px-6 py-20">
+        <div className="space-y-8 animate-pulse">
+          <div className="h-72 bg-gray-100 rounded-2xl" />
+          <div className="grid grid-cols-1 md:grid-cols-{{ columns }} gap-8">
+            {[...Array({{ columns }})].map((_, i) => (
+              <div key={i} className="space-y-3">
+                <div className="h-40 bg-gray-100 rounded-xl" />
+                <div className="h-4 bg-gray-100 rounded w-3/4" />
+                <div className="h-3 bg-gray-100 rounded w-1/2" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-5xl mx-auto px-6 py-20">
+        <div className="bg-red-50 rounded-2xl p-8 text-center">
+          <p className="text-red-600 font-medium">Something went wrong</p>
+          <p className="text-red-400 text-sm mt-1">{error.message}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!data?.length) {
+    return (
+      <div className="max-w-5xl mx-auto px-6 py-32 text-center">
+        <h2 className="text-2xl font-serif font-bold text-gray-900 mb-3">No stories yet</h2>
+        <p className="text-gray-400 mb-8">Be the first to publish something.</p>
+        <Link
+          to="/posts/new"
+          className="inline-flex items-center px-6 py-3 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-700 transition-colors"
+        >
+          Write your first post
+        </Link>
+      </div>
+    )
+  }
+
+  const [featured, ...rest] = data
+
+  return (
+    <div className="max-w-5xl mx-auto px-6 py-12">
+      {/* Featured post */}
+      <Link to={`{{ view.path }}/${featured.id}`} className="group block mb-16">
+        <article className="grid md:grid-cols-2 gap-8 items-center">
+          <div className="aspect-[4/3] bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center">
+            <span className="text-6xl font-serif text-gray-200 select-none">
+              {featured.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}?.charAt(0)?.toUpperCase()}
+            </span>
+          </div>
+          <div>
+            {% if collection %}
+            {% for field_name, field in collection.fields.items() %}
+            {% if field.resolved_type == "enum" %}
+            <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mb-4 ${statusColors[featured.{{ field.source_field_path[0] }}] || "bg-gray-100 text-gray-600"}`}>
+              {featured.{{ field.source_field_path[0] }}}
+            </span>
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            <h2 className="text-3xl font-serif font-bold text-gray-900 mb-3 group-hover:text-gray-600 transition-colors leading-tight">
+              {featured.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}}
+            </h2>
+            {% if collection and (collection.fields.values() | list) | length > 2 %}
+            <p className="text-gray-500 leading-relaxed line-clamp-3 mb-4">
+              {featured.{{ (collection.fields.values() | list)[1].source_field_path[0] }}}
+            </p>
+            {% endif %}
+            <div className="flex items-center gap-3 text-sm text-gray-400">
+              {% if collection and (collection.fields | length) > 2 %}
+              {% set last_field = (collection.fields.values() | list)[-1] %}
+              <span>{featured.{{ last_field.source_field_path[0] }} || "Anonymous"}</span>
+              <span aria-hidden="true">&middot;</span>
+              {% endif %}
+              <time>{formatDate(featured.createdAt)}</time>
+            </div>
+          </div>
+        </article>
+      </Link>
+
+      {rest.length > 0 && (
+        <>
+          <div className="border-t border-gray-100 pt-12 mb-10">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">Latest</h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-{{ columns }} gap-x-8 gap-y-12">
+            {rest.map((item: any) => (
+              <Link key={item.id} to={`{{ view.path }}/${item.id}`} className="group block">
+                <article>
+                  <div className="aspect-[16/10] bg-gradient-to-br from-gray-100 to-gray-50 rounded-xl mb-4 flex items-center justify-center">
+                    <span className="text-4xl font-serif text-gray-200 select-none">
+                      {item.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}?.charAt(0)?.toUpperCase()}
+                    </span>
+                  </div>
+                  {% if collection %}
+                  {% for field_name, field in collection.fields.items() %}
+                  {% if field.resolved_type == "enum" %}
+                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium mb-2 ${statusColors[item.{{ field.source_field_path[0] }}] || "bg-gray-100 text-gray-600"}`}>
+                    {item.{{ field.source_field_path[0] }}}
+                  </span>
+                  {% endif %}
+                  {% endfor %}
+                  {% endif %}
+                  <h3 className="font-semibold text-gray-900 group-hover:text-gray-600 transition-colors mb-1.5 line-clamp-2 leading-snug">
+                    {item.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}}
+                  </h3>
+                  {% if collection and (collection.fields.values() | list) | length > 2 %}
+                  <p className="text-sm text-gray-400 line-clamp-2 mb-3">
+                    {item.{{ (collection.fields.values() | list)[1].source_field_path[0] }}}
+                  </p>
+                  {% endif %}
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    {% if collection and (collection.fields | length) > 2 %}
+                    {% set last_field = (collection.fields.values() | list)[-1] %}
+                    <span>{item.{{ last_field.source_field_path[0] }} || "Anonymous"}</span>
+                    <span aria-hidden="true">&middot;</span>
+                    {% endif %}
+                    <time>{formatDate(item.createdAt)}</time>
+                  </div>
+                </article>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,198 @@
+import { useState, useEffect } from "react"
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom"
+import { AuthProvider, useAuth } from "./AuthProvider"
+import { CollectionPage } from "./CollectionPage"
+import { LoginPage } from "./LoginPage"
+import { apiFetch } from "./lib/api"
+
+const ALL_COLLECTIONS = [
+  {% for entity_name, entity in entities.items() %}
+  { key: "{{ entity.repository_name }}", label: "{{ entity_name | pascal_case }}", is_auth: {{ 'true' if entity.is_auth else 'false' }} },
+  {% endfor %}
+]
+
+const COLLECTION_ICONS: Record<string, string> = {
+  default: "M3.375 3C2.339 3 1.5 3.84 1.5 4.875v.75c0 1.036.84 1.875 1.875 1.875h15.75c1.035 0 1.875-.84 1.875-1.875v-.75C21 3.839 20.16 3 19.125 3H3.375zM1.5 9.75A.75.75 0 012.25 9h15a.75.75 0 010 1.5h-15A.75.75 0 011.5 9.75zm0 3A.75.75 0 012.25 12h9a.75.75 0 010 1.5h-9A.75.75 0 011.5 12.75zM3 15.75A.75.75 0 013.75 15h4.5a.75.75 0 010 1.5h-4.5A.75.75 0 013 15.75z",
+}
+
+function Sidebar({ accessible, onSignIn }: { accessible: Set<string>; onSignIn: () => void }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { logout, user, isAuthenticated } = useAuth()
+  const visible = ALL_COLLECTIONS.filter(c => accessible.has(c.key))
+
+  return (
+    <aside className="w-56 bg-slate-900 flex flex-col h-screen border-r border-slate-800 flex-shrink-0">
+      <div className="px-4 py-4 border-b border-slate-800 flex items-center gap-2">
+        <div className="w-7 h-7 rounded bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+          {{ context.api_name[:1] | upper }}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white truncate">{{ context.api_name | pascal_case }}</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">admin</p>
+        </div>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto py-2 px-2">
+        <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider px-2 py-1 mb-1">Collections</p>
+        {visible.length === 0 && (
+          <p className="text-xs text-slate-600 px-2 py-1">No accessible collections</p>
+        )}
+        {visible.map(col => (
+          <button
+            key={col.key}
+            onClick={() => navigate(`/${col.key}`)}
+            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-sm transition-colors mb-0.5 ${
+              location.pathname === `/${col.key}`
+                ? "bg-blue-600 text-white"
+                : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0">
+              <path d={COLLECTION_ICONS.default} />
+            </svg>
+            <span className="truncate">{col.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="border-t border-slate-800 p-3">
+        {isAuthenticated ? (
+          <>
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-300 flex-shrink-0">
+                {(user as any)?.displayName?.charAt(0)?.toUpperCase() || (user as any)?.email?.charAt(0)?.toUpperCase() || "?"}
+              </div>
+              <span className="text-xs text-slate-400 truncate">
+                {(user as any)?.displayName || (user as any)?.email || "Admin"}
+              </span>
+            </div>
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-500 hover:text-white hover:bg-slate-800 rounded transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h5.5A2.25 2.25 0 0113 4.25v2a.75.75 0 01-1.5 0v-2a.75.75 0 00-.75-.75h-5.5a.75.75 0 00-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 00.75-.75v-2a.75.75 0 011.5 0v2A2.25 2.25 0 0110.75 18h-5.5A2.25 2.25 0 013 15.75V4.25z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M6 10a.75.75 0 01.75-.75h9.546l-1.048-.943a.75.75 0 111.004-1.114l2.5 2.25a.75.75 0 010 1.114l-2.5 2.25a.75.75 0 11-1.004-1.114l1.048-.943H6.75A.75.75 0 016 10z" clipRule="evenodd" />
+              </svg>
+              Sign out
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={onSignIn}
+            className="w-full flex items-center justify-center gap-2 px-2 py-2 text-xs text-white bg-blue-600 hover:bg-blue-500 rounded transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+              <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h5.5A2.25 2.25 0 0113 4.25v2a.75.75 0 01-1.5 0v-2a.75.75 0 00-.75-.75h-5.5a.75.75 0 00-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 00.75-.75v-2a.75.75 0 011.5 0v2A2.25 2.25 0 0110.75 18h-5.5A2.25 2.25 0 013 15.75V4.25z" clipRule="evenodd" />
+              <path fillRule="evenodd" d="M13 10a.75.75 0 01.75-.75h2.704l-1.048-.943a.75.75 0 111.004-1.114l2.5 2.25a.75.75 0 010 1.114l-2.5 2.25a.75.75 0 11-1.004-1.114l1.048-.943H13.75A.75.75 0 0113 10z" clipRule="evenodd" />
+            </svg>
+            Sign in
+          </button>
+        )}
+      </div>
+    </aside>
+  )
+}
+
+function AdminShell() {
+  const { isAuthenticated, token } = useAuth()
+  const [accessible, setAccessible] = useState<Set<string>>(new Set())
+  const [checking, setChecking] = useState(true)
+  const [showLogin, setShowLogin] = useState(false)
+
+  const checkAccess = () => {
+    setChecking(true)
+    return Promise.all(
+      ALL_COLLECTIONS.map(async (col) => {
+        try {
+          const res = await apiFetch(`/${col.key}`)
+          return res.ok ? col.key : null
+        } catch {
+          return null
+        }
+      })
+    ).then(results => {
+      setAccessible(new Set(results.filter(Boolean) as string[]))
+      setChecking(false)
+    })
+  }
+
+  // Re-check access on mount and whenever auth token changes
+  useEffect(() => { checkAccess() }, [token])
+
+  // Hide login overlay after successful login
+  useEffect(() => {
+    if (isAuthenticated) setShowLogin(false)
+  }, [isAuthenticated])
+
+  const firstKey = ALL_COLLECTIONS.find(c => accessible.has(c.key))?.key
+
+  return (
+    <div className="flex h-screen bg-slate-950 overflow-hidden">
+      <Sidebar accessible={accessible} onSignIn={() => setShowLogin(true)} />
+      <main className="flex-1 overflow-hidden flex flex-col">
+        {checking ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-slate-500">
+              <svg className="animate-spin w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm">Loading collections...</span>
+            </div>
+          </div>
+        ) : (
+          <Routes>
+            {% for entity_name, entity in entities.items() %}
+            <Route path="/{{ entity.repository_name }}" element={<CollectionPage collection="{{ entity.repository_name }}" onSignIn={() => setShowLogin(true)} />} />
+            {% endfor %}
+            {firstKey
+              ? <Route path="*" element={<Navigate to={`/${firstKey}`} replace />} />
+              : <Route path="*" element={<EmptyState onSignIn={() => setShowLogin(true)} />} />
+            }
+          </Routes>
+        )}
+      </main>
+      {showLogin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowLogin(false)} />
+          <div className="relative">
+            <LoginPage onClose={() => setShowLogin(false)} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ onSignIn }: { onSignIn: () => void }) {
+  const { isAuthenticated } = useAuth()
+  return (
+    <div className="flex-1 flex items-center justify-center h-full">
+      <div className="text-center">
+        <p className="text-slate-400 text-sm">No accessible collections</p>
+        {isAuthenticated ? (
+          <p className="text-slate-600 text-xs mt-1">You don't have permission to view any data.</p>
+        ) : (
+          <button
+            onClick={onSignIn}
+            className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded transition-colors"
+          >
+            Sign in to access more
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AdminShell />
+      </AuthProvider>
+    </BrowserRouter>
+  )
+}

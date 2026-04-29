@@ -78,9 +78,7 @@ def _principal_has_role(
 
     # Check hierarchy: principal's roles may include required_role transitively
     identity_collection = principal.get("identity_collection", "")
-    # entity name = collection name without trailing 's'
-    entity_name = identity_collection.rstrip("s") if identity_collection.endswith("s") else identity_collection
-    entity_hierarchy = auth_config.role_hierarchies.get(entity_name, {})
+    entity_hierarchy = auth_config.role_hierarchies.get(identity_collection, {})
 
     for role in principal_roles:
         included = entity_hierarchy.get(role, set())

@@ -1,0 +1,29 @@
+name: admin
+version: 1.0.0
+language: typescript
+framework: react
+
+components: {}
+
+scaffold:
+  - package.json
+  - vite.config.ts
+  - tsconfig.json
+  - index.html
+  - main
+  - App
+  - AuthProvider
+  - CollectionPage
+  - RecordModal
+  - LoginPage
+  - index.css
+  - tailwind.config.js
+  - postcss.config.js
+
+output:
+  extension: tsx
+  directory_structure:
+    generated: src/__generated__
+    components: src/__generated__
+    pages: src/__generated__
+    hooks: src/__generated__/hooks

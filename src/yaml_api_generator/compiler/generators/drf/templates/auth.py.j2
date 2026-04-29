@@ -127,7 +127,7 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
         for doc in col.find({}):
             if str(doc.get("{{ identity.identifier }}", "")) != identifier_value:
                 continue
-            stored_hash = doc.get("passwordHash")
+            stored_hash = doc["_auth"]["passwordHash"]
             if not isinstance(stored_hash, str):
                 continue
             if not verify_password(password, stored_hash):

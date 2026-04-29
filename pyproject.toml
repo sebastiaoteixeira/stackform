@@ -28,4 +28,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-yaml_api_generator = ["schemas/*.json", "compiler/generators/*/templates/*.j2", "compiler/generators/shared/templates/*.j2"]
+yaml_api_generator = ["schemas/*.json", "parsing/schemas/*.json", "compiler/generators/*/templates/*.j2", "compiler/generators/shared/templates/*.j2"]
