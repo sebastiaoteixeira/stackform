@@ -1,0 +1,11 @@
+version: "0.1"
+api:
+  basePath: ${API_BASE:-/api}
+mongo:
+  uri: ${TEST_MONGO_URI:-mongodb://localhost:27017}
+  database: ${TEST_DB_NAME:-testdb}
+collections:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string }

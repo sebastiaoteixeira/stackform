@@ -20,6 +20,9 @@ dependencies = [
   "simple-term-menu",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [project.scripts]
 yaml-api = "yaml_api_generator.cli:cli"
 
@@ -31,3 +34,16 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 yaml_api_generator = ["schemas/*.json", "parsing/schemas/*.json", "compiler/generators/*/templates/*.j2", "compiler/generators/shared/templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+]

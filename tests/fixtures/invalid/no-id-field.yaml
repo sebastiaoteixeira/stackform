@@ -1,0 +1,8 @@
+version: "0.2"
+entities:
+  post:
+    fields:
+      title: { type: string, required: true }
+repositories:
+  posts:
+    entity: post

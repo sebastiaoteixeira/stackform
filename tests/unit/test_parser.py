@@ -1,0 +1,395 @@
+import os
+
+import pytest
+
+from yaml_api_generator.parsers.yaml_parser import (
+    ConfigErrors,
+    ParseResult,
+    _resolve_interpolation,
+    load_and_generate_ir,
+)
+from tests.conftest import VALID_DIR, INVALID_DIR
+
+EXAMPLES_DIR = __import__("pathlib").Path(__file__).parent.parent.parent / "examples"
+
+
+# --- Existing tests (1: valid YAML loads) ---
+
+
+def test_basic_crud_collections() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "basic-crud.yaml"))
+    ir = result.ir
+    assert "posts" in ir.collections
+    col = ir.collections["posts"]
+    assert "title" in col.fields
+    ops = {r.operation for r in ir.routes}
+    assert "list" in ops
+    assert "replace" not in ops
+
+
+def test_basic_crud_routes() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "basic-crud.yaml")).ir
+    methods = {r.method for r in ir.routes}
+    assert "GET" in methods
+    assert "POST" in methods
+    assert "DELETE" in methods
+    ops = {r.operation for r in ir.routes}
+    assert "login" not in ops
+    assert "register" not in ops
+
+
+def test_auth_password_identity() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "auth-password.yaml")).ir
+    assert "users" in ir.identityCollections
+
+
+def test_auth_password_has_login_register_routes() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "auth-password.yaml")).ir
+    paths = {r.path for r in ir.routes}
+    ops = {r.operation for r in ir.routes}
+    assert "login" in ops
+    assert any("register" in p for p in paths)
+
+
+def test_entity_inheritance_fields_merged() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "entity-inheritance.yaml")).ir
+    col = ir.collections["posts"]
+    assert "id" in col.fields
+    assert "createdAt" in col.fields
+    assert "title" in col.fields
+
+
+def test_abstract_entity_not_in_collections() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "entity-inheritance.yaml")).ir
+    assert "base" not in ir.collections
+    for col in ir.collections.values():
+        assert col.entity_name != "base"
+
+
+def test_roles_hierarchy_in_ir() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "roles-access.yaml")).ir
+    assert "user" in ir.role_hierarchies
+    user_h = ir.role_hierarchies["user"]
+    assert "admin" in user_h
+    assert "moderator" in user_h["admin"]
+
+
+def test_access_rules_on_routes() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "roles-access.yaml")).ir
+    delete_route = next(
+        r for r in ir.routes if r.operation == "delete" and "posts" in r.path
+    )
+    assert delete_route.access_rules is not None
+    assert any(r.required_role == "admin" for r in delete_route.access_rules)
+
+
+def test_natural_pk() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "natural-pk.yaml")).ir
+    col = ir.collections["countries"]
+    assert col.idField == "code"
+
+
+def test_mongo_from_yaml() -> None:
+    ir = load_and_generate_ir(str(VALID_DIR / "basic-crud.yaml")).ir
+    assert ir.mongo.database == "testdb"
+    assert "27017" in ir.mongo.uri
+
+
+# --- Test 2: Invalid YAML syntax → YAML_PARSE_ERROR ---
+
+
+def test_yaml_syntax_error_raises_parse_error() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "malformed-yaml.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "YAML_PARSE_ERROR" in codes
+    err = exc_info.value.errors[0]
+    assert "line:" in err.path or "col:" in err.path
+
+
+# --- Test 3: Empty file → treated as {} ---
+
+
+def test_empty_file_treated_as_empty_dict() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "empty-file.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "YAML_PARSE_ERROR" not in codes
+    assert "SCHEMA_VALIDATION_ERROR" in codes
+
+
+# --- Test 4: File with only comments → treated as {} ---
+
+
+def test_comments_only_file_treated_as_empty_dict() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "comments-only.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "YAML_PARSE_ERROR" not in codes
+    assert "SCHEMA_VALIDATION_ERROR" in codes
+
+
+# --- Test 5: YAML root is a list → YAML_ROOT_INVALID ---
+
+
+def test_yaml_root_is_list_raises() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "root-is-list.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "YAML_ROOT_INVALID" in codes
+
+
+# --- Test 6: YAML root is a scalar → YAML_ROOT_INVALID ---
+
+
+def test_yaml_root_is_scalar_raises() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "root-is-scalar.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "YAML_ROOT_INVALID" in codes
+
+
+# --- Test 7: File not found → OSError propagates ---
+
+
+def test_file_not_found_raises_os_error() -> None:
+    with pytest.raises(OSError):
+        load_and_generate_ir("/nonexistent/path/to/file.yaml")
+
+
+# --- Test 8: ${VAR} with env set → substituted ---
+
+
+def test_env_var_substituted_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_MONGO_URI", "mongodb://custom:27017")
+    result = load_and_generate_ir(str(VALID_DIR / "env-interpolation.yaml"))
+    assert result.ir.mongo.uri == "mongodb://custom:27017"
+
+
+# --- Test 9: ${VAR} with env not set, no default → INTERPOLATION_MISSING_VAR ---
+
+
+def test_env_var_missing_no_default_raises() -> None:
+    os.environ.pop("MISSING_VAR_NO_DEFAULT", None)
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "env-missing-var.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "INTERPOLATION_MISSING_VAR" in codes
+
+
+# --- Test 10: ${VAR:-default} with env not set → uses "default" ---
+
+
+def test_env_var_default_used_when_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TEST_MONGO_URI", raising=False)
+    monkeypatch.delenv("TEST_DB_NAME", raising=False)
+    result = load_and_generate_ir(str(VALID_DIR / "env-interpolation.yaml"))
+    assert result.ir.mongo.uri == "mongodb://localhost:27017"
+    assert result.ir.mongo.database == "testdb"
+
+
+# --- Test 11: ${VAR:-} with env not set → uses empty string ---
+
+
+def test_env_var_empty_default_resolves_to_empty_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("EMPTY_VAR", raising=False)
+    errors: list = []
+    result = _resolve_interpolation({"key": "${EMPTY_VAR:-}"}, tuple(), errors)
+    assert result["key"] == ""
+
+
+# --- Test 12: ${VAR:-default} with env set to empty string → uses empty string ---
+
+
+def test_env_var_empty_string_wins_over_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_VAR", "")
+    errors: list = []
+    result = _resolve_interpolation({"key": "${MY_VAR:-fallback}"}, tuple(), errors)
+    assert result["key"] == ""
+
+
+# --- Test 13: Multiple vars in same string → all resolved ---
+
+
+def test_multiple_vars_in_same_string(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOST", "dbserver")
+    monkeypatch.setenv("PORT", "5432")
+    errors: list = []
+    result = _resolve_interpolation({"uri": "${HOST}:${PORT}"}, tuple(), errors)
+    assert result["uri"] == "dbserver:5432"
+
+
+# --- Test 14: Vars in dict values → resolved ---
+
+
+def test_vars_in_dict_values_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_KEY", "resolved_value")
+    errors: list = []
+    result = _resolve_interpolation({"outer": {"inner": "${MY_KEY}"}}, tuple(), errors)
+    assert result["outer"]["inner"] == "resolved_value"
+
+
+# --- Test 15: Vars in list items → resolved ---
+
+
+def test_vars_in_list_items_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ITEM_A", "alpha")
+    monkeypatch.setenv("ITEM_B", "beta")
+    errors: list = []
+    result = _resolve_interpolation(
+        {"items": ["${ITEM_A}", "${ITEM_B}"]}, tuple(), errors
+    )
+    assert result["items"] == ["alpha", "beta"]
+
+
+# --- Test 16: Non-string values (int, bool, None) → unchanged ---
+
+
+def test_non_string_values_unchanged() -> None:
+    errors: list = []
+    result = _resolve_interpolation(
+        {"int_val": 42, "bool_val": True, "null_val": None}, tuple(), errors
+    )
+    assert result["int_val"] == 42
+    assert result["bool_val"] is True
+    assert result["null_val"] is None
+    assert errors == []
+
+
+# --- Test 17: Deeply nested vars → resolved ---
+
+
+def test_deeply_nested_vars_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEEP_VAR", "deep_value")
+    errors: list = []
+    result = _resolve_interpolation(
+        {"a": {"b": {"c": {"d": "${DEEP_VAR}"}}}}, tuple(), errors
+    )
+    assert result["a"]["b"]["c"]["d"] == "deep_value"
+
+
+# --- Test 18: Interpolation errors halt pipeline ---
+
+
+def test_interpolation_errors_halt_before_schema_validation() -> None:
+    os.environ.pop("MISSING_VAR_NO_DEFAULT", None)
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "env-missing-var.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "INTERPOLATION_MISSING_VAR" in codes
+    assert "SCHEMA_VALIDATION_ERROR" not in codes
+
+
+# --- Test 19: No version key → defaults to "0.1" ---
+
+
+def test_no_version_defaults_to_v01() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(VALID_DIR / "v01-no-version.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "UNSUPPORTED_VERSION" not in codes
+
+
+# --- Test 20: Version "0.1" → v01 transformer ---
+
+
+def test_version_01_uses_v01_transformer() -> None:
+    result = load_and_generate_ir(str(EXAMPLES_DIR / "blog.yaml"))
+    assert result.ir.version == "0.1"
+    assert "posts" in result.ir.collections
+    assert "users" in result.ir.collections
+
+
+# --- Test 22: Version "0.3" → UNSUPPORTED_VERSION ---
+
+
+def test_version_unsupported_raises() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "version-unsupported.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "UNSUPPORTED_VERSION" in codes
+
+
+# --- Test 23: Empty string version → UNSUPPORTED_VERSION ---
+
+
+def test_version_empty_string_raises() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "version-empty.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "UNSUPPORTED_VERSION" in codes
+
+
+# --- Test 24: Explicit schema path → used directly ---
+
+
+def test_explicit_schema_path_used() -> None:
+    schema_path = (
+        __import__("pathlib").Path(__file__).parent.parent.parent
+        / "src"
+        / "yaml_api_generator"
+        / "parsers"
+        / "schemas"
+        / "yaml-spec-v0.1.schema.json"
+    )
+    result = load_and_generate_ir(
+        str(EXAMPLES_DIR / "blog.yaml"), schema_file=str(schema_path)
+    )
+    assert result.ir.version == "0.1"
+
+
+# --- Test 25: Schema file unreadable → SCHEMA_LOAD_ERROR ---
+
+
+def test_schema_file_unreadable_raises() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(
+            str(EXAMPLES_DIR / "blog.yaml"),
+            schema_file="/nonexistent/schema.json",
+        )
+    codes = {e.code for e in exc_info.value.errors}
+    assert "SCHEMA_LOAD_ERROR" in codes
+
+
+# --- Test 26: Schema root not dict → SCHEMA_LOAD_ERROR ---
+
+
+def test_schema_root_not_dict_raises() -> None:
+    schema_path = str(INVALID_DIR / "schema-not-dict.json")
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(EXAMPLES_DIR / "blog.yaml"), schema_file=schema_path)
+    codes = {e.code for e in exc_info.value.errors}
+    assert "SCHEMA_LOAD_ERROR" in codes
+
+
+# --- Test 27: Schema validation failure → SCHEMA_VALIDATION_ERROR (multiple) ---
+
+
+def test_schema_validation_failure_multiple_errors() -> None:
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(INVALID_DIR / "schema-validation-fail.yaml"))
+    codes = {e.code for e in exc_info.value.errors}
+    assert "SCHEMA_VALIDATION_ERROR" in codes
+    assert len(exc_info.value.errors) >= 1
+
+
+# --- Test 28: UI block extracted and preserved ---
+
+
+def test_ui_block_extracted_and_preserved() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "ui-block.yaml"))
+    assert result.ui_block is not None
+    assert "dashboard" in result.ui_block
+    assert result.ui_block["theme"] == "dark"
+
+
+# --- Test 29: No UI block → ui_block=None ---
+
+
+def test_no_ui_block_returns_none() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "basic-crud.yaml"))
+    assert result.ui_block is None
