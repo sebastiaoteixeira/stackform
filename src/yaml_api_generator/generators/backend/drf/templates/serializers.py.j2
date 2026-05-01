@@ -1,0 +1,9 @@
+from rest_framework import serializers
+
+{% for model in models %}
+
+class {{ model.name }}(serializers.Serializer):
+{% for field in model.fields %}
+    {{ field.name }} = {{ field | drf_field }}
+{% endfor %}
+{% endfor %}

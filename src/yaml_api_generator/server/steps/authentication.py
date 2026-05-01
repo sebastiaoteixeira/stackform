@@ -16,6 +16,8 @@ def ResolvePrincipalStep(
     repository: BaseRepository,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
+        if ctx.principal is not None:
+            return ctx
         ctx.principal = await _resolve_identity_principal(
             identity_collections=identity_collections,
             identity_id_fields=identity_id_fields,

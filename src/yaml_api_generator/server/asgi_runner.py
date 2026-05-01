@@ -66,8 +66,9 @@ class ASGIApp:
             await self._send_json(send, 404, {"detail": "Not found"})
             return
 
-        body = await self._read_body(receive)
-        if body is _INVALID_JSON:
+        try:
+            body = await self._read_body(receive)
+        except (json.JSONDecodeError, UnicodeDecodeError):
             await self._send_json(send, 400, {"detail": "Invalid JSON body"})
             return
 
@@ -117,10 +118,7 @@ class ASGIApp:
                 break
         if not body:
             return None
-        try:
-            return json.loads(body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return _INVALID_JSON
+        return json.loads(body)
 
     @staticmethod
     async def _send_json(send: Any, status: int, data: Any) -> None:
@@ -135,5 +133,3 @@ class ASGIApp:
         })
         await send({"type": "http.response.body", "body": body})
 
-
-_INVALID_JSON: Any = object()

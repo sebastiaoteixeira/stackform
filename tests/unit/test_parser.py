@@ -332,7 +332,7 @@ def test_explicit_schema_path_used() -> None:
         __import__("pathlib").Path(__file__).parent.parent.parent
         / "src"
         / "yaml_api_generator"
-        / "parsing"
+        / "parsers"
         / "schemas"
         / "yaml-spec-v0.1.schema.json"
     )
