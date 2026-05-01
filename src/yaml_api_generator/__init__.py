@@ -6,7 +6,7 @@ from .ir import (
     IROperations,
     IRRoute,
 )
-from .runtime.pipeline import Pipeline
+from .server.pipeline import Pipeline
 
 __all__ = [
     "IRApi",
@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 try:
-    from .parsing.parser import ConfigError, ConfigErrors, load_and_generate_ir
+    from .parsers.yaml_parser import ConfigError, ConfigErrors, load_and_generate_ir
 
     __all__.extend(["ConfigError", "ConfigErrors", "load_and_generate_ir"])
 except ModuleNotFoundError:

@@ -3,33 +3,33 @@ from typing import Any
 
 import pytest
 
-from yaml_api_generator.runtime.context import RequestContext
-from yaml_api_generator.runtime.runtime_context import (
+from yaml_api_generator.server.request_context import RequestContext
+from yaml_api_generator.server.server_context import (
     RuntimeAccessRule,
     RuntimeAuthConfig,
     RuntimeIdentityDescriptor,
 )
-from yaml_api_generator.runtime.steps.authentication import (
+from yaml_api_generator.server.steps.authentication import (
     ResolvePrincipalStep,
     _extract_api_key,
     _extract_basic_credentials,
     _extract_bearer_token,
 )
-from yaml_api_generator.runtime.steps.authorization import (
+from yaml_api_generator.server.steps.authorization import (
     AuthorizeRouteStep,
     ForbiddenError,
     PostFetchAuthorizeStep,
     UnauthorizedError,
     ValidateIdentityCreateStep,
 )
-from yaml_api_generator.when_ast import (
+from yaml_api_generator.ir.when import (
     Equals,
     FieldRef,
     NotEquals,
     StringLiteral,
 )
-from yaml_api_generator.runtime.auth.password import hash_password
-from yaml_api_generator.runtime.repositories.base import BaseRepository
+from yaml_api_generator.server.auth.password import hash_password
+from yaml_api_generator.server.repositories.base import BaseRepository
 
 
 class InMemoryRepository(BaseRepository):
@@ -413,7 +413,7 @@ class TestResolvePrincipalStep:
 
     @pytest.mark.asyncio
     async def test_210_bearer_jwt_resolves_principal(self):
-        from yaml_api_generator.runtime.auth.jwt import create_jwt_token
+        from yaml_api_generator.server.auth.jwt import create_jwt_token
 
         pw_hash = hash_password("secret")
         repo = InMemoryRepository(

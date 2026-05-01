@@ -2,7 +2,7 @@ import pathlib
 
 import pytest
 
-from yaml_api_generator.parsing.parser import ConfigErrors, load_and_generate_ir
+from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 from tests.conftest import INVALID_DIR, VALID_DIR
 
 EXAMPLES_DIR = pathlib.Path(__file__).parent.parent.parent / "examples"
@@ -21,11 +21,13 @@ def test_v01_blog_collections_parsed() -> None:
     assert "title" in posts.fields
     assert "content" in posts.fields
     assert "tags" in posts.fields
-    assert posts.operations.list is True
-    assert posts.operations.replace is False
     users = ir.collections["users"]
     assert "username" in users.fields
-    assert users.operations.delete is True
+    posts_ops = {r.operation for r in ir.routes if r.collection == "posts"}
+    assert "list" in posts_ops
+    assert "replace" not in posts_ops
+    users_ops = {r.operation for r in ir.routes if r.collection == "users"}
+    assert "delete" in users_ops
 
 
 # --- Test 126: ID field extraction edge cases ---

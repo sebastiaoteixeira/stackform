@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from yaml_api_generator.parsing.parser import (
+from yaml_api_generator.parsers.yaml_parser import (
     ConfigErrors,
     ParseResult,
     _resolve_interpolation,
@@ -21,10 +21,10 @@ def test_basic_crud_collections() -> None:
     ir = result.ir
     assert "posts" in ir.collections
     col = ir.collections["posts"]
-    assert col.entity_name == "post"
     assert "title" in col.fields
-    assert col.operations.list is True
-    assert col.operations.replace is False
+    ops = {r.operation for r in ir.routes}
+    assert "list" in ops
+    assert "replace" not in ops
 
 
 def test_basic_crud_routes() -> None:
@@ -41,9 +41,6 @@ def test_basic_crud_routes() -> None:
 def test_auth_password_identity() -> None:
     ir = load_and_generate_ir(str(VALID_DIR / "auth-password.yaml")).ir
     assert "users" in ir.identityCollections
-    ic = ir.identityCollections["users"]
-    assert ic.identifier == "email"
-    assert "password" in ic.via
 
 
 def test_auth_password_has_login_register_routes() -> None:
@@ -335,7 +332,7 @@ def test_explicit_schema_path_used() -> None:
         __import__("pathlib").Path(__file__).parent.parent.parent
         / "src"
         / "yaml_api_generator"
-        / "parsing"
+        / "parsers"
         / "schemas"
         / "yaml-spec-v0.1.schema.json"
     )

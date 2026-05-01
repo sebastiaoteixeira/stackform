@@ -2,15 +2,15 @@ import json
 
 import pytest
 
-from yaml_api_generator.runtime.asgi_runner import ASGIApp, _compile_path
-from yaml_api_generator.runtime.runtime_context import (
+from yaml_api_generator.server.asgi_runner import ASGIApp, _compile_path
+from yaml_api_generator.server.server_context import (
     RuntimeAppConfig,
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
     RuntimeContext,
     RuntimeRouteDescriptor,
 )
-from yaml_api_generator.runtime.repositories.base import BaseRepository
+from yaml_api_generator.server.repositories.base import BaseRepository
 
 
 def _make_ctx_with_routes(routes):
@@ -199,7 +199,7 @@ async def test_invalid_json_body_returns_400_json():
 
 
 def _inject_failing_pipeline(app, error_cls):
-    from yaml_api_generator.runtime.pipeline import Pipeline
+    from yaml_api_generator.server.pipeline import Pipeline
 
     for method, entries in app._routes.items():
         for i, (pattern, pipeline, route) in enumerate(entries):
@@ -220,7 +220,7 @@ def _inject_failing_pipeline(app, error_cls):
 
 @pytest.mark.anyio
 async def test_error_mapping_401_unauthorized():
-    from yaml_api_generator.runtime.steps import UnauthorizedError
+    from yaml_api_generator.server.steps import UnauthorizedError
 
     routes = [
         RuntimeRouteDescriptor(
@@ -242,7 +242,7 @@ async def test_error_mapping_401_unauthorized():
 
 @pytest.mark.anyio
 async def test_error_mapping_403_forbidden():
-    from yaml_api_generator.runtime.steps import ForbiddenError
+    from yaml_api_generator.server.steps import ForbiddenError
 
     routes = [
         RuntimeRouteDescriptor(
@@ -264,7 +264,7 @@ async def test_error_mapping_403_forbidden():
 
 @pytest.mark.anyio
 async def test_error_mapping_404_not_found():
-    from yaml_api_generator.runtime.steps import NotFoundError
+    from yaml_api_generator.server.steps import NotFoundError
 
     routes = [
         RuntimeRouteDescriptor(

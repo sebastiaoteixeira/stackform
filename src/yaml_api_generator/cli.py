@@ -31,8 +31,8 @@ def cli():
 )
 def compile(yaml_file: str, schema_file: str | None, output_dir: str, target: str):
     """Compile a YAML API spec into source code."""
-    from .compiler.compiler import compile_api
-    from .parsing.parser import ConfigErrors
+    from .generators.compile import compile_api
+    from .parsers.yaml_parser import ConfigErrors
 
     try:
         compile_api(
@@ -68,8 +68,8 @@ def dev(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool
     """Run the YAML API development server."""
     import uvicorn
 
-    from .parsing.parser import ConfigErrors
-    from .runtime.server import build_app, build_raw_app
+    from .parsers.yaml_parser import ConfigErrors
+    from .server.server import build_app, build_raw_app
 
     try:
         app = (
@@ -106,21 +106,33 @@ def dev(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool
 )
 def frontend(yaml_file: str, schema_file: str | None, output_dir: str | None):
     """Generate frontend from a YAML API spec."""
-    from .frontend.pipeline import generate_frontend
-    from .parsing.parser import ConfigErrors
+    from .parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+    from .generators.frontend.generator import generate_frontend
+    from .generators.frontend.packs.loader import load_pack
+    from .parsers.ui_parser import build_generator_context
 
     try:
-        from .parsing.parser import load_and_generate_ir
-
         result = load_and_generate_ir(yaml_file, schema_file)
         if result.ui_block is None:
             click.echo("Error: No 'ui' block found in the YAML spec.", err=True)
             raise SystemExit(1)
 
+        frontend_block = result.ui_block.get("frontend", {}) or {}
+        pack_name = frontend_block.get("pack")
+        if not isinstance(pack_name, str) or not pack_name.strip():
+            click.echo("Error: ui.frontend.pack is required.", err=True)
+            raise SystemExit(1)
+
+        overwrite = frontend_block.get("overwrite", "never")
+        pack = load_pack(pack_name)
+        ui = build_generator_context(result.ir, result.ui_block, pack.manifest)
+
         generate_frontend(
             ir=result.ir,
-            ui_block=result.ui_block,
+            ui=ui,
+            pack_name=pack_name,
             output_override=output_dir,
+            overwrite=overwrite,
         )
     except ConfigErrors as error:
         import json
