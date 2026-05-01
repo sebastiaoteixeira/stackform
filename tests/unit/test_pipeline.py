@@ -1,11 +1,10 @@
 import pytest
 
-from yaml_api_generator.runtime.context import RequestContext
-from yaml_api_generator.runtime.pipeline import Pipeline
-from yaml_api_generator.runtime.pipeline_builder import PipelineBuilder
-from yaml_api_generator.runtime.repositories.base import BaseRepository
 from yaml_api_generator.ir import IRDocumentBinding
-from yaml_api_generator.runtime.runtime_context import (
+from yaml_api_generator.server.request_context import RequestContext
+from yaml_api_generator.server.pipeline import Pipeline
+from yaml_api_generator.server.pipeline_builder import PipelineBuilder
+from yaml_api_generator.server.server_context import (
     RuntimeAccessRule,
     RuntimeAppConfig,
     RuntimeAuthConfig,
@@ -13,26 +12,9 @@ from yaml_api_generator.runtime.runtime_context import (
     RuntimeIdentityDescriptor,
     RuntimeRouteDescriptor,
 )
-from yaml_api_generator.when_ast import Equals, FieldRef, StringLiteral
+from yaml_api_generator.server.steps import ForbiddenError, UnauthorizedError
+from yaml_api_generator.ir.when import Equals, FieldRef
 from .test_repository_steps import InMemoryRepository
-
-
-def _make_ctx(**overrides) -> RequestContext:
-    defaults = dict(
-        method="GET",
-        path="/items",
-        api_version=None,
-        collection="items",
-        operation="list",
-        headers={},
-        url_params={},
-        repository=None,
-        principal=None,
-        body=None,
-        response=None,
-    )
-    defaults.update(overrides)
-    return RequestContext(**defaults)
 
 
 def _make_runtime_context(
@@ -42,7 +24,7 @@ def _make_runtime_context(
     has_password_auth=False,
     has_api_key_auth=False,
     role_hierarchies=None,
-) -> tuple:
+):
     cols = collections or {
         "items": RuntimeCollectionDescriptor(
             name="items",
@@ -70,7 +52,7 @@ def _make_runtime_context(
             is_public=True,
         ),
     ]
-    ctx = type(
+    return type(
         "RC",
         (),
         {
@@ -80,10 +62,9 @@ def _make_runtime_context(
             "auth": auth,
         },
     )()
-    return ctx
 
 
-# --- Pipeline Execution (304-308) ---
+# --- Pipeline Execution ---
 
 
 @pytest.mark.asyncio
@@ -150,17 +131,21 @@ async def test_pipeline_exception_propagates():
         await p.run()
 
 
-# --- Pipeline Builder (309-317) ---
+# --- Pipeline Builder (behavioral) ---
 
 
 @pytest.mark.asyncio
-async def test_builder_custom_handler_route():
+async def test_builder_custom_handler_route_calls_handler():
+    import sys
     import types
 
     mod = types.ModuleType("myapp.handlers.items")
-    mod.custom_handler = lambda ctx: ctx  # type: ignore
-    import sys
 
+    def custom_handler(ctx):
+        ctx.response = {"handled": True}
+        return ctx
+
+    mod.custom_handler = custom_handler
     sys.modules["myapp.handlers.items"] = mod
 
     route = RuntimeRouteDescriptor(
@@ -173,20 +158,19 @@ async def test_builder_custom_handler_route():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    assert len(pipeline.steps) == 1
-    assert pipeline.steps[0] is mod.custom_handler
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    result = await pipeline.run()
+    assert result.response == {"handled": True}
 
     del sys.modules["myapp.handlers.items"]
 
 
-def test_builder_login_route():
+@pytest.mark.asyncio
+async def test_builder_login_route_validates_and_returns_token():
+    from yaml_api_generator.server.auth.password import hash_password
+
     identity = RuntimeIdentityDescriptor(
-        name="users",
-        identifier="email",
-        via=["password"],
-        id_field="id",
+        name="users", identifier="email", via=["password"], id_field="id"
     )
     route = RuntimeRouteDescriptor(
         method="POST",
@@ -210,14 +194,50 @@ def test_builder_login_route():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    step_names = [s.__name__ for s in pipeline.steps]
-    assert "step" in step_names[0]
-    assert len(pipeline.steps) == 2
+    repo.register_id_field("users", "id")
+    repo._data["users"] = {
+        "u1": {"id": "u1", "email": "a@b.com", "_auth": {"passwordHash": hash_password("secret")}}
+    }
+
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    result = await pipeline.run(body={"email": "a@b.com", "password": "secret"})
+    assert "token" in result.response
 
 
-def test_builder_standard_crud_has_validation_and_repo():
+@pytest.mark.asyncio
+async def test_builder_login_route_missing_body_raises():
+    identity = RuntimeIdentityDescriptor(
+        name="users", identifier="email", via=["password"], id_field="id"
+    )
+    route = RuntimeRouteDescriptor(
+        method="POST",
+        path="/users/login",
+        operation="login",
+        collection="users",
+        is_public=True,
+    )
+    rc = _make_runtime_context(
+        collections={
+            "users": RuntimeCollectionDescriptor(
+                name="users",
+                type="auth",
+                id_field="id",
+                id_format="uuidv7",
+                fields={"email": {"type": "string"}},
+            ),
+        },
+        identity_collections={"users": identity},
+        routes=[route],
+        has_password_auth=True,
+    )
+    repo = InMemoryRepository()
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    with pytest.raises(ValueError):
+        await pipeline.run(body={"email": "a@b.com"})  # missing password
+
+
+@pytest.mark.asyncio
+async def test_builder_standard_crud_invalid_body_raises_validation_error():
     route = RuntimeRouteDescriptor(
         method="POST",
         path="/items",
@@ -227,12 +247,30 @@ def test_builder_standard_crud_has_validation_and_repo():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    assert len(pipeline.steps) >= 2
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    with pytest.raises(ValueError):
+        await pipeline.run(body={})  # missing required "title"
 
 
-def test_builder_non_public_route_has_auth_steps():
+@pytest.mark.asyncio
+async def test_builder_standard_crud_valid_body_creates_item():
+    route = RuntimeRouteDescriptor(
+        method="POST",
+        path="/items",
+        operation="create",
+        collection="items",
+        is_public=True,
+    )
+    rc = _make_runtime_context(routes=[route])
+    repo = InMemoryRepository()
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    result = await pipeline.run(body={"title": "My Item"})
+    assert result.response is not None
+    assert result.response.get("title") == "My Item"
+
+
+@pytest.mark.asyncio
+async def test_builder_non_public_route_rejects_unauthenticated():
     route = RuntimeRouteDescriptor(
         method="POST",
         path="/items",
@@ -242,10 +280,7 @@ def test_builder_non_public_route_has_auth_steps():
         access_rules=[RuntimeAccessRule(principal="*", effect="allow")],
     )
     identity = RuntimeIdentityDescriptor(
-        name="users",
-        identifier="email",
-        via=["password"],
-        id_field="id",
+        name="users", identifier="email", via=["password"], id_field="id"
     )
     rc = _make_runtime_context(
         identity_collections={"users": identity},
@@ -253,13 +288,13 @@ def test_builder_non_public_route_has_auth_steps():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    step_names = [type(s).__name__ for s in pipeline.steps]
-    assert len(pipeline.steps) >= 3
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    with pytest.raises(UnauthorizedError):
+        await pipeline.run(body={"title": "x"}, headers={})  # no auth header
 
 
-def test_builder_public_route_no_auth_steps():
+@pytest.mark.asyncio
+async def test_builder_public_route_succeeds_without_auth():
     route = RuntimeRouteDescriptor(
         method="GET",
         path="/items",
@@ -269,12 +304,13 @@ def test_builder_public_route_no_auth_steps():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    assert len(pipeline.steps) == 2
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    result = await pipeline.run(headers={})
+    assert result.response == []  # empty list, no auth error
 
 
-def test_builder_update_with_document_rules_has_prefetch():
+@pytest.mark.asyncio
+async def test_builder_update_with_document_rule_allows_matching_principal():
     when_expr = Equals(
         left=FieldRef(root="principal", path=("sub",)),
         right=FieldRef(root="document", path=("authorId",)),
@@ -287,7 +323,7 @@ def test_builder_update_with_document_rules_has_prefetch():
         is_public=False,
         access_rules=[
             RuntimeAccessRule(
-                principal="identity:user",
+                principal="identity:users",
                 when=when_expr,
                 document_symbols={"document": IRDocumentBinding(collection="items")},
                 effect="allow",
@@ -295,10 +331,7 @@ def test_builder_update_with_document_rules_has_prefetch():
         ],
     )
     identity = RuntimeIdentityDescriptor(
-        name="users",
-        identifier="email",
-        via=["password"],
-        id_field="id",
+        name="users", identifier="email", via=["password"], id_field="id"
     )
     rc = _make_runtime_context(
         identity_collections={"users": identity},
@@ -306,25 +339,32 @@ def test_builder_update_with_document_rules_has_prefetch():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    assert len(pipeline.steps) >= 4
+    repo.register_id_field("items", "id")
+    repo._data["items"] = {"item-1": {"id": "item-1", "title": "Old", "authorId": "user-1"}}
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    result = await pipeline.run(
+        url_params={"id": "item-1"},
+        body={"title": "New"},
+        principal={"sub": "user-1", "identity_collection": "users", "roles": [], "record": {}},
+    )
+    assert result.response is not None
 
 
-def test_builder_get_with_document_rules_repo_then_post_fetch():
+@pytest.mark.asyncio
+async def test_builder_update_with_document_rule_denies_non_matching_principal():
     when_expr = Equals(
         left=FieldRef(root="principal", path=("sub",)),
         right=FieldRef(root="document", path=("authorId",)),
     )
     route = RuntimeRouteDescriptor(
-        method="GET",
+        method="PATCH",
         path="/items/{id}",
-        operation="get",
+        operation="update",
         collection="items",
         is_public=False,
         access_rules=[
             RuntimeAccessRule(
-                principal="identity:user",
+                principal="identity:users",
                 when=when_expr,
                 document_symbols={"document": IRDocumentBinding(collection="items")},
                 effect="allow",
@@ -332,10 +372,7 @@ def test_builder_get_with_document_rules_repo_then_post_fetch():
         ],
     )
     identity = RuntimeIdentityDescriptor(
-        name="users",
-        identifier="email",
-        via=["password"],
-        id_field="id",
+        name="users", identifier="email", via=["password"], id_field="id"
     )
     rc = _make_runtime_context(
         identity_collections={"users": identity},
@@ -343,17 +380,21 @@ def test_builder_get_with_document_rules_repo_then_post_fetch():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    assert len(pipeline.steps) >= 4
+    repo.register_id_field("items", "id")
+    repo._data["items"] = {"item-1": {"id": "item-1", "title": "Old", "authorId": "user-1"}}
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    with pytest.raises(ForbiddenError):
+        await pipeline.run(
+            url_params={"id": "item-1"},
+            body={"title": "New"},
+            principal={"sub": "user-2", "identity_collection": "users", "roles": [], "record": {}},
+        )
 
 
-def test_builder_identity_create_has_validate_identity_step():
+@pytest.mark.asyncio
+async def test_builder_identity_create_without_password_raises():
     identity = RuntimeIdentityDescriptor(
-        name="users",
-        identifier="email",
-        via=["password"],
-        id_field="id",
+        name="users", identifier="email", via=["password"], id_field="id"
     )
     route = RuntimeRouteDescriptor(
         method="POST",
@@ -377,9 +418,9 @@ def test_builder_identity_create_has_validate_identity_step():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
-    pipeline = builder.build_for_route(route)
-    assert len(pipeline.steps) >= 3
+    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    with pytest.raises(ValueError):
+        await pipeline.run(body={"email": "a@b.com"})  # missing password
 
 
 def test_builder_unsupported_operation_raises():
@@ -392,6 +433,5 @@ def test_builder_unsupported_operation_raises():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    builder = PipelineBuilder(rc, repo)
     with pytest.raises(ValueError, match="Unsupported operation"):
-        builder.build_for_route(route)
+        PipelineBuilder(rc, repo).build_for_route(route)

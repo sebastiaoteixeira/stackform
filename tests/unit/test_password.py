@@ -1,18 +1,14 @@
 import pytest
 
-from yaml_api_generator.runtime.auth.password import hash_password, verify_password
+from yaml_api_generator.server.auth.password import hash_password, verify_password
 
 
 class TestHashPassword:
-    def test_176_hash_produces_correct_format(self):
+    def test_176_hash_verifiable_with_verify_password(self):
+        # If hash_password produces output that verify_password can't verify, it's broken
         h = hash_password("secret123")
-        parts = h.split("$")
-        assert len(parts) == 5
-        assert parts[0] == "pbkdf2"
-        assert parts[1] == "sha256"
-        assert parts[2].isdigit()
-        assert parts[3] != ""
-        assert parts[4] != ""
+        assert verify_password("secret123", h) is True
+        assert verify_password("wrong", h) is False
 
     def test_177_different_hashes_for_same_password(self):
         h1 = hash_password("secret123")

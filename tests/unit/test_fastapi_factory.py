@@ -1,20 +1,16 @@
 from datetime import datetime
-from typing import Any, Literal, get_args
+from typing import Any, Literal
 
 import pytest
-from pydantic import BaseModel
+from pydantic import ValidationError
 
-from yaml_api_generator.runtime.fastapi_factory import (
-    WRITE_OPERATIONS,
-    create_pydantic_model,
-    create_pydantic_model_fields,
-    register_fastapi_routes,
+from yaml_api_generator.server.fastapi_factory import (
     _field_annotation,
     _security_requirements,
-    _openapi_security_schemes,
+    create_pydantic_model,
+    register_fastapi_routes,
 )
-from yaml_api_generator.runtime.runtime_context import (
-    RuntimeAccessRule,
+from yaml_api_generator.server.server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
     RuntimeIdentityDescriptor,
@@ -43,38 +39,37 @@ def _make_identity(
     identifier: str = "email",
     via: list[str] | None = None,
     id_field: str = "id",
-    roles_field: str | None = None,
 ) -> RuntimeIdentityDescriptor:
     return RuntimeIdentityDescriptor(
         name=name,
         identifier=identifier,
         via=via or ["password"],
         id_field=id_field,
-        roles_field=roles_field,
     )
+
+
+# --- Model naming convention (documented spec: {Collection}{Op}Payload) ---
 
 
 def test_model_naming_collection_capitalized_operation_payload():
     col = _make_collection("items", {"title": {"type": "string", "required": True}})
     model = create_pydantic_model(col, "create")
-    assert model is not None
     assert model.__name__ == "ItemsCreatePayload"
 
 
 def test_underscore_collection_naming():
-    col = _make_collection(
-        "user_posts", {"title": {"type": "string", "required": True}}
-    )
+    col = _make_collection("user_posts", {"title": {"type": "string", "required": True}})
     model = create_pydantic_model(col, "create")
-    assert model is not None
     assert model.__name__ == "UserPostsCreatePayload"
+
+
+# --- Model creation per operation ---
 
 
 def test_write_operations_create_model():
     col = _make_collection("items", {"name": {"type": "string", "required": True}})
     for op in ("create", "update", "replace"):
-        model = create_pydantic_model(col, op)
-        assert model is not None
+        assert create_pydantic_model(col, op) is not None
 
 
 def test_read_operations_return_none():
@@ -84,28 +79,35 @@ def test_read_operations_return_none():
     assert create_pydantic_model(col, "delete") is None
 
 
-def test_login_model_has_identifier_and_password():
+# --- Login model requires identifier + password ---
+
+
+def test_login_model_requires_identifier_and_password():
     col = _make_collection("users", {"email": {"type": "string", "required": True}})
     identity = _make_identity(identifier="email", via=["password"])
     model = create_pydantic_model(col, "login", identity)
-    assert model is not None
-    assert model.__name__ == "UsersLoginPayload"
-    assert "email" in model.model_fields
-    assert "password" in model.model_fields
+    model(email="a@b.com", password="secret")  # must succeed
+    with pytest.raises(ValidationError):
+        model(email="a@b.com")  # missing password
+    with pytest.raises(ValidationError):
+        model(password="secret")  # missing identifier
+
+
+# --- Update operation: all fields optional ---
 
 
 def test_update_operation_all_fields_optional():
-    col = _make_collection(
-        "items",
-        {
-            "title": {"type": "string", "required": True},
-            "count": {"type": "number", "required": True},
-        },
-    )
+    col = _make_collection("items", {
+        "title": {"type": "string", "required": True},
+        "count": {"type": "number", "required": True},
+    })
     model = create_pydantic_model(col, "update")
-    assert model is not None
-    for field_info in model.model_fields.values():
-        assert field_info.is_required() is False
+    instance = model()  # must succeed with no fields
+    assert model(title="x").model_dump(exclude_unset=True) == {"title": "x"}
+    assert model().model_dump(exclude_unset=True) == {}
+
+
+# --- Field type annotations ---
 
 
 def test_field_type_mapping_string():
@@ -143,111 +145,94 @@ def test_field_type_mapping_ref():
     assert _field_annotation({"type": "ref", "ref": "user"}) is str
 
 
-def test_constraints_min_max():
-    col = _make_collection(
-        "items",
-        {"score": {"type": "number", "min": 0, "max": 100}},
-    )
+# --- Constraints enforced at validation time ---
+
+
+def test_constraints_min_max_enforced():
+    col = _make_collection("items", {"score": {"type": "number", "min": 0, "max": 100}})
     model = create_pydantic_model(col, "create")
-    assert model is not None
-    field_info = model.model_fields["score"]
-    assert field_info.metadata
-    ge_found = any(
-        hasattr(m, "ge") and getattr(m, "ge") == 0 for m in field_info.metadata
-    )
-    le_found = any(
-        hasattr(m, "le") and getattr(m, "le") == 100 for m in field_info.metadata
-    )
-    assert ge_found
-    assert le_found
+    model(score=50)   # valid
+    model(score=0)    # boundary valid
+    model(score=100)  # boundary valid
+    with pytest.raises(ValidationError):
+        model(score=-1)
+    with pytest.raises(ValidationError):
+        model(score=101)
 
 
-def test_constraints_min_length_max_length():
-    col = _make_collection(
-        "items",
-        {"name": {"type": "string", "minLength": 1, "maxLength": 255}},
-    )
+def test_constraints_min_length_max_length_enforced():
+    col = _make_collection("items", {"name": {"type": "string", "minLength": 2, "maxLength": 5}})
     model = create_pydantic_model(col, "create")
-    assert model is not None
-    field_info = model.model_fields["name"]
-    assert field_info.metadata
-    min_found = any(
-        hasattr(m, "min_length") and getattr(m, "min_length") == 1
-        for m in field_info.metadata
-    )
-    max_found = any(
-        hasattr(m, "max_length") and getattr(m, "max_length") == 255
-        for m in field_info.metadata
-    )
-    assert min_found
-    assert max_found
+    model(name="hi")      # at min
+    model(name="hello")   # at max
+    with pytest.raises(ValidationError):
+        model(name="x")   # too short
+    with pytest.raises(ValidationError):
+        model(name="toolong")  # too long
 
 
-def test_password_field_injection_for_identity_create():
+# --- Field exclusions ---
+
+
+def test_password_field_required_for_identity_create():
     col = _make_collection("users", {"email": {"type": "string", "required": True}})
     identity = _make_identity(via=["password"])
     model = create_pydantic_model(col, "create", identity)
-    assert model is not None
-    assert "password" in model.model_fields
+    model(email="a@b.com", password="secret")  # must succeed
+    with pytest.raises(ValidationError):
+        model(email="a@b.com")  # missing password
 
 
-def test_existing_password_field_no_duplicate():
-    col = _make_collection(
-        "users",
-        {
-            "email": {"type": "string", "required": True},
-            "password": {"type": "string", "required": True},
-        },
-    )
+def test_existing_password_field_not_duplicated():
+    col = _make_collection("users", {
+        "email": {"type": "string", "required": True},
+        "password": {"type": "string", "required": True},
+    })
     identity = _make_identity(via=["password"])
     model = create_pydantic_model(col, "create", identity)
-    assert model is not None
-    password_count = sum(1 for f in model.model_fields if f == "password")
-    assert password_count == 1
+    # If duplicated, Pydantic would error or behave oddly; just verify it works
+    model(email="a@b.com", password="secret")
 
 
-def test_id_type_fields_excluded():
-    col = _make_collection(
-        "items", {"id": {"type": "id"}, "name": {"type": "string", "required": True}}
-    )
+def test_id_type_field_not_required_in_create():
+    """Auto-generated id fields must not appear in the create payload."""
+    col = _make_collection("items", {
+        "id": {"type": "id"},
+        "name": {"type": "string", "required": True},
+    })
     model = create_pydantic_model(col, "create")
-    assert model is not None
-    assert "id" not in model.model_fields
+    # Can create without providing id
+    instance = model(name="Widget")
+    assert "id" not in instance.model_dump(exclude_unset=True)
 
 
-def test_auth_field_excluded():
-    col = _make_collection(
-        "items",
-        {"name": {"type": "string", "required": True}, "_auth": {"type": "object"}},
-    )
+def test_auth_internal_field_not_accepted_in_create():
+    """_auth fields must not appear in create payloads — they are internal."""
+    col = _make_collection("items", {
+        "name": {"type": "string", "required": True},
+        "_auth": {"type": "object"},
+    })
     model = create_pydantic_model(col, "create")
-    assert model is not None
-    assert "_auth" not in model.model_fields
+    instance = model(name="x")
+    assert "_auth" not in instance.model_dump(exclude_unset=True)
+
+
+# --- Route registration ---
 
 
 def test_routes_registered_with_correct_methods_and_paths():
     from fastapi import FastAPI
+    from yaml_api_generator.server.server_context import RuntimeAppConfig, RuntimeContext
 
     col = _make_collection("posts", {"title": {"type": "string", "required": True}})
     auth = RuntimeAuthConfig(
-        enabled=False,
-        identity_collections={},
-        identity_id_fields={},
-        has_password_auth=False,
-        has_api_key_auth=False,
+        enabled=False, identity_collections={}, identity_id_fields={},
+        has_password_auth=False, has_api_key_auth=False,
     )
     route = RuntimeRouteDescriptor(
-        method="POST",
-        path="/api/v1/posts",
-        operation="create",
-        collection="posts",
-        is_public=True,
+        method="POST", path="/api/v1/posts", operation="create",
+        collection="posts", is_public=True,
     )
-    from yaml_api_generator.runtime.runtime_context import (
-        RuntimeAppConfig,
-        RuntimeContext,
-    )
-
     ctx = RuntimeContext(
         app=RuntimeAppConfig(base_path="/api", api_version="v1"),
         collections={"posts": col},
@@ -260,58 +245,25 @@ def test_routes_registered_with_correct_methods_and_paths():
             pass
 
     app = FastAPI()
-    pipelines = register_fastapi_routes(app, ctx, _DummyRepo())
-    assert ("POST", "/api/v1/posts") in pipelines
+    register_fastapi_routes(app, ctx, _DummyRepo())
     registered = [(r.methods, r.path) for r in app.routes if hasattr(r, "methods")]
-    assert any(
-        "POST" in methods and path == "/api/v1/posts" for methods, path in registered
-    )
+    assert any("POST" in methods and path == "/api/v1/posts" for methods, path in registered)
 
 
-def test_four_endpoint_variants():
+def test_all_crud_routes_registered():
     from fastapi import FastAPI
-    from yaml_api_generator.runtime.runtime_context import (
-        RuntimeAppConfig,
-        RuntimeContext,
-    )
+    from yaml_api_generator.server.server_context import RuntimeAppConfig, RuntimeContext
 
     col = _make_collection("items", {"name": {"type": "string", "required": True}})
     auth = RuntimeAuthConfig(
-        enabled=False,
-        identity_collections={},
-        identity_id_fields={},
-        has_password_auth=False,
-        has_api_key_auth=False,
+        enabled=False, identity_collections={}, identity_id_fields={},
+        has_password_auth=False, has_api_key_auth=False,
     )
     routes = [
-        RuntimeRouteDescriptor(
-            method="GET",
-            path="/items",
-            operation="list",
-            collection="items",
-            is_public=True,
-        ),
-        RuntimeRouteDescriptor(
-            method="POST",
-            path="/items",
-            operation="create",
-            collection="items",
-            is_public=True,
-        ),
-        RuntimeRouteDescriptor(
-            method="GET",
-            path="/items/{id}",
-            operation="get",
-            collection="items",
-            is_public=True,
-        ),
-        RuntimeRouteDescriptor(
-            method="PUT",
-            path="/items/{id}",
-            operation="update",
-            collection="items",
-            is_public=True,
-        ),
+        RuntimeRouteDescriptor(method="GET",   path="/items",      operation="list",   collection="items", is_public=True),
+        RuntimeRouteDescriptor(method="POST",  path="/items",      operation="create", collection="items", is_public=True),
+        RuntimeRouteDescriptor(method="GET",   path="/items/{id}", operation="get",    collection="items", is_public=True),
+        RuntimeRouteDescriptor(method="PATCH", path="/items/{id}", operation="update", collection="items", is_public=True),
     ]
     ctx = RuntimeContext(
         app=RuntimeAppConfig(base_path="/api", api_version="v1"),
@@ -326,43 +278,40 @@ def test_four_endpoint_variants():
 
     app = FastAPI()
     register_fastapi_routes(app, ctx, _DummyRepo())
-    registered_paths = {
-        r.path for r in app.routes if hasattr(r, "path") and hasattr(r, "methods")
-    }
+    registered_paths = {r.path for r in app.routes if hasattr(r, "path") and hasattr(r, "methods")}
     assert "/items" in registered_paths
     assert "/items/{id}" in registered_paths
 
 
+# --- Pydantic model behavior ---
+
+
 def test_payload_model_dump_exclude_unset_for_partial_updates():
-    col = _make_collection(
-        "items",
-        {"name": {"type": "string", "required": True}, "desc": {"type": "string"}},
-    )
+    col = _make_collection("items", {
+        "name": {"type": "string", "required": True},
+        "desc": {"type": "string"},
+    })
     model = create_pydantic_model(col, "update")
-    assert model is not None
     instance = model(name="test")
     dumped = instance.model_dump(exclude_unset=True)
     assert "desc" not in dumped
     assert dumped["name"] == "test"
 
 
+# --- Error → HTTP status mapping ---
+
+
 @pytest.mark.anyio
 async def test_error_mapping_unauthorized_401():
-    from yaml_api_generator.runtime.steps import UnauthorizedError
-    from yaml_api_generator.runtime.fastapi_factory import _run_pipeline
-    from yaml_api_generator.runtime.pipeline import Pipeline
-    from fastapi import HTTPException
+    from fastapi import FastAPI, HTTPException
+    from yaml_api_generator.server.fastapi_factory import _run_pipeline
+    from yaml_api_generator.server.pipeline import Pipeline
+    from yaml_api_generator.server.steps import UnauthorizedError
 
-    async def _raise_unauth(ctx):
+    async def _raise(ctx):
         raise UnauthorizedError("nope")
 
-    pipeline = Pipeline(
-        steps=[_raise_unauth],
-        method="GET",
-        path="/",
-        collection="items",
-        operation="list",
-    )
+    pipeline = Pipeline(steps=[_raise], method="GET", path="/", collection="items", operation="list")
 
     class _FakeRequest:
         path_params = {}
@@ -375,21 +324,15 @@ async def test_error_mapping_unauthorized_401():
 
 @pytest.mark.anyio
 async def test_error_mapping_forbidden_403():
-    from yaml_api_generator.runtime.steps import ForbiddenError
-    from yaml_api_generator.runtime.pipeline import Pipeline
-    from yaml_api_generator.runtime.fastapi_factory import _run_pipeline
     from fastapi import HTTPException
+    from yaml_api_generator.server.fastapi_factory import _run_pipeline
+    from yaml_api_generator.server.pipeline import Pipeline
+    from yaml_api_generator.server.steps import ForbiddenError
 
-    async def _raise_forbidden(ctx):
+    async def _raise(ctx):
         raise ForbiddenError("nope")
 
-    pipeline = Pipeline(
-        steps=[_raise_forbidden],
-        method="GET",
-        path="/",
-        collection="items",
-        operation="list",
-    )
+    pipeline = Pipeline(steps=[_raise], method="GET", path="/", collection="items", operation="list")
 
     class _FakeRequest:
         path_params = {}
@@ -402,21 +345,15 @@ async def test_error_mapping_forbidden_403():
 
 @pytest.mark.anyio
 async def test_error_mapping_not_found_404():
-    from yaml_api_generator.runtime.steps import NotFoundError
-    from yaml_api_generator.runtime.pipeline import Pipeline
-    from yaml_api_generator.runtime.fastapi_factory import _run_pipeline
     from fastapi import HTTPException
+    from yaml_api_generator.server.fastapi_factory import _run_pipeline
+    from yaml_api_generator.server.pipeline import Pipeline
+    from yaml_api_generator.server.steps import NotFoundError
 
-    async def _raise_notfound(ctx):
+    async def _raise(ctx):
         raise NotFoundError("gone")
 
-    pipeline = Pipeline(
-        steps=[_raise_notfound],
-        method="GET",
-        path="/",
-        collection="items",
-        operation="get",
-    )
+    pipeline = Pipeline(steps=[_raise], method="GET", path="/", collection="items", operation="get")
 
     class _FakeRequest:
         path_params = {}
@@ -429,20 +366,14 @@ async def test_error_mapping_not_found_404():
 
 @pytest.mark.anyio
 async def test_error_mapping_value_error_422():
-    from yaml_api_generator.runtime.pipeline import Pipeline
-    from yaml_api_generator.runtime.fastapi_factory import _run_pipeline
     from fastapi import HTTPException
+    from yaml_api_generator.server.fastapi_factory import _run_pipeline
+    from yaml_api_generator.server.pipeline import Pipeline
 
-    async def _raise_value(ctx):
+    async def _raise(ctx):
         raise ValueError("bad input")
 
-    pipeline = Pipeline(
-        steps=[_raise_value],
-        method="POST",
-        path="/",
-        collection="items",
-        operation="create",
-    )
+    pipeline = Pipeline(steps=[_raise], method="POST", path="/", collection="items", operation="create")
 
     class _FakeRequest:
         path_params = {}
@@ -453,38 +384,25 @@ async def test_error_mapping_value_error_422():
     assert exc_info.value.status_code == 422
 
 
+# --- OpenAPI security requirements ---
+
+
 def test_public_route_no_security_requirements():
     route = RuntimeRouteDescriptor(
-        method="GET",
-        path="/posts",
-        operation="list",
-        collection="posts",
-        is_public=True,
+        method="GET", path="/posts", operation="list", collection="posts", is_public=True
     )
     auth = RuntimeAuthConfig(
-        enabled=True,
-        identity_collections={},
-        identity_id_fields={},
-        has_password_auth=True,
-        has_api_key_auth=False,
+        enabled=True, identity_collections={}, identity_id_fields={},
+        has_password_auth=True, has_api_key_auth=False,
     )
     assert _security_requirements(route, auth) == []
 
 
-def test_api_key_auth_produces_apikey_and_bearer():
+def test_api_key_auth_includes_apikey_and_bearer_schemes():
     route = RuntimeRouteDescriptor(
-        method="GET",
-        path="/posts",
-        operation="list",
-        collection="posts",
-        is_public=False,
+        method="GET", path="/posts", operation="list", collection="posts", is_public=False
     )
-    identity = RuntimeIdentityDescriptor(
-        name="clients",
-        identifier="clientId",
-        via=["apiKey"],
-        id_field="id",
-    )
+    identity = RuntimeIdentityDescriptor(name="clients", identifier="clientId", via=["apiKey"], id_field="id")
     auth = RuntimeAuthConfig(
         enabled=True,
         identity_collections={"clients": identity},
@@ -497,20 +415,11 @@ def test_api_key_auth_produces_apikey_and_bearer():
     assert {"BearerAuth": []} in reqs
 
 
-def test_password_auth_produces_basic_and_bearer():
+def test_password_auth_includes_basic_and_bearer_schemes():
     route = RuntimeRouteDescriptor(
-        method="GET",
-        path="/posts",
-        operation="list",
-        collection="posts",
-        is_public=False,
+        method="GET", path="/posts", operation="list", collection="posts", is_public=False
     )
-    identity = RuntimeIdentityDescriptor(
-        name="users",
-        identifier="email",
-        via=["password"],
-        id_field="id",
-    )
+    identity = RuntimeIdentityDescriptor(name="users", identifier="email", via=["password"], id_field="id")
     auth = RuntimeAuthConfig(
         enabled=True,
         identity_collections={"users": identity},

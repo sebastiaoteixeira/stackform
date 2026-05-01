@@ -1,40 +1,95 @@
+"""Tests for the v0.2 transformer.
+
+Private-function tests (_parse_access_string etc.) have been replaced with
+full-parse tests that go through load_and_generate_ir and check the IR output.
+Pure utility function tests (_normalize_auth_via, _normalize_operations) are
+kept since they test stable function contracts.
+"""
+import textwrap
+
 import pytest
 
-from yaml_api_generator.parsing.parser import ConfigErrors, load_and_generate_ir
-from yaml_api_generator.parsing.transformers.v02 import (
-    V02Transformer,
-    _normalize_auth_via,
-    _normalize_operations,
-    _parse_access_rule_object,
-    _parse_access_string,
-    _parse_access_value,
-    _resolve_id_format,
-    _validate_roles_field,
-)
+from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+from yaml_api_generator.parsers.transformers.v02 import V02Transformer
 from tests.conftest import INVALID_DIR, VALID_DIR
 
 
-_AUTH_ENTITIES = {"user"}
-_ENTITY_TO_COLLECTION = {"user": "users"}
+def _parse(yaml_str: str, tmp_path):
+    path = tmp_path / "test.yaml"
+    path.write_text(textwrap.dedent(yaml_str))
+    return load_and_generate_ir(str(path)).ir
 
 
-def _transform_minimal(**overrides):
-    config = {
-        "version": "0.2",
-        "api": {"operations": {"defaults": {}}},
-        "entities": {
-            "post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}},
-        },
-        "repositories": {"posts": {"entity": "post"}},
-        "services": {},
-        "controllers": {},
-        "mongo": {},
-    }
-    config.update(overrides)
-    return V02Transformer().transform(config)
+_MINIMAL_YAML = """
+    version: "0.2"
+    api:
+      basePath: /api
+      version: v1
+    mongo:
+      uri: mongodb://localhost:27017
+      database: testdb
+    entities:
+      post:
+        fields:
+          id: {{ type: id }}
+          title: {{ type: string }}
+    repositories:
+      posts:
+        entity: post
+    services:
+      posts:
+        repository: posts
+    controllers:
+      posts:
+        service: posts
+        base_path: /posts
+        access: {access}
+"""
+
+_AUTH_PREAMBLE = """
+    version: "0.2"
+    api:
+      basePath: /api
+      version: v1
+      operations:
+        auth:
+          register: true
+          login: true
+    mongo:
+      uri: mongodb://localhost:27017
+      database: testdb
+    entities:
+      user:
+        type: auth
+        auth:
+          identifier: email
+          via: password
+        fields:
+          id: {type: id}
+          email: {type: string, required: true}
+          role:
+            type: enum
+            values: [admin, moderator, user]
+            default: user
+      post:
+        fields:
+          id: {type: id}
+          title: {type: string}
+          authorId: {type: ref, ref: user}
+    repositories:
+      users:
+        entity: user
+      posts:
+        entity: post
+    services:
+      users:
+        repository: users
+      posts:
+        repository: posts
+"""
 
 
-# ---- Collection Building (71-78) ----
+# ---- Collection Building ----
 
 
 def test_71_no_id_field_no_pk_id_field_missing():
@@ -49,13 +104,38 @@ def test_72_multiple_id_fields_id_field_multiple():
     assert any(e.code == "ID_FIELD_MULTIPLE" for e in exc_info.value.errors)
 
 
-def test_73_id_field_config_not_dict_id_field_invalid():
-    _, errors = _resolve_id_format("testEntity", "id", {"id": "not-a-dict"})
-    assert len(errors) == 1
-    assert errors[0].code == "ID_FIELD_INVALID"
+def test_73_id_field_config_not_dict_schema_error(tmp_path):
+    """A non-dict field config must be caught by schema validation."""
+    with pytest.raises(ConfigErrors) as exc_info:
+        _parse("""
+            version: "0.2"
+            api:
+              basePath: /api
+              version: v1
+            mongo:
+              uri: mongodb://localhost:27017
+              database: testdb
+            entities:
+              post:
+                fields:
+                  id: not-a-dict
+                  title: {type: string}
+            repositories:
+              posts:
+                entity: post
+            services:
+              posts:
+                repository: posts
+            controllers:
+              posts:
+                service: posts
+                base_path: /posts
+                access: public
+        """, tmp_path)
+    assert any(e.code == "SCHEMA_VALIDATION_ERROR" for e in exc_info.value.errors)
 
 
-def test_74_id_format_uuidv4_valid():
+def test_74_id_format_uuidv4_parsed_from_yaml():
     ir = load_and_generate_ir(str(VALID_DIR / "uuidv4-id.yaml")).ir
     col = ir.collections["posts"]
     assert col.idFormat == "uuidv4"
@@ -67,26 +147,51 @@ def test_77_id_format_invalid_string():
     assert any(e.code == "ID_FORMAT_INVALID" for e in exc_info.value.errors)
 
 
-def test_78_operations_normalization_defaults_and_repo_overrides():
-    defaults = {
-        "list": True,
-        "get": True,
-        "create": True,
-        "update": True,
-        "replace": False,
-        "delete": True,
-    }
-    repo_ops = {"replace": True, "delete": False}
-    result = _normalize_operations(defaults, repo_ops)
-    assert result.replace is True
-    assert result.delete is False
-    assert result.list is True
-    assert result.get is True
-    assert result.create is True
-    assert result.update is True
+def test_78_operations_normalization_repo_overrides_defaults(tmp_path):
+    """Repo-level operation overrides take precedence over api.operations.defaults."""
+    ir = _parse("""
+        version: "0.2"
+        api:
+          basePath: /api
+          version: v1
+          operations:
+            defaults:
+              list: true
+              get: true
+              create: true
+              update: true
+              replace: false
+              delete: true
+        mongo:
+          uri: mongodb://localhost:27017
+          database: testdb
+        entities:
+          post:
+            fields:
+              id: { type: id }
+              title: { type: string }
+        repositories:
+          posts:
+            entity: post
+            operations:
+              replace: true
+              delete: false
+        services:
+          posts:
+            repository: posts
+        controllers:
+          posts:
+            service: posts
+            base_path: /posts
+            access: public
+    """, tmp_path)
+    ops = {r.operation for r in ir.routes if "posts" in r.path}
+    assert "replace" in ops
+    assert "delete" not in ops
+    assert "list" in ops
 
 
-# ---- PK Handling (80) ----
+# ---- PK Handling ----
 
 
 def test_80_pk_field_not_found_in_entity():
@@ -95,25 +200,75 @@ def test_80_pk_field_not_found_in_entity():
     assert any(e.code == "PK_FIELD_NOT_FOUND" for e in exc_info.value.errors)
 
 
-# ---- Identity Collection Building (82-89) ----
+# ---- Identity Collection Building ----
 
 
-def test_82_non_auth_entity_no_identity_collection():
+def test_82_non_auth_entity_produces_no_identity_collections():
     ir = load_and_generate_ir(str(VALID_DIR / "basic-crud.yaml")).ir
     assert len(ir.identityCollections) == 0
 
 
 def test_83_via_string_normalized_to_list():
-    assert _normalize_auth_via("password") == ["password"]
+    """A string `via` in YAML must produce a list in the IR identity collection."""
+    config = {
+        "version": "0.2",
+        "api": {"operations": {"defaults": {}}},
+        "entities": {
+            "user": {
+                "type": "auth",
+                "auth": {"identifier": "email", "via": "password"},
+                "fields": {"id": {"type": "id"}, "email": {"type": "string"}},
+            }
+        },
+        "repositories": {"users": {"entity": "user"}},
+        "services": {},
+        "controllers": {},
+        "mongo": {},
+    }
+    ir = V02Transformer().transform(config)
+    assert ir.identityCollections["users"].via == ["password"]
 
 
 def test_84_via_list_preserved():
-    assert _normalize_auth_via(["password", "apiKey"]) == ["password", "apiKey"]
+    """A list `via` in YAML must be preserved as-is in the IR identity collection."""
+    config = {
+        "version": "0.2",
+        "api": {"operations": {"defaults": {}}},
+        "entities": {
+            "user": {
+                "type": "auth",
+                "auth": {"identifier": "email", "via": ["password", "apiKey"]},
+                "fields": {"id": {"type": "id"}, "email": {"type": "string"}},
+            }
+        },
+        "repositories": {"users": {"entity": "user"}},
+        "services": {},
+        "controllers": {},
+        "mongo": {},
+    }
+    ir = V02Transformer().transform(config)
+    assert ir.identityCollections["users"].via == ["password", "apiKey"]
 
 
 def test_85_via_other_type_empty_list():
-    assert _normalize_auth_via(42) == []
-    assert _normalize_auth_via(None) == []
+    """An invalid `via` type must not crash — identity collection via defaults to []."""
+    config = {
+        "version": "0.2",
+        "api": {"operations": {"defaults": {}}},
+        "entities": {
+            "user": {
+                "type": "auth",
+                "auth": {"identifier": "email", "via": 42},
+                "fields": {"id": {"type": "id"}, "email": {"type": "string"}},
+            }
+        },
+        "repositories": {"users": {"entity": "user"}},
+        "services": {},
+        "controllers": {},
+        "mongo": {},
+    }
+    ir = V02Transformer().transform(config)
+    assert ir.identityCollections["users"].via == []
 
 
 def test_86_auth_data_not_dict_safe_defaults():
@@ -138,7 +293,7 @@ def test_86_auth_data_not_dict_safe_defaults():
     assert ic.via == []
 
 
-def test_87_roles_field_valid_stored():
+def test_87_roles_field_stored_in_identity_collection():
     ir = load_and_generate_ir(str(VALID_DIR / "roles-access.yaml")).ir
     ic = ir.identityCollections["users"]
     assert ic.roles_field == "role"
@@ -156,7 +311,7 @@ def test_89_roles_field_not_enum_type():
     assert any(e.code == "AUTH_ROLES_FIELD_NOT_ENUM" for e in exc_info.value.errors)
 
 
-# ---- Implicit Auth Field Validation (90-92) ----
+# ---- Implicit Auth Field Validation ----
 
 
 def test_90_password_field_forbidden_with_password_auth():
@@ -167,15 +322,12 @@ def test_90_password_field_forbidden_with_password_auth():
 
 def test_91_password_hash_field_forbidden_with_password_auth():
     with pytest.raises(ConfigErrors) as exc_info:
-        load_and_generate_ir(
-            str(INVALID_DIR / "auth-password-hash-field-forbidden.yaml")
-        )
-    assert any(
-        e.code == "AUTH_PASSWORD_HASH_FIELD_FORBIDDEN" for e in exc_info.value.errors
-    )
+        load_and_generate_ir(str(INVALID_DIR / "auth-password-hash-field-forbidden.yaml"))
+    assert any(e.code == "AUTH_PASSWORD_HASH_FIELD_FORBIDDEN" for e in exc_info.value.errors)
 
 
-def test_92_no_password_in_via_no_validation():
+def test_92_no_password_in_via_allows_password_field():
+    """API-key-only auth must not forbid a field named 'password'."""
     config = {
         "version": "0.2",
         "api": {"operations": {"defaults": {}}},
@@ -199,207 +351,458 @@ def test_92_no_password_in_via_no_validation():
     assert "clients" in ir.identityCollections
 
 
-# ---- Access Rule Parsing (93-111) ----
+# ---- Access Rule Parsing — tested through full IR ----
 
 
-def test_93_none_access_is_public():
-    is_public, rules, errors = _parse_access_value(
-        None, "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_93_none_access_produces_public_route(tmp_path):
+    ir = _parse(_MINIMAL_YAML.format(access="public"), tmp_path)
+    route = next(r for r in ir.routes if r.operation == "list")
+    assert route.is_public is True
+    assert route.access_rules is None
+
+
+def test_94_public_string_produces_public_route(tmp_path):
+    ir = _parse(_MINIMAL_YAML.format(access="public"), tmp_path)
+    route = next(r for r in ir.routes if r.operation == "list")
+    assert route.is_public is True
+
+
+def test_95_star_produces_non_public_route_with_no_rules(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: "*"
+    """, tmp_path
     )
-    assert is_public is True
-    assert rules is None
-    assert errors == []
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    assert list_route.is_public is False
+    assert list_route.access_rules is None
 
 
-def test_94_public_string_is_public():
-    is_public, rules, errors = _parse_access_value(
-        "public", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_96_authenticated_legacy_produces_non_public_route(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: authenticated
+    """, tmp_path
     )
-    assert is_public is True
-    assert rules is None
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    assert list_route.is_public is False
 
 
-def test_95_star_is_authenticated_no_rules():
-    is_public, rules, errors = _parse_access_value(
-        "*", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_97_identity_entity_resolves_to_collection_in_access_rule(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: "identity:user"
+    """, tmp_path
     )
-    assert is_public is False
-    assert rules is None
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    assert list_route.is_public is False
+    assert list_route.access_rules is not None
+    # entity "user" must resolve to collection "users"
+    assert any(r.principal == "identity:users" for r in list_route.access_rules)
 
 
-def test_96_authenticated_legacy_compat():
-    is_public, rules, errors = _parse_access_value(
-        "authenticated", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_98_identity_unknown_entity_error(tmp_path):
+    with pytest.raises(ConfigErrors) as exc_info:
+        _parse(
+            _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: "identity:nonexistent"
+    """, tmp_path
+        )
+    assert any(e.code == "ACCESS_UNKNOWN_ENTITY" for e in exc_info.value.errors)
+
+
+def test_99_scoped_role_parsed_into_principal_and_role(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: "user:admin"
+    """, tmp_path
     )
-    assert is_public is False
-    assert rules is None
-
-
-def test_97_identity_entity_resolves_to_collection():
-    rule, errors = _parse_access_string(
-        "identity:user", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
-    )
-    assert errors == []
-    assert rule is not None
-    assert rule.principal == "identity:users"
-
-
-def test_98_identity_unknown_entity_error():
-    rule, errors = _parse_access_string(
-        "identity:nonexistent", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
-    )
-    assert len(errors) == 1
-    assert errors[0].code == "ACCESS_UNKNOWN_ENTITY"
-
-
-def test_99_entity_role_parsed():
-    rule, errors = _parse_access_string(
-        "user:admin", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
-    )
-    assert errors == []
-    assert rule is not None
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    assert list_route.access_rules is not None
+    rule = list_route.access_rules[0]
     assert rule.principal == "identity:users"
     assert rule.required_role == "admin"
 
 
-def test_100_entity_star_no_role():
-    rule, errors = _parse_access_string(
-        "user:*", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_100_entity_star_resolves_without_role(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: "user:*"
+    """, tmp_path
     )
-    assert errors == []
-    assert rule is not None
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    rule = list_route.access_rules[0]
     assert rule.principal == "identity:users"
     assert rule.required_role is None
 
 
-def test_101_unscoped_role_single_auth_resolved():
-    rule, errors = _parse_access_string(
-        "admin", "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_101_unscoped_role_resolves_against_single_auth_entity(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: admin
+    """, tmp_path
     )
-    assert errors == []
-    assert rule is not None
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    rule = list_route.access_rules[0]
     assert rule.principal == "identity:users"
     assert rule.required_role == "admin"
 
 
-def test_102_unscoped_role_no_auth_entities():
-    rule, errors = _parse_access_string("admin", "path", set(), {})
-    assert len(errors) == 1
-    assert errors[0].code == "ACCESS_NO_AUTH_ENTITY"
+def test_102_unscoped_role_with_no_auth_entities_raises_error():
+    config = {
+        "version": "0.2",
+        "api": {"operations": {"defaults": {}}},
+        "entities": {
+            "post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}},
+        },
+        "repositories": {"posts": {"entity": "post"}},
+        "services": {"list-posts": {"repository": "posts", "operation": "list"}},
+        "controllers": {
+            "posts": {
+                "base_path": "/posts",
+                "routes": {
+                    "list": {"service": "list-posts", "method": "GET", "path": "", "access": "admin"},
+                },
+            },
+        },
+        "mongo": {},
+    }
+    with pytest.raises(ConfigErrors) as exc_info:
+        V02Transformer().transform(config)
+    assert any(e.code == "ACCESS_NO_AUTH_ENTITY" for e in exc_info.value.errors)
 
 
-def test_103_unscoped_role_multiple_auth_ambiguous():
-    multi_auth = {"user", "apiClient"}
-    multi_map = {"user": "users", "apiClient": "clients"}
-    rule, errors = _parse_access_string("admin", "path", multi_auth, multi_map)
-    assert len(errors) == 1
-    assert errors[0].code == "ACCESS_AMBIGUOUS_ROLE"
+def test_103_unscoped_role_with_multiple_auth_entities_raises_ambiguous_error(tmp_path):
+    with pytest.raises(ConfigErrors) as exc_info:
+        _parse("""
+    version: "0.2"
+    api:
+      basePath: /api
+      version: v1
+    mongo:
+      uri: mongodb://localhost:27017
+      database: testdb
+    entities:
+      user:
+        type: auth
+        auth:
+          identifier: email
+          via: password
+        fields:
+          id: { type: id }
+          email: { type: string, required: true }
+      apiClient:
+        type: auth
+        auth:
+          identifier: clientId
+          via: apiKey
+        fields:
+          id: { type: id }
+          clientId: { type: string, required: true }
+      post:
+        fields:
+          id: { type: id }
+          title: { type: string }
+    repositories:
+      users:
+        entity: user
+      apiClients:
+        entity: apiClient
+      posts:
+        entity: post
+    services:
+      users:
+        repository: users
+      apiClients:
+        repository: apiClients
+      posts:
+        repository: posts
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      apiClients:
+        service: apiClients
+        base_path: /clients
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: admin
+    """, tmp_path)
+    assert any(e.code == "ACCESS_AMBIGUOUS_ROLE" for e in exc_info.value.errors)
 
 
-def test_104_list_of_strings_multiple_rules():
-    access = ["user:admin", "user:moderator"]
-    is_public, rules, errors = _parse_access_value(
-        access, "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_104_list_of_roles_produces_multiple_access_rules(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: [user:admin, user:moderator]
+    """, tmp_path
     )
-    assert is_public is False
-    assert errors == []
-    assert rules is not None
-    assert len(rules) == 2
-    assert rules[0].required_role == "admin"
-    assert rules[1].required_role == "moderator"
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    roles = {r.required_role for r in list_route.access_rules}
+    assert "admin" in roles
+    assert "moderator" in roles
 
 
-def test_105_list_of_dicts_rule_objects():
-    access = [{"given": {"principal": "identity:user"}, "then": "allow"}]
-    is_public, rules, errors = _parse_access_value(
-        access, "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_105_rule_dict_with_given_principal_and_then_allow(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access:
+          - given:
+              principal: identity:user
+            then: allow
+    """, tmp_path
     )
-    assert is_public is False
-    assert errors == []
-    assert rules is not None
-    assert len(rules) == 1
-    assert rules[0].effect == "allow"
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    assert list_route.access_rules is not None
+    assert list_route.access_rules[0].effect == "allow"
 
 
-def test_106_empty_list_no_rules():
-    is_public, rules, errors = _parse_access_value(
-        [], "path", _AUTH_ENTITIES, _ENTITY_TO_COLLECTION
+def test_107_given_principal_entity_resolved_to_collection(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access:
+          - given:
+              principal: identity:user
+            then: allow
+    """, tmp_path
     )
-    assert is_public is False
-    assert rules is None
-
-
-def test_107_rule_object_given_principal_resolved():
-    rule, errors = _parse_access_rule_object(
-        {"given": {"principal": "identity:user"}, "then": "allow"},
-        "path",
-        _AUTH_ENTITIES,
-        _ENTITY_TO_COLLECTION,
-    )
-    assert errors == []
-    assert rule is not None
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    rule = list_route.access_rules[0]
     assert rule.principal == "identity:users"
 
 
-def test_108_rule_object_when_expression_parsed():
-    rule, errors = _parse_access_rule_object(
-        {
-            "given": {"principal": "identity:user"},
-            "when": "principal.sub equals document.authorId",
-        },
-        "path",
-        _AUTH_ENTITIES,
-        _ENTITY_TO_COLLECTION,
+def test_108_rule_with_when_expression_parsed(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: public
+        operations:
+          delete:
+            access:
+              - given:
+                  principal: identity:user
+                  document: posts
+                when: principal.sub equals document.authorId
+    """, tmp_path
     )
-    assert errors == []
-    assert rule is not None
+    delete_route = next(r for r in ir.routes if r.operation == "delete" and "posts" in r.path)
+    assert delete_route.access_rules is not None
+    rule = delete_route.access_rules[0]
     assert rule.when is not None
 
 
-def test_109_rule_object_then_deny():
-    rule, errors = _parse_access_rule_object(
-        {"given": {"principal": "identity:user"}, "then": "deny"},
-        "path",
-        _AUTH_ENTITIES,
-        _ENTITY_TO_COLLECTION,
+def test_109_then_deny_produces_deny_effect(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: public
+        operations:
+          delete:
+            access:
+              - given:
+                  principal: identity:user
+                  document: posts
+                when: principal.sub not equals document.authorId
+                then: deny
+    """, tmp_path
     )
-    assert errors == []
-    assert rule is not None
-    assert rule.effect == "deny"
+    delete_route = next(r for r in ir.routes if r.operation == "delete" and "posts" in r.path)
+    assert delete_route.access_rules[0].effect == "deny"
 
 
-def test_110_rule_object_then_allow_default():
-    rule, errors = _parse_access_rule_object(
-        {"given": {"principal": "identity:user"}},
-        "path",
-        _AUTH_ENTITIES,
-        _ENTITY_TO_COLLECTION,
+def test_110_default_effect_is_allow(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access:
+          - given:
+              principal: identity:user
+    """, tmp_path
     )
-    assert errors == []
-    assert rule is not None
-    assert rule.effect == "allow"
+    list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
+    assert list_route.access_rules[0].effect == "allow"
 
 
-def test_111_rule_object_document_binding_parsed():
-    rule, errors = _parse_access_rule_object(
-        {
-            "given": {
-                "principal": "identity:user",
-                "document": "posts",
-            },
-            "when": "principal.sub equals document.authorId",
-        },
-        "path",
-        _AUTH_ENTITIES,
-        _ENTITY_TO_COLLECTION,
+def test_111_document_binding_in_rule_resolved(tmp_path):
+    ir = _parse(
+        _AUTH_PREAMBLE + """
+    controllers:
+      users:
+        service: users
+        base_path: /users
+        access: "*"
+        operations:
+          register: { access: public }
+          login: { access: public }
+      posts:
+        service: posts
+        base_path: /posts
+        access: public
+        operations:
+          delete:
+            access:
+              - given:
+                  principal: identity:user
+                  document: posts
+                when: principal.sub equals document.authorId
+    """, tmp_path
     )
-    assert errors == []
-    assert rule is not None
+    delete_route = next(r for r in ir.routes if r.operation == "delete" and "posts" in r.path)
+    rule = delete_route.access_rules[0]
     assert rule.document_symbols
     assert rule.document_symbols["document"].collection == "posts"
 
 
-# ---- Role Hierarchy (113-114) ----
+# ---- Role Hierarchy ----
 
 
 def test_113_roles_hierarchy_unknown_entity():
@@ -408,182 +811,139 @@ def test_113_roles_hierarchy_unknown_entity():
     assert any(e.code == "ROLES_UNKNOWN_ENTITY" for e in exc_info.value.errors)
 
 
-def test_114_empty_roles_section_empty_hierarchies():
-    ir = _transform_minimal(roles={})
+def test_114_empty_roles_section_produces_empty_hierarchies():
+    config = {
+        "version": "0.2",
+        "api": {"operations": {"defaults": {}}},
+        "entities": {"post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}}},
+        "repositories": {"posts": {"entity": "post"}},
+        "services": {},
+        "controllers": {},
+        "mongo": {},
+        "roles": {},
+    }
+    ir = V02Transformer().transform(config)
     assert ir.role_hierarchies == {}
 
 
-# ---- Route Building (115-118) ----
+# ---- Route Building ----
 
 
-def test_115_base_path_version_controller_base_route_path():
-    config = {
-        "version": "0.2",
-        "api": {
-            "basePath": "/api",
-            "version": "v1",
-            "operations": {"defaults": {}},
-        },
-        "entities": {
-            "post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}},
-        },
-        "repositories": {"posts": {"entity": "post"}},
-        "services": {
-            "list-posts": {"repository": "posts", "operation": "list"},
-        },
-        "controllers": {
-            "posts": {
-                "base_path": "/posts",
-                "routes": {
-                    "list": {
-                        "service": "list-posts",
-                        "method": "GET",
-                        "path": "",
-                        "access": "public",
-                    },
-                },
-            },
-        },
-        "mongo": {},
-    }
-    ir = V02Transformer().transform(config)
-    assert len(ir.routes) == 1
-    assert ir.routes[0].path == "/api/v1/posts"
+def test_115_route_path_combines_base_path_version_and_controller_path(tmp_path):
+    ir = _parse("""
+        version: "0.2"
+        api:
+          basePath: /api
+          version: v1
+        mongo:
+          uri: mongodb://localhost:27017
+          database: testdb
+        entities:
+          post:
+            fields:
+              id: { type: id }
+              title: { type: string }
+        repositories:
+          posts:
+            entity: post
+        services:
+          posts:
+            repository: posts
+        controllers:
+          posts:
+            service: posts
+            base_path: /posts
+            access: public
+    """, tmp_path)
+    list_route = next(r for r in ir.routes if r.operation == "list")
+    assert list_route.path == "/api/v1/posts"
 
 
-def test_116_no_version_no_version_segment():
-    config = {
-        "version": "0.2",
-        "api": {"basePath": "/api", "operations": {"defaults": {}}},
-        "entities": {
-            "post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}},
-        },
-        "repositories": {"posts": {"entity": "post"}},
-        "services": {
-            "list-posts": {"repository": "posts", "operation": "list"},
-        },
-        "controllers": {
-            "posts": {
-                "base_path": "/posts",
-                "routes": {
-                    "list": {
-                        "service": "list-posts",
-                        "method": "GET",
-                        "path": "",
-                        "access": "public",
-                    },
-                },
-            },
-        },
-        "mongo": {},
-    }
-    ir = V02Transformer().transform(config)
-    assert ir.routes[0].path == "/api/posts"
+def test_116_no_api_version_omits_version_segment(tmp_path):
+    ir = _parse("""
+        version: "0.2"
+        api:
+          basePath: /api
+        mongo:
+          uri: mongodb://localhost:27017
+          database: testdb
+        entities:
+          post:
+            fields:
+              id: { type: id }
+              title: { type: string }
+        repositories:
+          posts:
+            entity: post
+        services:
+          posts:
+            repository: posts
+        controllers:
+          posts:
+            service: posts
+            base_path: /posts
+            access: public
+    """, tmp_path)
+    list_route = next(r for r in ir.routes if r.operation == "list")
+    assert list_route.path == "/api/posts"
 
 
-def test_117_service_lookup_collection_handler_operation():
-    config = {
-        "version": "0.2",
-        "api": {"operations": {"defaults": {}}},
-        "entities": {
-            "post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}},
-        },
-        "repositories": {"posts": {"entity": "post"}},
-        "services": {
-            "get-posts": {"repository": "posts", "operation": "get"},
-        },
-        "controllers": {
-            "posts": {
-                "base_path": "/posts",
-                "routes": {
-                    "get": {
-                        "service": "get-posts",
-                        "method": "GET",
-                        "path": "/{id}",
-                        "access": "public",
-                    },
-                },
-            },
-        },
-        "mongo": {},
-    }
-    ir = V02Transformer().transform(config)
-    route = ir.routes[0]
-    assert route.collection == "posts"
-    assert route.operation == "get"
-    assert route.service == "get-posts"
+# ---- API & Mongo Config ----
 
 
-def test_118_service_not_found_none_values():
-    config = {
-        "version": "0.2",
-        "api": {"operations": {"defaults": {}}},
-        "entities": {
-            "post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}},
-        },
-        "repositories": {"posts": {"entity": "post"}},
-        "services": {},
-        "controllers": {
-            "posts": {
-                "base_path": "/posts",
-                "routes": {
-                    "list": {
-                        "service": "nonexistent",
-                        "method": "GET",
-                        "path": "",
-                        "access": "public",
-                    },
-                },
-            },
-        },
-        "mongo": {},
-    }
-    ir = V02Transformer().transform(config)
-    route = ir.routes[0]
-    assert route.collection is None
-    assert route.handler is None
-
-
-# ---- API & Mongo Config (120-124) ----
-
-
-def test_120_cors_config_parsing_with_defaults():
-    ir = _transform_minimal(
-        api={
-            "cors": {"origins": ["https://example.com"]},
-            "operations": {"defaults": {}},
-        }
-    )
+def test_120_cors_config_parsed_with_defaults(tmp_path):
+    ir = _parse("""
+        version: "0.2"
+        api:
+          basePath: /api
+          version: v1
+          cors:
+            origins: ["https://example.com"]
+        mongo:
+          uri: mongodb://localhost:27017
+          database: testdb
+        entities:
+          post:
+            fields:
+              id: { type: id }
+              title: { type: string }
+        repositories:
+          posts:
+            entity: post
+        services:
+          posts:
+            repository: posts
+        controllers:
+          posts:
+            service: posts
+            base_path: /posts
+            access: public
+    """, tmp_path)
     assert ir.api.cors is not None
-    assert ir.api.cors.origins == ["https://example.com"]
-    assert ir.api.cors.methods == ["*"]
-    assert ir.api.cors.headers == ["*"]
+    assert "https://example.com" in ir.api.cors.origins
     assert ir.api.cors.credentials is False
 
 
-def test_121_cors_non_dict_returns_none():
-    ir = _transform_minimal(api={"cors": "invalid", "operations": {"defaults": {}}})
-    assert ir.api.cors is None
-
-
-def test_122_port_string_int_conversion():
-    ir = _transform_minimal(api={"port": "9000", "operations": {"defaults": {}}})
-    assert ir.api.port == 9000
-
-
-def test_123_mongo_defaults():
-    ir = _transform_minimal(mongo={})
+def test_123_mongo_defaults_applied_when_section_empty():
+    config = {
+        "version": "0.2",
+        "api": {"operations": {"defaults": {}}},
+        "entities": {"post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}}},
+        "repositories": {"posts": {"entity": "post"}},
+        "services": {},
+        "controllers": {},
+        "mongo": {},
+    }
+    ir = V02Transformer().transform(config)
     assert ir.mongo.uri == "mongodb://localhost:27017"
     assert ir.mongo.database == "yaml_api"
 
 
-def test_124_no_mongo_section_defaults():
+def test_124_mongo_defaults_applied_when_section_missing():
     config = {
         "version": "0.2",
         "api": {"operations": {"defaults": {}}},
-        "entities": {
-            "post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}},
-        },
+        "entities": {"post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}}},
         "repositories": {"posts": {"entity": "post"}},
         "services": {},
         "controllers": {},

@@ -1,63 +1,60 @@
 import pytest
 
-from yaml_api_generator.parsing.when_parser import (
+from yaml_api_generator.parsers.when_parser import (
     parse_document_binding,
     parse_when_expr,
     parse_when_list,
 )
-from yaml_api_generator.when_ast import And, Equals, FieldRef, NotEquals, StringLiteral
+from yaml_api_generator.server.when_eval import evaluate_when
 
 
 _PATH = "test"
 
 
+def _eval(expr_str: str, *, principal=None, document=None) -> bool:
+    expr, errors = parse_when_expr(expr_str, _PATH)
+    assert not errors
+    return evaluate_when(expr, principal or {}, document or {})
+
+
 class TestParseWhenExpr:
-    def test_134_equals_fieldref_string(self):
-        expr, errors = parse_when_expr("principal.sub equals 'hello'", _PATH)
-        assert not errors
-        assert isinstance(expr, Equals)
-        assert isinstance(expr.left, FieldRef)
-        assert expr.left.root == "principal"
-        assert expr.left.path == ("sub",)
-        assert isinstance(expr.right, StringLiteral)
-        assert expr.right.value == "hello"
+    def test_134_equals_matches_when_equal(self):
+        assert _eval("principal.sub equals 'hello'", principal={"sub": "hello"}) is True
+        assert _eval("principal.sub equals 'hello'", principal={"sub": "world"}) is False
 
-    def test_135_not_equals_fieldref_string(self):
-        expr, errors = parse_when_expr("principal.sub not equals 'hello'", _PATH)
-        assert not errors
-        assert isinstance(expr, NotEquals)
-        assert isinstance(expr.left, FieldRef)
-        assert isinstance(expr.right, StringLiteral)
+    def test_135_not_equals_matches_when_not_equal(self):
+        assert _eval("principal.sub not equals 'hello'", principal={"sub": "hello"}) is False
+        assert _eval("principal.sub not equals 'hello'", principal={"sub": "world"}) is True
 
-    def test_136_equals_fieldref_fieldref(self):
-        expr, errors = parse_when_expr("principal.sub equals document.id", _PATH)
-        assert not errors
-        assert isinstance(expr, Equals)
-        assert isinstance(expr.left, FieldRef)
-        assert expr.left.root == "principal"
-        assert isinstance(expr.right, FieldRef)
-        assert expr.right.root == "document"
+    def test_136_field_ref_to_field_ref_compares_values(self):
+        assert _eval(
+            "principal.sub equals document.id",
+            principal={"sub": "abc"},
+            document={"id": "abc"},
+        ) is True
+        assert _eval(
+            "principal.sub equals document.id",
+            principal={"sub": "abc"},
+            document={"id": "xyz"},
+        ) is False
 
     def test_137_empty_string_literal(self):
-        expr, errors = parse_when_expr("principal.sub equals ''", _PATH)
-        assert not errors
-        assert isinstance(expr, Equals)
-        assert isinstance(expr.right, StringLiteral)
-        assert expr.right.value == ""
+        assert _eval("principal.sub equals ''", principal={"sub": ""}) is True
+        assert _eval("principal.sub equals ''", principal={"sub": "x"}) is False
 
-    def test_138_string_with_spaces(self):
-        expr, errors = parse_when_expr("principal.sub equals 'hello world'", _PATH)
-        assert not errors
-        assert isinstance(expr.right, StringLiteral)
-        assert expr.right.value == "hello world"
+    def test_138_string_literal_with_spaces(self):
+        assert _eval("principal.sub equals 'hello world'", principal={"sub": "hello world"}) is True
+        assert _eval("principal.sub equals 'hello world'", principal={"sub": "hello"}) is False
 
-    def test_139_deep_field_ref(self):
-        expr, errors = parse_when_expr("principal.a.b.c equals 'x'", _PATH)
-        assert not errors
-        lhs = expr.left
-        assert isinstance(lhs, FieldRef)
-        assert lhs.root == "principal"
-        assert lhs.path == ("a", "b", "c")
+    def test_139_deep_field_ref_traverses_nested_dicts(self):
+        assert _eval(
+            "principal.a.b.c equals 'x'",
+            principal={"a": {"b": {"c": "x"}}},
+        ) is True
+        assert _eval(
+            "principal.a.b.c equals 'x'",
+            principal={"a": {"b": {"c": "y"}}},
+        ) is False
 
     def test_140_bare_operand_without_dot(self):
         _, errors = parse_when_expr("principal equals 'hello'", _PATH)
@@ -78,31 +75,28 @@ class TestParseWhenExpr:
         assert len(errors) == 1
         assert errors[0].code == "WHEN_EXPR_INVALID"
 
-    def test_144_whitespace_trimming(self):
-        expr, errors = parse_when_expr("  principal.sub   equals   'hello'  ", _PATH)
-        assert not errors
-        assert isinstance(expr, Equals)
-        assert isinstance(expr.left, FieldRef)
-        assert expr.left.path == ("sub",)
-        assert isinstance(expr.right, StringLiteral)
-        assert expr.right.value == "hello"
+    def test_144_whitespace_trimming_evaluates_correctly(self):
+        assert _eval("  principal.sub   equals   'hello'  ", principal={"sub": "hello"}) is True
 
 
 class TestParseWhenList:
-    def test_145_single_item_returns_expression_directly(self):
+    def test_145_single_item_evaluates_like_single_expression(self):
         result, errors = parse_when_list("principal.sub equals 'hello'", _PATH)
         assert not errors
-        assert isinstance(result, Equals)
-        assert not isinstance(result, And)
+        assert evaluate_when(result, {"sub": "hello"}, {}) is True
+        assert evaluate_when(result, {"sub": "world"}, {}) is False
 
-    def test_146_multi_item_nested_and(self):
+    def test_146_multi_item_requires_all_conditions_true(self):
         result, errors = parse_when_list(
-            ["principal.sub equals 'hello'", "document.id equals 'x'"], _PATH
+            ["principal.sub equals 'user-1'", "document.id equals 'doc-1'"], _PATH
         )
         assert not errors
-        assert isinstance(result, And)
-        assert isinstance(result.left, Equals)
-        assert isinstance(result.right, Equals)
+        # Both true
+        assert evaluate_when(result, {"sub": "user-1"}, {"id": "doc-1"}) is True
+        # First false
+        assert evaluate_when(result, {"sub": "other"}, {"id": "doc-1"}) is False
+        # Second false
+        assert evaluate_when(result, {"sub": "user-1"}, {"id": "other"}) is False
 
     def test_147_empty_list_returns_none(self):
         result, errors = parse_when_list([], _PATH)

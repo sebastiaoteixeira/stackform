@@ -1,13 +1,11 @@
-import pytest
-
-from yaml_api_generator.compiler.generators.fastapi.generator import FastAPIGenerator
-from yaml_api_generator.compiler.generators.drf.generator import DRFGenerator
-from yaml_api_generator.compiler.generators.raw.generator import RawASGIGenerator
-from yaml_api_generator.compiler.generators.fastapi.type_mapper import python_type
-from yaml_api_generator.compiler.generators.drf.type_mapper import drf_field
-from yaml_api_generator.compiler.compile_context import FieldDescriptor
-from yaml_api_generator.compiler.context_builder import build_context
-from yaml_api_generator.parsing.parser import load_and_generate_ir
+from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
+from yaml_api_generator.generators.backend.drf.generator import DRFGenerator
+from yaml_api_generator.generators.backend.raw.generator import RawASGIGenerator
+from yaml_api_generator.generators.backend.fastapi.type_mapper import python_type
+from yaml_api_generator.generators.backend.drf.type_mapper import drf_field
+from yaml_api_generator.generators.backend.compile_context import FieldDescriptor
+from yaml_api_generator.generators.backend.context_builder import build_context
+from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 from tests.conftest import VALID_DIR
 
 
@@ -173,8 +171,8 @@ def test_drf_views_per_collection(tmp_path):
 
 
 def test_drf_when_expression_to_python():
-    from yaml_api_generator.compiler.generators.drf.generator import _when_to_python
-    from yaml_api_generator.when_ast import Equals, FieldRef, StringLiteral
+    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
+    from yaml_api_generator.ir.when import Equals, FieldRef
 
     expr = Equals(
         left=FieldRef(root="principal", path=("sub",)),
@@ -220,9 +218,13 @@ def test_raw_asgi_app_file(tmp_path):
 
 
 def test_raw_path_to_regex_conversion():
-    from yaml_api_generator.compiler.generators.raw.generator import _path_to_regex
+    import re
+    from yaml_api_generator.generators.backend.raw.generator import _path_to_regex
 
-    assert "(?P<id>[^/]+)" in _path_to_regex("/posts/{id}")
+    pattern = re.compile(_path_to_regex("/posts/{id}"))
+    assert pattern.match("/posts/abc123") is not None
+    assert pattern.match("/posts/abc123").group("id") == "abc123"
+    assert pattern.match("/other/abc123") is None
 
 
 def test_raw_validation_file(tmp_path):
