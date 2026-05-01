@@ -116,6 +116,9 @@
     },
     "ui": {
       "type": "object"
+    },
+    "deploy": {
+      "$ref": "#/$defs/DeployConfig"
     }
   },
   "$defs": {

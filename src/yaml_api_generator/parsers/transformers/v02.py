@@ -1,3 +1,4 @@
+
 from typing import Any, cast
 
 from yaml_api_generator.ir import (
@@ -5,6 +6,9 @@ from yaml_api_generator.ir import (
     IRApi,
     IRCollection,
     IRCors,
+    IRDeploy,
+    IRDeployDocker,
+    IRDeploySystemd,
     IRDocument,
     IRDocumentBinding,
     IRIdentityBinding,
@@ -85,6 +89,7 @@ class V02Transformer:
             services=services,
             role_hierarchies=role_hierarchies,
             mongo=self._build_mongo(resolved.get("mongo", {})),
+            deploy=self._build_deploy(resolved.get("deploy")),
         )
 
     def _normalize_operations(
@@ -563,6 +568,33 @@ class V02Transformer:
         return IRMongo(
             uri=mongo_data.get("uri", "mongodb://localhost:27017"),
             database=mongo_data.get("database", "yaml_api"),
+        )
+
+    def _build_deploy(self, deploy_data: Any) -> IRDeploy | None:
+        if not isinstance(deploy_data, dict):
+            return None
+        runtime = deploy_data.get("runtime")
+        if not runtime:
+            return None
+        docker_data = deploy_data.get("docker")
+        docker = IRDeployDocker(image=docker_data.get("image")) if isinstance(docker_data, dict) else None
+        systemd_data = deploy_data.get("systemd")
+        systemd = (
+            IRDeploySystemd(
+                user=systemd_data.get("user", "ubuntu"),
+                restart=systemd_data.get("restart", "on-failure"),
+            )
+            if isinstance(systemd_data, dict)
+            else None
+        )
+        mongo_data = deploy_data.get("mongo", {})
+        return IRDeploy(
+            runtime=str(runtime),
+            name=deploy_data.get("name"),
+            port=int(deploy_data.get("port", 8000)),
+            mongo_local=bool(mongo_data.get("local", False)) if isinstance(mongo_data, dict) else False,
+            docker=docker,
+            systemd=systemd,
         )
 
     def _build_routes(

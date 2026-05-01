@@ -33,24 +33,24 @@ IRProvider = IROIDCProvider | IRSAMLProvider
 
 
 @dataclass(frozen=True)
-class IRDockerDeployConfig:
+class IRDeployDocker:
     image: str | None = None
 
 
 @dataclass(frozen=True)
-class IRSystemdDeployConfig:
+class IRDeploySystemd:
     user: str = "ubuntu"
     restart: str = "on-failure"
 
 
 @dataclass(frozen=True)
-class IRDeployConfig:
-    name: str | None
-    port: int
+class IRDeploy:
     runtime: str
-    mongo_local: bool
-    docker: IRDockerDeployConfig | None
-    systemd: IRSystemdDeployConfig | None
+    name: str | None = None
+    port: int = 8000
+    mongo_local: bool = False
+    docker: IRDeployDocker | None = None
+    systemd: IRDeploySystemd | None = None
 
 
 @dataclass(frozen=True)
@@ -177,8 +177,8 @@ class IRDocument:
     services: dict[str, IRService] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)
-    mongo: IRMongo | None = None
-    deploy: IRDeployConfig | None = None
+    mongo: IRMongo = field(default_factory=IRMongo)
+    deploy: IRDeploy | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
