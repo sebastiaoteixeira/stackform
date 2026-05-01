@@ -16,6 +16,8 @@ dependencies = [
   "jinja2",
   "click",
   "pyjwt",
+  "httpx",
+  "simple-term-menu",
 ]
 
 [project.optional-dependencies]

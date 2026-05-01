@@ -54,7 +54,7 @@ async def _resolve_jwt_principal(
         return None
 
     identity = identity_collections.get(collection_name)
-    if identity is None or "password" not in identity.via:
+    if identity is None or not identity.has_password:
         return None
 
     id_field = identity_id_fields.get(collection_name)
@@ -112,7 +112,7 @@ async def _resolve_identity_for_collection(
     repository: BaseRepository,
     headers: dict[str, str],
 ) -> dict[str, Any] | None:
-    if "apiKey" in identity.via:
+    if identity.has_api_key:
         token = _extract_api_key(headers)
         if token is not None:
             return await _find_principal(
@@ -124,15 +124,16 @@ async def _resolve_identity_for_collection(
                 identity=identity,
             )
 
-    if "password" in identity.via and identity.identifier:
+    pw_binding = identity.get_binding("password")
+    if pw_binding is not None:
         credentials = _extract_basic_credentials(headers)
         if credentials is not None:
-            identifier, password = credentials
+            identifier_value, password = credentials
             return await _find_principal_with_password(
                 repository=repository,
                 collection_name=identity.name,
-                identifier_field=identity.identifier,
-                identifier_value=identifier,
+                identifier_field=pw_binding.identifier,
+                identifier_value=identifier_value,
                 password=password,
                 id_field=id_field,
                 identity=identity,

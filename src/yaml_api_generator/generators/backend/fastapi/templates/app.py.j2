@@ -14,6 +14,12 @@ from routes.{{ col_name }} import router as {{ col_name }}_router
 {% if ctx.auth.has_password_auth %}
 from routes.login import router as login_router
 {% endif %}
+{% if ctx.auth.has_oidc_auth %}
+from routes.oidc_routes import router as oidc_router
+{% endif %}
+{% if ctx.auth.has_saml_auth %}
+from routes.saml_routes import router as saml_router
+{% endif %}
 
 
 @asynccontextmanager
@@ -42,6 +48,12 @@ app.include_router({{ col_name }}_router)
 {% endfor %}
 {% if ctx.auth.has_password_auth %}
 app.include_router(login_router)
+{% endif %}
+{% if ctx.auth.has_oidc_auth %}
+app.include_router(oidc_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
+{% endif %}
+{% if ctx.auth.has_saml_auth %}
+app.include_router(saml_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
 {% endif %}
 
 {% if ctx.auth.enabled %}

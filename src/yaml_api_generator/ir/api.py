@@ -4,6 +4,34 @@ from typing import Any
 from .when import WhenExpr
 
 
+# Well-known OIDC discovery URLs; provider name resolves automatically when listed here.
+WELL_KNOWN_OIDC_DISCOVERY: dict[str, str] = {
+    "google": "https://accounts.google.com/.well-known/openid-configuration",
+    "microsoft": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
+    "apple": "https://appleid.apple.com/.well-known/openid-configuration",
+}
+
+
+@dataclass(frozen=True)
+class IROIDCProvider:
+    name: str
+    client_id: str
+    client_secret: str
+    discovery_url: str
+    type: str = "oidc"
+
+
+@dataclass(frozen=True)
+class IRSAMLProvider:
+    name: str
+    idp_metadata_url: str
+    sp_entity_id: str
+    type: str = "saml"
+
+
+IRProvider = IROIDCProvider | IRSAMLProvider
+
+
 @dataclass(frozen=True)
 class IROperations:
     list: bool
@@ -93,11 +121,29 @@ class IRRoute:
 
 
 @dataclass(frozen=True)
+class IRProviderBinding:
+    provider: str
+    identifier: str
+    claim_mapping: dict[str, str] = field(default_factory=dict)
+    auto_provision: bool = True
+
+
+@dataclass(frozen=True)
 class IRIdentityCollection:
     name: str
-    identifier: str | None
-    via: list[str]
+    bindings: tuple[IRProviderBinding, ...]
     roles_field: str | None = None
+
+    @property
+    def has_password(self) -> bool:
+        return any(b.provider == "password" for b in self.bindings)
+
+    @property
+    def has_api_key(self) -> bool:
+        return any(b.provider == "apiKey" for b in self.bindings)
+
+    def get_binding(self, provider: str) -> "IRProviderBinding | None":
+        return next((b for b in self.bindings if b.provider == provider), None)
 
 
 @dataclass(frozen=True)
@@ -109,6 +155,7 @@ class IRDocument:
     identityCollections: dict[str, IRIdentityCollection]
     services: dict[str, IRService] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
 
     def to_dict(self) -> dict[str, Any]:
