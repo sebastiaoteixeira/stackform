@@ -144,10 +144,11 @@ def _evaluate_rule(
         return True
 
     if rule.identity_symbols or rule.document_symbols:
-        symbols = {
-            **_resolve_identity_symbols(rule, principal),
-            **_resolve_document_symbols(rule, document),
-        }
+        symbols: dict[str, dict | None] = {}
+        if principal is not None:
+            symbols["principal"] = principal
+        symbols.update(_resolve_identity_symbols(rule, principal))
+        symbols.update(_resolve_document_symbols(rule, document))
         return evaluate_when_with_symbols(rule.when, symbols)
 
     return evaluate_when(rule.when, principal, document)

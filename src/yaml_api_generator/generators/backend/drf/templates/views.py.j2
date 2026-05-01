@@ -1,0 +1,219 @@
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
+{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
+{% set ns = namespace(needs_models=false, model_imports=[]) %}
+{% for route in crud_routes %}
+{% if route.body_model %}
+{% set ns.needs_models = true %}
+{% if route.body_model not in ns.model_imports %}
+{% set _ = ns.model_imports.append(route.body_model) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if ns.needs_models %}
+from api.serializers.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
+{% endif %}
+from api.repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
+from api.services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
+from api.services.exceptions import NotFoundError, ValidationError
+from api.authentication.mongodb import get_database
+{% set needs_auth = crud_routes | selectattr("needs_auth") | list %}
+{% if needs_auth %}
+from api.authentication.auth import resolve_principal
+{% endif %}
+
+{% set class_name = collection_name | capitalize_collection %}
+{% set list_routes = crud_routes | selectattr("has_id_param", "false") | list %}
+{% set detail_routes = crud_routes | selectattr("has_id_param") | list %}
+
+{% macro security_decorator(route) %}
+{% if route.needs_auth %}
+    @extend_schema(auth=[{% if auth.has_password_auth %}{"BasicAuth": []}, {% endif %}{% if auth.has_api_key_auth %}{"ApiKeyAuth": []}, {% endif %}{"BearerAuth": []}])
+{% else %}
+    @extend_schema(auth=[])
+{% endif %}
+{% endmacro %}
+
+{% macro pre_fetch_check(route) %}
+{% if route.needs_auth %}
+        db = get_database()
+        principal = resolve_principal(request, db)
+        if principal is None:
+            return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
+{% if route.access_rules %}
+{% set ns = namespace(has_doc_rule=false) %}
+{% for rule in route.access_rules %}
+{% if rule.when is not none and rule.when is needs_document %}
+{% set ns.has_doc_rule = true %}
+{% endif %}
+{% endfor %}
+{% if not ns.has_doc_rule %}
+{% set ns.first = true %}
+{% for rule in route.access_rules %}
+{% if rule.when is none %}
+{% if ns.first %}
+        {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% else %}
+        {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% endif %}
+{% set ns.first = false %}
+{% else %}
+{% if ns.first %}
+        if {{ rule.when | when_to_python }}:
+            {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% else %}
+        elif {{ rule.when | when_to_python }}:
+            {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% endif %}
+{% set ns.first = false %}
+{% endif %}
+{% endfor %}
+{% if not ns.first %}
+        {% if ns.first %}{% else %}else:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% endif %}
+{% endif %}
+{% else %}
+        _needs_post_fetch = True
+{% endif %}
+{% endif %}
+{% endif %}
+{% endmacro %}
+
+{% macro post_fetch_check(route, doc_var) %}
+{% if route.needs_auth and route.access_rules %}
+{% set ns = namespace(has_doc_rule=false) %}
+{% for rule in route.access_rules %}
+{% if rule.when is not none and rule.when is needs_document %}
+{% set ns.has_doc_rule = true %}
+{% endif %}
+{% endfor %}
+{% if ns.has_doc_rule %}
+            document = {{ doc_var }}
+{% set ns.first = true %}
+{% for rule in route.access_rules %}
+{% if rule.when is none %}
+{% if ns.first %}
+            if True:
+                {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% else %}
+            elif True:
+                {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% endif %}
+{% set ns.first = false %}
+{% elif rule.when is needs_document %}
+{% if ns.first %}
+            if document is not None and {{ rule.when | when_to_python }}:
+                {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% else %}
+            elif document is not None and {{ rule.when | when_to_python }}:
+                {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% endif %}
+{% set ns.first = false %}
+{% else %}
+{% if ns.first %}
+            if {{ rule.when | when_to_python }}:
+                {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% else %}
+            elif {{ rule.when | when_to_python }}:
+                {% if rule.effect == "deny" %}return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN){% else %}pass{% endif %}
+
+{% endif %}
+{% set ns.first = false %}
+{% endif %}
+{% endfor %}
+{% if not ns.first %}
+            else:
+                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+{% endif %}
+{% endif %}
+{% endif %}
+{% endmacro %}
+
+{% if list_routes %}
+class {{ class_name }}ListView(APIView):
+{% for route in list_routes %}
+
+{{ security_decorator(route) }}
+    def {{ route.method | lower }}(self, request):
+        db = get_database()
+        repo = {{ class_name }}Repository(db)
+        service = {{ class_name }}Service(repo)
+{{ pre_fetch_check(route) }}
+        try:
+{% if route.operation == "list" %}
+            documents = service.list()
+            return Response(documents)
+{% elif route.operation == "create" %}
+            serializer = {{ route.body_model }}(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+            document = service.create(data)
+            return Response(document, status=status.HTTP_201_CREATED)
+{% endif %}
+        except NotFoundError:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+{% endfor %}
+{% endif %}
+
+{% if detail_routes %}
+class {{ class_name }}DetailView(APIView):
+{% for route in detail_routes %}
+
+{{ security_decorator(route) }}
+    def {{ route.method | lower }}(self, request, pk):
+        db = get_database()
+        repo = {{ class_name }}Repository(db)
+        service = {{ class_name }}Service(repo)
+{{ pre_fetch_check(route) }}
+        try:
+{% if route.operation == "get" %}
+            result = service.get(pk)
+{{ post_fetch_check(route, "result") }}
+            return Response(result)
+{% elif route.operation == "update" %}
+            serializer = {{ route.body_model }}(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+{% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
+            prefetch = service.get(pk)
+{{ post_fetch_check(route, "prefetch") }}
+{% endif %}
+            result = service.update(pk, data)
+            return Response(result)
+{% elif route.operation == "replace" %}
+            serializer = {{ route.body_model }}(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+{% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
+            prefetch = service.get(pk)
+{{ post_fetch_check(route, "prefetch") }}
+{% endif %}
+            result = service.replace(pk, data)
+            return Response(result)
+{% elif route.operation == "delete" %}
+{% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
+            prefetch = service.get(pk)
+{{ post_fetch_check(route, "prefetch") }}
+{% endif %}
+            result = service.delete(pk)
+            return Response(result)
+{% endif %}
+        except NotFoundError:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+{% endfor %}
+{% endif %}

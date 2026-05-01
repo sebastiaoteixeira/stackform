@@ -1,0 +1,55 @@
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from api.authentication.auth import verify_password
+from api.authentication.jwt_utils import create_jwt_token
+from api.authentication.mongodb import get_database
+
+{% for identity in auth.identity_collections %}
+{% if "password" in identity.via and identity.identifier %}
+{% set class_name = identity.name | capitalize_collection %}
+
+class {{ class_name }}LoginView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        identifier_value = request.data.get("{{ identity.identifier }}")
+        password = request.data.get("password")
+
+        if not identifier_value or not password:
+            return Response(
+                {"detail": "Invalid credentials"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        db = get_database()
+        col = db["{{ identity.name }}"]
+        for doc in col.find({}):
+            if str(doc.get("{{ identity.identifier }}", "")) != str(identifier_value):
+                continue
+            stored_hash = doc["_auth"]["passwordHash"]
+            if not isinstance(stored_hash, str):
+                continue
+            if not verify_password(str(password), stored_hash):
+                continue
+
+            subject = doc.get("{{ identity.id_field }}")
+            if subject is None:
+                continue
+
+            token = create_jwt_token(str(subject), "{{ identity.name }}")
+            safe_user = {
+                k: v for k, v in doc.items()
+                if k not in ("password", "_id", "_auth")
+            }
+            return Response({"token": token, "user": safe_user})
+
+        return Response(
+            {"detail": "Invalid credentials"},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+{% endif %}
+{% endfor %}
