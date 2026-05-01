@@ -79,16 +79,6 @@
         "$ref": "#/$defs/EntityConfig"
       }
     },
-    "roles": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      }
-    },
     "repositories": {
       "type": "object",
       "additionalProperties": {
@@ -160,7 +150,10 @@
           "minItems": 1
         },
         "roles": {
-          "type": "string"
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "#/$defs/RolesConfig" }
+          ]
         }
       },
       "allOf": [
@@ -194,6 +187,26 @@
           "additionalProperties": { "type": "string" }
         },
         "auto_provision": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "RolesConfig": {
+      "type": "object",
+      "required": ["values", "default"],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "default": { "type": "string" },
+        "hierarchy": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
       },
       "additionalProperties": false
     },

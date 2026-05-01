@@ -121,6 +121,14 @@ class IRRoute:
 
 
 @dataclass(frozen=True)
+class IRRolesConfig:
+    values: tuple[str, ...]
+    default: str
+    # Direct role inclusions (not yet transitively expanded)
+    hierarchy: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class IRProviderBinding:
     provider: str
     identifier: str
@@ -132,6 +140,7 @@ class IRProviderBinding:
 class IRIdentityCollection:
     name: str
     bindings: tuple[IRProviderBinding, ...]
+    roles: IRRolesConfig | None = None
     roles_field: str | None = None
 
     @property
