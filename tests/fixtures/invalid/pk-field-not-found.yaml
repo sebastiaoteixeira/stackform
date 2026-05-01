@@ -1,0 +1,10 @@
+version: "0.2"
+entities:
+  country:
+    pk: nonexistent
+    fields:
+      code: { type: string }
+      name: { type: string }
+repositories:
+  countries:
+    entity: country

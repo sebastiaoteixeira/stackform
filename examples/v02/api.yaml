@@ -25,9 +25,9 @@ mongo:
 entities:
   user:
     type: auth
-    auth:
-      identifier: email
-      via: password
+    via:
+      - provider: password
+        identifier: email
     roles:
       values: [admin, moderator, user]
       default: user

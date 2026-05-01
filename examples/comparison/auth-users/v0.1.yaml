@@ -1,0 +1,94 @@
+version: "0.1"
+
+api:
+  basePath: /api
+  version: v1
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: myapp
+
+include:
+  - comments.yaml # This yaml is merged into the root level, allowing it to define its own collections and operations while still being part of the same API version.
+                  # CANNOT OVERWRITE EXISTING KEYS (e.g. collections.users.type is already defined as 'auth' here, so it cannot be redefined in comments.yaml)
+
+import:
+  repositories:
+    - ./custom/post_queries.py    # @repository_op: DB queries (by-author, search, etc.)
+  services:
+    - ./custom/post_actions.py    # @step: business logic (publish, archive, etc.)
+
+collections:
+  users:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+    access:
+      create: public
+      list: authenticated
+      get: authenticated
+      update: authenticated
+      replace: authenticated
+      delete:
+        - principal: identity:users
+          when: "principal.sub == document.id"
+    fields:
+      id:
+        type: id
+      email:
+        type: string
+        required: true
+        unique: true
+        format: email
+      displayName:
+        type: string
+        required: true
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
+
+  posts:
+    access:
+      create: public
+      list: public
+      get: public
+      update: authenticated
+      delete:
+        - principal: identity:users
+          when: "principal.sub == document.authorId"
+        - principal: identity:users
+          when: "principal.record.role == 'moderator'"
+    fields:
+      id:
+        type: id
+      title:
+        type: string
+        required: true
+      content:
+        type: string
+      authorId:
+        type: ref
+        ref: users
+    operations:
+      my-posts:
+        path: /posts/mine
+        access: authenticated
+        # Is this a DB query (repository) or business logic (service)?
+        # From the YAML alone, impossible to tell.
+        # The decorator in custom/posts.py decides, but the YAML is blind to it.
+      publish:
+        path: /posts/{id}/publish
+        access: authenticated
+        # Same ambiguity. Is publish a simple field update (repo)?
+        # Or does it send notifications, validate state, etc. (service)?
+        # The YAML treats both identically.

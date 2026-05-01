@@ -1,0 +1,5 @@
+version: ""
+collections:
+  posts:
+    fields:
+      id: { type: id }

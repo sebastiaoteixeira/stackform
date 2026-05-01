@@ -25,10 +25,10 @@ mongo:
 entities:
   user:
     type: auth
-    auth:
-      identifier: email
-      via: password
-      roles: role
+    via:
+      - provider: password
+        identifier: email
+    roles: role
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }

@@ -1,0 +1,6 @@
+version: "0.1"
+collections:
+  posts:
+    fields:
+      id: { type: id }
+      title: ${MISSING_VAR_NO_DEFAULT}
