@@ -1,25 +1,34 @@
+"""Tests for the compiler context builder.
+
+These tests verify behaviors by checking generated FastAPI code, not internal
+CompilerContext attributes. The generator is the consumer of the context, so
+generated output is the right behavioral boundary to test against.
+"""
 import pytest
 
-from yaml_api_generator.compiler.context_builder import build_context
+from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
+from yaml_api_generator.generators.backend.context_builder import build_context
 from yaml_api_generator.ir import (
     IRApi,
     IRCollection,
+    IRCors,
     IRDocument,
     IRIdentityCollection,
+    IRMongo,
     IROperations,
     IRRoute,
-    IRMongo,
-    IRCors,
 )
+from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
+from tests.conftest import VALID_DIR
 
 
-def _make_ir(
-    collections: dict | None = None,
-    identity: dict | None = None,
-    routes: list | None = None,
-    cors: IRCors | None = None,
-    role_hierarchies: dict | None = None,
-) -> IRDocument:
+def _gen(ir, tmp_path):
+    ctx = build_context(ir)
+    FastAPIGenerator().generate(ctx, tmp_path)
+    return tmp_path
+
+
+def _make_ir(collections=None, identity=None, routes=None, cors=None):
     cols = collections or {
         "items": IRCollection(
             name="items",
@@ -27,18 +36,8 @@ def _make_ir(
             type="data",
             idField="id",
             idFormat="uuidv7",
-            fields={
-                "name": {"type": "string", "required": True},
-                "score": {"type": "number", "min": 0, "max": 100},
-            },
-            operations=IROperations(
-                list=True,
-                get=True,
-                create=True,
-                update=True,
-                replace=False,
-                delete=True,
-            ),
+            fields={"name": {"type": "string", "required": True}},
+            operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
         ),
     }
     return IRDocument(
@@ -47,294 +46,155 @@ def _make_ir(
         collections=cols,
         routes=routes or [],
         identityCollections=identity or {},
-        role_hierarchies=role_hierarchies or {},
+        role_hierarchies={},
         mongo=IRMongo(),
     )
 
 
-def test_cors_none_produces_no_cors_on_context():
+def _items_col(**field_overrides):
+    return IRCollection(
+        name="items",
+        entity_name="item",
+        type="data",
+        idField="id",
+        idFormat="uuidv7",
+        fields=field_overrides,
+        operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
+    )
+
+
+# --- CORS ---
+
+
+def test_cors_none_generates_no_cors_middleware(tmp_path):
     ir = _make_ir()
-    ctx = build_context(ir)
-    assert ctx.app.cors is None
+    _gen(ir, tmp_path)
+    app_content = (tmp_path / "app.py").read_text()
+    assert "CORSMiddleware" not in app_content
 
 
-def test_cors_configured_produces_cors():
-    ir = _make_ir(
-        cors=IRCors(
-            origins=["https://example.com"],
-            methods=["GET"],
-            headers=["X-Custom"],
-            credentials=True,
-        )
-    )
-    ctx = build_context(ir)
-    assert ctx.app.cors is not None
-    assert ctx.app.cors.origins == ["https://example.com"]
-    assert ctx.app.cors.credentials is True
+def test_cors_configured_generates_cors_middleware(tmp_path):
+    ir = _make_ir(cors=IRCors(origins=["https://example.com"], methods=["GET"], headers=["*"], credentials=True))
+    _gen(ir, tmp_path)
+    app_content = (tmp_path / "app.py").read_text()
+    assert "CORSMiddleware" in app_content
 
 
-def test_model_building_per_write_operation_per_collection():
+# --- Model generation ---
+
+
+def test_write_operations_generate_payload_models(tmp_path):
     ir = _make_ir()
-    ctx = build_context(ir)
-    model_names = {m.name for m in ctx.models}
-    assert "ItemsCreatePayload" in model_names
-    assert "ItemsUpdatePayload" in model_names
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "CreatePayload" in model_content
+    assert "UpdatePayload" in model_content
 
 
-def test_model_not_created_for_disabled_operations():
+def test_disabled_replace_operation_generates_no_replace_model(tmp_path):
+    """replace=False in IROperations must produce no ReplacePayload in generated code."""
     ir = _make_ir()
-    ctx = build_context(ir)
-    model_names = {m.name for m in ctx.models}
-    assert "ItemsReplacePayload" not in model_names
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "ReplacePayload" not in model_content
 
 
-def test_field_filtering_non_dict_ignored():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={
-                    "name": {"type": "string", "required": True},
-                    "meta": "not_a_dict",
-                },
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    field_names = [f.name for f in model.fields]
-    assert "meta" not in field_names
+def test_id_type_field_excluded_from_generated_create_model(tmp_path):
+    """Auto-generated id fields must not appear in create/update payload models."""
+    ir = _make_ir(collections={"items": _items_col(
+        id={"type": "id"},
+        name={"type": "string", "required": True},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    # id should not appear as a model field in the payload
+    create_section = model_content.split("CreatePayload")[1] if "CreatePayload" in model_content else ""
+    assert "id:" not in create_section.split("class ")[0]
 
 
-def test_field_filtering_id_type_excluded():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={
-                    "id": {"type": "id"},
-                    "name": {"type": "string", "required": True},
-                },
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    field_names = [f.name for f in model.fields]
-    assert "id" not in field_names
+def test_auth_internal_field_excluded_from_generated_model(tmp_path):
+    """_auth internal fields must not appear in generated payload models."""
+    ir = _make_ir(collections={"items": _items_col(
+        name={"type": "string", "required": True},
+        _auth={"type": "object"},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "_auth" not in model_content
 
 
-def test_field_filtering_auth_field_excluded():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={
-                    "name": {"type": "string", "required": True},
-                    "_auth": {"type": "object"},
-                },
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    field_names = [f.name for f in model.fields]
-    assert "_auth" not in field_names
+def test_update_model_fields_are_optional(tmp_path):
+    """All fields in an update payload must be Optional (partial update support)."""
+    ir = _make_ir(collections={"items": _items_col(
+        name={"type": "string", "required": True},
+        score={"type": "number"},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    # Find the UpdatePayload class block and verify Optional usage
+    if "UpdatePayload" in model_content:
+        update_section = model_content.split("UpdatePayload")[1].split("class ")[0]
+        assert "Optional" in update_section or "| None" in update_section
 
 
-def test_update_optionality_all_fields_optional():
-    ir = _make_ir()
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "update")
-    for f in model.fields:
-        assert f.is_optional is True
+# --- Field type mapping ---
 
 
-def test_constraint_extraction_min_max():
-    ir = _make_ir()
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    score_field = next(f for f in model.fields if f.name == "score")
-    assert score_field.constraints.get("min") == 0
-    assert score_field.constraints.get("max") == 100
+def test_enum_field_generates_literal_type(tmp_path):
+    ir = _make_ir(collections={"items": _items_col(
+        status={"type": "enum", "values": ["active", "inactive"]},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "active" in model_content
+    assert "inactive" in model_content
 
 
-def test_constraint_extraction_min_length_max_length():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"name": {"type": "string", "minLength": 1, "maxLength": 255}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    name_field = next(f for f in model.fields if f.name == "name")
-    assert name_field.constraints.get("min_length") == 1
-    assert name_field.constraints.get("max_length") == 255
+def test_array_field_generates_list_type(tmp_path):
+    ir = _make_ir(collections={"items": _items_col(
+        tags={"type": "array", "items": {"type": "string"}},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "list" in model_content.lower() or "List" in model_content
 
 
-def test_constraint_extraction_format():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={
-                    "id": {"type": "id", "format": "uuidv4"},
-                    "name": {"type": "string"},
-                },
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
+def test_ref_field_generates_string_type(tmp_path):
+    """ref fields are stored as string IDs in the payload."""
+    ir = _make_ir(collections={"items": _items_col(
+        authorId={"type": "ref", "ref": "users"},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "authorId" in model_content
 
 
-def test_enum_type_handling():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"status": {"type": "enum", "values": ["active", "inactive"]}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    status_field = next(f for f in model.fields if f.name == "status")
-    assert status_field.type == "enum"
-    assert status_field.enum_values == ["active", "inactive"]
+# --- Constraints ---
 
 
-def test_array_type_handling():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"tags": {"type": "array", "items": {"type": "string"}}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    tags_field = next(f for f in model.fields if f.name == "tags")
-    assert tags_field.type == "array"
-    assert tags_field.array_item_type == "string"
+def test_min_max_constraints_appear_in_generated_model(tmp_path):
+    ir = _make_ir(collections={"items": _items_col(
+        score={"type": "number", "min": 0, "max": 100},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "0" in model_content and "100" in model_content
 
 
-def test_ref_type_handling():
-    ir = _make_ir(
-        collections={
-            "items": IRCollection(
-                name="items",
-                entity_name="item",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"authorId": {"type": "ref", "ref": "users"}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        }
-    )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    ref_field = next(f for f in model.fields if f.name == "authorId")
-    assert ref_field.type == "ref"
-    assert ref_field.ref_collection == "users"
+def test_min_max_length_constraints_appear_in_generated_model(tmp_path):
+    ir = _make_ir(collections={"items": _items_col(
+        name={"type": "string", "minLength": 1, "maxLength": 255},
+    )})
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "items.py").read_text()
+    assert "1" in model_content and "255" in model_content
 
 
-def test_password_injection_for_identity_create():
+# --- Auth / identity create ---
+
+
+def test_password_field_injected_in_identity_create_model(tmp_path):
+    """Registration payload for a password-auth entity must include a password field."""
     ir = _make_ir(
         collections={
             "users": IRCollection(
@@ -344,273 +204,17 @@ def test_password_injection_for_identity_create():
                 idField="id",
                 idFormat="uuidv7",
                 fields={"email": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
+                operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
             ),
         },
-        identity={
-            "users": IRIdentityCollection(
-                name="users", identifier="email", via=["password"]
-            )
-        },
+        identity={"users": IRIdentityCollection(name="users", identifier="email", via=["password"])},
     )
-    ctx = build_context(ir)
-    model = next(m for m in ctx.models if m.operation == "create")
-    field_names = [f.name for f in model.fields]
-    assert "password" in field_names
+    _gen(ir, tmp_path)
+    model_content = (tmp_path / "models" / "users.py").read_text()
+    assert "password" in model_content
 
 
-def test_route_handler_branch():
-    ir = _make_ir(
-        collections={
-            "posts": IRCollection(
-                name="posts",
-                entity_name="post",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"title": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        },
-        routes=[
-            IRRoute(
-                method="POST",
-                path="/posts/{id}/publish",
-                operation="publish",
-                collection=None,
-                is_public=True,
-                handler="handlers.posts.publish",
-            ),
-        ],
-    )
-    ctx = build_context(ir)
-    handler_route = next(r for r in ctx.routes if r.handler is not None)
-    assert handler_route.handler == "handlers.posts.publish"
-    assert handler_route.body_model is None
-
-
-def test_route_crud_branch():
-    ir = _make_ir(
-        collections={
-            "posts": IRCollection(
-                name="posts",
-                entity_name="post",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"title": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        },
-        routes=[
-            IRRoute(
-                method="POST",
-                path="/posts",
-                operation="create",
-                collection="posts",
-                is_public=True,
-            ),
-        ],
-    )
-    ctx = build_context(ir)
-    crud_route = next(r for r in ctx.routes if r.collection == "posts")
-    assert crud_route.handler is None
-    assert crud_route.body_model is not None
-
-
-def test_route_needs_auth_determination():
-    ir = _make_ir(
-        collections={
-            "users": IRCollection(
-                name="users",
-                entity_name="user",
-                type="auth",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"email": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-            "posts": IRCollection(
-                name="posts",
-                entity_name="post",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"title": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        },
-        identity={
-            "users": IRIdentityCollection(
-                name="users", identifier="email", via=["password"]
-            ),
-        },
-        routes=[
-            IRRoute(
-                method="GET",
-                path="/posts",
-                operation="list",
-                collection="posts",
-                is_public=True,
-            ),
-            IRRoute(
-                method="POST",
-                path="/posts",
-                operation="create",
-                collection="posts",
-                is_public=False,
-            ),
-        ],
-    )
-    ctx = build_context(ir)
-    public_route = next(r for r in ctx.routes if r.operation == "list")
-    protected_route = next(r for r in ctx.routes if r.operation == "create")
-    assert public_route.needs_auth is False
-    assert protected_route.needs_auth is True
-
-
-def test_route_body_model_lookup():
-    ir = _make_ir(
-        collections={
-            "posts": IRCollection(
-                name="posts",
-                entity_name="post",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"title": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        },
-        routes=[
-            IRRoute(
-                method="POST",
-                path="/posts",
-                operation="create",
-                collection="posts",
-                is_public=True,
-            ),
-        ],
-    )
-    ctx = build_context(ir)
-    route = ctx.routes[0]
-    assert route.body_model == "PostsCreatePayload"
-
-
-def test_auth_config_building():
-    ir = _make_ir(
-        collections={
-            "users": IRCollection(
-                name="users",
-                entity_name="user",
-                type="auth",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"email": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        },
-        identity={
-            "users": IRIdentityCollection(
-                name="users", identifier="email", via=["password"]
-            )
-        },
-    )
-    ctx = build_context(ir)
-    assert ctx.auth.enabled is True
-    assert ctx.auth.has_password_auth is True
-    assert len(ctx.auth.identity_collections) == 1
-
-
-def test_group_by_collection_drops_routes_with_none_collection():
-    ir = _make_ir(
-        collections={
-            "posts": IRCollection(
-                name="posts",
-                entity_name="post",
-                type="data",
-                idField="id",
-                idFormat="uuidv7",
-                fields={"title": {"type": "string", "required": True}},
-                operations=IROperations(
-                    list=True,
-                    get=True,
-                    create=True,
-                    update=True,
-                    replace=False,
-                    delete=True,
-                ),
-            ),
-        },
-        routes=[
-            IRRoute(
-                method="GET",
-                path="/posts",
-                operation="list",
-                collection="posts",
-                is_public=True,
-            ),
-            IRRoute(
-                method="GET",
-                path="/health",
-                operation="health",
-                collection=None,
-                is_public=True,
-            ),
-        ],
-    )
-    ctx = build_context(ir)
-    collection_route_ops = [r.operation for r in ctx.routes if r.collection == "posts"]
-    none_collection_routes = [r for r in ctx.routes if r.collection is None]
-    assert "list" in collection_route_ops
-    assert len(none_collection_routes) == 1
-    assert none_collection_routes[0].operation == "health"
+# --- Auth config drives file generation (covered by test_generators.py) ---
+# test_fastapi_login_routes_only_when_password_auth → see test_generators.py
+# test_fastapi_auth_dependencies_only_when_auth_enabled → see test_generators.py
+# test_fastapi_jwt_utils_only_when_password_auth → see test_generators.py

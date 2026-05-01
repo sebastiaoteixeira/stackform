@@ -1,7 +1,7 @@
 import pytest
 
-from yaml_api_generator.runtime.when_eval import evaluate_when
-from yaml_api_generator.when_ast import (
+from yaml_api_generator.server.when_eval import evaluate_when
+from yaml_api_generator.ir.when import (
     And,
     Equals,
     FieldRef,

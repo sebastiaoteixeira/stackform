@@ -1,6 +1,6 @@
 import pytest
 
-from yaml_api_generator.parsing.parser import ConfigErrors, load_and_generate_ir
+from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 from tests.conftest import INVALID_DIR, VALID_DIR
 
 

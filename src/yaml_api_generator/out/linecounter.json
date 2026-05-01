@@ -1,0 +1,1259 @@
+{
+    "extension": "linecounter",
+    "version": "0.2.7",
+    "workspace": "/home/sebastiao/Projects/yaml-api-generator/src/yaml_api_generator",
+    "linecount": [
+        {
+            "version": "0.2.7",
+            "counttime": "2026-04-29 17:53:13",
+            "filesum": 189,
+            "codesum": 8656,
+            "commentsum": 89,
+            "blanksum": 1643,
+            "statistics": {
+                ".py": {
+                    "code": 6247,
+                    "comment": 89,
+                    "blank": 1360
+                },
+                ".json": {
+                    "code": 804,
+                    "comment": 0,
+                    "blank": 0
+                },
+                ".j2": {
+                    "code": 1605,
+                    "comment": 0,
+                    "blank": 283
+                }
+            },
+            "filelist": [
+                {
+                    "blank": 7,
+                    "code": 33,
+                    "comment": 0,
+                    "filename": "__init__.py"
+                },
+                {
+                    "filename": "__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/asgi_runner.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/cli.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/context.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/fastapi_factory.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/ir.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/parser.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/pipeline.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/pipeline_builder.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/plan_compiler.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/runtime_context.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/runtime_context_builder.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/runtime_plan.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/server.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/step_factories.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/steps.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "__pycache__/when_ast.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 22,
+                    "code": 112,
+                    "comment": 0,
+                    "filename": "cli.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "compiler/__init__.py"
+                },
+                {
+                    "filename": "compiler/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/__pycache__/cli.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/__pycache__/compile_context.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/__pycache__/compiler.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/__pycache__/context_builder.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 21,
+                    "code": 80,
+                    "comment": 0,
+                    "filename": "compiler/compile_context.py"
+                },
+                {
+                    "blank": 7,
+                    "code": 34,
+                    "comment": 0,
+                    "filename": "compiler/compiler.py"
+                },
+                {
+                    "blank": 41,
+                    "code": 259,
+                    "comment": 0,
+                    "filename": "compiler/context_builder.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "compiler/generators/__init__.py"
+                },
+                {
+                    "filename": "compiler/generators/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/generators/__pycache__/base.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 3,
+                    "code": 6,
+                    "comment": 0,
+                    "filename": "compiler/generators/base.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/__init__.py"
+                },
+                {
+                    "filename": "compiler/generators/drf/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/generators/drf/__pycache__/generator.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/generators/drf/__pycache__/type_mapper.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 56,
+                    "code": 261,
+                    "comment": 2,
+                    "filename": "compiler/generators/drf/generator.py"
+                },
+                {
+                    "blank": 2,
+                    "code": 24,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/api_urls.py.j2"
+                },
+                {
+                    "blank": 3,
+                    "code": 7,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/apps.py.j2"
+                },
+                {
+                    "blank": 3,
+                    "code": 4,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/asgi.py.j2"
+                },
+                {
+                    "blank": 22,
+                    "code": 128,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/auth.py.j2"
+                },
+                {
+                    "blank": 10,
+                    "code": 45,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/login_views.py.j2"
+                },
+                {
+                    "blank": 4,
+                    "code": 9,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/manage.py.j2"
+                },
+                {
+                    "blank": 9,
+                    "code": 20,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/mongodb.py.j2"
+                },
+                {
+                    "blank": 1,
+                    "code": 7,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/project_urls.py.j2"
+                },
+                {
+                    "blank": 14,
+                    "code": 68,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/repository.py.j2"
+                },
+                {
+                    "blank": 0,
+                    "code": 6,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/requirements.txt.j2"
+                },
+                {
+                    "blank": 2,
+                    "code": 7,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/serializers.py.j2"
+                },
+                {
+                    "blank": 14,
+                    "code": 56,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/settings.py.j2"
+                },
+                {
+                    "blank": 18,
+                    "code": 201,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/views.py.j2"
+                },
+                {
+                    "blank": 3,
+                    "code": 4,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/templates/wsgi.py.j2"
+                },
+                {
+                    "blank": 12,
+                    "code": 36,
+                    "comment": 0,
+                    "filename": "compiler/generators/drf/type_mapper.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/__init__.py"
+                },
+                {
+                    "filename": "compiler/generators/fastapi/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/generators/fastapi/__pycache__/generator.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/generators/fastapi/__pycache__/type_mapper.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 47,
+                    "code": 207,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/generator.py"
+                },
+                {
+                    "blank": 17,
+                    "code": 66,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/app.py.j2"
+                },
+                {
+                    "blank": 19,
+                    "code": 123,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/auth.py.j2"
+                },
+                {
+                    "blank": 12,
+                    "code": 39,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/login_routes.py.j2"
+                },
+                {
+                    "blank": 4,
+                    "code": 50,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/models.py.j2"
+                },
+                {
+                    "blank": 9,
+                    "code": 20,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/mongodb.py.j2"
+                },
+                {
+                    "blank": 14,
+                    "code": 69,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/repository.py.j2"
+                },
+                {
+                    "blank": 0,
+                    "code": 5,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/requirements.txt.j2"
+                },
+                {
+                    "blank": 5,
+                    "code": 78,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/templates/routes.py.j2"
+                },
+                {
+                    "blank": 14,
+                    "code": 31,
+                    "comment": 0,
+                    "filename": "compiler/generators/fastapi/type_mapper.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "compiler/generators/raw/__init__.py"
+                },
+                {
+                    "filename": "compiler/generators/raw/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "compiler/generators/raw/__pycache__/generator.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 40,
+                    "code": 166,
+                    "comment": 0,
+                    "filename": "compiler/generators/raw/generator.py"
+                },
+                {
+                    "blank": 29,
+                    "code": 191,
+                    "comment": 0,
+                    "filename": "compiler/generators/raw/templates/app.py.j2"
+                },
+                {
+                    "blank": 17,
+                    "code": 120,
+                    "comment": 0,
+                    "filename": "compiler/generators/raw/templates/auth.py.j2"
+                },
+                {
+                    "blank": 0,
+                    "code": 3,
+                    "comment": 0,
+                    "filename": "compiler/generators/raw/templates/requirements.txt.j2"
+                },
+                {
+                    "blank": 28,
+                    "code": 122,
+                    "comment": 0,
+                    "filename": "compiler/generators/raw/templates/validation.py.j2"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "compiler/generators/shared/__init__.py"
+                },
+                {
+                    "blank": 2,
+                    "code": 10,
+                    "comment": 0,
+                    "filename": "compiler/generators/shared/templates/exceptions.py.j2"
+                },
+                {
+                    "blank": 7,
+                    "code": 19,
+                    "comment": 0,
+                    "filename": "compiler/generators/shared/templates/jwt_utils.py.j2"
+                },
+                {
+                    "blank": 15,
+                    "code": 104,
+                    "comment": 0,
+                    "filename": "compiler/generators/shared/templates/service.py.j2"
+                },
+                {
+                    "filename": "deploy/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/__pycache__/base.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/__pycache__/deploy_context.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/__pycache__/deploy_context_builder.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/__pycache__/deployer.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/generators/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/generators/docker/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/generators/docker/__pycache__/generator.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/generators/systemd/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "deploy/generators/systemd/__pycache__/generator.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "figma/__init__.py"
+                },
+                {
+                    "filename": "figma/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "figma/__pycache__/auth.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "figma/__pycache__/client.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "figma/__pycache__/discover.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "figma/__pycache__/generator.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "figma/__pycache__/mapper.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "figma/__pycache__/models.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 46,
+                    "code": 163,
+                    "comment": 3,
+                    "filename": "figma/auth.py"
+                },
+                {
+                    "blank": 29,
+                    "code": 140,
+                    "comment": 2,
+                    "filename": "figma/client.py"
+                },
+                {
+                    "blank": 26,
+                    "code": 72,
+                    "comment": 3,
+                    "filename": "figma/discover.py"
+                },
+                {
+                    "blank": 36,
+                    "code": 150,
+                    "comment": 0,
+                    "filename": "figma/generator.py"
+                },
+                {
+                    "blank": 23,
+                    "code": 90,
+                    "comment": 5,
+                    "filename": "figma/mapper.py"
+                },
+                {
+                    "blank": 9,
+                    "code": 27,
+                    "comment": 1,
+                    "filename": "figma/models.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "frontend/__init__.py"
+                },
+                {
+                    "filename": "frontend/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/__pycache__/context_builder.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/__pycache__/generator_context.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/__pycache__/pipeline.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/__pycache__/renderer.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/__pycache__/slots.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/__pycache__/writer.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 56,
+                    "code": 289,
+                    "comment": 7,
+                    "filename": "frontend/context_builder.py"
+                },
+                {
+                    "blank": 32,
+                    "code": 80,
+                    "comment": 16,
+                    "filename": "frontend/generator_context.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "frontend/packs/__init__.py"
+                },
+                {
+                    "filename": "frontend/packs/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/packs/__pycache__/loader.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "frontend/packs/__pycache__/manifest.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 17,
+                    "code": 68,
+                    "comment": 0,
+                    "filename": "frontend/packs/loader.py"
+                },
+                {
+                    "blank": 7,
+                    "code": 31,
+                    "comment": 0,
+                    "filename": "frontend/packs/manifest.py"
+                },
+                {
+                    "blank": 11,
+                    "code": 31,
+                    "comment": 0,
+                    "filename": "frontend/pipeline.py"
+                },
+                {
+                    "blank": 69,
+                    "code": 293,
+                    "comment": 18,
+                    "filename": "frontend/renderer.py"
+                },
+                {
+                    "blank": 10,
+                    "code": 39,
+                    "comment": 1,
+                    "filename": "frontend/writer.py"
+                },
+                {
+                    "blank": 24,
+                    "code": 84,
+                    "comment": 0,
+                    "filename": "ir.py"
+                },
+                {
+                    "blank": 1,
+                    "code": 2,
+                    "comment": 0,
+                    "filename": "parsing/__init__.py"
+                },
+                {
+                    "filename": "parsing/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "parsing/__pycache__/desugar.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "parsing/__pycache__/parser.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "parsing/__pycache__/when_parser.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 80,
+                    "code": 325,
+                    "comment": 10,
+                    "filename": "parsing/desugar.py"
+                },
+                {
+                    "blank": 39,
+                    "code": 183,
+                    "comment": 0,
+                    "filename": "parsing/parser.py"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "parsing/schemas/__init__.py"
+                },
+                {
+                    "filename": "parsing/schemas/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 0,
+                    "code": 433,
+                    "comment": 0,
+                    "filename": "parsing/schemas/yaml-spec-v0.1.schema.json"
+                },
+                {
+                    "blank": 0,
+                    "code": 371,
+                    "comment": 0,
+                    "filename": "parsing/schemas/yaml-spec-v0.2.schema.json"
+                },
+                {
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0,
+                    "filename": "parsing/transformers/__init__.py"
+                },
+                {
+                    "filename": "parsing/transformers/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "parsing/transformers/__pycache__/registry.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "parsing/transformers/__pycache__/v01.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "parsing/transformers/__pycache__/v02.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 4,
+                    "code": 14,
+                    "comment": 0,
+                    "filename": "parsing/transformers/registry.py"
+                },
+                {
+                    "blank": 47,
+                    "code": 302,
+                    "comment": 0,
+                    "filename": "parsing/transformers/v01.py"
+                },
+                {
+                    "blank": 84,
+                    "code": 593,
+                    "comment": 8,
+                    "filename": "parsing/transformers/v02.py"
+                },
+                {
+                    "blank": 24,
+                    "code": 111,
+                    "comment": 1,
+                    "filename": "parsing/when_parser.py"
+                },
+                {
+                    "blank": 1,
+                    "code": 2,
+                    "comment": 0,
+                    "filename": "runtime/__init__.py"
+                },
+                {
+                    "filename": "runtime/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/asgi_runner.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/context.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/fastapi_factory.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/pipeline.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/pipeline_builder.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/runtime_context.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/runtime_context_builder.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/server.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/__pycache__/when_eval.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 22,
+                    "code": 117,
+                    "comment": 1,
+                    "filename": "runtime/asgi_runner.py"
+                },
+                {
+                    "blank": 1,
+                    "code": 3,
+                    "comment": 0,
+                    "filename": "runtime/auth/__init__.py"
+                },
+                {
+                    "filename": "runtime/auth/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/auth/__pycache__/jwt.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/auth/__pycache__/password.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 7,
+                    "code": 19,
+                    "comment": 0,
+                    "filename": "runtime/auth/jwt.py"
+                },
+                {
+                    "blank": 9,
+                    "code": 37,
+                    "comment": 0,
+                    "filename": "runtime/auth/password.py"
+                },
+                {
+                    "blank": 2,
+                    "code": 15,
+                    "comment": 0,
+                    "filename": "runtime/context.py"
+                },
+                {
+                    "blank": 53,
+                    "code": 264,
+                    "comment": 0,
+                    "filename": "runtime/fastapi_factory.py"
+                },
+                {
+                    "blank": 8,
+                    "code": 96,
+                    "comment": 0,
+                    "filename": "runtime/pipeline.py"
+                },
+                {
+                    "blank": 20,
+                    "code": 146,
+                    "comment": 2,
+                    "filename": "runtime/pipeline_builder.py"
+                },
+                {
+                    "blank": 1,
+                    "code": 3,
+                    "comment": 0,
+                    "filename": "runtime/repositories/__init__.py"
+                },
+                {
+                    "filename": "runtime/repositories/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/repositories/__pycache__/base.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/repositories/__pycache__/mongodb.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 10,
+                    "code": 45,
+                    "comment": 0,
+                    "filename": "runtime/repositories/base.py"
+                },
+                {
+                    "blank": 19,
+                    "code": 105,
+                    "comment": 0,
+                    "filename": "runtime/repositories/mongodb.py"
+                },
+                {
+                    "blank": 17,
+                    "code": 55,
+                    "comment": 0,
+                    "filename": "runtime/runtime_context.py"
+                },
+                {
+                    "blank": 24,
+                    "code": 136,
+                    "comment": 1,
+                    "filename": "runtime/runtime_context_builder.py"
+                },
+                {
+                    "blank": 15,
+                    "code": 41,
+                    "comment": 0,
+                    "filename": "runtime/server.py"
+                },
+                {
+                    "blank": 7,
+                    "code": 43,
+                    "comment": 0,
+                    "filename": "runtime/steps/__init__.py"
+                },
+                {
+                    "filename": "runtime/steps/__pycache__/__init__.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/steps/__pycache__/authentication.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/steps/__pycache__/authorization.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/steps/__pycache__/login.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/steps/__pycache__/repositories.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/steps/__pycache__/repository.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "filename": "runtime/steps/__pycache__/validation.cpython-314.pyc",
+                    "isbinaryfile": true,
+                    "blank": 0,
+                    "code": 0,
+                    "comment": 0
+                },
+                {
+                    "blank": 41,
+                    "code": 227,
+                    "comment": 2,
+                    "filename": "runtime/steps/authentication.py"
+                },
+                {
+                    "blank": 45,
+                    "code": 120,
+                    "comment": 6,
+                    "filename": "runtime/steps/authorization.py"
+                },
+                {
+                    "blank": 12,
+                    "code": 56,
+                    "comment": 0,
+                    "filename": "runtime/steps/login.py"
+                },
+                {
+                    "blank": 36,
+                    "code": 138,
+                    "comment": 0,
+                    "filename": "runtime/steps/repositories.py"
+                },
+                {
+                    "blank": 5,
+                    "code": 24,
+                    "comment": 0,
+                    "filename": "runtime/steps/repository.py"
+                },
+                {
+                    "blank": 32,
+                    "code": 156,
+                    "comment": 0,
+                    "filename": "runtime/steps/validation.py"
+                },
+                {
+                    "blank": 10,
+                    "code": 46,
+                    "comment": 0,
+                    "filename": "runtime/when_eval.py"
+                },
+                {
+                    "blank": 19,
+                    "code": 41,
+                    "comment": 0,
+                    "filename": "when_ast.py"
+                }
+            ]
+        }
+    ]
+}
