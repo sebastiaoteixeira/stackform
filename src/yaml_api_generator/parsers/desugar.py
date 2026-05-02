@@ -170,9 +170,7 @@ def _topological_sort(dep_graph: dict[str, str | None]) -> list[str]:
 
 
 def _desugar_repositories(repositories: dict[str, Any]) -> None:
-    for repo_entry in repositories.values():
-        if isinstance(repo_entry, dict):
-            repo_entry.pop("operations", None)
+    pass  # operations dict must survive to the transformer for IRRepository building
 
 
 def _is_minified_service(
@@ -286,7 +284,13 @@ def _desugar_services(
             continue
 
         entity = entities[entity_name]
-        repo_ops = repo.get("operations", {}) if isinstance(repo, dict) else {}
+        # crud list overrides which ops exist; it takes precedence over global defaults
+        repo_crud = repo.get("crud") if isinstance(repo, dict) else None
+        repo_ops: dict[str, Any] = {}
+        if repo_crud is not None:
+            for op in CRUD_OPERATIONS:
+                # explicitly enable ops in crud list (overrides defaults), disable others
+                repo_ops[op] = op in repo_crud
         service_ops = entry.get("operations", {})
 
         resolved = _resolve_crud_ops(defaults, repo_ops, service_ops)

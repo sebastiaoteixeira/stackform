@@ -34,9 +34,6 @@ class V01Transformer:
         id_field_errors: list[ConfigError] = []
         for name, collection_data in collections_data.items():
             collection_type = str(collection_data.get("type", "base"))
-            operations = self._normalize_operations(
-                defaults, collection_data.get("operations")
-            )
             fields = cast(dict[str, Any], collection_data["fields"])
             id_field, errors = self._extract_id_field(name, fields)
             id_field_errors.extend(errors)
@@ -63,7 +60,6 @@ class V01Transformer:
                 idField=id_field,
                 idFormat=id_format,
                 fields=fields,
-                operations=operations,
             )
 
         if id_field_errors:
@@ -91,12 +87,18 @@ class V01Transformer:
         if implicit_field_errors:
             raise ConfigErrors(implicit_field_errors)
 
+        # Build a per-collection operations map (kept local, not stored on IRCollection)
+        collection_operations: dict[str, IROperations] = {
+            name: self._normalize_operations(defaults, collections_data[name].get("operations"))
+            for name in collections
+        }
+
         routes: list[IRRoute] = []
         for name, collection in collections.items():
             routes.extend(
                 self._build_routes(
                     name,
-                    collection.operations,
+                    collection_operations[name],
                     collection_access_policies.get(name, {}),
                 )
             )

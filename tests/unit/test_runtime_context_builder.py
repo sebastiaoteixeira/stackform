@@ -7,8 +7,8 @@ from yaml_api_generator.ir import (
     IRDocument,
     IRIdentityCollection,
     IRMongo,
-    IROperations,
     IRProviderBinding,
+    IRRepository,
     IRRoute,
 )
 from yaml_api_generator.server.pipeline_builder import PipelineBuilder
@@ -34,7 +34,6 @@ def _make_ir(
             idField="id",
             idFormat="uuidv7",
             fields={"name": {"type": "string", "required": True}},
-            operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
         ),
     }
     return IRDocument(
@@ -45,6 +44,7 @@ def _make_ir(
         identityCollections=identity or {},
         role_hierarchies=role_hierarchies or {},
         mongo=IRMongo(),
+        repositories={},
     )
 
 
@@ -56,7 +56,6 @@ def _users_collection():
         idField="id",
         idFormat="uuidv7",
         fields={"email": {"type": "string", "required": True}},
-        operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
     )
 
 
@@ -106,7 +105,6 @@ async def test_collection_id_field_used_in_repository_operations():
                 idField="itemId",
                 idFormat="uuidv7",
                 fields={"name": {"type": "string", "required": True}},
-                operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
             ),
         },
         routes=[_route("create")],
@@ -178,7 +176,6 @@ async def test_role_based_access_rule_from_ir_is_enforced():
                 idField="id",
                 idFormat="uuidv7",
                 fields={"name": {"type": "string", "required": True}},
-                operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
             ),
             "users": _users_collection(),
         },

@@ -200,10 +200,12 @@ class FastAPIGenerator(CodeGenerator):
 
         for col_name, col_data in collections_by_name.items():
             col_info = context.collections[col_name]
+            custom_ops = context.repository_operations.get(col_name, [])
             content = template.render(
                 collection_name=col_name,
                 id_field=col_info["id_field"],
                 id_field_format=col_info["id_format"],
+                custom_operations=custom_ops,
             )
             (repos_dir / f"{col_name}.py").write_text(content)
             class_name = "".join(p.capitalize() for p in col_name.split("_"))

@@ -112,3 +112,4 @@ class CompileContext:
     routes: list[RouteDescriptor]
     auth: AuthConfig
     collections: dict[str, Any]
+    repository_operations: dict[str, list[dict]] = field(default_factory=dict)
