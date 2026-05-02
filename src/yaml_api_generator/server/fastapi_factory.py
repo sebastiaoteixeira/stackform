@@ -72,7 +72,7 @@ def create_pydantic_model_fields(
     if (
         identity_collection is not None
         and operation == "create"
-        and "password" in identity_collection.via
+        and identity_collection.has_password
         and "password" not in fields
     ):
         fields["password"] = (str, Field(..., min_length=1))
@@ -86,8 +86,10 @@ def create_pydantic_model(
     identity_collection: RuntimeIdentityDescriptor | None = None,
 ) -> type[BaseModel] | None:
     if operation == "login" and identity_collection is not None:
+        pw_binding = identity_collection.get_binding("password")
+        identifier_field = pw_binding.identifier if pw_binding else "identifier"
         fields = {
-            identity_collection.identifier: (str, Field(..., min_length=1)),
+            identifier_field: (str, Field(..., min_length=1)),
             "password": (str, Field(..., min_length=1)),
         }
         model_name = "".join(part.capitalize() for part in collection.name.split("_"))
@@ -256,7 +258,7 @@ async def _run_pipeline(
 def _identity_methods(auth: RuntimeAuthConfig) -> set[str]:
     methods: set[str] = set()
     for identity in auth.identity_collections.values():
-        methods.update(identity.via)
+        methods.update(b.provider for b in identity.bindings)
     return methods
 
 

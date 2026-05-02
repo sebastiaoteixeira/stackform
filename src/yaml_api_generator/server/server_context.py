@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
-from ..when_ast import WhenExpr
+from ..ir.when import WhenExpr
 
 
 @dataclass(frozen=True)

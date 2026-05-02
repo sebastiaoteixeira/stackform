@@ -8,6 +8,7 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     IRMongo,
     IROperations,
+    IRProviderBinding,
     IRRoute,
 )
 from yaml_api_generator.server.pipeline_builder import PipelineBuilder
@@ -125,7 +126,7 @@ async def test_password_auth_collection_enables_login():
 
     ir = _make_ir(
         collections={"users": _users_collection()},
-        identity={"users": IRIdentityCollection(name="users", identifier="email", via=["password"])},
+        identity={"users": IRIdentityCollection(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),))},
         routes=[
             IRRoute(method="POST", path="/users/login", operation="login",
                     collection="users", is_public=True),
@@ -148,7 +149,7 @@ async def test_non_public_route_from_ir_rejects_unauthenticated():
     """IR with a non-public route must produce a pipeline that rejects anonymous requests."""
     ir = _make_ir(
         collections={"users": _users_collection()},
-        identity={"users": IRIdentityCollection(name="users", identifier="email", via=["password"])},
+        identity={"users": IRIdentityCollection(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),))},
         routes=[
             IRRoute(
                 method="POST", path="/items", operation="create", collection="users",
@@ -181,7 +182,7 @@ async def test_role_based_access_rule_from_ir_is_enforced():
             ),
             "users": _users_collection(),
         },
-        identity={"users": IRIdentityCollection(name="users", identifier="email", via=["password"])},
+        identity={"users": IRIdentityCollection(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),))},
         routes=[
             IRRoute(
                 method="DELETE", path="/items/{id}", operation="delete", collection="items",

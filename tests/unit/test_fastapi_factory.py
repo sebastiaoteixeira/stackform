@@ -4,6 +4,7 @@ from typing import Any, Literal
 import pytest
 from pydantic import ValidationError
 
+from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.server.fastapi_factory import (
     _field_annotation,
     _security_requirements,
@@ -40,10 +41,10 @@ def _make_identity(
     via: list[str] | None = None,
     id_field: str = "id",
 ) -> RuntimeIdentityDescriptor:
+    providers = via or ["password"]
     return RuntimeIdentityDescriptor(
         name=name,
-        identifier=identifier,
-        via=via or ["password"],
+        bindings=tuple(IRProviderBinding(provider=p, identifier=identifier) for p in providers),
         id_field=id_field,
     )
 
@@ -402,7 +403,7 @@ def test_api_key_auth_includes_apikey_and_bearer_schemes():
     route = RuntimeRouteDescriptor(
         method="GET", path="/posts", operation="list", collection="posts", is_public=False
     )
-    identity = RuntimeIdentityDescriptor(name="clients", identifier="clientId", via=["apiKey"], id_field="id")
+    identity = RuntimeIdentityDescriptor(name="clients", bindings=(IRProviderBinding(provider="apiKey", identifier="clientId"),), id_field="id")
     auth = RuntimeAuthConfig(
         enabled=True,
         identity_collections={"clients": identity},
@@ -419,7 +420,7 @@ def test_password_auth_includes_basic_and_bearer_schemes():
     route = RuntimeRouteDescriptor(
         method="GET", path="/posts", operation="list", collection="posts", is_public=False
     )
-    identity = RuntimeIdentityDescriptor(name="users", identifier="email", via=["password"], id_field="id")
+    identity = RuntimeIdentityDescriptor(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id")
     auth = RuntimeAuthConfig(
         enabled=True,
         identity_collections={"users": identity},

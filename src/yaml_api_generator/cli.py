@@ -129,6 +129,15 @@ def deploy(yaml_file: str, host: str, user: str, key: str, output_dir: str, sche
 
     click.echo(f"Generated deploy artifacts in {output_dir}")
 
+@cli.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.option(
+    "--schema",
+    "schema_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to JSON schema file (auto-detected from spec version if omitted).",
+)
 @click.option(
     "--output",
     "output_dir",

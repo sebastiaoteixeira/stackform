@@ -158,13 +158,18 @@
             "$ref": "#/$defs/FieldConfig"
           }
         },
-        "via": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/ProviderBinding" },
-          "minItems": 1
-        },
-        "roles": {
-          "type": "string"
+        "auth": {
+          "type": "object",
+          "properties": {
+            "identifier": { "type": "string" },
+            "via": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+              ]
+            },
+            "roles": { "type": "string" }
+          }
         }
       },
       "allOf": [
@@ -182,7 +187,7 @@
             "required": ["type"]
           },
           "then": {
-            "required": ["via"]
+            "required": ["auth"]
           }
         }
       ]

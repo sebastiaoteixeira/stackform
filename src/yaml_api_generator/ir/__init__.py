@@ -14,6 +14,10 @@ from .api import (
     IROperations,
     IRRoute,
     IRService,
+    IROIDCProvider,
+    IRProviderBinding,
+    IRProvider,
+    IRSAMLProvider
 )
 from .when import (
     And,

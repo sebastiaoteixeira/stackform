@@ -1,6 +1,6 @@
 from typing import Any
 
-from ..ir import (
+from ...ir import (
     IRDocument,
     IRCollection,
     IRIdentityCollection,

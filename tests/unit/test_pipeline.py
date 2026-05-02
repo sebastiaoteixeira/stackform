@@ -1,6 +1,6 @@
 import pytest
 
-from yaml_api_generator.ir import IRDocumentBinding
+from yaml_api_generator.ir import IRDocumentBinding, IRProviderBinding
 from yaml_api_generator.server.request_context import RequestContext
 from yaml_api_generator.server.pipeline import Pipeline
 from yaml_api_generator.server.pipeline_builder import PipelineBuilder
@@ -170,7 +170,7 @@ async def test_builder_login_route_validates_and_returns_token():
     from yaml_api_generator.server.auth.password import hash_password
 
     identity = RuntimeIdentityDescriptor(
-        name="users", identifier="email", via=["password"], id_field="id"
+        name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id"
     )
     route = RuntimeRouteDescriptor(
         method="POST",
@@ -207,7 +207,7 @@ async def test_builder_login_route_validates_and_returns_token():
 @pytest.mark.asyncio
 async def test_builder_login_route_missing_body_raises():
     identity = RuntimeIdentityDescriptor(
-        name="users", identifier="email", via=["password"], id_field="id"
+        name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id"
     )
     route = RuntimeRouteDescriptor(
         method="POST",
@@ -280,7 +280,7 @@ async def test_builder_non_public_route_rejects_unauthenticated():
         access_rules=[RuntimeAccessRule(principal="*", effect="allow")],
     )
     identity = RuntimeIdentityDescriptor(
-        name="users", identifier="email", via=["password"], id_field="id"
+        name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id"
     )
     rc = _make_runtime_context(
         identity_collections={"users": identity},
@@ -331,7 +331,7 @@ async def test_builder_update_with_document_rule_allows_matching_principal():
         ],
     )
     identity = RuntimeIdentityDescriptor(
-        name="users", identifier="email", via=["password"], id_field="id"
+        name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id"
     )
     rc = _make_runtime_context(
         identity_collections={"users": identity},
@@ -372,7 +372,7 @@ async def test_builder_update_with_document_rule_denies_non_matching_principal()
         ],
     )
     identity = RuntimeIdentityDescriptor(
-        name="users", identifier="email", via=["password"], id_field="id"
+        name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id"
     )
     rc = _make_runtime_context(
         identity_collections={"users": identity},
@@ -394,7 +394,7 @@ async def test_builder_update_with_document_rule_denies_non_matching_principal()
 @pytest.mark.asyncio
 async def test_builder_identity_create_without_password_raises():
     identity = RuntimeIdentityDescriptor(
-        name="users", identifier="email", via=["password"], id_field="id"
+        name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id"
     )
     route = RuntimeRouteDescriptor(
         method="POST",

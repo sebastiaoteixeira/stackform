@@ -15,6 +15,7 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     IRMongo,
     IROperations,
+    IRProviderBinding,
     IRRoute,
     IRService,
 )
@@ -183,7 +184,7 @@ class V02Transformer:
     ) -> list[ConfigError]:
         errors: list[ConfigError] = []
         for name, identity in identity_collections.items():
-            if "password" not in identity.via:
+            if not identity.has_password:
                 continue
             fields = collections[name].fields
             if "password" in fields:
@@ -515,10 +516,14 @@ class V02Transformer:
                 if role_errors:
                     raise ConfigErrors(role_errors)
 
+            bindings = tuple(
+                IRProviderBinding(provider=p, identifier=identifier or "")
+                for p in via
+                if identifier
+            )
             identity_collections[repo_name] = IRIdentityCollection(
                 name=repo_name,
-                identifier=identifier,
-                via=via,
+                bindings=bindings,
                 roles_field=roles_field,
             )
         return identity_collections

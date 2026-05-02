@@ -226,11 +226,14 @@ def test_83_via_string_normalized_to_list():
         "mongo": {},
     }
     ir = V02Transformer().transform(config)
-    assert ir.identityCollections["users"].via == ["password"]
+    ic = ir.identityCollections["users"]
+    assert len(ic.bindings) == 1
+    assert ic.bindings[0].provider == "password"
+    assert ic.bindings[0].identifier == "email"
 
 
 def test_84_via_list_preserved():
-    """A list `via` in YAML must be preserved as-is in the IR identity collection."""
+    """A list `via` in YAML must produce one binding per provider in the IR identity collection."""
     config = {
         "version": "0.2",
         "api": {"operations": {"defaults": {}}},
@@ -247,11 +250,12 @@ def test_84_via_list_preserved():
         "mongo": {},
     }
     ir = V02Transformer().transform(config)
-    assert ir.identityCollections["users"].via == ["password", "apiKey"]
+    ic = ir.identityCollections["users"]
+    assert {b.provider for b in ic.bindings} == {"password", "apiKey"}
 
 
 def test_85_via_other_type_empty_list():
-    """An invalid `via` type must not crash — identity collection via defaults to []."""
+    """An invalid `via` type must not crash — identity collection bindings defaults to empty."""
     config = {
         "version": "0.2",
         "api": {"operations": {"defaults": {}}},
@@ -268,7 +272,7 @@ def test_85_via_other_type_empty_list():
         "mongo": {},
     }
     ir = V02Transformer().transform(config)
-    assert ir.identityCollections["users"].via == []
+    assert ir.identityCollections["users"].bindings == ()
 
 
 def test_86_auth_data_not_dict_safe_defaults():
@@ -289,8 +293,7 @@ def test_86_auth_data_not_dict_safe_defaults():
     }
     ir = V02Transformer().transform(config)
     ic = ir.identityCollections["users"]
-    assert ic.identifier is None
-    assert ic.via == []
+    assert ic.bindings == ()
 
 
 def test_87_roles_field_stored_in_identity_collection():

@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.server.request_context import RequestContext
 from yaml_api_generator.server.server_context import (
     RuntimeAccessRule,
@@ -105,10 +106,14 @@ def _make_identity(
     id_field: str = "id",
     roles_field: str | None = "role",
 ) -> RuntimeIdentityDescriptor:
+    providers = via or ["password"]
+    bindings = tuple(
+        IRProviderBinding(provider=p, identifier=identifier or "")
+        for p in providers
+    )
     return RuntimeIdentityDescriptor(
         name=name,
-        identifier=identifier,
-        via=via or ["password"],
+        bindings=bindings,
         id_field=id_field,
         roles_field=roles_field,
     )

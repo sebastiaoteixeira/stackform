@@ -55,7 +55,7 @@ def _build_field_schemas(
     if (
         identity_collection is not None
         and operation == "create"
-        and "password" in identity_collection.via
+        and identity_collection.has_password
         and not any(s.name == "password" for s in schemas)
     ):
         schemas.append(
@@ -74,10 +74,11 @@ def _build_login_schemas(
     identity_collection: RuntimeIdentityDescriptor,
 ) -> list[_FieldSchema]:
     schemas: list[_FieldSchema] = []
-    if identity_collection.identifier:
+    pw_binding = identity_collection.get_binding("password")
+    if pw_binding and pw_binding.identifier:
         schemas.append(
             _FieldSchema(
-                name=identity_collection.identifier,
+                name=pw_binding.identifier,
                 field_type="string",
                 required=True,
                 min_length=1,

@@ -16,6 +16,7 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     IRMongo,
     IROperations,
+    IRProviderBinding,
     IRRoute,
 )
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
@@ -207,7 +208,7 @@ def test_password_field_injected_in_identity_create_model(tmp_path):
                 operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
             ),
         },
-        identity={"users": IRIdentityCollection(name="users", identifier="email", via=["password"])},
+        identity={"users": IRIdentityCollection(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),))},
     )
     _gen(ir, tmp_path)
     model_content = (tmp_path / "models" / "users.py").read_text()
