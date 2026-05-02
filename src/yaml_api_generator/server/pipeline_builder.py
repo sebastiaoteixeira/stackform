@@ -147,7 +147,7 @@ class PipelineBuilder:
         id_field = collection.id_field
         identity_collection = self._ctx.auth.identity_collections.get(collection_name)
         uses_password = (
-            identity_collection is not None and "password" in identity_collection.via
+            identity_collection is not None and identity_collection.has_password
         )
 
         if operation == "list":

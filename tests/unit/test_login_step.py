@@ -1,5 +1,6 @@
 import pytest
 
+from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.server.auth.jwt import decode_jwt_token
 from yaml_api_generator.server.auth.password import hash_password
 from yaml_api_generator.server.request_context import RequestContext
@@ -13,8 +14,7 @@ from .test_repository_steps import InMemoryRepository, _make_ctx
 def _make_identity() -> RuntimeIdentityDescriptor:
     return RuntimeIdentityDescriptor(
         name="users",
-        identifier="email",
-        via=["password"],
+        bindings=(IRProviderBinding(provider="password", identifier="email"),),
         id_field="id",
     )
 

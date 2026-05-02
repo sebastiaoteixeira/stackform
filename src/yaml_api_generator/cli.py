@@ -91,6 +91,46 @@ def dev(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool
 
 @cli.command()
 @click.argument("yaml_file", type=click.Path(exists=True))
+@click.option("--host", required=True, help="Target server hostname or IP.")
+@click.option("--user", default="ubuntu", help="SSH user (default: ubuntu).")
+@click.option("--key", default="~/.ssh/id_rsa", help="Path to SSH private key.")
+@click.option(
+    "--output",
+    "output_dir",
+    default="./deploy",
+    help="Output directory (default: ./deploy).",
+)
+@click.option(
+    "--schema",
+    "schema_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to JSON schema file (auto-detected from spec version if omitted).",
+)
+def deploy(yaml_file: str, host: str, user: str, key: str, output_dir: str, schema_file: str | None) -> None:
+    """Generate Ansible deployment artifacts from a YAML API spec."""
+    import sys
+
+    from .deploy.deployer import deploy_api
+    from .parsing.parser import ConfigErrors
+
+    try:
+        deploy_api(
+            yaml_file=yaml_file,
+            schema_file=schema_file,
+            host=host,
+            ssh_user=user,
+            ssh_key=key,
+            output_dir=output_dir,
+        )
+    except (ConfigErrors, ValueError, OSError) as error:
+        sys.stderr.write(f"Error: {error}\n")
+        raise SystemExit(1)
+
+    click.echo(f"Generated deploy artifacts in {output_dir}")
+
+@cli.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
 @click.option(
     "--schema",
     "schema_file",
@@ -144,3 +184,50 @@ def frontend(yaml_file: str, schema_file: str | None, output_dir: str | None):
     except (FileNotFoundError, ValueError) as error:
         click.echo(f"Error: {error}", err=True)
         raise SystemExit(1)
+
+
+@cli.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.option(
+    "--schema",
+    "schema_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to JSON schema file (auto-detected from spec version if omitted).",
+)
+@click.option("--host", required=True, help="Target server hostname or IP.")
+@click.option("--user", default="ubuntu", help="SSH user (default: ubuntu).")
+@click.option("--key", default="~/.ssh/id_rsa", help="Path to SSH private key.")
+@click.option(
+    "--output",
+    "output_dir",
+    default="./deploy",
+    help="Output directory (default: ./deploy).",
+)
+def deploy(yaml_file: str, schema_file: str | None, host: str, user: str, key: str, output_dir: str) -> None:
+    """Generate deployment artifacts from a YAML API spec."""
+    from pathlib import Path
+
+    from .parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+    from .generators.deploy.generate import generate_deploy
+
+    try:
+        raw_text = Path(yaml_file).read_text()
+        result = load_and_generate_ir(yaml_file, schema_file)
+        generate_deploy(
+            ir=result.ir,
+            raw_yaml_text=raw_text,
+            host=host,
+            ssh_user=user,
+            ssh_key=key,
+            output_dir=output_dir,
+        )
+    except ConfigErrors as error:
+        payload = [item.to_dict() for item in error.errors]
+        sys.stderr.write(json.dumps(payload, indent=2) + "\n")
+        raise SystemExit(1)
+    except (ValueError, OSError) as error:
+        sys.stderr.write(f"Error: {error}\n")
+        raise SystemExit(1)
+
+    click.echo(f"Generated deploy artifacts in {output_dir}")

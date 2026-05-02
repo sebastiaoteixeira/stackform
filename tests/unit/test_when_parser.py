@@ -73,7 +73,7 @@ class TestParseWhenExpr:
     def test_143_empty_string_expr(self):
         _, errors = parse_when_expr("", _PATH)
         assert len(errors) == 1
-        assert errors[0].code == "WHEN_EXPR_INVALID"
+        assert errors[0].code == "WHEN_OPERAND_MISSING"
 
     def test_144_whitespace_trimming_evaluates_correctly(self):
         assert _eval("  principal.sub   equals   'hello'  ", principal={"sub": "hello"}) is True

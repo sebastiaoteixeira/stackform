@@ -33,6 +33,27 @@ IRProvider = IROIDCProvider | IRSAMLProvider
 
 
 @dataclass(frozen=True)
+class IRDeployDocker:
+    image: str | None = None
+
+
+@dataclass(frozen=True)
+class IRDeploySystemd:
+    user: str = "ubuntu"
+    restart: str = "on-failure"
+
+
+@dataclass(frozen=True)
+class IRDeploy:
+    runtime: str
+    name: str | None = None
+    port: int = 8000
+    mongo_local: bool = False
+    docker: IRDeployDocker | None = None
+    systemd: IRDeploySystemd | None = None
+
+
+@dataclass(frozen=True)
 class IROperations:
     list: bool
     get: bool
@@ -124,7 +145,6 @@ class IRRoute:
 class IRRolesConfig:
     values: tuple[str, ...]
     default: str
-    # Direct role inclusions (not yet transitively expanded)
     hierarchy: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
@@ -166,6 +186,7 @@ class IRDocument:
     role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
+    deploy: IRDeploy | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

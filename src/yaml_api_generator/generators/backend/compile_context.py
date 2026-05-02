@@ -64,6 +64,7 @@ class IdentityCollectionDescriptor:
     bindings: list[IRProviderBinding]
     id_field: str
     roles: IRRolesConfig | None = None
+    roles_field: str | None = None
 
     @property
     def has_password(self) -> bool:

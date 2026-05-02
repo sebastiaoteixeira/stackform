@@ -19,7 +19,9 @@ def LoginStep(
         if not isinstance(body, dict):
             raise UnauthorizedError("Invalid login payload")
 
-        identifier_value = body.get(identity_collection.identifier or "")
+        pw_binding = identity_collection.get_binding("password")
+        identifier_field = pw_binding.identifier if pw_binding else ""
+        identifier_value = body.get(identifier_field)
         password = body.get("password")
         if not identifier_value or not password:
             raise UnauthorizedError("Invalid credentials")
@@ -27,7 +29,7 @@ def LoginStep(
         documents = await repository.list(identity_collection.name)
         user = _find_user(
             documents,
-            identifier_field=identity_collection.identifier or "",
+            identifier_field=identifier_field,
             identifier_value=str(identifier_value),
             password=str(password),
         )

@@ -105,6 +105,9 @@
     },
     "ui": {
       "type": "object"
+    },
+    "deploy": {
+      "$ref": "#/$defs/DeployConfig"
     }
   },
   "$defs": {
@@ -144,16 +147,18 @@
             "$ref": "#/$defs/FieldConfig"
           }
         },
-        "via": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/ProviderBinding" },
-          "minItems": 1
-        },
-        "roles": {
-          "oneOf": [
-            { "type": "string" },
-            { "$ref": "#/$defs/RolesConfig" }
-          ]
+        "auth": {
+          "type": "object",
+          "properties": {
+            "identifier": { "type": "string" },
+            "via": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+              ]
+            },
+            "roles": { "type": "string" }
+          }
         }
       },
       "allOf": [
@@ -171,9 +176,10 @@
             "required": ["type"]
           },
           "then": {
-            "required": ["via"]
+            "required": ["auth"]
           }
         }
+
       ]
     },
     "ProviderBinding": {
@@ -366,6 +372,34 @@
           }
         }
       ]
+    },
+    "DeployConfig": {
+      "type": "object",
+      "required": ["runtime"],
+      "properties": {
+        "name": { "type": "string" },
+        "port": { "type": "integer", "default": 8000 },
+        "runtime": { "type": "string", "enum": ["docker", "systemd"] },
+        "mongo": {
+          "type": "object",
+          "properties": {
+            "local": { "type": "boolean", "default": false }
+          }
+        },
+        "docker": {
+          "type": "object",
+          "properties": {
+            "image": { "type": "string" }
+          }
+        },
+        "systemd": {
+          "type": "object",
+          "properties": {
+            "user": { "type": "string" },
+            "restart": { "type": "string" }
+          }
+        }
+      }
     },
     "AccessRule": {
       "type": "object",

@@ -1,5 +1,6 @@
 import pytest
 
+from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.server.request_context import RequestContext
 from yaml_api_generator.server.server_context import (
     RuntimeCollectionDescriptor,
@@ -25,8 +26,7 @@ def _make_identity(
 ) -> RuntimeIdentityDescriptor:
     return RuntimeIdentityDescriptor(
         name="users",
-        identifier=identifier,
-        via=list(via),
+        bindings=tuple(IRProviderBinding(provider=p, identifier=identifier) for p in via),
         id_field="id",
     )
 

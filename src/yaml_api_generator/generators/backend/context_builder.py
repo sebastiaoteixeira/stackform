@@ -1,7 +1,12 @@
 from typing import Any
 
-from ...ir import IRDocument, IRCollection, IRIdentityCollection
-from ...ir.api import IROIDCProvider, IRSAMLProvider
+from ...ir import (
+    IRDocument,
+    IRCollection,
+    IRIdentityCollection,
+    IROIDCProvider,
+    IRSAMLProvider,
+)
 from .compile_context import (
     AccessRuleDescriptor,
     AppConfig,
@@ -277,6 +282,7 @@ def _build_auth_config(
                 bindings=list(identity.bindings),
                 id_field=col.idField,
                 roles=identity.roles,
+                roles_field=identity.roles_field,
             )
         )
         if identity.has_password:

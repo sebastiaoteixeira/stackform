@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..ir import IRDocumentBinding, IRIdentityBinding
-from ..ir.api import IRProviderBinding, IRRolesConfig
+from ..ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
+from ..ir.api import IRRolesConfig
 from ..ir.when import WhenExpr
 
 

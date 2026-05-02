@@ -91,7 +91,8 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
         auth_identifier = None
         identity = ir.identityCollections.get(col_name)
         if identity:
-            auth_identifier = identity.identifier
+            pw_binding = identity.get_binding("password")
+            auth_identifier = pw_binding.identifier if pw_binding else None
 
         entities[entity_name] = EntityInfo(
             name=entity_name,

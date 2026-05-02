@@ -18,9 +18,6 @@ from ..ir import (
 from .yaml_parser import ConfigError
 
 
-_STRING_LITERAL_RE = re.compile(r"^'([^']*)'$")
-_FIELD_REF_RE = re.compile(r"^([a-zA-Z_]\w*)(\.\w+)+$")
-
 # Tokenizer: multi-word operators must be listed before their prefixes
 _TOKEN_PATTERNS = [
     ("NOT_EQUALS", r"not\s+equals"),
@@ -183,7 +180,7 @@ class _Parser:
                 break
             if tok[0] == "STRING":
                 self._consume()
-                values.append(tok[1][1:-1])  # strip surrounding quotes
+                values.append(tok[1][1:-1])
             elif tok[0] == "WORD":
                 self._consume()
                 values.append(tok[1])

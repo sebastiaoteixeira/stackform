@@ -22,23 +22,18 @@ class ForbiddenError(ValueError):
 def _required_identity_fields(
     identity_collection: RuntimeIdentityDescriptor,
 ) -> tuple[str, ...]:
+    seen: set[str] = set()
     fields: list[str] = []
-    if identity_collection.identifier:
-        fields.append(identity_collection.identifier)
 
-    for method in identity_collection.via:
-        if method == "password":
-            fields.append("password")
-        elif method == "apiKey":
-            fields.append("apiKey")
-        else:
-            raise ValueError(f"Unsupported auth method: {method}")
+    for binding in identity_collection.bindings:
+        if binding.identifier and binding.identifier not in seen:
+            fields.append(binding.identifier)
+            seen.add(binding.identifier)
+        if binding.provider not in seen:
+            fields.append(binding.provider)
+            seen.add(binding.provider)
 
-    unique_fields: list[str] = []
-    for field_name in fields:
-        if field_name and field_name not in unique_fields:
-            unique_fields.append(field_name)
-    return tuple(unique_fields)
+    return tuple(fields)
 
 
 def ValidateIdentityCreateStep(

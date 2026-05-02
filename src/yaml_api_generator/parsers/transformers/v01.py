@@ -7,6 +7,7 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     IRMongo,
     IROperations,
+    IRProviderBinding,
     IRRoute,
 )
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
@@ -74,10 +75,14 @@ class V01Transformer:
                 continue
             collection_data = collections_data.get(name, {})
             identifier, via = self._extract_identity_auth(collection_data)
+            bindings = tuple(
+                IRProviderBinding(provider=p, identifier=identifier or "")
+                for p in via
+                if identifier
+            )
             identity_collections[name] = IRIdentityCollection(
                 name=name,
-                identifier=identifier,
-                via=via,
+                bindings=bindings,
             )
 
         implicit_field_errors = self._validate_implicit_auth_fields(
@@ -97,7 +102,7 @@ class V01Transformer:
             )
 
         for name, identity in identity_collections.items():
-            if "password" in identity.via:
+            if identity.has_password:
                 routes.append(
                     IRRoute(
                         method="POST",
@@ -264,7 +269,7 @@ class V01Transformer:
     ) -> list[ConfigError]:
         errors: list[ConfigError] = []
         for name, identity in identity_collections.items():
-            if "password" not in identity.via:
+            if not identity.has_password:
                 continue
             fields = collections[name].fields
             if "password" in fields:

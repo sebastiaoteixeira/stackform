@@ -1,0 +1,35 @@
+- name: Create app directory
+  file:
+    path: /opt/{{ ctx.name }}
+    state: directory
+    owner: {{ ctx.user }}
+    mode: '0755'
+
+- name: Copy app files
+  synchronize:
+    src: "{{ '{{' }} playbook_dir {{ '}}' }}/"
+    dest: /opt/{{ ctx.name }}/
+    delete: true
+    rsync_opts:
+      - "--exclude=roles"
+      - "--exclude=playbook.yml"
+      - "--exclude=inventory.yml"
+      - "--exclude=files"
+
+- name: Create virtualenv and install dependencies
+  pip:
+    requirements: /opt/{{ ctx.name }}/requirements.txt
+    virtualenv: /opt/{{ ctx.name }}/venv
+    virtualenv_command: python3 -m venv
+
+- name: Copy systemd service file
+  copy:
+    src: app.service
+    dest: /etc/systemd/system/{{ ctx.name }}.service
+
+- name: Enable and start service
+  systemd:
+    name: {{ ctx.name }}
+    enabled: true
+    state: restarted
+    daemon_reload: true
