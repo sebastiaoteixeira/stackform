@@ -77,8 +77,7 @@ repositories:
     entity: user
   posts:
     entity: post
-    operations:
-      replace: true
+    crud: [list, get, create, update, replace, delete]
   countries:
     entity: country
 

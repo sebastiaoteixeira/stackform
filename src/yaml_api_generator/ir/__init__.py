@@ -1,4 +1,5 @@
 from .api import (
+    CRUD_OPERATIONS,
     IRAccessRule,
     IRApi,
     IRCollection,
@@ -11,7 +12,9 @@ from .api import (
     IRIdentityBinding,
     IRIdentityCollection,
     IRMongo,
+    IROperation,
     IROperations,
+    IRRepository,
     IRRoute,
     IRRolesConfig,
     IRService,
@@ -49,6 +52,7 @@ from .ui import (
 )
 
 __all__ = [
+    "CRUD_OPERATIONS",
     "IRAccessRule",
     "IRApi",
     "IRCollection",
@@ -61,7 +65,9 @@ __all__ = [
     "IRIdentityBinding",
     "IRIdentityCollection",
     "IRMongo",
+    "IROperation",
     "IROperations",
+    "IRRepository",
     "IRRoute",
     "IRRolesConfig",
     "IRService",

@@ -287,15 +287,39 @@
         }
       ]
     },
+    "OperationConfig": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "object",
+          "required": ["command"],
+          "properties": {
+            "command": { "type": "string" },
+            "collection": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "handler": { "type": "string" }
+      }
+    },
     "RepositoryConfig": {
       "type": "object",
-      "required": ["entity"],
       "properties": {
         "entity": {
           "type": "string"
         },
+        "crud": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["list", "get", "create", "update", "replace", "delete"]
+          }
+        },
         "operations": {
-          "$ref": "#/$defs/OperationFlags"
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/OperationConfig"
+          }
         }
       }
     },

@@ -148,7 +148,7 @@ def test_77_id_format_invalid_string():
 
 
 def test_78_operations_normalization_repo_overrides_defaults(tmp_path):
-    """Repo-level operation overrides take precedence over api.operations.defaults."""
+    """Repo-level crud list overrides which operations are generated."""
     ir = _parse("""
         version: "0.2"
         api:
@@ -173,9 +173,7 @@ def test_78_operations_normalization_repo_overrides_defaults(tmp_path):
         repositories:
           posts:
             entity: post
-            operations:
-              replace: true
-              delete: false
+            crud: [list, get, create, update, replace]
         services:
           posts:
             repository: posts
@@ -185,6 +183,7 @@ def test_78_operations_normalization_repo_overrides_defaults(tmp_path):
             base_path: /posts
             access: public
     """, tmp_path)
+    assert ir.repositories["posts"].crud == ("list", "get", "create", "update", "replace")
     ops = {r.operation for r in ir.routes if "posts" in r.path}
     assert "replace" in ops
     assert "delete" not in ops

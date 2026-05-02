@@ -9,14 +9,15 @@ import pytest
 from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
 from yaml_api_generator.generators.backend.context_builder import build_context
 from yaml_api_generator.ir import (
+    CRUD_OPERATIONS,
     IRApi,
     IRCollection,
     IRCors,
     IRDocument,
     IRIdentityCollection,
     IRMongo,
-    IROperations,
     IRProviderBinding,
+    IRRepository,
     IRRoute,
 )
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
@@ -29,7 +30,7 @@ def _gen(ir, tmp_path):
     return tmp_path
 
 
-def _make_ir(collections=None, identity=None, routes=None, cors=None):
+def _make_ir(collections=None, identity=None, routes=None, cors=None, repositories=None):
     cols = collections or {
         "items": IRCollection(
             name="items",
@@ -38,8 +39,10 @@ def _make_ir(collections=None, identity=None, routes=None, cors=None):
             idField="id",
             idFormat="uuidv7",
             fields={"name": {"type": "string", "required": True}},
-            operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
         ),
+    }
+    repos = repositories if repositories is not None else {
+        "items": IRRepository(name="items", entity="item"),
     }
     return IRDocument(
         version="0.2",
@@ -49,6 +52,7 @@ def _make_ir(collections=None, identity=None, routes=None, cors=None):
         identityCollections=identity or {},
         role_hierarchies={},
         mongo=IRMongo(),
+        repositories=repos,
     )
 
 
@@ -60,7 +64,6 @@ def _items_col(**field_overrides):
         idField="id",
         idFormat="uuidv7",
         fields=field_overrides,
-        operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
     )
 
 
@@ -93,8 +96,10 @@ def test_write_operations_generate_payload_models(tmp_path):
 
 
 def test_disabled_replace_operation_generates_no_replace_model(tmp_path):
-    """replace=False in IROperations must produce no ReplacePayload in generated code."""
-    ir = _make_ir()
+    """replace absent from IRRepository.crud must produce no ReplacePayload in generated code."""
+    ir = _make_ir(repositories={
+        "items": IRRepository(name="items", entity="item", crud=("list", "get", "create", "update", "delete")),
+    })
     _gen(ir, tmp_path)
     model_content = (tmp_path / "models" / "items.py").read_text()
     assert "ReplacePayload" not in model_content
@@ -205,9 +210,9 @@ def test_password_field_injected_in_identity_create_model(tmp_path):
                 idField="id",
                 idFormat="uuidv7",
                 fields={"email": {"type": "string", "required": True}},
-                operations=IROperations(list=True, get=True, create=True, update=True, replace=False, delete=True),
             ),
         },
+        repositories={"users": IRRepository(name="users", entity="user")},
         identity={"users": IRIdentityCollection(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),))},
     )
     _gen(ir, tmp_path)

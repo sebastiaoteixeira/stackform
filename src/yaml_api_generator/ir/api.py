@@ -53,6 +53,24 @@ class IRDeploy:
     systemd: IRDeploySystemd | None = None
 
 
+CRUD_OPERATIONS: tuple[str, ...] = ("list", "get", "create", "update", "replace", "delete")
+
+
+@dataclass(frozen=True)
+class IROperation:
+    name: str
+    query: dict | None = None
+    handler: str | None = None
+
+
+@dataclass(frozen=True)
+class IRRepository:
+    name: str
+    entity: str | None = None
+    crud: tuple[str, ...] = CRUD_OPERATIONS
+    operations: dict[str, IROperation] = field(default_factory=dict)
+
+
 @dataclass(frozen=True)
 class IROperations:
     list: bool
@@ -93,7 +111,6 @@ class IRCollection:
     idField: str
     idFormat: str
     fields: dict[str, Any]
-    operations: IROperations
 
 
 @dataclass(frozen=True)
@@ -187,6 +204,7 @@ class IRDocument:
     providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
     deploy: IRDeploy | None = None
+    repositories: dict[str, IRRepository] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

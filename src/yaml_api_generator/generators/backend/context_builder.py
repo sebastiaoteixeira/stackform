@@ -1,10 +1,12 @@
 from typing import Any
 
 from ...ir import (
+    CRUD_OPERATIONS,
     IRDocument,
     IRCollection,
     IRIdentityCollection,
     IROIDCProvider,
+    IRRepository,
     IRSAMLProvider,
 )
 from .compile_context import (
@@ -41,7 +43,7 @@ def build_context(document: IRDocument) -> CompileContext:
     )
 
     identity_map = document.identityCollections
-    models = _build_models(document.collections, identity_map)
+    models = _build_models(document.collections, identity_map, document.repositories)
     model_index = {m.name: m for m in models}
     routes = _build_routes(document, model_index)
 
@@ -55,6 +57,7 @@ def build_context(document: IRDocument) -> CompileContext:
         }
 
     auth = _build_auth_config(identity_map, document.collections, document.providers)
+    repository_operations = _build_repository_operations(document.repositories)
 
     return CompileContext(
         app=app,
@@ -62,19 +65,35 @@ def build_context(document: IRDocument) -> CompileContext:
         routes=routes,
         auth=auth,
         collections=raw_collections,
+        repository_operations=repository_operations,
     )
+
+
+def _build_repository_operations(
+    repositories: dict[str, IRRepository],
+) -> dict[str, list[dict]]:
+    result: dict[str, list[dict]] = {}
+    for repo_name, repo in repositories.items():
+        if repo.operations:
+            result[repo_name] = [
+                {"name": op.name, "query": op.query, "handler": op.handler}
+                for op in repo.operations.values()
+            ]
+    return result
 
 
 def _build_models(
     collections: dict[str, IRCollection],
     identity_map: dict[str, IRIdentityCollection],
+    repositories: dict[str, IRRepository],
 ) -> list[ModelDescriptor]:
     models: list[ModelDescriptor] = []
     for name, col in collections.items():
         identity = identity_map.get(name)
+        repo = repositories.get(name)
+        enabled_ops = repo.crud if repo is not None else CRUD_OPERATIONS
         for op in WRITE_OPERATIONS:
-            ops_dict = col.operations.__dict__
-            if not ops_dict.get(op, False):
+            if op not in enabled_ops:
                 continue
             fields = _build_fields(col, op, identity)
             model_name = _model_name(name, op)
