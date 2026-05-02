@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
+from ..ir.api import IRRolesConfig
 from ..ir.when import WhenExpr
 
 
@@ -19,6 +20,7 @@ class RuntimeIdentityDescriptor:
     name: str
     bindings: tuple[IRProviderBinding, ...]
     id_field: str
+    roles: IRRolesConfig | None = None
     roles_field: str | None = None
 
     @property
@@ -61,6 +63,7 @@ class RuntimeAuthConfig:
     identity_id_fields: dict[str, str]
     has_password_auth: bool
     has_api_key_auth: bool
+    # Transitively expanded: collection_name -> role -> set of included roles
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
 

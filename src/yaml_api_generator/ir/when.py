@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,18 @@ class Not(WhenExpr):
     operand: WhenExpr
 
 
+@dataclass(frozen=True)
+class In(WhenExpr):
+    left: WhenExpr
+    values: tuple[Any, ...]
+
+
+@dataclass(frozen=True)
+class NotIn(WhenExpr):
+    left: WhenExpr
+    values: tuple[Any, ...]
+
+
 def needs_document(expr: WhenExpr) -> bool:
     if isinstance(expr, FieldRef):
         return expr.root == "document"
@@ -55,7 +68,8 @@ def needs_document(expr: WhenExpr) -> bool:
         return False
     if isinstance(expr, (Equals, NotEquals, And, Or)):
         return needs_document(expr.left) or needs_document(expr.right)
-
+    if isinstance(expr, (In, NotIn)):
+        return needs_document(expr.left)
     if isinstance(expr, Not):
         return needs_document(expr.operand)
     return False

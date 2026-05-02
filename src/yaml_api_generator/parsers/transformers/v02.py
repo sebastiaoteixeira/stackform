@@ -1,4 +1,3 @@
-
 from typing import Any, cast
 
 from yaml_api_generator.ir import (

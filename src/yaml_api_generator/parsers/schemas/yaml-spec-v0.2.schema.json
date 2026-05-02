@@ -79,16 +79,6 @@
         "$ref": "#/$defs/EntityConfig"
       }
     },
-    "roles": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      }
-    },
     "repositories": {
       "type": "object",
       "additionalProperties": {
@@ -107,7 +97,6 @@
         "$ref": "#/$defs/ControllerConfig"
       }
     },
-    "deploy": { "$ref": "#/$defs/DeployConfig" },
     "providers": {
       "type": "object",
       "additionalProperties": {
@@ -190,6 +179,7 @@
             "required": ["auth"]
           }
         }
+
       ]
     },
     "ProviderBinding": {
@@ -203,6 +193,26 @@
           "additionalProperties": { "type": "string" }
         },
         "auto_provision": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "RolesConfig": {
+      "type": "object",
+      "required": ["values", "default"],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "default": { "type": "string" },
+        "hierarchy": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
       },
       "additionalProperties": false
     },

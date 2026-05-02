@@ -148,6 +148,9 @@
         "auth": {
           "$ref": "#/$defs/AuthCollectionConfig"
         },
+        "roles": {
+          "$ref": "#/$defs/RolesConfig"
+        },
         "operations": {
           "$ref": "#/$defs/OperationFlags"
         },
@@ -368,6 +371,26 @@
     },
     "FieldConfigLite": {
       "$ref": "#/$defs/FieldConfig"
+    },
+    "RolesConfig": {
+      "type": "object",
+      "required": ["values", "default"],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "default": { "type": "string" },
+        "hierarchy": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "AccessRule": {
       "type": "object",

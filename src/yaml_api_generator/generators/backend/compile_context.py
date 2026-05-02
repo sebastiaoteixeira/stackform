@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from ...ir.api import IRProvider, IRProviderBinding
+from ...ir.api import IRProvider, IRProviderBinding, IRRolesConfig
 from ...ir.when import WhenExpr
 
 
@@ -63,6 +63,7 @@ class IdentityCollectionDescriptor:
     name: str
     bindings: list[IRProviderBinding]
     id_field: str
+    roles: IRRolesConfig | None = None
     roles_field: str | None = None
 
     @property
@@ -111,4 +112,3 @@ class CompileContext:
     routes: list[RouteDescriptor]
     auth: AuthConfig
     collections: dict[str, Any]
-    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)

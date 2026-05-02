@@ -35,7 +35,12 @@ entities:
     via:
       - provider: password
         identifier: email
-    roles: role
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       email:
         type: string
@@ -45,10 +50,6 @@ entities:
       displayName:
         type: string
         required: true
-      role:
-        type: enum
-        values: [admin, moderator, user]
-        default: user
 
   post:
     extends: base
@@ -70,11 +71,6 @@ entities:
     fields:
       code: { type: string }
       name: { type: string }
-
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:

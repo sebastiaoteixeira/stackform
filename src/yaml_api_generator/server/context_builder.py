@@ -1,4 +1,4 @@
-from yaml_api_generator.ir import IRDocument, IRCollection, IRDocumentBinding, IRIdentityCollection
+from ..ir import IRDocument, IRCollection, IRDocumentBinding, IRIdentityCollection
 from .server_context import (
     RuntimeAccessRule,
     RuntimeAppConfig,
@@ -21,7 +21,6 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
     auth = _build_auth_config(
         document.identityCollections,
         document.collections,
-        document.role_hierarchies,
     )
 
     return RuntimeContext(
@@ -107,7 +106,6 @@ def _flatten_hierarchy(
 def _build_auth_config(
     identity_collections: dict[str, IRIdentityCollection],
     collections: dict[str, IRCollection],
-    role_hierarchies: dict[str, dict[str, list[str]]],
 ) -> RuntimeAuthConfig:
     identity_descriptors: dict[str, RuntimeIdentityDescriptor] = {}
     identity_id_fields: dict[str, str] = {}
@@ -122,6 +120,7 @@ def _build_auth_config(
             name=identity.name,
             bindings=identity.bindings,
             id_field=id_field,
+            roles=identity.roles,
             roles_field=identity.roles_field,
         )
 
@@ -137,10 +136,15 @@ def _build_auth_config(
         for name in identity_collections
         if name in collections and collections[name].entity_name
     }
+    # Derive flattened hierarchies from per-entity roles config
     flattened_hierarchies: dict[str, dict[str, set[str]]] = {}
-    for entity_name, hierarchy in role_hierarchies.items():
-        collection_name = entity_to_collection.get(entity_name, entity_name)
-        flattened_hierarchies[collection_name] = _flatten_hierarchy(hierarchy)
+    for name, identity in identity_collections.items():
+        if identity.roles is not None and identity.roles.hierarchy:
+            raw: dict[str, list[str]] = {
+                role: list(includes)
+                for role, includes in identity.roles.hierarchy.items()
+            }
+            flattened_hierarchies[name] = _flatten_hierarchy(raw)
 
     return RuntimeAuthConfig(
         enabled=bool(identity_collections),
