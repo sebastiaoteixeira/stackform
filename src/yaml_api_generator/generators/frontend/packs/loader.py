@@ -4,7 +4,11 @@ from pathlib import Path
 
 import yaml
 
-from .manifest import OutputConfig, Pack, PackManifest
+from yaml_api_generator.ir.pack_manifest import (
+    OutputConfig,
+    Pack,
+    PackManifest,
+)
 
 
 def load_pack(name_or_path: str) -> Pack:

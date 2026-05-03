@@ -1,3 +1,17 @@
+"""Compilation context data structures for backend code generation.
+
+Provides frozen dataclasses that represent the compiled context needed
+to generate backend code. Bridges IR (intermediate representation) and
+code generation by organizing data into generator-friendly structures.
+
+Key types:
+- CompileContext: Top-level context with all compilation metadata
+- RouteDescriptor: HTTP route configuration
+- ModelDescriptor: Request/response model definition
+- AuthConfig: Authentication and authorization settings
+- FieldDescriptor: Model field with type and constraints
+"""
+
 from dataclasses import dataclass, field
 from typing import Any
 

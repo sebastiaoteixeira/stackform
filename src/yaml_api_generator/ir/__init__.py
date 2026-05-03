@@ -50,6 +50,11 @@ from .ui import (
     UIComponent,
     UIView,
 )
+from .pack_manifest import (
+    OutputConfig,
+    Pack,
+    PackManifest,
+)
 
 __all__ = [
     "CRUD_OPERATIONS",

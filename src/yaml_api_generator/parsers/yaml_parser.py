@@ -1,3 +1,22 @@
+"""
+YAML parser: Load and validate YAML API specifications.
+
+This module handles:
+- YAML file loading with environment variable interpolation
+- JSON schema validation
+- Configuration error collection and reporting
+- IR (Intermediate Representation) generation
+
+Key functions:
+- load_and_generate_ir(): Main entry point for parsing
+- ConfigError/ConfigErrors: Structured error reporting
+
+Environment variable interpolation:
+- Syntax: ${VAR_NAME} or ${VAR_NAME:-default}
+- Supports nested interpolation
+- Env vars expanded before schema validation
+"""
+
 import os
 import re
 from dataclasses import dataclass
@@ -13,7 +32,7 @@ INTERPOLATION_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}"
 
 
 @dataclass(frozen=True)
-class ConfigError:
+class ConfigError(Exception):
     code: str
     message: str
     path: str

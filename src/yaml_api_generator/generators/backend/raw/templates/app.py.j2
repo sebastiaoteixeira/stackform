@@ -4,117 +4,33 @@ import re
 from typing import Any
 
 from dependencies.mongodb import connect_db, close_db, get_database
+{% set collections = routes | map(attribute='collection') | unique | select | list %}
 {% for col_name in collections %}
-from repositories.{{ col_name }} import {{ col_name | capitalize_collection }}Repository
-from services.{{ col_name }} import {{ col_name | capitalize_collection }}Service
+from routes.{{ col_name }} import *
 {% endfor %}
-from services.exceptions import NotFoundError, ValidationError
-{% if ctx.auth.enabled %}
-from dependencies.auth import resolve_principal
-{% endif %}
 {% if ctx.auth.has_password_auth %}
-from dependencies.auth import verify_password
-from dependencies.jwt_utils import create_jwt_token
+from routes.login import *
 {% endif %}
-import validation
 
 
 _INVALID_JSON: Any = object()
 _PREFIX = "{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}"
 
 
+def _path_to_regex(path: str) -> str:
+    """Convert /{collection}/{id} style path to regex with named groups."""
+    def _replace(m: re.Match) -> str:
+        return f"(?P<{m.group(1)}>[^/]+)"
+    return re.sub(r"\{(\w+)\}", _replace, path)
+
+
 {% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
-{% for route in crud_routes %}
-{% set handler_name = "handle_" ~ route.operation ~ "_" ~ route.collection %}
-async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str]) -> tuple[int, Any]:
-    db = get_database()
-    repo = {{ route.collection | capitalize_collection }}Repository(db)
-    service = {{ route.collection | capitalize_collection }}Service(repo)
-{% if route.needs_auth %}
-    principal = await resolve_principal(headers, db)
-    if principal is None:
-        return 401, {"detail": "Unauthorized"}
-{% endif %}
-    try:
-{% if route.operation == "list" %}
-        documents = await service.list()
-        return 200, documents
-{% elif route.operation == "get" %}
-        document = await service.get(url_params["id"])
-        return 200, document
-{% elif route.operation == "create" %}
-        if body is None:
-            return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ route.collection }}_create(body)
-        document = await service.create(data)
-        return 200, document
-{% elif route.operation == "update" %}
-        if body is None:
-            return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ route.collection }}_update(body)
-        document = await service.update(url_params["id"], data)
-        return 200, document
-{% elif route.operation == "replace" %}
-        if body is None:
-            return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ route.collection }}_replace(body)
-        document = await service.replace(url_params["id"], data)
-        return 200, document
-{% elif route.operation == "delete" %}
-        document = await service.delete(url_params["id"])
-        return 200, document
-{% endif %}
-    except NotFoundError:
-        return 404, {"detail": "Resource not found"}
-    except ValidationError as exc:
-        return 422, {"detail": exc.message}
-
-{% endfor %}
-
-{% for identity in ctx.auth.identity_collections %}
-{% if "password" in identity.via and identity.identifier %}
-async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, headers: dict[str, str]) -> tuple[int, Any]:
-    if body is None:
-        return 422, {"detail": "Request body is required"}
-    try:
-        data = validation.validate_{{ identity.name }}_login(body)
-    except ValueError as exc:
-        return 422, {"detail": str(exc)}
-
-    db = get_database()
-    col = db["{{ identity.name }}"]
-    cursor = col.find({})
-    docs = await cursor.to_list(length=None)
-
-    for doc in docs:
-        if str(doc.get("{{ identity.identifier }}", "")) != data[{{ identity.identifier | tojson }}]:
-            continue
-        stored_hash = doc["_auth"]["passwordHash"]
-        if not isinstance(stored_hash, str):
-            continue
-        if not verify_password(data["password"], stored_hash):
-            continue
-
-        subject = doc.get("{{ identity.id_field }}")
-        if subject is None:
-            continue
-
-        token = create_jwt_token(str(subject), "{{ identity.name }}")
-        safe_user = {
-            k: v for k, v in doc.items()
-            if k not in ("password", "_id", "_auth")
-        }
-        return 200, {"token": token, "user": safe_user}
-
-    return 401, {"detail": "Invalid credentials"}
-
-{% endif %}
-{% endfor %}
-
 ROUTES: dict[str, list[tuple[re.Pattern[str], Any]]] = {}
 {% for route in crud_routes %}
+{% if route.collection %}
 {% set handler_name = "handle_" ~ route.operation ~ "_" ~ route.collection %}
 ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.path | path_to_regex }}$"), {{ handler_name }}))
+{% endif %}
 {% endfor %}
 {% for identity in ctx.auth.identity_collections %}
 {% if "password" in identity.via and identity.identifier %}
@@ -162,8 +78,10 @@ class ASGIApp:
             for k, v in scope.get("headers", [])
         }
 
+        db = get_database()
+
         try:
-            status, data = await handler(url_params, body, headers)
+            status, data = await handler(url_params, body, headers, db)
         except ValueError as exc:
             await self._send_json(send, 422, {"detail": str(exc)})
             return

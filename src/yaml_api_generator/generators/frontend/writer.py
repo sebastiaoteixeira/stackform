@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from .output import OutputFile
-from .packs.manifest import Pack
+from yaml_api_generator.ir.pack_manifest import Pack
 
 
 def write_output(

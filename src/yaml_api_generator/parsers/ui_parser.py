@@ -17,7 +17,7 @@ from yaml_api_generator.ir.ui import (
     UIComponent,
     UIView,
 )
-from yaml_api_generator.generators.frontend.packs.manifest import PackManifest
+from yaml_api_generator.ir.pack_manifest import PackManifest
 
 
 def build_generator_context(

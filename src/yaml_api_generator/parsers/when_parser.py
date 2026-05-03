@@ -48,7 +48,8 @@ def _tokenize(raw: str) -> list[tuple[str, str]]:
         kind = m.lastgroup
         if kind == "WS":
             continue
-        assert kind is not None
+        if kind is None:
+            continue
         tokens.append((kind, m.group()))
     return tokens
 

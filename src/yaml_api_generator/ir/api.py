@@ -1,15 +1,29 @@
+"""Intermediate Representation (IR) for API specification.
+
+Defines the complete IR structure representing a validated YAML API spec.
+All IR types are frozen dataclasses for immutability and type safety.
+
+Key structures:
+- IRApi: Top-level API metadata (base path, version, CORS)
+- IRCollection: Entity collection with fields and operations
+- IRRoute: HTTP endpoint with authorization rules
+- IRDocument: Complete parsed specification
+- IRIdentityCollection: Authentication collection configuration
+- IRProvider: OIDC/SAML authentication provider settings
+
+Authorization:
+- IRAccessRule: Role and condition-based access control
+- WhenExpr: Authorization expression AST (imported from ir.when)
+
+The IR serves as the single source of truth for code generation,
+eliminating repeated YAML parsing and validation.
+"""
+
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from .when import WhenExpr
-
-
-# Well-known OIDC discovery URLs; provider name resolves automatically when listed here.
-WELL_KNOWN_OIDC_DISCOVERY: dict[str, str] = {
-    "google": "https://accounts.google.com/.well-known/openid-configuration",
-    "microsoft": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
-    "apple": "https://appleid.apple.com/.well-known/openid-configuration",
-}
+from ..constants import CRUD_OPERATIONS
 
 
 @dataclass(frozen=True)
@@ -51,9 +65,6 @@ class IRDeploy:
     mongo_local: bool = False
     docker: IRDeployDocker | None = None
     systemd: IRDeploySystemd | None = None
-
-
-CRUD_OPERATIONS: tuple[str, ...] = ("list", "get", "create", "update", "replace", "delete")
 
 
 @dataclass(frozen=True)

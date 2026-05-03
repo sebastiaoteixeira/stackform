@@ -145,20 +145,20 @@ class {{ class_name }}ListView(APIView):
 {% for route in list_routes %}
 
 {{ security_decorator(route) }}
-    def {{ route.method | lower }}(self, request):
+    async def {{ route.method | lower }}(self, request):
         db = get_database()
         repo = {{ class_name }}Repository(db)
         service = {{ class_name }}Service(repo)
 {{ pre_fetch_check(route) }}
         try:
 {% if route.operation == "list" %}
-            documents = service.list()
+            documents = await service.list()
             return Response(documents)
 {% elif route.operation == "create" %}
             serializer = {{ route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
-            document = service.create(data)
+            document = await service.create(data)
             return Response(document, status=status.HTTP_201_CREATED)
 {% endif %}
         except NotFoundError:
@@ -173,14 +173,14 @@ class {{ class_name }}DetailView(APIView):
 {% for route in detail_routes %}
 
 {{ security_decorator(route) }}
-    def {{ route.method | lower }}(self, request, pk):
+    async def {{ route.method | lower }}(self, request, pk):
         db = get_database()
         repo = {{ class_name }}Repository(db)
         service = {{ class_name }}Service(repo)
 {{ pre_fetch_check(route) }}
         try:
 {% if route.operation == "get" %}
-            result = service.get(pk)
+            result = await service.get(pk)
 {{ post_fetch_check(route, "result") }}
             return Response(result)
 {% elif route.operation == "update" %}
@@ -188,27 +188,27 @@ class {{ class_name }}DetailView(APIView):
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = service.get(pk)
+            prefetch = await service.get(pk)
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = service.update(pk, data)
+            result = await service.update(pk, data)
             return Response(result)
 {% elif route.operation == "replace" %}
             serializer = {{ route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = service.get(pk)
+            prefetch = await service.get(pk)
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = service.replace(pk, data)
+            result = await service.replace(pk, data)
             return Response(result)
 {% elif route.operation == "delete" %}
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = service.get(pk)
+            prefetch = await service.get(pk)
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = service.delete(pk)
+            result = await service.delete(pk)
             return Response(result)
 {% endif %}
         except NotFoundError:
