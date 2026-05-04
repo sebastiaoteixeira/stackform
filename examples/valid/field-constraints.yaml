@@ -1,0 +1,94 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: field_constraints_db
+
+entities:
+  user_profile:
+    fields:
+      id: { type: id }
+      username: { type: string, required: true, unique: true, minLength: 3, maxLength: 20 }
+      email: { type: string, required: true, unique: true, format: email }
+      bio: { type: string, maxLength: 500 }
+      age: { type: number, min: 13, max: 120 }
+      rating: { type: number, min: 0, max: 5 }
+      website: { type: string, format: uri }
+      phone: { type: string, format: e164 }
+      is_verified: { type: boolean, default: false }
+      status:
+        type: enum
+        values: [active, suspended, deleted]
+        default: active
+      created_at: { type: datetime }
+      tags: { type: array, items: { type: string } }
+
+  product:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true, minLength: 1, maxLength: 100 }
+      description: { type: string, maxLength: 1000 }
+      price: { type: number, required: true, min: 0 }
+      stock: { type: number, required: true, min: 0, max: 1000000 }
+      sku: { type: string, required: true, unique: true, minLength: 3, maxLength: 50 }
+      discount_percent: { type: number, min: 0, max: 100, default: 0 }
+      is_available: { type: boolean, default: true }
+      category:
+        type: enum
+        values: [electronics, clothing, books, food, other]
+        default: other
+
+  article:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true, minLength: 5, maxLength: 200 }
+      slug: { type: string, required: true, unique: true, minLength: 3, maxLength: 250 }
+      content: { type: string, required: true, minLength: 10 }
+      excerpt: { type: string, maxLength: 300 }
+      author_email: { type: string, required: true, format: email }
+      views: { type: number, min: 0, default: 0 }
+      likes: { type: number, min: 0, default: 0 }
+      published: { type: boolean, default: false }
+
+repositories:
+  user_profiles:
+    entity: user_profile
+    crud: [create, list, get, update, delete]
+
+  products:
+    entity: product
+    crud: [create, list, get, update, delete]
+
+  articles:
+    entity: article
+    crud: [create, list, get, update, delete]
+
+services:
+  user_profiles:
+    repository: user_profiles
+
+  products:
+    repository: products
+
+  articles:
+    repository: articles
+
+controllers:
+  user_profiles:
+    base_path: /profiles
+    service: user_profiles
+    access: public
+
+  products:
+    base_path: /products
+    service: products
+    access: public
+
+  articles:
+    base_path: /articles
+    service: articles
+    access: public

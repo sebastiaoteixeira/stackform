@@ -1,0 +1,88 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: id_formats_db
+
+entities:
+  product_uuidv7:
+    fields:
+      id: { type: id, format: uuidv7 }
+      name: { type: string, required: true }
+      sku: { type: string, required: true }
+
+  product_uuidv4:
+    fields:
+      id: { type: id, format: uuidv4 }
+      name: { type: string, required: true }
+      barcode: { type: string }
+
+  country:
+    pk: code
+    fields:
+      code: { type: string, required: true }
+      name: { type: string, required: true }
+      iso_numeric: { type: number }
+      continent: { type: string }
+
+  language:
+    pk: iso_code
+    fields:
+      iso_code: { type: string, required: true }
+      name: { type: string, required: true }
+      native_name: { type: string }
+
+repositories:
+  products_v7:
+    entity: product_uuidv7
+    crud: [create, list, get, update, delete]
+
+  products_v4:
+    entity: product_uuidv4
+    crud: [create, list, get, update, delete]
+
+  countries:
+    entity: country
+    crud: [create, list, get, update, delete]
+
+  languages:
+    entity: language
+    crud: [create, list, get, update, delete]
+
+services:
+  products_v7:
+    repository: products_v7
+
+  products_v4:
+    repository: products_v4
+
+  countries:
+    repository: countries
+
+  languages:
+    repository: languages
+
+controllers:
+  products_v7:
+    base_path: /products-v7
+    service: products_v7
+    access: public
+
+  products_v4:
+    base_path: /products-v4
+    service: products_v4
+    access: public
+
+  countries:
+    base_path: /countries
+    service: countries
+    access: public
+
+  languages:
+    base_path: /languages
+    service: languages
+    access: public

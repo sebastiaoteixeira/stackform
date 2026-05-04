@@ -1,0 +1,19 @@
+version: "0.2"
+
+# Invalid: Field names must start with a letter
+# Fields cannot start with underscore (reserved for internal use)
+# Fields cannot start with numbers
+
+entities:
+  bad_fields:
+    fields:
+      id: { type: id }
+      _id: { type: string }              # Invalid: starts with _
+      _reserved: { type: string }        # Invalid: starts with _
+      2fast: { type: string }            # Invalid: starts with number
+      name: { type: string }             # Valid
+
+repositories:
+  bad_fields:
+    entity: bad_fields
+    crud: [create, get]

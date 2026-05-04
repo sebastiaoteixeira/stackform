@@ -1,0 +1,119 @@
+from {{ import_prefix }}.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
+from {{ service_import_prefix }}.exceptions import NotFoundError, ValidationError
+{% if is_identity_collection %}
+from {{ auth_import_prefix }} import hash_password
+{% endif %}
+
+
+class {{ collection_name | capitalize_collection }}Service:
+    def __init__(self, repo: {{ collection_name | capitalize_collection }}Repository):
+        self._repo = repo
+
+{% if is_async %}
+    async def list(self) -> list[dict]:
+        return await self._repo.list()
+
+    async def get(self, resource_id: str) -> dict:
+        document = await self._repo.get(resource_id)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+
+    async def create(self, data: dict) -> dict:
+{% if is_identity_collection %}
+        self._validate_identity_fields(data)
+{% endif %}
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        return await self._repo.create(data)
+
+    async def update(self, resource_id: str, data: dict) -> dict:
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        document = await self._repo.update(resource_id, data)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+
+    async def replace(self, resource_id: str, data: dict) -> dict:
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        document = await self._repo.replace(resource_id, data)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+
+    async def delete(self, resource_id: str) -> dict:
+        document = await self._repo.delete(resource_id)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+{% else %}
+    def list(self) -> list[dict]:
+        return self._repo.list()
+
+    def get(self, resource_id: str) -> dict:
+        document = self._repo.get(resource_id)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+
+    def create(self, data: dict) -> dict:
+{% if is_identity_collection %}
+        self._validate_identity_fields(data)
+{% endif %}
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        return self._repo.create(data)
+
+    def update(self, resource_id: str, data: dict) -> dict:
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        document = self._repo.update(resource_id, data)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+
+    def replace(self, resource_id: str, data: dict) -> dict:
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        document = self._repo.replace(resource_id, data)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+
+    def delete(self, resource_id: str) -> dict:
+        document = self._repo.delete(resource_id)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+{% endif %}
+{% if password_via %}
+
+    @staticmethod
+    def _process_password(data: dict) -> None:
+        raw_password = data.pop("password", None)
+        if raw_password is not None:
+            if not isinstance(raw_password, str) or not raw_password.strip():
+                raise ValidationError("password", "Password must be a non-empty string")
+            auth_data = data.get("_auth", {})
+            if not isinstance(auth_data, dict):
+                auth_data = {}
+            auth_data["passwordHash"] = hash_password(raw_password)
+            data["_auth"] = auth_data
+{% endif %}
+{% if is_identity_collection %}
+
+    @staticmethod
+    def _validate_identity_fields(data: dict) -> None:
+{% for field_name in identity_fields %}
+        if not isinstance(data.get("{{ field_name }}"), str) or not data.get("{{ field_name }}", "").strip():
+            raise ValidationError("{{ field_name }}", "Missing required field: {{ field_name }}")
+{% endfor %}
+{% endif %}

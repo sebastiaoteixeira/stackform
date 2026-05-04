@@ -1,0 +1,162 @@
+{% if id_field_format in ["uuidv7", "uuidv4"] %}
+import uuid
+{% endif %}
+from typing import Any
+
+from pymongo import ReturnDocument
+from pymongo.asynchronous.database import AsyncDatabase
+
+{% set class_name = collection_name | capitalize_collection %}
+
+class {{ class_name }}Repository:
+    COLLECTION = "{{ collection_name }}"
+    ID_FIELD = "{{ id_field }}"
+
+    def __init__(self, db: AsyncDatabase) -> None:
+        self._col = db[self.COLLECTION]
+        self._db = db
+
+    def _match_filter(self, document_id: str) -> dict[str, Any]:
+        return {self.ID_FIELD: document_id}
+
+    def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
+        if doc is None:
+            return None
+        return {k: v for k, v in doc.items() if not k.startswith("_")}
+
+    async def list(self) -> list[dict[str, Any]]:
+        cursor = self._col.find({})
+        docs = await cursor.to_list(length=None)
+        return [self._normalize(d) for d in docs]
+
+    async def get(self, document_id: str) -> dict[str, Any] | None:
+        doc = await self._col.find_one(self._match_filter(document_id))
+        return self._normalize(doc)
+
+    async def create(self, data: dict[str, Any]) -> dict[str, Any]:
+{% if id_field_format == "natural" %}
+        pass  # natural key — no auto-generation
+{% elif id_field_format == "uuidv4" %}
+        data[self.ID_FIELD] = str(uuid.uuid4())
+{% else %}
+        data[self.ID_FIELD] = str(uuid.uuid7())
+{% endif %}
+        await self._col.insert_one(data)
+        return self._normalize(data)
+
+    async def update(
+        self, document_id: str, data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        doc = await self._col.find_one_and_update(
+            self._match_filter(document_id),
+            {"$set": data},
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(doc)
+
+    async def replace(
+        self, document_id: str, data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        doc = await self._col.find_one_and_replace(
+            self._match_filter(document_id),
+            data,
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(doc)
+
+    async def delete(self, document_id: str) -> dict[str, Any] | None:
+        doc = await self._col.find_one_and_delete(self._match_filter(document_id))
+        return self._normalize(doc)
+{% for op in custom_operations | default([]) %}
+{% set q = op.query %}
+{% set col_expr = "self._db[\"" + q.collection + "\"]" if q and q.collection else "self._col" %}
+{% if q %}
+{% set cmd = q.command %}
+{% if cmd == "find" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> list[dict[str, Any]]:
+        cursor = {{ col_expr }}.find(filter)
+        docs = await cursor.to_list(length=None)
+        return [self._normalize(d) for d in docs]
+{% elif cmd == "findOne" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one(filter)
+        return self._normalize(doc)
+{% elif cmd == "aggregate" %}
+
+    async def {{ op.name }}(self, pipeline: list) -> list[dict[str, Any]]:
+        cursor = {{ col_expr }}.aggregate(pipeline)
+        return await cursor.to_list(length=None)
+{% elif cmd == "countDocuments" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> int:
+        return await {{ col_expr }}.count_documents(filter)
+{% elif cmd == "estimatedDocumentCount" %}
+
+    async def {{ op.name }}(self) -> int:
+        return await {{ col_expr }}.estimated_document_count()
+{% elif cmd == "distinct" %}
+
+    async def {{ op.name }}(self, key: str, filter: dict[str, Any]) -> list:
+        return await {{ col_expr }}.distinct(key, filter)
+{% elif cmd == "insertOne" %}
+
+    async def {{ op.name }}(self, document: dict[str, Any]) -> dict[str, Any]:
+        await {{ col_expr }}.insert_one(document)
+        return self._normalize(document)
+{% elif cmd == "insertMany" %}
+
+    async def {{ op.name }}(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        await {{ col_expr }}.insert_many(documents)
+        return [self._normalize(d) for d in documents]
+{% elif cmd == "updateOne" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
+        return self._normalize(doc)
+{% elif cmd == "updateMany" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> Any:
+        return await {{ col_expr }}.update_many(filter, update)
+{% elif cmd == "replaceOne" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
+        return self._normalize(doc)
+{% elif cmd == "deleteOne" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_delete(filter)
+        return self._normalize(doc)
+{% elif cmd == "deleteMany" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> Any:
+        return await {{ col_expr }}.delete_many(filter)
+{% elif cmd == "findOneAndUpdate" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
+        return self._normalize(doc)
+{% elif cmd == "findOneAndReplace" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
+        return self._normalize(doc)
+{% elif cmd == "findOneAndDelete" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_delete(filter)
+        return self._normalize(doc)
+{% elif cmd == "bulkWrite" %}
+
+    async def {{ op.name }}(self, requests: list) -> Any:
+        return await {{ col_expr }}.bulk_write(requests)
+{% endif %}
+{% else %}
+
+    async def {{ op.name }}(self, **kwargs: Any) -> Any:
+        import {{ op.handler.rsplit(".", 1)[0] }}
+        return await {{ op.handler }}(**kwargs)
+{% endif %}
+{% endfor %}

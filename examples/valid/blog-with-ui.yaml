@@ -1,0 +1,140 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true, format: email }
+      name: { type: string, required: true }
+      bio: { type: string }
+
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      slug: { type: string, required: true, unique: true }
+      content: { type: string, required: true }
+      status:
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+      authorId: { type: string, required: true }
+      publishedAt: { type: datetime }
+      createdAt: { type: datetime }
+
+  comment:
+    fields:
+      id: { type: id }
+      postId: { type: string, required: true }
+      authorId: { type: string, required: true }
+      content: { type: string, required: true }
+      createdAt: { type: datetime }
+
+repositories:
+  users:
+    entity: user
+    crud: [create, list, get, update, delete]
+
+  posts:
+    entity: post
+    crud: [create, list, get, update, delete]
+
+  comments:
+    entity: comment
+    crud: [create, list, get, delete]
+
+services:
+  users:
+    repository: users
+
+  posts:
+    repository: posts
+
+  comments:
+    repository: comments
+
+controllers:
+  users:
+    base_path: /users
+    service: users
+    access: public
+    operations:
+      register: { access: public }
+      login: { access: public }
+      list: { access: authenticated }
+      get: { access: authenticated }
+
+  posts:
+    base_path: /posts
+    service: posts
+    access: public
+    operations:
+      list: { access: public }
+      get: { access: public }
+      create: { access: authenticated }
+      update:
+        access:
+          - given:
+              principal: identity:user
+              document: post
+            when: principal.sub equals document.authorId
+      delete:
+        access:
+          - given:
+              principal: identity:user
+              document: post
+            when: principal.sub equals document.authorId
+
+  comments:
+    base_path: /comments
+    service: comments
+    access: authenticated
+    operations:
+      list: { access: public }
+      create: { access: authenticated }
+      delete:
+        access:
+          - given:
+              principal: identity:user
+              document: comment
+            when: principal.sub equals document.authorId
+
+ui:
+  frontend:
+    pack: generic
+    output: ./blog-ui
+    overwrite: always
+  config:
+    app_name: Blog Admin
+    theme:
+      primaryColor: "#3b82f6"
+      darkMode: false
+  views:
+    users_list:
+      path: /users
+      component: table
+      props:
+        collection: user
+    posts_list:
+      path: /posts
+      component: table
+      props:
+        collection: post
+    comments_list:
+      path: /comments
+      component: table
+      props:
+        collection: comment
+
+deploy:
+  runtime: docker
+  name: blog-api
+  port: 8000

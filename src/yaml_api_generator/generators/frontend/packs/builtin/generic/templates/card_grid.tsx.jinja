@@ -1,0 +1,35 @@
+interface {{ collection_name | pascal_case }}CardGridProps {
+  data: any[];
+  columns?: number;
+}
+
+export function {{ collection_name | pascal_case }}CardGrid({ data, columns = 3 }: {{ collection_name | pascal_case }}CardGridProps) {
+  return (
+    <div className="w-full">
+      <div className="mb-6 flex items-center justify-between">
+        <h2 className="text-xl font-semibold">{{ collection_name | title }}</h2>
+        <button className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          + New
+        </button>
+      </div>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+        {data.map((item, i) => (
+          <div
+            key={item.id || i}
+            className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+          >
+            {% if primary_field %}
+            <h3 className="font-medium text-lg mb-2">{item.{{ primary_field }}}</h3>
+            {% endif %}
+            {% for field in card_fields %}
+            <div className="text-sm text-gray-600 mb-1">
+              <span className="font-medium">{{ field.label }}:</span> {item.{{ field.name }}}
+            </div>
+            {% endfor %}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

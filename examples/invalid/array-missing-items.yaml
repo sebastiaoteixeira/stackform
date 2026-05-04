@@ -1,0 +1,34 @@
+version: "0.2"
+
+entities:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      tags: { type: array }  # Missing required 'items' specification
+
+repositories:
+  posts:
+    entity: posts
+    crud: [create, list, get]
+
+services:
+  posts:
+    repository: posts
+
+controllers:
+  posts:
+    base_path: /posts
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: posts
+        access: public
+
+api:
+  basePath: /api
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: test_db

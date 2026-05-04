@@ -1,0 +1,165 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: access_control_db
+
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, editor, viewer]
+      default: viewer
+      hierarchy:
+        admin: [editor]
+        editor: [viewer]
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true, format: email }
+      name: { type: string, required: true }
+      role:
+        type: enum
+        values: [admin, editor, viewer]
+        default: viewer
+      department: { type: string }
+
+  article:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      content: { type: string, required: true }
+      author_id: { type: string, required: true }
+      status:
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+      department: { type: string }
+      is_public: { type: boolean, default: false }
+
+  sensitive_data:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      public_info: { type: string }
+      restricted_info: { type: string }
+      confidential_info: { type: string }
+      owner_id: { type: string, required: true }
+
+roles:
+  user:
+    admin: [editor]
+    editor: [viewer]
+
+repositories:
+  users:
+    entity: user
+    crud: [create, list, get, update, delete]
+
+  articles:
+    entity: article
+    crud: [create, list, get, update, delete]
+
+  sensitive_data:
+    entity: sensitive_data
+    crud: [create, list, get, update, delete]
+
+services:
+  users:
+    repository: users
+
+  articles:
+    repository: articles
+
+  sensitive_data:
+    repository: sensitive_data
+
+controllers:
+  users:
+    base_path: /users
+    service: users
+    access: public
+    operations:
+      register: { access: public }
+      login: { access: public }
+      list: { access: admin }
+      get:
+        access:
+          - admin
+          - given:
+              principal: identity:user
+              document: users
+            when: principal.sub equals document.id
+      update:
+        access:
+          - given:
+              principal: identity:user
+              document: users
+            when: principal.sub equals document.id
+
+  articles:
+    base_path: /articles
+    service: articles
+    access: public
+    operations:
+      list:
+        access:
+          - viewer
+          - editor
+          - admin
+      get:
+        access:
+          - admin
+          - given:
+              principal: identity:user
+              document: articles
+            when: principal.sub equals document.author_id
+      create:
+        access:
+          - editor
+      update:
+        access:
+          - admin
+          - given:
+              principal: identity:user
+              document: articles
+            when: principal.sub equals document.author_id
+      delete:
+        access:
+          - admin
+
+  sensitive_data:
+    base_path: /sensitive
+    service: sensitive_data
+    access: "*"
+    operations:
+      create:
+        access:
+          - editor
+      list:
+        access:
+          - viewer
+          - admin
+      get:
+        access:
+          - given:
+              principal: identity:user
+              document: sensitive_data
+            when: principal.sub equals document.owner_id
+          - admin
+      update:
+        access:
+          - given:
+              principal: identity:user
+              document: sensitive_data
+            when: principal.sub equals document.owner_id
+          - admin
+      delete:
+        access:
+          - admin

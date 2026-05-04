@@ -1,0 +1,18 @@
+"""
+WSGI config for generated Django project.
+
+Note: This project uses async views for optimal MongoDB performance.
+ASGI (asgi.py) is recommended for deployment to maintain full async benefits.
+WSGI will work but with reduced concurrency as async views are wrapped to sync.
+
+For production deployments, use:
+- ASGI: uvicorn, daphne, or hypercorn (recommended)
+- WSGI: gunicorn or uWSGI (compatibility mode)
+"""
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
+
+application = get_wsgi_application()

@@ -1,0 +1,117 @@
+version: "0.2"
+
+entities:
+  items2024:
+    fields:
+      id: { type: id }
+      name_with_underscore: { type: string, required: true }
+      field2FA: { type: string }
+      v2_api_key: { type: string }
+      camelCaseField: { type: string }
+      number123field: { type: number }
+      nested_object: { type: object }
+      array_of_strings: { type: array, items: { type: string } }
+      boolean_flag: { type: boolean }
+      very_long_field_name_that_tests_the_system_limit: { type: string }
+
+  api_v2_resources:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      metadata: { type: object }
+      tags: { type: array, items: { type: string } }
+
+  user2Profile:
+    fields:
+      id: { type: id }
+      displayName: { type: string, required: true }
+      settings: { type: object }
+
+repositories:
+  items2024:
+    entity: items2024
+    crud: [create, list, get, update, delete]
+    operations:
+      count_by_flag:
+        query:
+          command: countDocuments
+          filter: { boolean_flag: true }
+      complex_aggregation:
+        query:
+          command: aggregate
+          pipeline:
+            - { $match: { boolean_flag: true } }
+            - { $group: { _id: "$name_with_underscore", count: { $sum: 1 } } }
+            - { $sort: { count: -1 } }
+            - { $limit: 10 }
+
+  api_v2_resources:
+    entity: api_v2_resources
+    crud: [create, list, get]
+
+  user2Profile:
+    entity: user2Profile
+    crud: [create, list, get]
+
+services:
+  items2024:
+    repository: items2024
+  api_v2_resources:
+    repository: api_v2_resources
+  user2Profile:
+    repository: user2Profile
+
+controllers:
+  items2024:
+    base_path: /items2024
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: items2024
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: items2024
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: items2024
+        access: public
+
+  api_v2:
+    base_path: /v2/resources
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: api_v2_resources
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: api_v2_resources
+        access: public
+
+  profiles:
+    base_path: /profiles
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: user2Profile
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: user2Profile
+        access: public
+
+api:
+  basePath: /api/v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: edge_cases_db

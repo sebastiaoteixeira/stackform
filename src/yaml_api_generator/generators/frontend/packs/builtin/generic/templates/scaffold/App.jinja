@@ -1,0 +1,47 @@
+import { Routes, Route, Link } from 'react-router-dom';
+{% for view in views.values() %}
+import {{ view.name | pascal_case }} from '../pages/{{ view.name | pascal_case }}';
+{% endfor %}
+
+function App() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex">
+              <div className="flex-shrink-0 flex items-center">
+                <h1 className="text-xl font-bold">{{ pack_config.app_name or 'App' }}</h1>
+              </div>
+              <div className="ml-6 flex space-x-8">
+                {% for view in views.values() %}
+                {% if view.path %}
+                <Link
+                  to="{{ view.path }}"
+                  className="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-900 hover:text-gray-600"
+                >
+                  {{ view.path.strip('/') | title }}
+                </Link>
+                {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <Routes>
+          <Route path="/" element={<div className="text-center py-12"><h2 className="text-2xl font-semibold">Welcome to {{ pack_config.app_name or 'App' }}</h2></div>} />
+          {% for view in views.values() %}
+          {% if view.path %}
+          <Route path="{{ view.path }}" element={<{{ view.name | pascal_case }} />} />
+          {% endif %}
+          {% endfor %}
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+export default App;

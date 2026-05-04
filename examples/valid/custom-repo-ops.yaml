@@ -1,0 +1,55 @@
+version: "0.2"
+
+entities:
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      content: { type: string }
+      authorId: { type: string, required: true }
+      status: { type: string }
+
+repositories:
+  posts:
+    entity: post
+    operations:
+      by_author:
+        query:
+          command: find
+          filter: { authorId: "author-123" }
+      count_by_status:
+        query:
+          command: countDocuments
+          filter: { status: "published" }
+      aggregate_by_author:
+        query:
+          command: aggregate
+          pipeline: [
+            { "$group": { "_id": "$authorId", "count": { "$sum": 1 } } }
+          ]
+
+services:
+  posts:
+    repository: posts
+
+controllers:
+  posts:
+    base_path: /posts
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: posts
+        access: public
+      by_author:
+        method: GET
+        path: /by-author
+        service: posts
+        access: public
+
+api:
+  basePath: /api
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: blog_db

@@ -1,0 +1,144 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: role_hierarchies_db
+
+entities:
+  admin_user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [super_admin, admin, moderator, support]
+      default: support
+      hierarchy:
+        super_admin: [admin, moderator]
+        admin: [moderator]
+        moderator: [support]
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true, format: email }
+      name: { type: string, required: true }
+      role:
+        type: enum
+        values: [super_admin, admin, moderator, support]
+        default: support
+      department: { type: string }
+
+  regular_user:
+    type: auth
+    auth:
+      identifier: username
+      via: password
+    roles:
+      values: [premium, standard, trial, guest]
+      default: guest
+      hierarchy:
+        premium: [standard]
+        standard: [trial]
+        trial: [guest]
+    fields:
+      id: { type: id }
+      username: { type: string, required: true, unique: true }
+      email: { type: string, required: true, unique: true, format: email }
+      role:
+        type: enum
+        values: [premium, standard, trial, guest]
+        default: guest
+
+  content:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      body: { type: string, required: true }
+      visibility:
+        type: enum
+        values: [public, restricted, private]
+        default: public
+      created_by: { type: string, required: true }
+
+roles:
+  admin_user:
+    super_admin: [admin, moderator]
+    admin: [moderator]
+    moderator: [support]
+  regular_user:
+    premium: [standard]
+    standard: [trial]
+    trial: [guest]
+
+repositories:
+  admins:
+    entity: admin_user
+    crud: [create, list, get, update, delete]
+
+  users:
+    entity: regular_user
+    crud: [create, list, get, update, delete]
+
+  content:
+    entity: content
+    crud: [create, list, get, update, delete]
+
+services:
+  admins:
+    repository: admins
+
+  users:
+    repository: users
+
+  content:
+    repository: content
+
+controllers:
+  admins:
+    base_path: /admins
+    service: admins
+    access: public
+    operations:
+      register: { access: public }
+      login: { access: public }
+      list: { access: admin_user:super_admin }
+      get: { access: admin_user:moderator }
+      update: { access: admin_user:admin }
+      delete: { access: admin_user:super_admin }
+
+  users:
+    base_path: /users
+    service: users
+    access: public
+    operations:
+      register: { access: public }
+      login: { access: public }
+      list: { access: "*" }
+
+  content:
+    base_path: /content
+    service: content
+    access: public
+    operations:
+      list:
+        access:
+          - public
+      create:
+        access:
+          - regular_user:trial
+      update:
+        access:
+          - given:
+              xx: identity:regular_user
+              document: content
+            when: xx.sub equals document.created_by
+      delete:
+        access:
+          - given:
+              principal: identity:regular_user
+              document: content
+            when: principal.sub equals document.created_by
+          - admin_user:moderator

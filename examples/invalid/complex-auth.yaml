@@ -1,0 +1,315 @@
+version: "0.2"
+
+api:
+  title: Complex Auth API
+  version: "1.0.0"
+  base: /api/v1
+
+database:
+  type: mongodb
+  uri: ${MONGO_URI:-mongodb://localhost:27017/complex_auth}
+
+auth:
+  roles:
+    super_admin:
+      inherits: []
+    admin:
+      inherits: [super_admin]
+    moderator:
+      inherits: [admin]
+    user:
+      inherits: [moderator]
+    guest:
+      inherits: []
+
+entities:
+  admins:
+    fields:
+      email:
+        type: string
+        required: true
+      name:
+        type: string
+        required: true
+      department:
+        type: string
+        required: false
+    identity:
+      via:
+        - provider: password
+          identifier: email
+      roles:
+        field: role
+        default: admin
+
+  users:
+    fields:
+      username:
+        type: string
+        required: true
+      email:
+        type: string
+        required: true
+      full_name:
+        type: string
+        required: true
+      status:
+        type: string
+        required: false
+    identity:
+      via:
+        - provider: password
+          identifier: username
+        - provider: api-key
+      roles:
+        field: role
+        default: user
+
+  organizations:
+    fields:
+      name:
+        type: string
+        required: true
+      owner_id:
+        type: string
+        required: true
+      members:
+        type: array
+        required: false
+
+  projects:
+    fields:
+      title:
+        type: string
+        required: true
+      description:
+        type: string
+        required: false
+      organization_id:
+        type: string
+        required: true
+      creator_id:
+        type: string
+        required: true
+      status:
+        type: string
+        required: false
+
+services:
+  admins:
+    repository: admins
+  users:
+    repository: users
+  organizations:
+    repository: organizations
+  projects:
+    repository: projects
+
+repositories:
+  admins:
+    entity: admins
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+
+  users:
+    entity: users
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+
+  organizations:
+    entity: organizations
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+    operations:
+      - name: find_by_owner
+        method: find
+        query:
+          owner_id: "{{owner_id}}"
+      - name: list_members
+        method: aggregate
+        pipeline:
+          - $match:
+              _id: "{{org_id}}"
+          - $unwind: "$members"
+          - $lookup:
+              from: users
+              localField: members
+              foreignField: _id
+              as: member_details
+
+  projects:
+    entity: projects
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+    operations:
+      - name: by_organization
+        method: find
+        query:
+          organization_id: "{{org_id}}"
+      - name: by_status
+        method: find
+        query:
+          status: "{{status}}"
+
+controllers:
+  admin-management:
+    service: admins
+    routes:
+      - method: POST
+        path: /admins
+        operation: create
+        access:
+          - effect: allow
+            when: principal.role equals 'super_admin'
+      - method: GET
+        path: /admins
+        operation: list
+        access:
+          - effect: allow
+            when: principal.role equals 'admin'
+      - method: GET
+        path: /admins/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.role equals 'admin'
+      - method: PATCH
+        path: /admins/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.role equals 'super_admin'
+      - method: DELETE
+        path: /admins/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.role equals 'super_admin'
+
+  user-management:
+    service: users
+    routes:
+      - method: POST
+        path: /users
+        operation: create
+        access: public
+      - method: GET
+        path: /users
+        operation: list
+        access:
+          - effect: allow
+            when: principal.role equals 'admin'
+      - method: GET
+        path: /users/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.id equals document.id
+          - effect: allow
+            when: principal.role equals 'moderator'
+      - method: PATCH
+        path: /users/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.id equals document.id
+          - effect: allow
+            when: principal.role equals 'admin'
+      - method: DELETE
+        path: /users/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.role equals 'admin'
+
+  organizations:
+    service: organizations
+    routes:
+      - method: POST
+        path: /organizations
+        operation: create
+        access:
+          - effect: allow
+            identity: users
+      - method: GET
+        path: /organizations
+        operation: list
+        access:
+          - effect: allow
+            identity: users
+      - method: GET
+        path: /organizations/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.id equals document.owner_id
+          - effect: allow
+            when: principal.role equals 'admin'
+      - method: PATCH
+        path: /organizations/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.id equals document.owner_id
+      - method: DELETE
+        path: /organizations/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.id equals document.owner_id
+          - effect: allow
+            when: principal.role equals 'admin'
+
+  projects:
+    service: projects
+    routes:
+      - method: POST
+        path: /projects
+        operation: create
+        access:
+          - effect: allow
+            identity: users
+      - method: GET
+        path: /projects
+        operation: list
+        access:
+          - effect: allow
+            identity: users
+      - method: GET
+        path: /projects/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.id equals document.creator_id
+          - effect: allow
+            when: principal.role equals 'moderator'
+      - method: PATCH
+        path: /projects/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.id equals document.creator_id
+      - method: DELETE
+        path: /projects/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.id equals document.creator_id
+          - effect: allow
+            when: principal.role equals 'admin'

@@ -1,0 +1,9 @@
+version: "0.2"
+
+# Missing entities field - required
+api:
+  basePath: /api
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: test_db

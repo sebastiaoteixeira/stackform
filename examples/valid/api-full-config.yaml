@@ -1,0 +1,63 @@
+version: "0.2"
+
+api:
+  basePath: /api/v2
+  version: v2.1.0
+  port: 9000
+  cors:
+    origins:
+      - http://localhost:3000
+      - http://localhost:5173
+      - https://app.example.com
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+    headers: [Content-Type, Authorization, X-Request-ID]
+    credentials: true
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: full_config_db
+
+entities:
+  resource:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      type: { type: string, required: true }
+      data: { type: object }
+      created_at: { type: datetime }
+
+  webhook:
+    fields:
+      id: { type: id }
+      url: { type: string, required: true, format: uri }
+      event: { type: string, required: true }
+      enabled: { type: boolean, default: true }
+      secret: { type: string }
+      headers: { type: object }
+
+repositories:
+  resources:
+    entity: resource
+    crud: [create, list, get, update, delete]
+
+  webhooks:
+    entity: webhook
+    crud: [create, list, get, update, delete]
+
+services:
+  resources:
+    repository: resources
+
+  webhooks:
+    repository: webhooks
+
+controllers:
+  resources:
+    base_path: /resources
+    service: resources
+    access: public
+
+  webhooks:
+    base_path: /webhooks
+    service: webhooks
+    access: public

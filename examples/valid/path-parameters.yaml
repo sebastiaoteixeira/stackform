@@ -1,0 +1,168 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: path_params_db
+
+entities:
+  post:
+    fields:
+      id: { type: id }
+      slug: { type: string, required: true, unique: true }
+      title: { type: string, required: true }
+      content: { type: string, required: true }
+      published: { type: boolean, default: false }
+      author_id: { type: string, required: true }
+
+  comment:
+    fields:
+      id: { type: id }
+      post_id: { type: string, required: true }
+      content: { type: string, required: true }
+      author_id: { type: string, required: true }
+
+  category:
+    fields:
+      id: { type: id }
+      slug: { type: string, required: true, unique: true }
+      name: { type: string, required: true }
+      description: { type: string }
+
+repositories:
+  posts:
+    entity: post
+    crud: [create, list, get, update, delete]
+    operations:
+      by_slug:
+        query:
+          command: findOne
+          filter: { slug: "{{slug}}" }
+
+  comments:
+    entity: comment
+    crud: [create, list, get, update, delete]
+    operations:
+      by_post:
+        query:
+          command: find
+          filter: { post_id: "{{post_id}}" }
+
+  categories:
+    entity: category
+    crud: [create, list, get, update, delete]
+    operations:
+      by_slug:
+        query:
+          command: findOne
+          filter: { slug: "{{slug}}" }
+
+services:
+  posts:
+    repository: posts
+
+  comments:
+    repository: comments
+
+  categories:
+    repository: categories
+
+controllers:
+  posts:
+    base_path: /posts
+    service: posts
+    access: public
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: posts
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: posts
+        access: public
+      get_by_id:
+        method: GET
+        path: /{id}
+        service: posts
+        access: public
+      get_by_slug:
+        method: GET
+        path: /slug/{slug}
+        service: posts
+        access: public
+      update:
+        method: PUT
+        path: /{id}
+        service: posts
+        access: public
+      delete:
+        method: DELETE
+        path: /{id}
+        service: posts
+        access: public
+
+  comments:
+    base_path: /posts
+    routes:
+      list_for_post:
+        method: GET
+        path: /{post_id}/comments
+        service: comments
+        access: public
+      create_for_post:
+        method: POST
+        path: /{post_id}/comments
+        service: comments
+        access: public
+      get_comment:
+        method: GET
+        path: /{post_id}/comments/{id}
+        service: comments
+        access: public
+      update_comment:
+        method: PUT
+        path: /{post_id}/comments/{id}
+        service: comments
+        access: public
+      delete_comment:
+        method: DELETE
+        path: /{post_id}/comments/{id}
+        service: comments
+        access: public
+
+  categories:
+    base_path: /categories
+    service: categories
+    access: public
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: categories
+        access: public
+      get_by_slug:
+        method: GET
+        path: /{slug}
+        service: categories
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: categories
+        access: public
+      update:
+        method: PUT
+        path: /{slug}
+        service: categories
+        access: public
+      delete:
+        method: DELETE
+        path: /{slug}
+        service: categories
+        access: public
