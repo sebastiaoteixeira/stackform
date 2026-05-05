@@ -31,6 +31,8 @@ def build_generator_context(
         for k, v in frontend_config.items()
         if k not in ("pack", "output", "overwrite", "generate")
     }
+    if "config" in ui_block:
+        pack_config.update(ui_block["config"])
 
     entities = _build_entities(ir)
     identity_entities = [

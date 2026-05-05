@@ -16,8 +16,8 @@ def load_pack(name_or_path: str) -> Pack:
 
     Search order:
     1. If name_or_path is an existing directory path, use it directly
-    2. .engine/packs/{name}/
-    3. ~/.engine/packs/{name}/
+    2. .yaml-api-generator/packs/{name}/
+    3. ~/.yaml-api-generator/packs/{name}/
     """
     pack_dir = _resolve_pack_dir(name_or_path)
     manifest = _load_manifest(pack_dir / "pack.yaml")
@@ -42,9 +42,11 @@ def _resolve_pack_dir(name_or_path: str) -> Path:
     if candidate.is_dir() and (candidate / "pack.yaml").is_file():
         return candidate.resolve()
 
+    builtin_dir = Path(__file__).parent / "builtin" / name_or_path
     search_dirs = [
-        Path.cwd() / ".engine" / "packs" / name_or_path,
-        Path.home() / ".engine" / "packs" / name_or_path,
+        builtin_dir,
+        Path.cwd() / ".yaml-api-generator" / "packs" / name_or_path,
+        Path.home() / ".yaml-api-generator" / "packs" / name_or_path,
     ]
     for search_dir in search_dirs:
         if search_dir.is_dir() and (search_dir / "pack.yaml").is_file():

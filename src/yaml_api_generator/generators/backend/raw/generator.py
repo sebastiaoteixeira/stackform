@@ -50,7 +50,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_single_file(
             env, context, output_dir,
             SingleFileRenderConfig(
-                template_name="requirements.txt.j2",
+                template_name="requirements.txt.jinja",
                 output_path="requirements.txt",
             )
         )
@@ -61,7 +61,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_single_file(
             env, context, output_dir,
             SingleFileRenderConfig(
-                template_name="app.py.j2",
+                template_name="app.py.jinja",
                 output_path="app.py",
                 context_builder=lambda ctx: {
                     "ctx": ctx,
@@ -85,7 +85,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_single_file(
             env, context, output_dir,
             SingleFileRenderConfig(
-                template_name="validation.py.j2",
+                template_name="validation.py.jinja",
                 output_path="validation.py",
                 context_builder=lambda ctx: {
                     "models": all_models,
@@ -104,11 +104,11 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="service.py.j2",
+                template_name="service.py.jinja",
                 output_subdir="services",
                 import_class_suffix="Service",
                 context_builder=self._build_service_context,
-                additional_files=[("exceptions.py.j2", "exceptions.py")],
+                additional_files=[("exceptions.py.jinja", "exceptions.py")],
             )
         )
 
@@ -137,7 +137,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="repository.py.j2",
+                template_name="repository.py.jinja",
                 output_subdir="repositories",
                 import_class_suffix="Repository",
                 context_builder=lambda col_name, col_data, ctx: {
@@ -166,7 +166,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
 
             needs_auth = any(route.needs_auth for route in col_data["routes"])
 
-            template = env.get_template("routes.py.j2")
+            template = env.get_template("routes.py.jinja")
             content = template.render(
                 collection_name=col_name,
                 routes=col_data["routes"],
@@ -180,22 +180,22 @@ class RawASGIGenerator(TemplateBasedGenerator):
         routes_dir = output_dir / "routes"
         routes_dir.mkdir(parents=True, exist_ok=True)
 
-        template = env.get_template("login_routes.py.j2")
+        template = env.get_template("login_routes.py.jinja")
         content = template.render(ctx=context)
         (routes_dir / "login.py").write_text(content)
 
     def _render_dependencies(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        files = [("mongodb.py.j2", "mongodb.py")]
+        files = [("mongodb.py.jinja", "mongodb.py")]
         init_imports = ["from .mongodb import get_database"]
 
         if context.auth.enabled:
-            files.append(("auth.py.j2", "auth.py"))
+            files.append(("auth.py.jinja", "auth.py"))
             init_imports.append("from .auth import resolve_principal")
 
         if context.auth.has_password_auth:
-            files.append(("jwt_utils.py.j2", "jwt_utils.py"))
+            files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 
         self._render_directory(

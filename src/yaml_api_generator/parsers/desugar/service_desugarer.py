@@ -28,6 +28,7 @@ class ServiceDesugarer:
         entities: dict[str, Any],
         defaults: dict[str, Any],
         auth_defaults: dict[str, Any],
+        controllers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Desugar services in-place: expand minified definitions.
@@ -60,7 +61,7 @@ class ServiceDesugarer:
 
             try:
                 self._expand_minified_service(
-                    svc_name,
+                svc_name,
                     entry,
                     repositories,
                     entities,

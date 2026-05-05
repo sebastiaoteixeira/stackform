@@ -434,17 +434,14 @@
       "properties": {
         "given": {
           "type": "object",
-          "required": ["principal"],
-          "properties": {
-            "principal": {
-              "oneOf": [
-                { "type": "string", "enum": ["public", "authenticated"] },
-                { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" }
-              ]
-            },
-            "document": { "type": "string" }
-          },
-          "additionalProperties": false
+          "minProperties": 1,
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string", "enum": ["public", "authenticated"] },
+              { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" },
+              { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$" }
+            ]
+          }
         },
         "when": {
           "oneOf": [

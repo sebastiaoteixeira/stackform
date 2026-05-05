@@ -63,6 +63,7 @@ class IRDeploy:
     name: str | None = None
     port: int = 8000
     mongo_local: bool = False
+    env_vars: tuple[str, ...] = field(default_factory=tuple)
     docker: IRDeployDocker | None = None
     systemd: IRDeploySystemd | None = None
 
@@ -162,7 +163,7 @@ class IRRoute:
     method: str
     path: str
     operation: str
-    collection: str | None = None
+    collection: str | None = None   # DEPRECATED: Routes don't have collections. They'r independent concepts
     service: str | None = None
     is_public: bool = True
     access_rules: list[IRAccessRule] | None = None
@@ -216,6 +217,11 @@ class IRDocument:
     mongo: IRMongo = field(default_factory=IRMongo)
     deploy: IRDeploy | None = None
     repositories: dict[str, IRRepository] = field(default_factory=dict)
+    ui_config: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    @property
+    def has_ui(self) -> bool:
+        return self.ui_config is not None

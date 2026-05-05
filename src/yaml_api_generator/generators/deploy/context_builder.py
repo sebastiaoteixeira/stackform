@@ -1,14 +1,9 @@
-import re
-
 from ...ir import IRDocument
 from .context import DeployContext, DockerDeployContext, SystemdDeployContext
-
-_ENV_VAR_RE = re.compile(r'\$\{([A-Z_][A-Z0-9_]*)(?::-[^}]*)?\}')
 
 
 def build_deploy_context(
     ir: IRDocument,
-    raw_yaml_text: str,
     host: str,
     ssh_user: str,
     ssh_key: str,
@@ -18,8 +13,8 @@ def build_deploy_context(
 
     deploy = ir.deploy
     name = deploy.name or "app"
-    mongo_db = ir.mongo.database if ir.mongo else "app"
-    env_vars = sorted(set(_ENV_VAR_RE.findall(raw_yaml_text)))
+    mongo_db = ir.mongo.database
+    env_vars = list(deploy.env_vars)
 
     common = dict(
         name=name,
@@ -29,6 +24,7 @@ def build_deploy_context(
         mongo_db=mongo_db,
         env_vars=env_vars,
         has_auth=bool(ir.identityCollections),
+        has_frontend=ir.has_ui,
         host=host,
         ssh_user=ssh_user,
         ssh_key=ssh_key,

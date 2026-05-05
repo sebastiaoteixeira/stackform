@@ -42,7 +42,7 @@ class DRFGenerator(TemplateBasedGenerator):
         )
         env.filters["drf_field"] = type_mapper.drf_field
         env.filters["capitalize_collection"] = to_pascal_case
-        env.filters["when_to_python"] = _when_to_python
+        env.filters["rule_to_python"] = _rule_to_python
         env.tests["needs_document"] = _needs_document_test
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_single_file(
             env, context, output_dir,
             SingleFileRenderConfig(
-                template_name="requirements.txt.j2",
+                template_name="requirements.txt.jinja",
                 output_path="requirements.txt",
             )
         )
@@ -72,16 +72,16 @@ class DRFGenerator(TemplateBasedGenerator):
         (project_dir / "__init__.py").write_text("")
 
         for template_name, filename in [
-            ("settings.py.j2", "settings.py"),
-            ("project_urls.py.j2", "urls.py"),
-            ("asgi.py.j2", "asgi.py"),
-            ("wsgi.py.j2", "wsgi.py"),
+            ("settings.py.jinja", "settings.py"),
+            ("project_urls.py.jinja", "urls.py"),
+            ("asgi.py.jinja", "asgi.py"),
+            ("wsgi.py.jinja", "wsgi.py"),
         ]:
             template = env.get_template(template_name)
             content = template.render(ctx=context)
             (project_dir / filename).write_text(content)
 
-        template = env.get_template("manage.py.j2")
+        template = env.get_template("manage.py.jinja")
         (output_dir / "manage.py").write_text(template.render())
 
     def _render_serializers(
@@ -94,7 +94,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="serializers.py.j2",
+                template_name="serializers.py.jinja",
                 output_subdir="serializers",
                 context_builder=lambda col_name, col_data, ctx: {
                     "models": col_data["models"],
@@ -113,11 +113,11 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="service.py.j2",
+                template_name="service.py.jinja",
                 output_subdir="services",
                 import_class_suffix="Service",
                 context_builder=self._build_service_context,
-                additional_files=[("exceptions.py.j2", "exceptions.py")],
+                additional_files=[("exceptions.py.jinja", "exceptions.py")],
             )
         )
 
@@ -146,7 +146,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="views.py.j2",
+                template_name="views.py.jinja",
                 output_subdir="views",
                 import_pattern="from .{col_name} import {class_name}ListView, {class_name}DetailView",
                 context_builder=lambda col_name, col_data, ctx: {
@@ -162,7 +162,7 @@ class DRFGenerator(TemplateBasedGenerator):
 
         if context.auth.has_password_auth:
             views_dir = output_dir / self.dir_prefix / "views"
-            login_template = env.get_template("login_views.py.j2")
+            login_template = env.get_template("login_views.py.jinja")
             login_content = login_template.render(auth=context.auth)
             (views_dir / "login.py").write_text(login_content)
 
@@ -176,7 +176,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="repository.py.j2",
+                template_name="repository.py.jinja",
                 output_subdir="repositories",
                 import_class_suffix="Repository",
                 context_builder=lambda col_name, col_data, ctx: {
@@ -191,15 +191,15 @@ class DRFGenerator(TemplateBasedGenerator):
     def _render_authentication(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        files = [("mongodb.py.j2", "mongodb.py")]
+        files = [("mongodb.py.jinja", "mongodb.py")]
         init_imports = ["from .mongodb import get_database, connect_db"]
 
         if context.auth.enabled:
-            files.append(("auth.py.j2", "auth.py"))
+            files.append(("auth.py.jinja", "auth.py"))
             init_imports.append("from .auth import resolve_principal")
 
         if context.auth.has_password_auth:
-            files.append(("jwt_utils.py.j2", "jwt_utils.py"))
+            files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 
         self._render_directory(
@@ -215,42 +215,64 @@ class DRFGenerator(TemplateBasedGenerator):
         api_dir = output_dir / self.dir_prefix
         api_dir.mkdir(parents=True, exist_ok=True)
 
-        template = env.get_template("api_urls.py.j2")
-        (api_dir / "urls.py").write_text(template.render(collections=context.collections, auth=context.auth))
+        template = env.get_template("api_urls.py.jinja")
+        collections_with_routes = {route.collection for route in context.routes if route.collection}
+        (api_dir / "urls.py").write_text(template.render(collections=collections_with_routes, auth=context.auth))
 
         (api_dir / "__init__.py").write_text("")
 
-        apps_template = env.get_template("apps.py.j2")
+        apps_template = env.get_template("apps.py.jinja")
         (api_dir / "apps.py").write_text(apps_template.render())
 
 
-def _operand_to_python(expr: WhenExpr) -> str:
+def _build_symbol_map(rule) -> dict[str, str]:
+    symbol_map: dict[str, str] = {}
+    if hasattr(rule, 'identity_symbols'):
+        for symbol_name in rule.identity_symbols:
+            symbol_map[symbol_name] = symbol_name
+    if hasattr(rule, 'document_symbols'):
+        for symbol_name in rule.document_symbols:
+            symbol_map[symbol_name] = symbol_name
+    return symbol_map
+
+
+def _operand_to_python(expr: WhenExpr, symbol_map: dict[str, str]) -> str:
     if isinstance(expr, StringLiteral):
         return f'"{expr.value}"'
     if isinstance(expr, FieldRef):
-        if expr.root == "principal":
-            if len(expr.path) == 1 and expr.path[0] == "sub":
-                return 'principal.get("sub")'
-            if len(expr.path) >= 2 and expr.path[0] == "record":
-                return f'principal.get("record", {{}}).get("{expr.path[1]}")'
-        elif expr.root == "document":
-            if len(expr.path) == 1:
-                return f'document.get("{expr.path[0]}")'
+        var_name = symbol_map.get(expr.root, expr.root)
+        if not expr.path:
+            return f'{var_name}.get("sub")'
+        if len(expr.path) == 1:
+            return f'{var_name}.get("{expr.path[0]}")'
+        if len(expr.path) >= 2 and expr.path[0] == "record":
+            return f'{var_name}.get("record", {{}}).get("{expr.path[1]}")'
+        nested = ".".join(f'get("{p}")' for p in expr.path)
+        return f'{var_name}.{nested}'
     return "None"
 
 
-def _when_to_python(expr: WhenExpr) -> str:
+def _when_to_python(expr: WhenExpr, symbol_map: dict[str, str] | None = None) -> str:
+    if symbol_map is None:
+        symbol_map = {}
     if isinstance(expr, Equals):
-        return f"{_operand_to_python(expr.left)} == {_operand_to_python(expr.right)}"
+        return f"{_operand_to_python(expr.left, symbol_map)} == {_operand_to_python(expr.right, symbol_map)}"
     if isinstance(expr, NotEquals):
-        return f"{_operand_to_python(expr.left)} != {_operand_to_python(expr.right)}"
+        return f"{_operand_to_python(expr.left, symbol_map)} != {_operand_to_python(expr.right, symbol_map)}"
     if isinstance(expr, And):
-        return f"({_when_to_python(expr.left)} and {_when_to_python(expr.right)})"
+        return f"({_when_to_python(expr.left, symbol_map)} and {_when_to_python(expr.right, symbol_map)})"
     if isinstance(expr, Or):
-        return f"({_when_to_python(expr.left)} or {_when_to_python(expr.right)})"
+        return f"({_when_to_python(expr.left, symbol_map)} or {_when_to_python(expr.right, symbol_map)})"
     if isinstance(expr, Not):
-        return f"(not {_when_to_python(expr.operand)})"
+        return f"(not {_when_to_python(expr.operand, symbol_map)})"
     return "False"
+
+
+def _rule_to_python(rule) -> str:
+    if not hasattr(rule, 'when') or rule.when is None:
+        return "True"
+    symbol_map = _build_symbol_map(rule)
+    return _when_to_python(rule.when, symbol_map)
 
 
 def _needs_document_test(expr: WhenExpr) -> bool:

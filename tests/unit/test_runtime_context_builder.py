@@ -11,12 +11,12 @@ from yaml_api_generator.ir import (
     IRRepository,
     IRRoute,
 )
-from yaml_api_generator.server.pipeline_builder import PipelineBuilder
-from yaml_api_generator.server.context_builder import (
+from yaml_api_generator.server.common.pipeline_builder import PipelineBuilder
+from yaml_api_generator.server.common.context_builder import (
     _flatten_hierarchy,
     build_runtime_context,
 )
-from yaml_api_generator.server.steps import ForbiddenError, UnauthorizedError
+from yaml_api_generator.server.common.steps import ForbiddenError, UnauthorizedError
 from .test_repository_steps import InMemoryRepository
 
 
@@ -120,7 +120,7 @@ async def test_collection_id_field_used_in_repository_operations():
 @pytest.mark.asyncio
 async def test_password_auth_collection_enables_login():
     """IR with password-auth identity collection must produce a working login pipeline."""
-    from yaml_api_generator.server.auth.password import hash_password
+    from yaml_api_generator.server.common.auth.password import hash_password
 
     ir = _make_ir(
         collections={"users": _users_collection()},

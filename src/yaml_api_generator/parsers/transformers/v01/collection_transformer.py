@@ -3,10 +3,13 @@
 Validates collection fields and extracts ID field configurations.
 """
 
+import re
 from typing import Any, cast
 
 from yaml_api_generator.ir import IRCollection
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+
+FIELD_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 
 
 class CollectionTransformer:
@@ -31,6 +34,12 @@ class CollectionTransformer:
         for name, collection_data in collections_data.items():
             collection_type = str(collection_data.get("type", "base"))
             fields = cast(dict[str, Any], collection_data["fields"])
+
+            field_name_errors = self._validate_field_names(name, fields)
+            id_field_errors.extend(field_name_errors)
+            if field_name_errors:
+                continue
+
             id_field, errors = self._extract_id_field(name, fields)
             id_field_errors.extend(errors)
 
@@ -111,3 +120,19 @@ class CollectionTransformer:
                 path=f"collections.{collection_name}.fields.{id_field}.format",
             )
         ]
+
+    def _validate_field_names(
+        self, collection_name: str, fields: dict[str, Any]
+    ) -> list[ConfigError]:
+        errors: list[ConfigError] = []
+        for field_name in fields:
+            if not FIELD_NAME_PATTERN.match(field_name):
+                errors.append(
+                    ConfigError(
+                        code="INVALID_FIELD_NAME",
+                        message=f"Invalid field name '{field_name}'",
+                        path=f"collections.{collection_name}.fields.{field_name}",
+                        hint="Field names must start with a letter and contain only letters, numbers, or underscores",
+                    )
+                )
+        return errors

@@ -38,6 +38,8 @@ class RouteBuilder:
                 access_rules = [
                     AccessRuleDescriptor(
                         principal=rule.principal,
+                        identity_symbols=list(rule.identity_symbols.keys()),
+                        document_symbols=list(rule.document_symbols.keys()),
                         when=rule.when,
                         effect=rule.effect,
                     )
@@ -51,8 +53,6 @@ class RouteBuilder:
                         path=ir_route.path,
                         operation=ir_route.operation,
                         collection=ir_route.collection,
-                        id_field=None,
-                        id_format=None,
                         is_public=ir_route.is_public,
                         needs_auth=needs_auth,
                         is_identity_create=False,
@@ -82,8 +82,6 @@ class RouteBuilder:
                     path=ir_route.path,
                     operation=ir_route.operation,
                     collection=ir_route.collection,
-                    id_field=col.idField,
-                    id_format=col.idFormat,
                     is_public=ir_route.is_public,
                     needs_auth=needs_auth,
                     is_identity_create=is_identity_create,

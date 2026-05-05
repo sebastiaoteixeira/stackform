@@ -1,9 +1,0 @@
-- name: Deploy {{ ctx.name }}
-  hosts: app
-  become: true
-  roles:
-    {% if ctx.mongo_local %}
-    - mongodb
-    {% endif %}
-    - python
-    - app

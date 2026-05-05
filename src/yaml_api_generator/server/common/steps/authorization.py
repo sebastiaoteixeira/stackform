@@ -29,7 +29,7 @@ from ..server_context import (
     RuntimeAuthConfig,
     RuntimeIdentityDescriptor,
 )
-from ..when_eval import evaluate_when, evaluate_when_with_symbols
+from ..when_eval import evaluate_when_with_symbols
 from yaml_api_generator.ir.when import collect_roots, needs_document as _when_needs_document
 
 
@@ -160,15 +160,17 @@ def _evaluate_rule(
     if rule.when is None:
         return True
 
-    if rule.identity_symbols or rule.document_symbols:
-        symbols: dict[str, dict | None] = {}
-        if principal is not None:
-            symbols["principal"] = principal
-        symbols.update(_resolve_identity_symbols(rule, principal))
-        symbols.update(_resolve_document_symbols(rule, document))
-        return evaluate_when_with_symbols(rule.when, symbols)
+    symbols: dict[str, dict | None] = {}
+    symbols.update(_resolve_identity_symbols(rule, principal))
+    symbols.update(_resolve_document_symbols(rule, document))
 
-    return evaluate_when(rule.when, principal, document)
+    roots_in_when = collect_roots(rule.when)
+    if "principal" in roots_in_when and "principal" not in symbols:
+        symbols["principal"] = principal
+    if "document" in roots_in_when and "document" not in symbols:
+        symbols["document"] = document
+
+    return evaluate_when_with_symbols(rule.when, symbols)
 
 
 def AuthorizeRouteStep(

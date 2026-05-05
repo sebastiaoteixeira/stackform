@@ -21,4 +21,5 @@ def build_context(document: IRDocument) -> CompileContext:
         Compilation context for code generation
     """
     from .builders import build_context as _build_context
+
     return _build_context(document)

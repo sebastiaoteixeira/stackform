@@ -45,7 +45,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_single_file(
             env, context, output_dir,
             SingleFileRenderConfig(
-                template_name="requirements.txt.j2",
+                template_name="requirements.txt.jinja",
                 output_path="requirements.txt",
             )
         )
@@ -53,7 +53,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
     def _render_app(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        template = env.get_template("app.py.j2")
+        template = env.get_template("app.py.jinja")
         content = template.render(ctx=context)
         (output_dir / "app.py").write_text(content)
 
@@ -67,7 +67,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="models.py.j2",
+                template_name="models.py.jinja",
                 output_subdir="models",
                 context_builder=lambda col_name, col_data, ctx: {
                     "models": col_data["models"],
@@ -87,11 +87,11 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="service.py.j2",
+                template_name="service.py.jinja",
                 output_subdir="services",
                 import_class_suffix="Service",
                 context_builder=self._build_service_context,
-                additional_files=[("exceptions.py.j2", "exceptions.py")],
+                additional_files=[("exceptions.py.jinja", "exceptions.py")],
             )
         )
 
@@ -120,7 +120,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="routes.py.j2",
+                template_name="routes.py.jinja",
                 output_subdir="routes",
                 import_pattern="from .{col_name} import router as {col_name}_router",
                 context_builder=lambda col_name, col_data, ctx: {
@@ -140,7 +140,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         auth_imports = []
 
         if context.auth.has_password_auth:
-            login_template = env.get_template("login_routes.py.j2")
+            login_template = env.get_template("login_routes.py.jinja")
             base_prefix = context.app.base_path
             if context.app.api_version:
                 base_prefix = f"{base_prefix}/{context.app.api_version}"
@@ -149,13 +149,13 @@ class FastAPIGenerator(TemplateBasedGenerator):
             auth_imports.append("from .login import router as login_router")
 
         if context.auth.has_oidc_auth:
-            oidc_template = env.get_template("oidc_routes.py.j2")
+            oidc_template = env.get_template("oidc_routes.py.jinja")
             oidc_content = oidc_template.render(auth=context.auth)
             (routes_dir / "oidc_routes.py").write_text(oidc_content)
             auth_imports.append("from .oidc_routes import router as oidc_router")
 
         if context.auth.has_saml_auth:
-            saml_template = env.get_template("saml_routes.py.j2")
+            saml_template = env.get_template("saml_routes.py.jinja")
             saml_content = saml_template.render(auth=context.auth)
             (routes_dir / "saml_routes.py").write_text(saml_content)
             auth_imports.append("from .saml_routes import router as saml_router")
@@ -174,7 +174,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_collection_based(
             env, context, collections_by_name, output_dir,
             RenderConfig(
-                template_name="repository.py.j2",
+                template_name="repository.py.jinja",
                 output_subdir="repositories",
                 import_class_suffix="Repository",
                 context_builder=lambda col_name, col_data, ctx: {
@@ -189,15 +189,15 @@ class FastAPIGenerator(TemplateBasedGenerator):
     def _render_dependencies(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        files = [("mongodb.py.j2", "mongodb.py")]
+        files = [("mongodb.py.jinja", "mongodb.py")]
         init_imports = ["from .mongodb import get_database"]
 
         if context.auth.enabled:
-            files.append(("auth.py.j2", "auth.py"))
+            files.append(("auth.py.jinja", "auth.py"))
             init_imports.append("from .auth import resolve_principal")
 
         if context.auth.has_password_auth:
-            files.append(("jwt_utils.py.j2", "jwt_utils.py"))
+            files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 
         self._render_directory(

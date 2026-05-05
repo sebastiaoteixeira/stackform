@@ -183,11 +183,13 @@ class RouteTransformer:
             database=mongo_data.get("database", "yaml_api"),
         )
 
-    def build_deploy(self, deploy_data: Any) -> IRDeploy | None:
+    def build_deploy(self, deploy_data: Any, full_config: dict[str, Any], mongo_config: dict[str, Any]) -> IRDeploy | None:
         """Build deployment configuration IR.
 
         Args:
             deploy_data: Raw deployment configuration from YAML
+            full_config: Full YAML configuration for extracting env vars
+            mongo_config: MongoDB configuration to determine if local
 
         Returns:
             Deploy IR object or None if no deployment configured
@@ -197,6 +199,7 @@ class RouteTransformer:
         runtime = deploy_data.get("runtime")
         if not runtime:
             return None
+
         docker_data = deploy_data.get("docker")
         docker = IRDeployDocker(image=docker_data.get("image")) if isinstance(docker_data, dict) else None
         systemd_data = deploy_data.get("systemd")
@@ -208,15 +211,43 @@ class RouteTransformer:
             if isinstance(systemd_data, dict)
             else None
         )
-        mongo_data = deploy_data.get("mongo", {})
+
+        mongo_uri = mongo_config.get("uri", "mongodb://localhost:27017")
+        mongo_local = not mongo_config or "localhost" in mongo_uri or "127.0.0.1" in mongo_uri
+
+        env_vars = self._extract_env_vars(full_config)
+
         return IRDeploy(
             runtime=str(runtime),
             name=deploy_data.get("name"),
             port=int(deploy_data.get("port", 8000)),
-            mongo_local=bool(mongo_data.get("local", False)) if isinstance(mongo_data, dict) else False,
+            mongo_local=mongo_local,
+            env_vars=tuple(env_vars),
             docker=docker,
             systemd=systemd,
         )
+
+    def _extract_env_vars(self, config: dict[str, Any]) -> list[str]:
+        """Extract environment variable names from config values.
+
+        Looks for ${VAR_NAME} or ${VAR_NAME:-default} patterns.
+        """
+        import re
+        env_var_pattern = re.compile(r'\$\{([A-Z_][A-Z0-9_]*)(?::-[^}]*)?\}')
+
+        def find_env_vars(obj: Any, vars_set: set[str]) -> None:
+            if isinstance(obj, str):
+                vars_set.update(env_var_pattern.findall(obj))
+            elif isinstance(obj, dict):
+                for value in obj.values():
+                    find_env_vars(value, vars_set)
+            elif isinstance(obj, list):
+                for item in obj:
+                    find_env_vars(item, vars_set)
+
+        vars_set: set[str] = set()
+        find_env_vars(config, vars_set)
+        return sorted(vars_set)
 
     def _resolve_imports(self, imports: dict[str, str]) -> dict[str, str]:
         return dict(imports)

@@ -5,9 +5,8 @@ Supports field references, comparisons, and boolean logic.
 
 Core functions:
 - evaluate_when_with_symbols(): Evaluate expression with symbol bindings
-- evaluate_when(): Legacy API using principal/document (deprecated)
 
-Symbol bindings map root names (principal, document) to runtime values.
+Symbol bindings map root names (principal, document, user-defined) to runtime values.
 Field references like 'principal.role' are resolved against these bindings.
 """
 
@@ -26,7 +25,7 @@ from yaml_api_generator.ir.when import (
 )
 from .utils.field_access import get_nested_field
 
-__all__ = ["evaluate_when", "needs_document"]
+__all__ = ["evaluate_when_with_symbols", "needs_document"]
 
 
 def _resolve_field(
@@ -61,20 +60,6 @@ def _resolve(expr: WhenExpr, symbols: dict[str, dict | None]) -> object:
     if isinstance(expr, StringLiteral):
         return expr.value
     return None
-
-
-# DEPRECATED: Marked for deletion. there is no longer pricipal/document hardcoded symbols. evaluate_when_with_symbols preferred over it
-def evaluate_when(
-    expr: WhenExpr,
-    principal: dict | None,
-    document: dict | None,
-) -> bool:
-    symbols: dict[str, dict | None] = {}
-    if principal is not None:
-        symbols["principal"] = principal
-    if document is not None:
-        symbols["document"] = document
-    return _evaluate(expr, symbols)
 
 
 def evaluate_when_with_symbols(

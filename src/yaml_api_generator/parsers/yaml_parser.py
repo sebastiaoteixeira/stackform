@@ -227,12 +227,14 @@ def load_and_generate_ir(
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
 
-    ui_block = resolved.pop("ui", None)
+    ui_block = resolved.get("ui", None)
 
     schema_path = _resolve_schema_path(version, schema_file)
 
     schema = _load_schema(schema_path)
-    schema_errors = _validate_schema(resolved, schema)
+
+    config_for_validation = {k: v for k, v in resolved.items() if k != "ui"}
+    schema_errors = _validate_schema(config_for_validation, schema)
     if schema_errors:
         raise ConfigErrors(schema_errors)
 

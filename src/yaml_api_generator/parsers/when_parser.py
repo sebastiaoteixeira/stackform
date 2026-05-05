@@ -31,7 +31,7 @@ _TOKEN_PATTERNS = [
     ("RBRACKET",   r"\]"),
     ("COMMA",      r","),
     ("STRING",     r"'[^']*'"),
-    ("FIELDREF",   r"(?:principal|document)(?:\.\w+)+"),
+    ("FIELDREF",   r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.\w+)+"),
     ("WORD",       r"\w+"),
     ("WS",         r"\s+"),
 ]
@@ -220,7 +220,7 @@ class _Parser:
             code="WHEN_OPERAND_INVALID",
             message=(
                 f"Invalid operand: '{tok[1]}'. "
-                "Expected a field reference (principal.*/document.*) or a string literal ('...')"
+                "Expected a field reference (e.g., user.id, document.status) or a string literal ('...')"
             ),
             path=self._path,
         ))

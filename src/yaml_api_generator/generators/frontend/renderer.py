@@ -34,6 +34,7 @@ def _render_scaffold(
         "index.html",
         "vite.config.ts",
         "tsconfig.json",
+        "tsconfig.node.json",
         "tailwind.config.js",
         "postcss.config.js",
     }

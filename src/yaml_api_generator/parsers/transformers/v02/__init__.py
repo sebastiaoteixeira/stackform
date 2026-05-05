@@ -95,6 +95,7 @@ class V02Transformer:
             entity_to_collection,
         )
 
+        mongo_config = resolved.get("mongo", {})
         return IRDocument(
             version=str(resolved["version"]),
             api=self._route.build_api(api_data),
@@ -103,7 +104,8 @@ class V02Transformer:
             identityCollections=identity_collections,
             services=services,
             role_hierarchies=role_hierarchies,
-            mongo=self._route.build_mongo(resolved.get("mongo", {})),
-            deploy=self._route.build_deploy(resolved.get("deploy")),
+            mongo=self._route.build_mongo(mongo_config),
+            deploy=self._route.build_deploy(resolved.get("deploy"), resolved, mongo_config),
             repositories=repositories,
+            ui_config=resolved.get("ui"),
         )

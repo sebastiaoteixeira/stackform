@@ -1,6 +1,6 @@
 import pytest
 
-from yaml_api_generator.server.when_eval import evaluate_when
+from yaml_api_generator.server.common.when_eval import evaluate_when_with_symbols
 from yaml_api_generator.ir.when import (
     And,
     Equals,
@@ -14,6 +14,15 @@ from yaml_api_generator.ir.when import (
 
 _PRINCIPAL = {"sub": "user-1", "record": {"role": "admin", "teamId": "t1"}}
 _DOCUMENT = {"id": "doc-1", "authorId": "user-1", "status": "published"}
+
+
+def _eval(expr: WhenExpr, principal: dict | None = None, document: dict | None = None) -> bool:
+    symbols: dict[str, dict | None] = {}
+    if principal is not None:
+        symbols["principal"] = principal
+    if document is not None:
+        symbols["document"] = document
+    return evaluate_when_with_symbols(expr, symbols)
 
 
 def _princ_sub():
@@ -35,84 +44,84 @@ def _princ_record_field(name: str):
 class TestEvaluateWhen:
     def test_162_equals_matching_principal_sub(self):
         expr = Equals(left=_princ_sub(), right=StringLiteral(value="user-1"))
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is True
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
 
     def test_163_equals_non_matching(self):
         expr = Equals(left=_princ_sub(), right=StringLiteral(value="other"))
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is False
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
 
     def test_164_not_equals_opposite(self):
         expr = NotEquals(left=_princ_sub(), right=StringLiteral(value="other"))
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is True
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
 
     def test_165_and_both_true(self):
         expr = And(
             left=Equals(left=_princ_sub(), right=StringLiteral(value="user-1")),
             right=Equals(left=_doc_id(), right=StringLiteral(value="doc-1")),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is True
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
 
     def test_166_and_one_false(self):
         expr = And(
             left=Equals(left=_princ_sub(), right=StringLiteral(value="user-1")),
             right=Equals(left=_doc_id(), right=StringLiteral(value="wrong")),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is False
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
 
     def test_167_or_one_true(self):
         expr = Or(
             left=Equals(left=_princ_sub(), right=StringLiteral(value="wrong")),
             right=Equals(left=_doc_id(), right=StringLiteral(value="doc-1")),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is True
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
 
     def test_168_or_both_false(self):
         expr = Or(
             left=Equals(left=_princ_sub(), right=StringLiteral(value="wrong")),
             right=Equals(left=_doc_id(), right=StringLiteral(value="wrong")),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is False
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
 
     def test_169_not_true(self):
         expr = Not(
             operand=Equals(left=_princ_sub(), right=StringLiteral(value="user-1"))
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is False
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
 
     def test_170_principal_record_field(self):
         expr = Equals(
             left=_princ_record_field("role"),
             right=StringLiteral(value="admin"),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is True
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
 
     def test_171_document_field(self):
         expr = Equals(
             left=_doc_field("authorId"),
             right=StringLiteral(value="user-1"),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is True
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
 
     def test_172_unknown_principal_path_returns_none(self):
         expr = Equals(
             left=FieldRef(root="principal", path=("unknown", "path")),
             right=StringLiteral(value="anything"),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is False
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
 
     def test_173_multi_level_document_path_returns_none(self):
         expr = Equals(
             left=FieldRef(root="document", path=("nested", "deep")),
             right=StringLiteral(value="anything"),
         )
-        assert evaluate_when(expr, _PRINCIPAL, _DOCUMENT) is False
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
 
     def test_174_principal_and_document_none(self):
         expr = Equals(left=_princ_sub(), right=StringLiteral(value="user-1"))
-        assert evaluate_when(expr, None, None) is False
+        assert _eval(expr, None, None) is False
 
     def test_175_unknown_expression_type_returns_false(self):
         class UnknownExpr(WhenExpr):
             pass
 
-        assert evaluate_when(UnknownExpr(), _PRINCIPAL, _DOCUMENT) is False
+        assert _eval(UnknownExpr(), _PRINCIPAL, _DOCUMENT) is False
