@@ -1,15 +1,29 @@
+"""Intermediate Representation (IR) for API specification.
+
+Defines the complete IR structure representing a validated YAML API spec.
+All IR types are frozen dataclasses for immutability and type safety.
+
+Key structures:
+- IRApi: Top-level API metadata (base path, version, CORS)
+- IRCollection: Entity collection with fields and operations
+- IRRoute: HTTP endpoint with authorization rules
+- IRDocument: Complete parsed specification
+- IRIdentityCollection: Authentication collection configuration
+- IRProvider: OIDC/SAML authentication provider settings
+
+Authorization:
+- IRAccessRule: Role and condition-based access control
+- WhenExpr: Authorization expression AST (imported from ir.when)
+
+The IR serves as the single source of truth for code generation,
+eliminating repeated YAML parsing and validation.
+"""
+
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from .when import WhenExpr
-
-
-# Well-known OIDC discovery URLs; provider name resolves automatically when listed here.
-WELL_KNOWN_OIDC_DISCOVERY: dict[str, str] = {
-    "google": "https://accounts.google.com/.well-known/openid-configuration",
-    "microsoft": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
-    "apple": "https://appleid.apple.com/.well-known/openid-configuration",
-}
+from ..constants import CRUD_OPERATIONS
 
 
 @dataclass(frozen=True)
@@ -49,11 +63,9 @@ class IRDeploy:
     name: str | None = None
     port: int = 8000
     mongo_local: bool = False
+    env_vars: tuple[str, ...] = field(default_factory=tuple)
     docker: IRDeployDocker | None = None
     systemd: IRDeploySystemd | None = None
-
-
-CRUD_OPERATIONS: tuple[str, ...] = ("list", "get", "create", "update", "replace", "delete")
 
 
 @dataclass(frozen=True)
@@ -151,7 +163,7 @@ class IRRoute:
     method: str
     path: str
     operation: str
-    collection: str | None = None
+    collection: str | None = None   # DEPRECATED: Routes don't have collections. They'r independent concepts
     service: str | None = None
     is_public: bool = True
     access_rules: list[IRAccessRule] | None = None
@@ -205,6 +217,11 @@ class IRDocument:
     mongo: IRMongo = field(default_factory=IRMongo)
     deploy: IRDeploy | None = None
     repositories: dict[str, IRRepository] = field(default_factory=dict)
+    ui_config: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    @property
+    def has_ui(self) -> bool:
+        return self.ui_config is not None

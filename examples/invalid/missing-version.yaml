@@ -1,0 +1,6 @@
+# Missing version field
+entities:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }

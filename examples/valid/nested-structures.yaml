@@ -1,0 +1,171 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: nested_structures_db
+
+entities:
+  organization:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      settings:
+        type: object
+        required: false
+      departments:
+        type: array
+        items: { type: object }
+        required: false
+      metadata:
+        type: object
+        required: false
+
+  user_profile:
+    fields:
+      id: { type: id }
+      username: { type: string, required: true }
+      contact:
+        type: object
+        required: false
+      preferences:
+        type: object
+        required: false
+      activity_history:
+        type: array
+        items: { type: object }
+        required: false
+      tags:
+        type: array
+        items: { type: string }
+        required: false
+
+  catalog_item:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      variants:
+        type: array
+        items: { type: object }
+        required: false
+      specifications:
+        type: object
+        required: false
+      reviews:
+        type: array
+        items: { type: object }
+        required: false
+      related_items:
+        type: array
+        items: { type: string }
+        required: false
+
+  workflow:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      steps:
+        type: array
+        items: { type: object }
+        required: true
+      config:
+        type: object
+        required: false
+      triggers:
+        type: array
+        items: { type: object }
+        required: false
+      outputs:
+        type: array
+        items: { type: object }
+        required: false
+
+  document:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      sections:
+        type: array
+        items: { type: object }
+        required: false
+      metadata:
+        type: object
+        required: false
+      attachments:
+        type: array
+        items: { type: object }
+        required: false
+      collaborators:
+        type: array
+        items: { type: object }
+        required: false
+      version_history:
+        type: array
+        items: { type: object }
+        required: false
+
+repositories:
+  organizations:
+    entity: organization
+    crud: [create, list, get, update, delete]
+
+  user_profiles:
+    entity: user_profile
+    crud: [create, list, get, update, delete]
+
+  catalog_items:
+    entity: catalog_item
+    crud: [create, list, get, update, delete]
+
+  workflows:
+    entity: workflow
+    crud: [create, list, get, update, delete]
+
+  documents:
+    entity: document
+    crud: [create, list, get, update, delete]
+
+services:
+  organizations:
+    repository: organizations
+
+  user_profiles:
+    repository: user_profiles
+
+  catalog_items:
+    repository: catalog_items
+
+  workflows:
+    repository: workflows
+
+  documents:
+    repository: documents
+
+controllers:
+  organizations:
+    base_path: /organizations
+    service: organizations
+    access: public
+
+  user_profiles:
+    base_path: /profiles
+    service: user_profiles
+    access: public
+
+  catalog_items:
+    base_path: /catalog
+    service: catalog_items
+    access: public
+
+  workflows:
+    base_path: /workflows
+    service: workflows
+    access: public
+
+  documents:
+    base_path: /documents
+    service: documents
+    access: public

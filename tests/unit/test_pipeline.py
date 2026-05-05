@@ -1,10 +1,10 @@
 import pytest
 
 from yaml_api_generator.ir import IRDocumentBinding, IRProviderBinding
-from yaml_api_generator.server.request_context import RequestContext
-from yaml_api_generator.server.pipeline import Pipeline
-from yaml_api_generator.server.pipeline_builder import PipelineBuilder
-from yaml_api_generator.server.server_context import (
+from yaml_api_generator.server.common.request_context import RequestContext
+from yaml_api_generator.server.common.pipeline import Pipeline
+from yaml_api_generator.server.common.pipeline_builder import PipelineBuilder
+from yaml_api_generator.server.common.server_context import (
     RuntimeAccessRule,
     RuntimeAppConfig,
     RuntimeAuthConfig,
@@ -12,7 +12,7 @@ from yaml_api_generator.server.server_context import (
     RuntimeIdentityDescriptor,
     RuntimeRouteDescriptor,
 )
-from yaml_api_generator.server.steps import ForbiddenError, UnauthorizedError
+from yaml_api_generator.server.common.steps import ForbiddenError, UnauthorizedError
 from yaml_api_generator.ir.when import Equals, FieldRef
 from .test_repository_steps import InMemoryRepository
 
@@ -167,7 +167,7 @@ async def test_builder_custom_handler_route_calls_handler():
 
 @pytest.mark.asyncio
 async def test_builder_login_route_validates_and_returns_token():
-    from yaml_api_generator.server.auth.password import hash_password
+    from yaml_api_generator.server.common.auth.password import hash_password
 
     identity = RuntimeIdentityDescriptor(
         name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),), id_field="id"

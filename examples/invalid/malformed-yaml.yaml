@@ -1,0 +1,8 @@
+version: "0.2"
+
+entities:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true
+      # Missing closing brace above

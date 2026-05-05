@@ -35,8 +35,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 yaml_api_generator = [
   "parsers/schemas/*.json",
-  "generators/backend/*/templates/*.j2",
-  "generators/backend/shared/templates/*.j2",
+  "generators/backend/*/templates/*.jinja",
+  "generators/backend/shared/templates/*.jinja",
 ]
 
 [tool.pytest.ini_options]

@@ -1,3 +1,22 @@
+"""
+YAML API Generator - Generate full-stack applications from YAML specifications.
+
+This package provides tools to compile YAML API specifications into production-ready
+backend and frontend code. Key components:
+
+- IR (Intermediate Representation): Structured API definitions
+- Parsers: YAML to IR conversion with validation
+- Generators: IR to code (FastAPI, DRF, Raw ASGI)
+- Server: Runtime request processing pipeline
+- Compiler: Orchestrates the full compilation process
+
+Public API:
+- IR classes (IRApi, IRCollection, IRRoute, etc.)
+- Pipeline for runtime request handling
+- Parsing utilities (load_and_generate_ir, ConfigError)
+- Optional: PlanCompiler, RuntimePlan (if dependencies available)
+"""
+
 from .ir import (
     IRApi,
     IRCollection,
@@ -6,7 +25,7 @@ from .ir import (
     IROperations,
     IRRoute,
 )
-from .server.pipeline import Pipeline
+from .server import Pipeline
 
 __all__ = [
     "IRApi",

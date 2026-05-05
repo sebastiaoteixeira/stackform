@@ -1,0 +1,202 @@
+version: "0.2"
+
+entities:
+  products:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      category: { type: string, required: true }
+      price: { type: number, required: true }
+      stock: { type: number, required: true }
+      ratings: { type: array, items: { type: object } }
+      metadata: { type: object }
+
+  orders:
+    fields:
+      id: { type: id }
+      customer_id: { type: string, required: true }
+      items: { type: array, items: { type: object }, required: true }
+      total: { type: number, required: true }
+      status: { type: string, required: true }
+      created_at: { type: string, required: true }
+
+  analytics:
+    fields:
+      id: { type: id }
+      event_name: { type: string, required: true }
+      user_id: { type: string, required: true }
+      timestamp: { type: string, required: true }
+      properties: { type: object }
+
+repositories:
+  products:
+    entity: products
+    crud: [create, list, get, update, delete]
+    operations:
+      by_category:
+        query:
+          command: find
+          filter: { category: "{{category}}" }
+          options: { sort: { price: 1 } }
+      price_range:
+        query:
+          command: find
+          filter:
+            price: { $gte: "{{min}}", $lte: "{{max}}" }
+      low_stock:
+        query:
+          command: find
+          filter: { stock: { $lt: 10 } }
+          options: { sort: { stock: 1 } }
+      search_name:
+        query:
+          command: find
+          filter: { name: { $regex: "{{query}}", $options: "i" } }
+      category_stats:
+        query:
+          command: aggregate
+          pipeline:
+            - { $group: { _id: "$category", count: { $sum: 1 }, avg_price: { $avg: "$price" } } }
+            - { $sort: { count: -1 } }
+      update_stock:
+        query:
+          command: updateMany
+          filter: { category: "{{category}}" }
+          update: { $inc: { stock: "{{amount}}" } }
+      count_by_category:
+        query:
+          command: countDocuments
+          filter: { category: "{{category}}" }
+
+  orders:
+    entity: orders
+    crud: [create, list, get, update]
+    operations:
+      by_customer:
+        query:
+          command: find
+          filter: { customer_id: "{{customer_id}}" }
+          options: { sort: { created_at: -1 } }
+      by_status:
+        query:
+          command: find
+          filter: { status: "{{status}}" }
+      recent:
+        query:
+          command: find
+          filter: { created_at: { $gte: "{{start_date}}" } }
+          options: { sort: { created_at: -1 }, limit: 100 }
+      high_value:
+        query:
+          command: find
+          filter: { total: { $gte: 1000 } }
+          options: { sort: { total: -1 } }
+      customer_total:
+        query:
+          command: aggregate
+          pipeline:
+            - { $match: { customer_id: "{{customer_id}}" } }
+            - { $group: { _id: "$customer_id", total_spent: { $sum: "$total" }, order_count: { $sum: 1 } } }
+      mark_shipped:
+        query:
+          command: updateMany
+          filter: { status: "processing" }
+          update: { $set: { status: "shipped" } }
+      delete_cancelled:
+        query:
+          command: deleteMany
+          filter: { status: "cancelled", created_at: { $lt: "{{retention_date}}" } }
+
+  analytics:
+    entity: analytics
+    crud: [create, list, get]
+    operations:
+      by_user:
+        query:
+          command: find
+          filter: { user_id: "{{user_id}}" }
+          options: { sort: { timestamp: -1 }, limit: 100 }
+      count_events:
+        query:
+          command: countDocuments
+          filter: { event_name: "{{event}}" }
+      event_aggregation:
+        query:
+          command: aggregate
+          pipeline:
+            - { $match: { timestamp: { $gte: "{{start}}" } } }
+            - { $group: { _id: "$event_name", count: { $sum: 1 } } }
+            - { $sort: { count: -1 } }
+      distinct_users:
+        query:
+          command: distinct
+          field: user_id
+          filter: { event_name: "{{event}}" }
+
+services:
+  products:
+    repository: products
+  orders:
+    repository: orders
+  analytics:
+    repository: analytics
+
+controllers:
+  products:
+    base_path: /products
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: products
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: products
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: products
+        access: public
+
+  orders:
+    base_path: /orders
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: orders
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: orders
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: orders
+        access: public
+
+  analytics:
+    base_path: /analytics
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: analytics
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: analytics
+        access: public
+
+api:
+  basePath: /api/v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: advanced_ops_db

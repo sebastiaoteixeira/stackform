@@ -8,7 +8,7 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 from yaml_api_generator.ir.ui import GeneratorContext, UIView
 from .output import OutputFile
-from .packs.manifest import Pack
+from yaml_api_generator.ir.pack_manifest import Pack
 
 
 def render_templates(pack: Pack, context: GeneratorContext) -> list[OutputFile]:
@@ -34,6 +34,7 @@ def _render_scaffold(
         "index.html",
         "vite.config.ts",
         "tsconfig.json",
+        "tsconfig.node.json",
         "tailwind.config.js",
         "postcss.config.js",
     }

@@ -1,0 +1,107 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: field_formats_db
+
+entities:
+  contact:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      email: { type: string, required: true, format: email }
+      secondary_email: { type: string, format: email }
+      phone: { type: string, required: true, format: e164 }
+      mobile: { type: string, format: e164 }
+      website: { type: string, format: uri }
+      blog_url: { type: string, format: uri }
+      linkedin_url: { type: string, format: uri }
+      company: { type: string }
+      notes: { type: string }
+
+  business:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      support_email: { type: string, required: true, format: email }
+      sales_email: { type: string, format: email }
+      billing_email: { type: string, format: email }
+      contact_phone: { type: string, required: true, format: e164 }
+      fax: { type: string, format: e164 }
+      website: { type: string, required: true, format: uri }
+      api_docs_url: { type: string, format: uri }
+      terms_url: { type: string, format: uri }
+      privacy_url: { type: string, format: uri }
+
+  newsletter_subscriber:
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true, format: email }
+      confirmed: { type: boolean, default: false }
+      subscribed_at: { type: datetime }
+
+  social_profile:
+    fields:
+      id: { type: id }
+      user_id: { type: string, required: true }
+      twitter_url: { type: string, format: uri }
+      github_url: { type: string, format: uri }
+      linkedin_url: { type: string, format: uri }
+      personal_website: { type: string, format: uri }
+      contact_email: { type: string, format: email }
+      contact_phone: { type: string, format: e164 }
+
+repositories:
+  contacts:
+    entity: contact
+    crud: [create, list, get, update, delete]
+
+  businesses:
+    entity: business
+    crud: [create, list, get, update, delete]
+
+  subscribers:
+    entity: newsletter_subscriber
+    crud: [create, list, get, delete]
+
+  social_profiles:
+    entity: social_profile
+    crud: [create, list, get, update, delete]
+
+services:
+  contacts:
+    repository: contacts
+
+  businesses:
+    repository: businesses
+
+  subscribers:
+    repository: subscribers
+
+  social_profiles:
+    repository: social_profiles
+
+controllers:
+  contacts:
+    base_path: /contacts
+    service: contacts
+    access: public
+
+  businesses:
+    base_path: /businesses
+    service: businesses
+    access: public
+
+  subscribers:
+    base_path: /subscribers
+    service: subscribers
+    access: public
+
+  social_profiles:
+    base_path: /social-profiles
+    service: social_profiles
+    access: public

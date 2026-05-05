@@ -13,14 +13,15 @@ def test_compile_valid_yaml_generates_fastapi(tmp_path):
     result = runner.invoke(
         cli,
         [
-            "compile",
+            "build",
             str(VALID_DIR / "basic-crud.yaml"),
+            "backend",
             "--output",
             output,
         ],
     )
     assert result.exit_code == 0
-    assert "fastapi" in result.output.lower() or "Generated" in result.output
+    assert "Backend generated" in result.output
 
 
 def test_compile_target_drf(tmp_path):
@@ -29,8 +30,9 @@ def test_compile_target_drf(tmp_path):
     result = runner.invoke(
         cli,
         [
-            "compile",
+            "build",
             str(VALID_DIR / "basic-crud.yaml"),
+            "backend",
             "--output",
             output,
             "--target",
@@ -47,8 +49,9 @@ def test_compile_target_raw(tmp_path):
     result = runner.invoke(
         cli,
         [
-            "compile",
+            "build",
             str(VALID_DIR / "basic-crud.yaml"),
+            "backend",
             "--output",
             output,
             "--target",
@@ -65,8 +68,9 @@ def test_compile_invalid_yaml_errors_json_stderr_exit1(tmp_path):
     result = runner.invoke(
         cli,
         [
-            "compile",
+            "build",
             str(INVALID_DIR / "abstract-entity-in-repo.yaml"),
+            "backend",
             "--output",
             output,
         ],
@@ -96,8 +100,9 @@ def test_frontend_without_ui_block_exits1():
     result = runner.invoke(
         cli,
         [
-            "frontend",
+            "build",
             str(VALID_DIR / "basic-crud.yaml"),
+            "frontend",
         ],
     )
     assert result.exit_code == 1

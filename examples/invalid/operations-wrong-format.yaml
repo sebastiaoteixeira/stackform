@@ -1,0 +1,38 @@
+version: "0.2"
+
+entities:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+
+repositories:
+  posts:
+    entity: posts
+    crud: [create, list, get]
+    operations:  # Should be object with operation names as keys, not array
+      - name: by_title
+        method: find
+        query:
+          title: "{{title}}"
+
+services:
+  posts:
+    repository: posts
+
+controllers:
+  posts:
+    base_path: /posts
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: posts
+        access: public
+
+api:
+  basePath: /api
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: test_db

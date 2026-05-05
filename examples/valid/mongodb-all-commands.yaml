@@ -1,0 +1,219 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: mongodb_commands_db
+
+entities:
+  product:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      category: { type: string, required: true }
+      price: { type: number, required: true }
+      stock: { type: number, required: true }
+      tags: { type: array, items: { type: string } }
+      metadata: { type: object }
+
+  order:
+    fields:
+      id: { type: id }
+      customer_id: { type: string, required: true }
+      items: { type: array, items: { type: object }, required: true }
+      total: { type: number, required: true }
+      status: { type: string, required: true }
+      created_at: { type: datetime }
+
+  inventory:
+    fields:
+      id: { type: id }
+      product_id: { type: string, required: true }
+      warehouse: { type: string, required: true }
+      quantity: { type: number, required: true }
+      last_updated: { type: datetime }
+
+repositories:
+  products:
+    entity: product
+    crud: [create, list, get, update, replace, delete]
+    operations:
+      find_by_category:
+        query:
+          command: find
+          filter: { category: "{{category}}" }
+          options: { sort: { price: 1 } }
+      find_one_by_name:
+        query:
+          command: findOne
+          filter: { name: "{{name}}" }
+      count_by_category:
+        query:
+          command: countDocuments
+          filter: { category: "{{category}}" }
+      distinct_categories:
+        query:
+          command: distinct
+          field: category
+          filter: {}
+      aggregate_stats:
+        query:
+          command: aggregate
+          pipeline:
+            - { $group: { _id: "$category", total: { $sum: 1 }, avg_price: { $avg: "$price" } } }
+            - { $sort: { total: -1 } }
+      insert_single:
+        query:
+          command: insertOne
+          document: "{{product}}"
+      insert_batch:
+        query:
+          command: insertMany
+          documents: "{{products}}"
+      update_price:
+        query:
+          command: updateOne
+          filter: { id: "{{id}}" }
+          update: { $set: { price: "{{new_price}}" } }
+      update_category_prices:
+        query:
+          command: updateMany
+          filter: { category: "{{category}}" }
+          update: { $mul: { price: "{{multiplier}}" } }
+      replace_product:
+        query:
+          command: replaceOne
+          filter: { id: "{{id}}" }
+          replacement: "{{product}}"
+      delete_product:
+        query:
+          command: deleteOne
+          filter: { id: "{{id}}" }
+      delete_category:
+        query:
+          command: deleteMany
+          filter: { category: "{{category}}" }
+      find_and_update:
+        query:
+          command: findOneAndUpdate
+          filter: { id: "{{id}}" }
+          update: { $inc: { stock: "{{amount}}" } }
+          options: { returnDocument: "after" }
+      find_and_replace:
+        query:
+          command: findOneAndReplace
+          filter: { id: "{{id}}" }
+          replacement: "{{product}}"
+          options: { returnDocument: "after" }
+      find_and_delete:
+        query:
+          command: findOneAndDelete
+          filter: { id: "{{id}}" }
+      bulk_operations:
+        query:
+          command: bulkWrite
+          requests: "{{operations}}"
+
+  orders:
+    entity: order
+    crud: [create, list, get, update, delete]
+    operations:
+      by_customer:
+        query:
+          command: find
+          filter: { customer_id: "{{customer_id}}" }
+          options: { sort: { created_at: -1 } }
+      by_status:
+        query:
+          command: find
+          filter: { status: "{{status}}" }
+      count_customer_orders:
+        query:
+          command: countDocuments
+          filter: { customer_id: "{{customer_id}}" }
+      distinct_customers:
+        query:
+          command: distinct
+          field: customer_id
+          filter: {}
+      customer_totals:
+        query:
+          command: aggregate
+          pipeline:
+            - { $match: { customer_id: "{{customer_id}}" } }
+            - { $group: { _id: "$customer_id", total_spent: { $sum: "$total" }, order_count: { $sum: 1 } } }
+      update_status:
+        query:
+          command: updateOne
+          filter: { id: "{{id}}" }
+          update: { $set: { status: "{{status}}" } }
+      mark_all_shipped:
+        query:
+          command: updateMany
+          filter: { status: "processing" }
+          update: { $set: { status: "shipped" } }
+      delete_old_orders:
+        query:
+          command: deleteMany
+          filter: { status: "cancelled", created_at: { $lt: "{{retention_date}}" } }
+
+  inventory:
+    entity: inventory
+    crud: [create, list, get, update, delete]
+    operations:
+      by_warehouse:
+        query:
+          command: find
+          filter: { warehouse: "{{warehouse}}" }
+      by_product:
+        query:
+          command: find
+          filter: { product_id: "{{product_id}}" }
+      low_stock:
+        query:
+          command: find
+          filter: { quantity: { $lt: "{{threshold}}" } }
+      total_by_warehouse:
+        query:
+          command: aggregate
+          pipeline:
+            - { $group: { _id: "$warehouse", total_items: { $sum: "$quantity" } } }
+      adjust_stock:
+        query:
+          command: updateOne
+          filter: { product_id: "{{product_id}}", warehouse: "{{warehouse}}" }
+          update: { $inc: { quantity: "{{adjustment}}" } }
+      restock_all:
+        query:
+          command: updateMany
+          filter: { quantity: { $lt: 10 } }
+          update: { $set: { quantity: 100 } }
+
+services:
+  products:
+    repository: products
+
+  orders:
+    repository: orders
+
+  inventory:
+    repository: inventory
+
+controllers:
+  products:
+    base_path: /products
+    service: products
+    access: public
+
+  orders:
+    base_path: /orders
+    service: orders
+    access: public
+
+  inventory:
+    base_path: /inventory
+    service: inventory
+    access: public

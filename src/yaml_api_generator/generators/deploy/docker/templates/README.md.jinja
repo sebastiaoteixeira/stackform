@@ -1,0 +1,149 @@
+# {{ ctx.name }} Deployment
+
+This directory contains Docker deployment configuration for {{ ctx.name }}.
+
+## Prerequisites
+
+- Docker and Docker Compose installed
+- Git (for cloning the repository)
+{% if ctx.has_frontend %}
+- Node.js and npm (for building the frontend)
+{% endif %}
+
+## Quick Start
+
+{% if ctx.has_frontend %}
+### 1. Build the Frontend
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+{% endif %}
+
+### {% if ctx.has_frontend %}2{% else %}1{% endif %}. Configure Environment Variables
+
+Edit the `.env` file with your configuration:
+
+```bash
+{% for var in ctx.env_vars %}
+{{ var }}=your_value_here
+{% endfor %}
+{% if ctx.mongo_local %}
+MONGO_URI=mongodb://mongodb:27017
+MONGO_DB={{ ctx.mongo_db }}
+{% endif %}
+```
+
+### {% if ctx.has_frontend %}3{% else %}2{% endif %}. Start Services
+
+```bash
+docker compose up -d
+```
+
+This will start:
+- Backend API on port {{ ctx.port }}
+{% if ctx.has_frontend %}
+- Frontend on port 3000
+{% endif %}
+{% if ctx.mongo_local %}
+- MongoDB on internal network (not exposed externally)
+{% endif %}
+
+### {% if ctx.has_frontend %}4{% else %}3{% endif %}. Check Status
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+## Services
+
+- **app**: Backend API service (FastAPI)
+  - Port: {{ ctx.port }}
+  - Built from: `backend/`
+  {% if ctx.has_auth %}
+  - Auth: Enabled
+  {% endif %}
+
+{% if ctx.has_frontend %}
+- **frontend**: Frontend web application (React + Nginx)
+  - Port: 3000
+  - API proxy: `/api` -> `http://app:{{ ctx.port }}`
+{% endif %}
+
+{% if ctx.mongo_local %}
+- **mongodb**: MongoDB database
+  - Internal port: 27017
+  - Data volume: `mongo_data`
+{% endif %}
+
+## Development
+
+To rebuild after code changes:
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+## Production Deployment
+
+For production deployment to a remote server:
+
+```bash
+ansible-playbook -i inventory.yml playbook.yml
+```
+
+Make sure to:
+1. Update `inventory.yml` with your server details
+2. Configure SSH keys for authentication
+3. Set production environment variables
+
+## Stopping Services
+
+```bash
+docker compose down
+```
+
+To also remove volumes:
+
+```bash
+docker compose down -v
+```
+
+## Troubleshooting
+
+### Backend won't start
+
+Check logs:
+```bash
+docker compose logs app
+```
+
+Common issues:
+{% if ctx.mongo_local %}
+- MongoDB not ready: Wait a few seconds and restart
+{% endif %}
+- Missing environment variables: Check `.env` file
+- Port already in use: Change port in docker-compose.yml
+
+{% if ctx.has_frontend %}
+### Frontend shows errors
+
+- Make sure you ran `npm run build` in the frontend directory
+- Check that `frontend/dist` exists and contains built files
+- Check nginx logs: `docker compose logs frontend`
+{% endif %}
+
+### Database connection errors
+
+{% if ctx.mongo_local %}
+- MongoDB service should be running: `docker compose ps mongodb`
+- Connection string should be: `mongodb://mongodb:27017`
+{% else %}
+- Check your external MongoDB connection string in `.env`
+- Ensure network connectivity from container to MongoDB
+{% endif %}

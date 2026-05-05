@@ -4,13 +4,14 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from ..base import CodeGenerator
+from yaml_api_generator.utils.strings import to_pascal_case
+from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
+from ..utils import find_identity, group_by_collection, extract_identity_fields
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "raw" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
-_FASTAPI_TEMPLATES_DIR = _BACKEND_GENERATORS / "fastapi" / "templates"
 
 
 def _path_to_regex(path: str) -> str:
@@ -20,70 +21,55 @@ def _path_to_regex(path: str) -> str:
     return re.sub(r"\{(\w+)\}", _replace, path)
 
 
-def _capitalize_collection(name: str) -> str:
-    return "".join(part.capitalize() for part in name.split("_"))
-
-
-def _find_identity(
-    context: CompileContext, col_name: str
-) -> IdentityCollectionDescriptor | None:
-    for ic in context.auth.identity_collections:
-        if ic.name == col_name:
-            return ic
-    return None
-
-
-def _group_by_collection(context: CompileContext) -> dict[str, dict]:
-    groups: dict[str, dict] = {}
-    for col_name in context.collections:
-        groups[col_name] = {"models": [], "routes": []}
-
-    for model in context.models:
-        groups[model.collection]["models"].append(model)
-    for route in context.routes:
-        if route.collection is None:
-            continue
-        groups[route.collection]["routes"].append(route)
-
-    return groups
-
-
-class RawASGIGenerator(CodeGenerator):
+class RawASGIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         env = Environment(
             loader=ChoiceLoader([
                 FileSystemLoader(str(_TEMPLATES_DIR)),
                 FileSystemLoader(str(_SHARED_TEMPLATES_DIR)),
-                FileSystemLoader(str(_FASTAPI_TEMPLATES_DIR)),
             ]),
             keep_trailing_newline=True,
             trim_blocks=True,
             lstrip_blocks=True,
         )
         env.filters["path_to_regex"] = _path_to_regex
-        env.filters["capitalize_collection"] = _capitalize_collection
+        env.filters["capitalize_collection"] = to_pascal_case
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        collections_by_name = _group_by_collection(context)
+        collections_by_name = group_by_collection(context)
 
+        self._render_routes(env, context, collections_by_name, output_dir)
+        if context.auth.has_password_auth:
+            self._render_login_routes(env, context, output_dir)
         self._render_app(env, context, output_dir)
         self._render_validation(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_dependencies(env, context, output_dir)
-        self._render_requirements(env, output_dir)
+        self._render_single_file(
+            env, context, output_dir,
+            SingleFileRenderConfig(
+                template_name="requirements.txt.jinja",
+                output_path="requirements.txt",
+            )
+        )
 
     def _render_app(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        template = env.get_template("app.py.j2")
-        content = template.render(
-            ctx=context,
-            collections=context.collections,
-            routes=context.routes,
+        self._render_single_file(
+            env, context, output_dir,
+            SingleFileRenderConfig(
+                template_name="app.py.jinja",
+                output_path="app.py",
+                context_builder=lambda ctx: {
+                    "ctx": ctx,
+                    "collections": ctx.collections,
+                    "routes": ctx.routes,
+                },
+            )
         )
-        (output_dir / "app.py").write_text(content)
 
     def _render_validation(
         self,
@@ -92,15 +78,21 @@ class RawASGIGenerator(CodeGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        template = env.get_template("validation.py.j2")
         all_models = []
         for col_data in collections_by_name.values():
             all_models.extend(col_data["models"])
-        content = template.render(
-            models=all_models,
-            auth=context.auth,
+
+        self._render_single_file(
+            env, context, output_dir,
+            SingleFileRenderConfig(
+                template_name="validation.py.jinja",
+                output_path="validation.py",
+                context_builder=lambda ctx: {
+                    "models": all_models,
+                    "auth": ctx.auth,
+                },
+            )
         )
-        (output_dir / "validation.py").write_text(content)
 
     def _render_services(
         self,
@@ -109,46 +101,31 @@ class RawASGIGenerator(CodeGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        services_dir = output_dir / "services"
-        services_dir.mkdir(exist_ok=True)
-
-        exc_template = env.get_template("exceptions.py.j2")
-        (services_dir / "exceptions.py").write_text(exc_template.render())
-
-        svc_template = env.get_template("service.py.j2")
-        init_imports: list[str] = []
-
-        for col_name in collections_by_name:
-            identity = _find_identity(context, col_name)
-            is_identity = identity is not None
-            password_via = is_identity and identity.has_password
-
-            identity_fields: list[str] = []
-            if is_identity:
-                seen: set[str] = set()
-                for b in identity.bindings:
-                    if b.identifier not in seen:
-                        identity_fields.append(b.identifier)
-                        seen.add(b.identifier)
-
-            content = svc_template.render(
-                collection_name=col_name,
-                is_async=True,
-                is_identity_collection=is_identity,
-                password_via=password_via,
-                identity_fields=identity_fields,
-                import_prefix="repositories",
-                auth_import_prefix="dependencies.auth",
-                service_import_prefix="services",
+        self._render_collection_based(
+            env, context, collections_by_name, output_dir,
+            RenderConfig(
+                template_name="service.py.jinja",
+                output_subdir="services",
+                import_class_suffix="Service",
+                context_builder=self._build_service_context,
+                additional_files=[("exceptions.py.jinja", "exceptions.py")],
             )
-            (services_dir / f"{col_name}.py").write_text(content)
-            class_name = _capitalize_collection(col_name)
-            init_imports.append(
-                f"from .{col_name} import {class_name}Service"
-            )
+        )
 
-        init_content = "\n".join(init_imports) + "\n" if init_imports else ""
-        (services_dir / "__init__.py").write_text(init_content)
+    def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
+        identity = find_identity(context, col_name)
+        is_identity = identity is not None
+
+        return {
+            "collection_name": col_name,
+            "is_async": True,
+            "is_identity_collection": is_identity,
+            "password_via": is_identity and identity.has_password,
+            "identity_fields": extract_identity_fields(context, col_name),
+            "import_prefix": "repositories",
+            "auth_import_prefix": "dependencies.auth",
+            "service_import_prefix": "services",
+        }
 
     def _render_repositories(
         self,
@@ -157,53 +134,73 @@ class RawASGIGenerator(CodeGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        repos_dir = output_dir / "repositories"
-        repos_dir.mkdir(exist_ok=True)
+        self._render_collection_based(
+            env, context, collections_by_name, output_dir,
+            RenderConfig(
+                template_name="repository.py.jinja",
+                output_subdir="repositories",
+                import_class_suffix="Repository",
+                context_builder=lambda col_name, col_data, ctx: {
+                    "collection_name": col_name,
+                    "id_field": ctx.collections[col_name]["id_field"],
+                    "id_field_format": ctx.collections[col_name]["id_format"],
+                    "custom_operations": ctx.repository_operations.get(col_name, []),
+                },
+            )
+        )
 
-        template = env.get_template("repository.py.j2")
-        init_imports: list[str] = []
+    def _render_routes(
+        self,
+        env: Environment,
+        context: CompileContext,
+        collections_by_name: dict[str, dict],
+        output_dir: Path,
+    ) -> None:
+        routes_dir = output_dir / "routes"
+        routes_dir.mkdir(parents=True, exist_ok=True)
+        (routes_dir / "__init__.py").write_text("")
 
-        for col_name in collections_by_name:
-            col_info = context.collections[col_name]
+        for col_name, col_data in collections_by_name.items():
+            if not col_data["routes"]:
+                continue
+
+            needs_auth = any(route.needs_auth for route in col_data["routes"])
+
+            template = env.get_template("routes.py.jinja")
             content = template.render(
                 collection_name=col_name,
-                id_field=col_info["id_field"],
-                id_field_format=col_info["id_format"],
+                routes=col_data["routes"],
+                needs_auth=needs_auth,
             )
-            (repos_dir / f"{col_name}.py").write_text(content)
-            class_name = _capitalize_collection(col_name)
-            init_imports.append(
-                f"from .{col_name} import {class_name}Repository"
-            )
+            (routes_dir / f"{col_name}.py").write_text(content)
 
-        init_content = "\n".join(init_imports) + "\n" if init_imports else ""
-        (repos_dir / "__init__.py").write_text(init_content)
+    def _render_login_routes(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        routes_dir = output_dir / "routes"
+        routes_dir.mkdir(parents=True, exist_ok=True)
+
+        template = env.get_template("login_routes.py.jinja")
+        content = template.render(ctx=context)
+        (routes_dir / "login.py").write_text(content)
 
     def _render_dependencies(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        deps_dir = output_dir / "dependencies"
-        deps_dir.mkdir(exist_ok=True)
-
-        mongo_template = env.get_template("mongodb.py.j2")
-        (deps_dir / "mongodb.py").write_text(mongo_template.render())
-
-        init_lines = ["from .mongodb import get_database"]
+        files = [("mongodb.py.jinja", "mongodb.py")]
+        init_imports = ["from .mongodb import get_database"]
 
         if context.auth.enabled:
-            auth_template = env.get_template("auth.py.j2")
-            content = auth_template.render(auth=context.auth)
-            (deps_dir / "auth.py").write_text(content)
-            init_lines.append("from .auth import resolve_principal")
+            files.append(("auth.py.jinja", "auth.py"))
+            init_imports.append("from .auth import resolve_principal")
 
         if context.auth.has_password_auth:
-            jwt_template = env.get_template("jwt_utils.py.j2")
-            (deps_dir / "jwt_utils.py").write_text(jwt_template.render())
-            init_lines.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
+            files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
+            init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 
-        init_content = "\n".join(init_lines) + "\n"
-        (deps_dir / "__init__.py").write_text(init_content)
-
-    def _render_requirements(self, env: Environment, output_dir: Path) -> None:
-        template = env.get_template("requirements.txt.j2")
-        (output_dir / "requirements.txt").write_text(template.render())
+        self._render_directory(
+            env, context, output_dir,
+            subdir="dependencies",
+            files=files,
+            init_imports=init_imports,
+        )

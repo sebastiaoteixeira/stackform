@@ -1,0 +1,9 @@
+version: "0.2"
+
+# Valid: all fields are optional
+entities:
+  items:
+    fields:
+      id: { type: id }
+      name: { type: string, required: false }
+      count: { type: number, required: false }

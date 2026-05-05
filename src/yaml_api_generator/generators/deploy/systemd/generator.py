@@ -20,29 +20,29 @@ class SystemdDeployGenerator(DeployGenerator):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         always = [
-            ("inventory.yml.j2", "inventory.yml"),
-            ("playbook.yml.j2", "playbook.yml"),
-            ("env.example.j2", ".env.example"),
+            ("inventory.yml.jinja", "inventory.yml"),
+            ("playbook.yml.jinja", "playbook.yml"),
+            ("env.example.jinja", ".env.example"),
         ]
         for tmpl, out in always:
             self._render(env, tmpl, ctx, output_dir / out)
 
         files_dir = output_dir / "files"
         files_dir.mkdir(exist_ok=True)
-        self._render(env, "files/app.service.j2", ctx, files_dir / "app.service")
+        self._render(env, "files/app.service.jinja", ctx, files_dir / "app.service")
 
         roles_app = output_dir / "roles" / "app" / "tasks"
         roles_app.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/app/tasks/main.yml.j2", ctx, roles_app / "main.yml")
+        self._render(env, "roles/app/tasks/main.yml.jinja", ctx, roles_app / "main.yml")
 
         roles_py = output_dir / "roles" / "python" / "tasks"
         roles_py.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/python/tasks/main.yml.j2", ctx, roles_py / "main.yml")
+        self._render(env, "roles/python/tasks/main.yml.jinja", ctx, roles_py / "main.yml")
 
         if ctx.mongo_local:
             roles_mongo = output_dir / "roles" / "mongodb" / "tasks"
             roles_mongo.mkdir(parents=True, exist_ok=True)
-            self._render(env, "roles/mongodb/tasks/main.yml.j2", ctx, roles_mongo / "main.yml")
+            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongo / "main.yml")
 
     def _render(self, env: Environment, tmpl: str, ctx: DeployContext, dest: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,47 @@
+services:
+  app:
+    {% if ctx.image %}
+    image: {{ ctx.image }}
+    {% else %}
+    build: .
+    {% endif %}
+    ports:
+      - "{{ ctx.port }}:{{ ctx.port }}"
+    environment:
+      {% if ctx.mongo_local %}
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB={{ ctx.mongo_db }}
+      {% endif %}
+      - PORT={{ ctx.port }}
+    env_file:
+      - .env
+    restart: unless-stopped
+    {% if ctx.mongo_local %}
+    depends_on:
+      - mongodb
+    {% endif %}
+
+  {% if ctx.mongo_local %}
+  mongodb:
+    image: mongo:8
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+  {% endif %}
+
+  {% if ctx.has_frontend %}
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+  {% endif %}
+
+{% if ctx.mongo_local %}
+volumes:
+  mongo_data:
+{% endif %}

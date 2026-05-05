@@ -1,0 +1,168 @@
+version: "0.2"
+
+entities:
+  admins:
+    fields:
+      id: { type: id }
+      email: { type: string, required: true }
+      name: { type: string, required: true }
+      department: { type: string }
+      role: { type: string }
+
+  users:
+    fields:
+      id: { type: id }
+      username: { type: string, required: true }
+      email: { type: string, required: true }
+      full_name: { type: string, required: true }
+      status: { type: string }
+      role: { type: string }
+
+  organizations:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      owner_id: { type: string, required: true }
+      member_ids: { type: array, items: { type: string } }
+
+  projects:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      description: { type: string }
+      organization_id: { type: string, required: true }
+      creator_id: { type: string, required: true }
+      status: { type: string }
+
+repositories:
+  admins:
+    entity: admins
+    crud: [create, list, get, update, delete]
+
+  users:
+    entity: users
+    crud: [create, list, get, update, delete]
+
+  organizations:
+    entity: organizations
+    crud: [create, list, get, update, delete]
+    operations:
+      find_by_owner:
+        query:
+          command: find
+          filter: { owner_id: "{{owner_id}}" }
+      count_members:
+        query:
+          command: countDocuments
+          filter: { member_ids: "{{user_id}}" }
+
+  projects:
+    entity: projects
+    crud: [create, list, get, update, delete]
+    operations:
+      by_organization:
+        query:
+          command: find
+          filter: { organization_id: "{{org_id}}" }
+      by_status:
+        query:
+          command: find
+          filter: { status: "{{status}}" }
+      count_active:
+        query:
+          command: countDocuments
+          filter: { status: "active" }
+
+services:
+  admins:
+    repository: admins
+  users:
+    repository: users
+  organizations:
+    repository: organizations
+  projects:
+    repository: projects
+
+controllers:
+  admins:
+    base_path: /admins
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: admins
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: admins
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: admins
+        access: public
+
+  users:
+    base_path: /users
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: users
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: users
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: users
+        access: public
+
+  organizations:
+    base_path: /organizations
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: organizations
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: organizations
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: organizations
+        access: public
+
+  projects:
+    base_path: /projects
+    routes:
+      list:
+        method: GET
+        path: ""
+        service: projects
+        access: public
+      create:
+        method: POST
+        path: ""
+        service: projects
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: projects
+        access: public
+
+api:
+  basePath: /api/v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: complex_auth_db

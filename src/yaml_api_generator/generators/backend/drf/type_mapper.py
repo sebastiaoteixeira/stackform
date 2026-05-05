@@ -1,4 +1,5 @@
 from yaml_api_generator.generators.backend.compile_context import FieldDescriptor
+from yaml_api_generator.generators.backend.constraint_utils import extract_numeric_constraints, extract_string_constraints
 
 
 _TYPE_MAP: dict[str, str] = {
@@ -36,13 +37,16 @@ def drf_field(field: FieldDescriptor) -> str:
 
     base = _TYPE_MAP.get(field.type, "serializers.CharField")
 
-    if field.constraints.get("min") is not None:
-        kwargs.append(f"min_value={field.constraints['min']}")
-    if field.constraints.get("max") is not None:
-        kwargs.append(f"max_value={field.constraints['max']}")
-    if field.constraints.get("min_length") is not None:
-        kwargs.append(f"min_length={field.constraints['min_length']}")
-    if field.constraints.get("max_length") is not None:
-        kwargs.append(f"max_length={field.constraints['max_length']}")
+    numeric_constraints = extract_numeric_constraints(field)
+    if "min" in numeric_constraints:
+        kwargs.append(f"min_value={numeric_constraints['min']}")
+    if "max" in numeric_constraints:
+        kwargs.append(f"max_value={numeric_constraints['max']}")
+
+    string_constraints = extract_string_constraints(field)
+    if "min_length" in string_constraints:
+        kwargs.append(f"min_length={string_constraints['min_length']}")
+    if "max_length" in string_constraints:
+        kwargs.append(f"max_length={string_constraints['max_length']}")
 
     return f"{base}({', '.join(kwargs)})"

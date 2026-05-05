@@ -1,0 +1,7 @@
+version: "0.2"
+
+entities:
+  items:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }

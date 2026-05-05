@@ -1,0 +1,7 @@
+version: "0.9"
+
+entities:
+  posts:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }

@@ -3,10 +3,10 @@ from typing import Any
 
 import pytest
 
-from yaml_api_generator.server.request_context import RequestContext
-from yaml_api_generator.server.repositories.base import BaseRepository
-from yaml_api_generator.server.steps import NotFoundError
-from yaml_api_generator.server.steps.repositories import (
+from yaml_api_generator.server.common.request_context import RequestContext
+from yaml_api_generator.server.common.repositories.base import BaseRepository
+from yaml_api_generator.server.common.steps import NotFoundError
+from yaml_api_generator.server.common.steps.repositories import (
     RepositoryCreateStep,
     RepositoryDeleteStep,
     RepositoryGetStep,

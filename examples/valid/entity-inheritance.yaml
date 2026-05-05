@@ -1,0 +1,115 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: inheritance_db
+
+entities:
+  base_entity:
+    abstract: true
+    fields:
+      id: { type: id }
+      created_at: { type: datetime }
+      updated_at: { type: datetime }
+
+  auditable:
+    abstract: true
+    extends: base_entity
+    fields:
+      created_by: { type: string }
+      updated_by: { type: string }
+
+  post:
+    extends: auditable
+    fields:
+      title: { type: string, required: true, minLength: 5 }
+      content: { type: string, required: true }
+      published: { type: boolean, default: false }
+      author_id: { type: string, required: true }
+      tags: { type: array, items: { type: string } }
+
+  comment:
+    extends: auditable
+    fields:
+      post_id: { type: string, required: true }
+      content: { type: string, required: true, minLength: 1 }
+      author_id: { type: string, required: true }
+      approved: { type: boolean, default: false }
+
+  timestamped:
+    abstract: true
+    fields:
+      id: { type: id }
+      timestamp: { type: datetime }
+
+  event_log:
+    extends: timestamped
+    fields:
+      event_type: { type: string, required: true }
+      user_id: { type: string }
+      description: { type: string }
+      metadata: { type: object }
+
+  audit_trail:
+    extends: timestamped
+    fields:
+      action: { type: string, required: true }
+      entity_type: { type: string, required: true }
+      entity_id: { type: string, required: true }
+      user_id: { type: string }
+      changes: { type: object }
+
+repositories:
+  posts:
+    entity: post
+    crud: [create, list, get, update, delete]
+
+  comments:
+    entity: comment
+    crud: [create, list, get, update, delete]
+
+  event_logs:
+    entity: event_log
+    crud: [create, list, get]
+
+  audit_trails:
+    entity: audit_trail
+    crud: [create, list, get]
+
+services:
+  posts:
+    repository: posts
+
+  comments:
+    repository: comments
+
+  event_logs:
+    repository: event_logs
+
+  audit_trails:
+    repository: audit_trails
+
+controllers:
+  posts:
+    base_path: /posts
+    service: posts
+    access: public
+
+  comments:
+    base_path: /comments
+    service: comments
+    access: public
+
+  event_logs:
+    base_path: /events
+    service: event_logs
+    access: public
+
+  audit_trails:
+    base_path: /audit
+    service: audit_trails
+    access: public

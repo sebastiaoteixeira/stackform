@@ -1,0 +1,324 @@
+version: "0.2"
+
+api:
+  title: Multi-Tenant SaaS API
+  version: "1.0.0"
+  base: /api/v1
+
+database:
+  type: mongodb
+  uri: ${MONGO_URI:-mongodb://localhost:27017/multitenant}
+
+auth:
+  roles:
+    tenant_admin:
+      inherits: []
+    tenant_user:
+      inherits: [tenant_admin]
+
+entities:
+  tenants:
+    fields:
+      name:
+        type: string
+        required: true
+      domain:
+        type: string
+        required: true
+      plan:
+        type: string
+        required: true
+      is_active:
+        type: boolean
+        required: false
+      created_at:
+        type: string
+        required: false
+
+  tenant_users:
+    fields:
+      email:
+        type: string
+        required: true
+      name:
+        type: string
+        required: true
+      tenant_id:
+        type: string
+        required: true
+      is_admin:
+        type: boolean
+        required: false
+    identity:
+      via:
+        - provider: password
+          identifier: email
+      roles:
+        field: role
+        default: tenant_user
+
+  documents:
+    fields:
+      title:
+        type: string
+        required: true
+      content:
+        type: string
+        required: false
+      tenant_id:
+        type: string
+        required: true
+      owner_id:
+        type: string
+        required: true
+      shared_with:
+        type: array
+        required: false
+      is_public:
+        type: boolean
+        required: false
+
+  workspaces:
+    fields:
+      name:
+        type: string
+        required: true
+      tenant_id:
+        type: string
+        required: true
+      members:
+        type: array
+        required: false
+      settings:
+        type: object
+        required: false
+
+services:
+  tenants:
+    repository: tenants
+  tenant_users:
+    repository: tenant_users
+  documents:
+    repository: documents
+  workspaces:
+    repository: workspaces
+
+repositories:
+  tenants:
+    entity: tenants
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+    operations:
+      - name: find_by_domain
+        method: findOne
+        query:
+          domain: "{{domain}}"
+      - name: find_active
+        method: find
+        query:
+          is_active: true
+
+  tenant_users:
+    entity: tenant_users
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+    operations:
+      - name: by_tenant
+        method: find
+        query:
+          tenant_id: "{{tenant_id}}"
+      - name: admins_only
+        method: find
+        query:
+          is_admin: true
+          tenant_id: "{{tenant_id}}"
+
+  documents:
+    entity: documents
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+    operations:
+      - name: by_tenant
+        method: find
+        query:
+          tenant_id: "{{tenant_id}}"
+      - name: shared_with_user
+        method: find
+        query:
+          tenant_id: "{{tenant_id}}"
+          shared_with: "{{user_id}}"
+      - name: public_docs
+        method: find
+        query:
+          tenant_id: "{{tenant_id}}"
+          is_public: true
+
+  workspaces:
+    entity: workspaces
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+    operations:
+      - name: by_tenant
+        method: find
+        query:
+          tenant_id: "{{tenant_id}}"
+      - name: user_workspaces
+        method: find
+        query:
+          tenant_id: "{{tenant_id}}"
+          members: "{{user_id}}"
+
+controllers:
+  tenants:
+    service: tenants
+    routes:
+      - method: POST
+        path: /tenants
+        operation: create
+        access: public
+      - method: GET
+        path: /tenants
+        operation: list
+        access: public
+      - method: GET
+        path: /tenants/{id}
+        operation: get
+        access: public
+
+  users:
+    service: tenant_users
+    routes:
+      - method: POST
+        path: /users
+        operation: create
+        access: public
+      - method: GET
+        path: /users
+        operation: list
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+      - method: GET
+        path: /users/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.id equals document.id
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.is_admin equals true
+      - method: PATCH
+        path: /users/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.id equals document.id
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.is_admin equals true
+      - method: DELETE
+        path: /users/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.is_admin equals true
+
+  documents:
+    service: documents
+    routes:
+      - method: POST
+        path: /documents
+        operation: create
+        access:
+          - effect: allow
+            identity: tenant_users
+      - method: GET
+        path: /documents
+        operation: list
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+      - method: GET
+        path: /documents/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.id equals document.owner_id
+              - when: document.is_public equals true
+      - method: PATCH
+        path: /documents/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.id equals document.owner_id
+      - method: DELETE
+        path: /documents/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.id equals document.owner_id
+              - when: principal.is_admin equals true
+
+  workspaces:
+    service: workspaces
+    routes:
+      - method: POST
+        path: /workspaces
+        operation: create
+        access:
+          - effect: allow
+            identity: tenant_users
+      - method: GET
+        path: /workspaces
+        operation: list
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+      - method: GET
+        path: /workspaces/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+      - method: PATCH
+        path: /workspaces/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.is_admin equals true
+      - method: DELETE
+        path: /workspaces/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.tenant_id equals document.tenant_id
+            rules:
+              - when: principal.is_admin equals true

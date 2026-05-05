@@ -1,0 +1,8 @@
+version: "0.2"
+
+# Valid: entities with no repositories/services/controllers
+entities:
+  orphan:
+    fields:
+      batata: { type: id }
+      name: { type: string, required: true }

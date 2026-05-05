@@ -10,6 +10,7 @@ class DeployContext:
     mongo_db: str
     env_vars: list[str]
     has_auth: bool
+    has_frontend: bool
     host: str
     ssh_user: str
     ssh_key: str

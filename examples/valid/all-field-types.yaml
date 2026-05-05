@@ -1,0 +1,49 @@
+version: "0.2"
+
+entities:
+  test_entity:
+    fields:
+      id: { type: id }
+      str_field: { type: string, required: true }
+      num_field: { type: number, required: false }
+      bool_field: { type: boolean, required: false }
+      obj_field: { type: object, required: false }
+      arr_strings: { type: array, items: { type: string }, required: false }
+      arr_numbers: { type: array, items: { type: number }, required: false }
+      arr_objects: { type: array, items: { type: object }, required: false }
+
+repositories:
+  test_entity:
+    entity: test_entity
+    crud: [create, list, get, update, replace, delete]
+
+services:
+  test_entity:
+    repository: test_entity
+
+controllers:
+  test:
+    base_path: /test
+    routes:
+      create:
+        method: POST
+        path: ""
+        service: test_entity
+        access: public
+      list:
+        method: GET
+        path: ""
+        service: test_entity
+        access: public
+      get:
+        method: GET
+        path: /{id}
+        service: test_entity
+        access: public
+
+api:
+  basePath: /api
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: test_db

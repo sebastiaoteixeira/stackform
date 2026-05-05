@@ -1,0 +1,182 @@
+version: "0.2"
+
+api:
+  title: Edge Cases Test API
+  version: "1.0.0"
+  base: /api/v1
+
+database:
+  type: mongodb
+  uri: ${MONGO_URI:-mongodb://localhost:27017/edge_cases}
+
+entities:
+  items2024:
+    fields:
+      name_with_underscore:
+        type: string
+        required: true
+      field2FA:
+        type: string
+        required: false
+      v2_api_key:
+        type: string
+        required: false
+      camelCaseField:
+        type: string
+        required: false
+      kebab-case-field:
+        type: string
+        required: false
+      number123field:
+        type: number
+        required: false
+      nested_object:
+        type: object
+        required: false
+      array_of_strings:
+        type: array
+        required: false
+      boolean_flag:
+        type: boolean
+        required: false
+      timestamp_field:
+        type: string
+        required: false
+      very_long_field_name_that_tests_the_system_limit:
+        type: string
+        required: false
+
+  api_v2_resources:
+    fields:
+      title:
+        type: string
+        required: true
+      metadata:
+        type: object
+        required: false
+      tags:
+        type: array
+        required: false
+
+  user2Profile:
+    fields:
+      displayName:
+        type: string
+        required: true
+      settings:
+        type: object
+        required: false
+
+services:
+  items2024:
+    repository: items2024
+  api_v2_resources:
+    repository: api_v2_resources
+  user2Profile:
+    repository: user2Profile
+
+repositories:
+  items2024:
+    entity: items2024
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+    operations:
+      - name: search_by_nested_field
+        method: find
+        query:
+          "nested_object.subfield": "{{value}}"
+      - name: count_by_tag
+        method: countDocuments
+        query:
+          array_of_strings: "{{tag}}"
+      - name: complex_aggregation
+        method: aggregate
+        pipeline:
+          - $match:
+              boolean_flag: true
+          - $group:
+              _id: "$name_with_underscore"
+              count:
+                $sum: 1
+          - $sort:
+              count: -1
+          - $limit: 10
+
+  api_v2_resources:
+    entity: api_v2_resources
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+
+  user2Profile:
+    entity: user2Profile
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+
+controllers:
+  items2024:
+    service: items2024
+    routes:
+      - method: POST
+        path: /items2024
+        operation: create
+        access: public
+      - method: GET
+        path: /items2024
+        operation: list
+        access: public
+      - method: GET
+        path: /items2024/{id}
+        operation: get
+        access: public
+      - method: PATCH
+        path: /items2024/{id}
+        operation: update
+        access: public
+      - method: DELETE
+        path: /items2024/{id}
+        operation: delete
+        access: public
+
+  api_v2:
+    service: api_v2_resources
+    routes:
+      - method: POST
+        path: /v2/resources
+        operation: create
+        access: public
+      - method: GET
+        path: /v2/resources
+        operation: list
+        access: public
+      - method: GET
+        path: /v2/resources/{id}
+        operation: get
+        access: public
+
+  profiles:
+    service: user2Profile
+    routes:
+      - method: POST
+        path: /profiles
+        operation: create
+        access: public
+      - method: GET
+        path: /profiles
+        operation: list
+        access: public
+      - method: GET
+        path: /profiles/{id}
+        operation: get
+        access: public

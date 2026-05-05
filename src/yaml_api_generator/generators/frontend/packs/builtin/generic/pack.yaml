@@ -1,0 +1,54 @@
+name: generic
+version: 1.0.0
+language: typescript
+framework: react
+description: Clean, minimal CRUD UI with table/card layouts
+
+components:
+  table:
+    props:
+      collection: { type: collection, required: true }
+      columns: { type: array }
+      onRowClick: { type: function }
+  card_grid:
+    props:
+      collection: { type: collection, required: true }
+      columns: { type: number, default: 3 }
+  detail:
+    props:
+      collection: { type: collection, required: true }
+      record: { type: object, required: true }
+  form:
+    props:
+      collection: { type: collection, required: true }
+      mode: { type: string, default: create }
+      onSubmit: { type: function }
+  auth:
+    props:
+      mode: { type: string, default: login }
+  empty_state:
+    props:
+      message: { type: string }
+      action: { type: string }
+
+scaffold:
+  - routing
+  - package.json
+  - vite.config.ts
+  - tsconfig.json
+  - tsconfig.node.json
+  - index.html
+  - main
+  - App
+  - api
+  - index.css
+  - tailwind.config.js
+  - postcss.config.js
+
+output:
+  extension: tsx
+  directory_structure:
+    generated: src/__generated__
+    components: src/components
+    pages: src/pages
+    hooks: src/__generated__/hooks

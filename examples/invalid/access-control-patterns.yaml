@@ -1,0 +1,248 @@
+version: "0.2"
+
+api:
+  title: Access Control Patterns API
+  version: "1.0.0"
+  base: /api/v1
+
+database:
+  type: mongodb
+  uri: ${MONGO_URI:-mongodb://localhost:27017/access_patterns}
+
+auth:
+  roles:
+    owner:
+      inherits: []
+    editor:
+      inherits: [owner]
+    viewer:
+      inherits: [editor]
+    guest:
+      inherits: []
+
+entities:
+  users:
+    fields:
+      email:
+        type: string
+        required: true
+      name:
+        type: string
+        required: true
+      department:
+        type: string
+        required: false
+      is_verified:
+        type: boolean
+        required: false
+    identity:
+      via:
+        - provider: password
+          identifier: email
+        - provider: api-key
+      roles:
+        field: role
+        default: viewer
+
+  sensitive_documents:
+    fields:
+      title:
+        type: string
+        required: true
+      content:
+        type: string
+        required: false
+      owner_id:
+        type: string
+        required: true
+      department:
+        type: string
+        required: true
+      classification:
+        type: string
+        required: true
+      collaborators:
+        type: array
+        required: false
+      is_archived:
+        type: boolean
+        required: false
+
+  audit_logs:
+    fields:
+      action:
+        type: string
+        required: true
+      user_id:
+        type: string
+        required: true
+      resource_type:
+        type: string
+        required: true
+      resource_id:
+        type: string
+        required: true
+      timestamp:
+        type: string
+        required: true
+      details:
+        type: object
+        required: false
+
+services:
+  users:
+    repository: users
+  sensitive_documents:
+    repository: sensitive_documents
+  audit_logs:
+    repository: audit_logs
+
+repositories:
+  users:
+    entity: users
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+
+  sensitive_documents:
+    entity: sensitive_documents
+    crud:
+      create: true
+      list: true
+      get: true
+      update: true
+      delete: true
+
+  audit_logs:
+    entity: audit_logs
+    crud:
+      create: true
+      list: true
+      get: true
+
+controllers:
+  users:
+    service: users
+    routes:
+      - method: POST
+        path: /users
+        operation: create
+        access: public
+      - method: GET
+        path: /users
+        operation: list
+        access:
+          - effect: allow
+            when: principal.role equals 'owner'
+          - effect: allow
+            when: principal.role equals 'editor'
+      - method: GET
+        path: /users/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.id equals document.id
+          - effect: allow
+            when: principal.role equals 'editor'
+          - effect: allow
+            when: principal.department equals document.department
+            rules:
+              - when: principal.is_verified equals true
+      - method: PATCH
+        path: /users/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.id equals document.id
+          - effect: allow
+            when: principal.role equals 'owner'
+      - method: DELETE
+        path: /users/{id}
+        operation: delete
+        access:
+          - effect: allow
+            when: principal.role equals 'owner'
+
+  documents:
+    service: sensitive_documents
+    routes:
+      - method: POST
+        path: /documents
+        operation: create
+        access:
+          - effect: allow
+            identity: users
+            rules:
+              - when: principal.is_verified equals true
+      - method: GET
+        path: /documents
+        operation: list
+        access:
+          - effect: allow
+            when: principal.role equals 'owner'
+          - effect: allow
+            when: principal.department equals document.department
+            rules:
+              - when: principal.role equals 'editor'
+      - method: GET
+        path: /documents/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.id equals document.owner_id
+          - effect: allow
+            when: principal.role equals 'owner'
+          - effect: allow
+            when: principal.department equals document.department
+            rules:
+              - when: document.classification not-equals 'top-secret'
+              - when: principal.role equals 'editor'
+      - method: PATCH
+        path: /documents/{id}
+        operation: update
+        access:
+          - effect: allow
+            when: principal.id equals document.owner_id
+            rules:
+              - when: document.is_archived not-equals true
+          - effect: allow
+            when: principal.role equals 'owner'
+      - method: DELETE
+        path: /documents/{id}
+        operation: delete
+        access:
+          - effect: deny
+            when: document.is_archived equals true
+          - effect: allow
+            when: principal.id equals document.owner_id
+          - effect: allow
+            when: principal.role equals 'owner'
+
+  audit:
+    service: audit_logs
+    routes:
+      - method: POST
+        path: /audit
+        operation: create
+        access:
+          - effect: allow
+            identity: users
+      - method: GET
+        path: /audit
+        operation: list
+        access:
+          - effect: allow
+            when: principal.role equals 'owner'
+          - effect: allow
+            when: principal.user_id equals document.user_id
+      - method: GET
+        path: /audit/{id}
+        operation: get
+        access:
+          - effect: allow
+            when: principal.role equals 'owner'
+          - effect: allow
+            when: principal.id equals document.user_id

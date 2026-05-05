@@ -1,0 +1,267 @@
+"""CLI commands for YAML API Generator.
+
+Provides four main commands:
+- compile: Generate backend code from YAML spec
+- dev: Run development server with hot-reload
+- frontend: Generate frontend code with UI packs
+- deploy: Generate deployment artifacts (Docker, systemd)
+"""
+
+import click
+
+from .utils.error_handler import handle_config_errors, handle_generic_error
+
+
+@click.group()
+def cli():
+    """YAML-driven REST API generator."""
+
+
+@cli.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.argument("what", default="all", type=click.Choice(["all", "backend", "frontend", "deploy"]))
+@click.option("-s", "--schema", "schema_file", type=click.Path(exists=True), help="JSON schema file")
+@click.option("-o", "--output", "output_dir", default="./target", help="Output directory")
+@click.option("-t", "--target", default="fastapi", help="Backend target: fastapi, drf, raw")
+@click.option("--json", "output_json", is_flag=True, help="Output errors in JSON")
+def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, target: str, output_json: bool):
+    """Build backend, frontend, deploy, or all."""
+    from pathlib import Path
+    from .compiler import compile_project
+    from ..parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+    from ..generators.frontend.generator import generate_frontend
+    from ..generators.frontend.packs.loader import load_pack
+    from ..parsers.ui_parser import build_generator_context
+    from ..generators.deploy.generate import generate_deploy
+
+    try:
+        result = load_and_generate_ir(yaml_file, schema_file)
+
+        # Backend
+        if what in ("all", "backend"):
+            compile_project(
+                yaml_file=yaml_file,
+                schema_file=schema_file,
+                output_dir=output_dir,
+                target=target,
+            )
+            click.echo(f"Backend generated in {output_dir}")
+
+        # Frontend
+        if what in ("all", "frontend"):
+            if result.ui_block is None:
+                if what == "frontend":
+                    click.echo("Error: No 'ui' block found in the YAML spec.", err=True)
+                    raise SystemExit(1)
+            else:
+                frontend_block = result.ui_block.get("frontend", {}) or {}
+                pack_name = frontend_block.get("pack")
+
+                if isinstance(pack_name, str) and pack_name.strip():
+                    overwrite = frontend_block.get("overwrite", "never")
+                    pack = load_pack(pack_name)
+                    ui = build_generator_context(result.ir, result.ui_block, pack.manifest)
+
+                    frontend_output = f"{output_dir}/frontend" if what == "all" else None
+
+                    generate_frontend(
+                        ir=result.ir,
+                        ui=ui,
+                        pack_name=pack_name,
+                        output_override=frontend_output,
+                        overwrite=overwrite,
+                    )
+                    click.echo("Frontend generated")
+                elif what == "frontend":
+                    click.echo("Error: ui.frontend.pack is required.", err=True)
+                    raise SystemExit(1)
+
+        # Deploy
+        if what in ("all", "deploy"):
+            if result.ir.deploy is None:
+                if what == "deploy":
+                    click.echo("Error: No 'deploy' block found in the YAML spec.", err=True)
+                    raise SystemExit(1)
+            else:
+                generate_deploy(
+                    ir=result.ir,
+                    host="localhost",
+                    ssh_user="ubuntu",
+                    ssh_key="~/.ssh/id_rsa",
+                    output_dir=output_dir,
+                )
+                click.echo(f"Deploy artifacts generated in {output_dir}")
+
+    except ConfigErrors as error:
+        handle_config_errors(error, yaml_file, "json" if output_json else "human")
+    except (OSError, ValueError, FileNotFoundError) as error:
+        handle_generic_error(error)
+
+
+@cli.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.option("-s", "--schema", "schema_file", type=click.Path(exists=True), help="JSON schema file")
+@click.option("--host", default="127.0.0.1", help="Host to bind")
+@click.option("-p", "--port", default=8000, type=int, help="Port to bind")
+@click.option("--raw", is_flag=True, help="Use raw ASGI runner")
+@click.option("--json", "output_json", is_flag=True, help="Output errors in JSON")
+def run(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool, output_json: bool):
+    """Run development server."""
+    import uvicorn
+
+    from ..parsers.yaml_parser import ConfigErrors
+    from ..server import build_app, build_raw_app
+
+    try:
+        app = (
+            build_raw_app(yaml_file, schema_file)
+            if raw
+            else build_app(yaml_file, schema_file)
+        )
+    except ConfigErrors as error:
+        handle_config_errors(error, yaml_file, "json" if output_json else "human")
+    except OSError as error:
+        handle_generic_error(error)
+
+    uvicorn.run(app, host=host, port=port)
+
+
+@cli.command()
+@click.argument("pack_dir", type=click.Path(exists=True))
+@click.option("-o", "--output", "output_file", help="Output file path")
+def pack(pack_dir: str, output_file: str | None):
+    """Package a UI pack for distribution."""
+    import tarfile
+    from pathlib import Path
+    import yaml
+
+    pack_path = Path(pack_dir)
+    manifest_path = pack_path / "pack.yaml"
+
+    if not manifest_path.is_file():
+        click.echo(f"Error: pack.yaml not found in {pack_dir}", err=True)
+        raise SystemExit(1)
+
+    with manifest_path.open("r") as f:
+        manifest = yaml.safe_load(f)
+
+    pack_name = manifest.get("name")
+    if not pack_name:
+        click.echo("Error: pack.yaml must have a 'name' field", err=True)
+        raise SystemExit(1)
+
+    pack_version = manifest.get("version", "0.0.0")
+    default_output = f"{pack_name}-{pack_version}.tar.gz"
+    output_path = Path(output_file or default_output)
+
+    with tarfile.open(output_path, "w:gz") as tar:
+        tar.add(pack_path, arcname=pack_name)
+
+    click.echo(f"Packed {pack_dir} to {output_path}")
+
+
+@cli.command()
+@click.argument("pack_path", type=click.Path(exists=True))
+def install_pack(pack_path: str):
+    """Install a UI pack."""
+    import tarfile
+    from pathlib import Path
+
+    pack_file = Path(pack_path)
+    packs_dir = Path.home() / ".yaml-api-generator" / "packs"
+    packs_dir.mkdir(parents=True, exist_ok=True)
+
+    if not pack_file.suffix == ".gz" and not pack_file.name.endswith(".tar.gz"):
+        click.echo(f"Error: Expected .tar.gz file, got {pack_file}", err=True)
+        raise SystemExit(1)
+
+    with tarfile.open(pack_file, "r:gz") as tar:
+        members = tar.getmembers()
+        if not members:
+            click.echo("Error: Pack archive is empty", err=True)
+            raise SystemExit(1)
+
+        root_name = members[0].name.split("/")[0]
+        target_dir = packs_dir / root_name
+
+        if target_dir.exists():
+            click.echo(f"Pack '{root_name}' already installed. Remove {target_dir} first.", err=True)
+            raise SystemExit(1)
+
+        tar.extractall(packs_dir)
+
+    click.echo(f"Installed pack '{root_name}' to {target_dir}")
+
+
+@cli.command()
+def list_packs():
+    """List installed UI packs."""
+    from pathlib import Path
+    import yaml
+
+    builtin_packs_dir = Path(__file__).parent.parent / "generators" / "frontend" / "packs" / "builtin"
+    user_packs_dir = Path.home() / ".yaml-api-generator" / "packs"
+
+    packs = []
+
+    if builtin_packs_dir.exists():
+        for pack_dir in builtin_packs_dir.iterdir():
+            if pack_dir.is_dir() and (pack_dir / "pack.yaml").exists():
+                with (pack_dir / "pack.yaml").open("r") as f:
+                    manifest = yaml.safe_load(f)
+                packs.append({
+                    "name": manifest.get("name", pack_dir.name),
+                    "version": manifest.get("version", "unknown"),
+                    "location": "built-in",
+                    "path": str(pack_dir),
+                })
+
+    if user_packs_dir.exists():
+        for pack_dir in user_packs_dir.iterdir():
+            if pack_dir.is_dir() and (pack_dir / "pack.yaml").exists():
+                with (pack_dir / "pack.yaml").open("r") as f:
+                    manifest = yaml.safe_load(f)
+                packs.append({
+                    "name": manifest.get("name", pack_dir.name),
+                    "version": manifest.get("version", "unknown"),
+                    "location": "user",
+                    "path": str(pack_dir),
+                })
+
+    if not packs:
+        click.echo("No packs installed")
+        return
+
+    click.echo(f"{'NAME':<20} {'VERSION':<12} {'LOCATION':<12} PATH")
+    click.echo("-" * 80)
+    for pack in packs:
+        click.echo(f"{pack['name']:<20} {pack['version']:<12} {pack['location']:<12} {pack['path']}")
+
+
+@cli.command()
+@click.argument("pack_name")
+def remove_pack(pack_name: str):
+    """Remove an installed UI pack."""
+    import shutil
+    from pathlib import Path
+    import yaml
+
+    builtin_packs_dir = Path(__file__).parent.parent / "generators" / "frontend" / "packs" / "builtin"
+    user_packs_dir = Path.home() / ".yaml-api-generator" / "packs"
+
+    builtin_pack = builtin_packs_dir / pack_name if builtin_packs_dir.exists() else None
+    if builtin_pack and builtin_pack.exists():
+        click.echo(f"Error: Cannot remove built-in pack '{pack_name}'", err=True)
+        raise SystemExit(1)
+
+    user_pack = user_packs_dir / pack_name
+    if not user_pack.exists():
+        click.echo(f"Error: Pack '{pack_name}' not found", err=True)
+        raise SystemExit(1)
+
+    if not (user_pack / "pack.yaml").exists():
+        click.echo(f"Error: '{pack_name}' is not a valid pack directory", err=True)
+        raise SystemExit(1)
+
+    shutil.rmtree(user_pack)
+    click.echo(f"Removed pack '{pack_name}'")

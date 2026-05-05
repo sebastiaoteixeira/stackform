@@ -1,6 +1,6 @@
 import pytest
 
-from yaml_api_generator.server.auth.password import hash_password, verify_password
+from yaml_api_generator.server.common.auth.password import hash_password, verify_password
 
 
 class TestHashPassword:

@@ -1,13 +1,13 @@
 import pytest
 
 from yaml_api_generator.ir import IRProviderBinding
-from yaml_api_generator.server.auth.jwt import decode_jwt_token
-from yaml_api_generator.server.auth.password import hash_password
-from yaml_api_generator.server.request_context import RequestContext
-from yaml_api_generator.server.repositories.base import BaseRepository
-from yaml_api_generator.server.server_context import RuntimeIdentityDescriptor
-from yaml_api_generator.server.steps.authorization import UnauthorizedError
-from yaml_api_generator.server.steps.login import LoginStep
+from yaml_api_generator.server.common.auth.jwt import decode_jwt_token
+from yaml_api_generator.server.common.auth.password import hash_password
+from yaml_api_generator.server.common.request_context import RequestContext
+from yaml_api_generator.server.common.repositories.base import BaseRepository
+from yaml_api_generator.server.common.server_context import RuntimeIdentityDescriptor
+from yaml_api_generator.server.common.steps.authorization import UnauthorizedError
+from yaml_api_generator.server.common.steps.login import LoginStep
 from .test_repository_steps import InMemoryRepository, _make_ctx
 
 

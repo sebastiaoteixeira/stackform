@@ -20,23 +20,31 @@ class DockerDeployGenerator(DeployGenerator):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         always = [
-            ("inventory.yml.j2", "inventory.yml"),
-            ("playbook.yml.j2", "playbook.yml"),
-            ("docker-compose.yml.j2", "docker-compose.yml"),
-            ("Dockerfile.j2", "Dockerfile"),
-            ("env.example.j2", ".env.example"),
+            ("inventory.yml.jinja", "inventory.yml"),
+            ("playbook.yml.jinja", "playbook.yml"),
+            ("docker-compose.yml.jinja", "docker-compose.yml"),
+            ("Dockerfile.jinja", "Dockerfile"),
+            ("env.example.jinja", ".env.example"),
+            ("README.md.jinja", "README.md"),
         ]
         for tmpl, out in always:
             self._render(env, tmpl, ctx, output_dir / out)
 
+        if ctx.has_frontend:
+            self._render(env, "nginx.conf.jinja", ctx, output_dir / "nginx.conf")
+            self._render(env, "Dockerfile.frontend.jinja", ctx, output_dir / "Dockerfile.frontend")
+
+        env_content = env.get_template("env.example.jinja").render(ctx=ctx)
+        (output_dir / ".env").write_text(env_content)
+
         roles_app = output_dir / "roles" / "app" / "tasks"
         roles_app.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/app/tasks/main.yml.j2", ctx, roles_app / "main.yml")
+        self._render(env, "roles/app/tasks/main.yml.jinja", ctx, roles_app / "main.yml")
 
         if ctx.mongo_local:
             roles_mongo = output_dir / "roles" / "mongodb" / "tasks"
             roles_mongo.mkdir(parents=True, exist_ok=True)
-            self._render(env, "roles/mongodb/tasks/main.yml.j2", ctx, roles_mongo / "main.yml")
+            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongo / "main.yml")
 
     def _render(self, env: Environment, tmpl: str, ctx: DeployContext, dest: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)

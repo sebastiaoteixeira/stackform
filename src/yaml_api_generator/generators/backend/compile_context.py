@@ -1,3 +1,17 @@
+"""Compilation context data structures for backend code generation.
+
+Provides frozen dataclasses that represent the compiled context needed
+to generate backend code. Bridges IR (intermediate representation) and
+code generation by organizing data into generator-friendly structures.
+
+Key types:
+- CompileContext: Top-level context with all compilation metadata
+- RouteDescriptor: HTTP route configuration
+- ModelDescriptor: Request/response model definition
+- AuthConfig: Authentication and authorization settings
+- FieldDescriptor: Model field with type and constraints
+"""
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -36,6 +50,8 @@ class DocumentBindingDescriptor:
 class AccessRuleDescriptor:
     principal: str
     required_role: str | None = None
+    identity_symbols: list[str] = field(default_factory=list)
+    document_symbols: list[str] = field(default_factory=list)
     when: WhenExpr | None = None
     effect: str = "allow"
 
@@ -46,8 +62,6 @@ class RouteDescriptor:
     path: str
     operation: str
     collection: str | None
-    id_field: str | None
-    id_format: str | None
     is_public: bool
     needs_auth: bool
     is_identity_create: bool
@@ -73,6 +87,11 @@ class IdentityCollectionDescriptor:
     @property
     def has_api_key(self) -> bool:
         return any(b.provider == "apiKey" for b in self.bindings)
+
+    @property
+    def identifier(self) -> str | None:
+        password_binding = self.get_binding("password")
+        return password_binding.identifier if password_binding else None
 
     def get_binding(self, provider: str) -> "IRProviderBinding | None":
         return next((b for b in self.bindings if b.provider == provider), None)

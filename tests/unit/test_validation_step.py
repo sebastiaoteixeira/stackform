@@ -1,12 +1,12 @@
 import pytest
 
 from yaml_api_generator.ir import IRProviderBinding
-from yaml_api_generator.server.request_context import RequestContext
-from yaml_api_generator.server.server_context import (
+from yaml_api_generator.server.common.request_context import RequestContext
+from yaml_api_generator.server.common.server_context import (
     RuntimeCollectionDescriptor,
     RuntimeIdentityDescriptor,
 )
-from yaml_api_generator.server.steps.validation import ValidateBodyStep
+from yaml_api_generator.server.common.steps.validation import ValidateBodyStep
 from .test_repository_steps import _make_ctx
 
 

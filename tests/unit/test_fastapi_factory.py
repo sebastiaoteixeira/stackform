@@ -5,13 +5,13 @@ import pytest
 from pydantic import ValidationError
 
 from yaml_api_generator.ir import IRProviderBinding
-from yaml_api_generator.server.fastapi_factory import (
+from yaml_api_generator.server.fastapi.factory import (
     _field_annotation,
     _security_requirements,
     create_pydantic_model,
     register_fastapi_routes,
 )
-from yaml_api_generator.server.server_context import (
+from yaml_api_generator.server.common.server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
     RuntimeIdentityDescriptor,
@@ -223,7 +223,7 @@ def test_auth_internal_field_not_accepted_in_create():
 
 def test_routes_registered_with_correct_methods_and_paths():
     from fastapi import FastAPI
-    from yaml_api_generator.server.server_context import RuntimeAppConfig, RuntimeContext
+    from yaml_api_generator.server.common.server_context import RuntimeAppConfig, RuntimeContext
 
     col = _make_collection("posts", {"title": {"type": "string", "required": True}})
     auth = RuntimeAuthConfig(
@@ -253,7 +253,7 @@ def test_routes_registered_with_correct_methods_and_paths():
 
 def test_all_crud_routes_registered():
     from fastapi import FastAPI
-    from yaml_api_generator.server.server_context import RuntimeAppConfig, RuntimeContext
+    from yaml_api_generator.server.common.server_context import RuntimeAppConfig, RuntimeContext
 
     col = _make_collection("items", {"name": {"type": "string", "required": True}})
     auth = RuntimeAuthConfig(
@@ -305,9 +305,9 @@ def test_payload_model_dump_exclude_unset_for_partial_updates():
 @pytest.mark.anyio
 async def test_error_mapping_unauthorized_401():
     from fastapi import FastAPI, HTTPException
-    from yaml_api_generator.server.fastapi_factory import _run_pipeline
-    from yaml_api_generator.server.pipeline import Pipeline
-    from yaml_api_generator.server.steps import UnauthorizedError
+    from yaml_api_generator.server.fastapi.factory import _run_pipeline
+    from yaml_api_generator.server.common.pipeline import Pipeline
+    from yaml_api_generator.server.common.steps import UnauthorizedError
 
     async def _raise(ctx):
         raise UnauthorizedError("nope")
@@ -326,9 +326,9 @@ async def test_error_mapping_unauthorized_401():
 @pytest.mark.anyio
 async def test_error_mapping_forbidden_403():
     from fastapi import HTTPException
-    from yaml_api_generator.server.fastapi_factory import _run_pipeline
-    from yaml_api_generator.server.pipeline import Pipeline
-    from yaml_api_generator.server.steps import ForbiddenError
+    from yaml_api_generator.server.fastapi.factory import _run_pipeline
+    from yaml_api_generator.server.common.pipeline import Pipeline
+    from yaml_api_generator.server.common.steps import ForbiddenError
 
     async def _raise(ctx):
         raise ForbiddenError("nope")
@@ -347,9 +347,9 @@ async def test_error_mapping_forbidden_403():
 @pytest.mark.anyio
 async def test_error_mapping_not_found_404():
     from fastapi import HTTPException
-    from yaml_api_generator.server.fastapi_factory import _run_pipeline
-    from yaml_api_generator.server.pipeline import Pipeline
-    from yaml_api_generator.server.steps import NotFoundError
+    from yaml_api_generator.server.fastapi.factory import _run_pipeline
+    from yaml_api_generator.server.common.pipeline import Pipeline
+    from yaml_api_generator.server.common.steps import NotFoundError
 
     async def _raise(ctx):
         raise NotFoundError("gone")
@@ -368,8 +368,8 @@ async def test_error_mapping_not_found_404():
 @pytest.mark.anyio
 async def test_error_mapping_value_error_422():
     from fastapi import HTTPException
-    from yaml_api_generator.server.fastapi_factory import _run_pipeline
-    from yaml_api_generator.server.pipeline import Pipeline
+    from yaml_api_generator.server.fastapi.factory import _run_pipeline
+    from yaml_api_generator.server.common.pipeline import Pipeline
 
     async def _raise(ctx):
         raise ValueError("bad input")

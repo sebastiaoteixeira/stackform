@@ -1,0 +1,99 @@
+import os
+from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import FastAPI
+{% if ctx.auth.enabled %}
+from fastapi.openapi.utils import get_openapi
+{% endif %}
+
+from dependencies.mongodb import connect_db, close_db
+{% set imported_collections = [] %}
+{% for route in ctx.routes %}
+{% if route.collection and route.collection not in imported_collections %}
+{% set _ = imported_collections.append(route.collection) %}
+from routes.{{ route.collection }} import router as {{ route.collection }}_router
+{% endif %}
+{% endfor %}
+{% if ctx.auth.has_password_auth %}
+from routes.login import router as login_router
+{% endif %}
+{% if ctx.auth.has_oidc_auth %}
+from routes.oidc_routes import router as oidc_router
+{% endif %}
+{% if ctx.auth.has_saml_auth %}
+from routes.saml_routes import router as saml_router
+{% endif %}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    connect_db()
+    yield
+    close_db()
+
+
+app = FastAPI(lifespan=lifespan)
+
+{% if ctx.app.cors %}
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins={{ ctx.app.cors.origins }},
+    allow_methods={{ ctx.app.cors.methods }},
+    allow_headers={{ ctx.app.cors.headers }},
+    allow_credentials={{ ctx.app.cors.credentials }},
+)
+{% endif %}
+
+{% for col_name in imported_collections %}
+app.include_router({{ col_name }}_router)
+{% endfor %}
+{% if ctx.auth.has_password_auth %}
+app.include_router(login_router)
+{% endif %}
+{% if ctx.auth.has_oidc_auth %}
+app.include_router(oidc_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
+{% endif %}
+{% if ctx.auth.has_saml_auth %}
+app.include_router(saml_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
+{% endif %}
+
+{% if ctx.auth.enabled %}
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
+    components = openapi_schema.setdefault("components", {})
+    schemes = components.setdefault("securitySchemes", {})
+{% if ctx.auth.has_api_key_auth %}
+    schemes["ApiKeyAuth"] = {"type": "apiKey", "in": "header", "name": "X-API-Key"}
+    schemes["BearerAuth"] = {"type": "http", "scheme": "bearer"}
+{% endif %}
+{% if ctx.auth.has_password_auth %}
+    schemes["BasicAuth"] = {"type": "http", "scheme": "basic"}
+    schemes["BearerAuth"] = {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+{% endif %}
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+{% endif %}
+
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "app:app",
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "{{ ctx.app.port }}")),
+        reload=True,
+    )

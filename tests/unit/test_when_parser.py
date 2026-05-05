@@ -5,7 +5,7 @@ from yaml_api_generator.parsers.when_parser import (
     parse_when_expr,
     parse_when_list,
 )
-from yaml_api_generator.server.when_eval import evaluate_when
+from yaml_api_generator.server.common.when_eval import evaluate_when_with_symbols
 
 
 _PATH = "test"
@@ -14,7 +14,12 @@ _PATH = "test"
 def _eval(expr_str: str, *, principal=None, document=None) -> bool:
     expr, errors = parse_when_expr(expr_str, _PATH)
     assert not errors
-    return evaluate_when(expr, principal or {}, document or {})
+    symbols: dict[str, dict | None] = {}
+    if principal is not None:
+        symbols["principal"] = principal
+    if document is not None:
+        symbols["document"] = document
+    return evaluate_when_with_symbols(expr, symbols)
 
 
 class TestParseWhenExpr:
@@ -83,8 +88,8 @@ class TestParseWhenList:
     def test_145_single_item_evaluates_like_single_expression(self):
         result, errors = parse_when_list("principal.sub equals 'hello'", _PATH)
         assert not errors
-        assert evaluate_when(result, {"sub": "hello"}, {}) is True
-        assert evaluate_when(result, {"sub": "world"}, {}) is False
+        assert evaluate_when_with_symbols(result, {"principal": {"sub": "hello"}}) is True
+        assert evaluate_when_with_symbols(result, {"principal": {"sub": "world"}}) is False
 
     def test_146_multi_item_requires_all_conditions_true(self):
         result, errors = parse_when_list(
@@ -92,11 +97,11 @@ class TestParseWhenList:
         )
         assert not errors
         # Both true
-        assert evaluate_when(result, {"sub": "user-1"}, {"id": "doc-1"}) is True
+        assert evaluate_when_with_symbols(result, {"principal": {"sub": "user-1"}, "document": {"id": "doc-1"}}) is True
         # First false
-        assert evaluate_when(result, {"sub": "other"}, {"id": "doc-1"}) is False
+        assert evaluate_when_with_symbols(result, {"principal": {"sub": "other"}, "document": {"id": "doc-1"}}) is False
         # Second false
-        assert evaluate_when(result, {"sub": "user-1"}, {"id": "other"}) is False
+        assert evaluate_when_with_symbols(result, {"principal": {"sub": "user-1"}, "document": {"id": "other"}}) is False
 
     def test_147_empty_list_returns_none(self):
         result, errors = parse_when_list([], _PATH)

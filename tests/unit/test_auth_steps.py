@@ -4,19 +4,19 @@ from typing import Any
 import pytest
 
 from yaml_api_generator.ir import IRProviderBinding
-from yaml_api_generator.server.request_context import RequestContext
-from yaml_api_generator.server.server_context import (
+from yaml_api_generator.server.common.request_context import RequestContext
+from yaml_api_generator.server.common.server_context import (
     RuntimeAccessRule,
     RuntimeAuthConfig,
     RuntimeIdentityDescriptor,
 )
-from yaml_api_generator.server.steps.authentication import (
-    ResolvePrincipalStep,
-    _extract_api_key,
-    _extract_basic_credentials,
-    _extract_bearer_token,
+from yaml_api_generator.server.common.steps.authentication import ResolvePrincipalStep
+from yaml_api_generator.server.common.auth.utils import (
+    extract_api_key,
+    extract_basic_credentials,
+    extract_bearer_token,
 )
-from yaml_api_generator.server.steps.authorization import (
+from yaml_api_generator.server.common.steps.authorization import (
     AuthorizeRouteStep,
     ForbiddenError,
     PostFetchAuthorizeStep,
@@ -29,8 +29,8 @@ from yaml_api_generator.ir.when import (
     NotEquals,
     StringLiteral,
 )
-from yaml_api_generator.server.auth.password import hash_password
-from yaml_api_generator.server.repositories.base import BaseRepository
+from yaml_api_generator.server.common.auth.password import hash_password
+from yaml_api_generator.server.common.repositories.base import BaseRepository
 
 
 class InMemoryRepository(BaseRepository):
@@ -121,29 +121,29 @@ def _make_identity(
 
 class TestExtractBearerToken:
     def test_189_bearer_token_from_header(self):
-        result = _extract_bearer_token({"Authorization": "Bearer mytoken123"})
+        result = extract_bearer_token({"Authorization": "Bearer mytoken123"})
         assert result == "mytoken123"
 
     def test_190_no_authorization_header(self):
-        result = _extract_bearer_token({})
+        result = extract_bearer_token({})
         assert result is None
 
     def test_191_basic_auth_not_extracted_as_bearer(self):
-        result = _extract_bearer_token({"Authorization": "Basic abc123"})
+        result = extract_bearer_token({"Authorization": "Basic abc123"})
         assert result is None
 
 
 class TestExtractApiKey:
     def test_192_api_key_from_header(self):
-        result = _extract_api_key({"X-API-Key": "myapikey"})
+        result = extract_api_key({"X-API-Key": "myapikey"})
         assert result == "myapikey"
 
     def test_193_api_key_falls_back_to_bearer(self):
-        result = _extract_api_key({"Authorization": "Bearer mytoken"})
+        result = extract_api_key({"Authorization": "Bearer mytoken"})
         assert result == "mytoken"
 
     def test_194_x_api_key_takes_priority_over_bearer(self):
-        result = _extract_api_key(
+        result = extract_api_key(
             {
                 "X-API-Key": "key123",
                 "Authorization": "Bearer token456",
@@ -154,33 +154,33 @@ class TestExtractApiKey:
 
 class TestExtractBasicCredentials:
     def test_195_basic_credentials_valid(self):
-        result = _extract_basic_credentials(
+        result = extract_basic_credentials(
             {"Authorization": _basic_header("user", "pass")}
         )
         assert result == ("user", "pass")
 
     def test_196_basic_bad_base64(self):
         with pytest.raises(UnauthorizedError):
-            _extract_basic_credentials({"Authorization": "Basic !!!notbase64!!!"})
+            extract_basic_credentials({"Authorization": "Basic !!!notbase64!!!"})
 
     def test_197_basic_missing_colon(self):
         encoded = base64.b64encode(b"nocolonhere").decode("ascii")
         with pytest.raises(UnauthorizedError):
-            _extract_basic_credentials({"Authorization": f"Basic {encoded}"})
+            extract_basic_credentials({"Authorization": f"Basic {encoded}"})
 
     def test_198_basic_empty_username(self):
         encoded = base64.b64encode(b":pass").decode("ascii")
         with pytest.raises(UnauthorizedError):
-            _extract_basic_credentials({"Authorization": f"Basic {encoded}"})
+            extract_basic_credentials({"Authorization": f"Basic {encoded}"})
 
     def test_199_basic_empty_password(self):
         encoded = base64.b64encode(b"user:").decode("ascii")
         with pytest.raises(UnauthorizedError):
-            _extract_basic_credentials({"Authorization": f"Basic {encoded}"})
+            extract_basic_credentials({"Authorization": f"Basic {encoded}"})
 
     def test_200_basic_password_containing_colon(self):
         encoded = base64.b64encode(b"user:pass:with:colons").decode("ascii")
-        result = _extract_basic_credentials({"Authorization": f"Basic {encoded}"})
+        result = extract_basic_credentials({"Authorization": f"Basic {encoded}"})
         assert result == ("user", "pass:with:colons")
 
 
@@ -418,7 +418,7 @@ class TestResolvePrincipalStep:
 
     @pytest.mark.asyncio
     async def test_210_bearer_jwt_resolves_principal(self):
-        from yaml_api_generator.server.auth.jwt import create_jwt_token
+        from yaml_api_generator.server.common.auth.jwt import create_jwt_token
 
         pw_hash = hash_password("secret")
         repo = InMemoryRepository(

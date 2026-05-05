@@ -1,0 +1,64 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+  port: 8080
+
+mongo:
+  uri: mongodb://mongo:27017
+  database: docker_app_db
+
+deploy:
+  runtime: docker
+  name: my-api-service
+  port: 8080
+  docker:
+    image: python:3.11-slim
+
+entities:
+  task:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      description: { type: string }
+      completed: { type: boolean, default: false }
+      priority:
+        type: enum
+        values: [low, medium, high]
+        default: medium
+      created_at: { type: datetime }
+
+  note:
+    fields:
+      id: { type: id }
+      content: { type: string, required: true }
+      tags: { type: array, items: { type: string } }
+      created_at: { type: datetime }
+
+repositories:
+  tasks:
+    entity: task
+    crud: [create, list, get, update, delete]
+
+  notes:
+    entity: note
+    crud: [create, list, get, update, delete]
+
+services:
+  tasks:
+    repository: tasks
+
+  notes:
+    repository: notes
+
+controllers:
+  tasks:
+    base_path: /tasks
+    service: tasks
+    access: public
+
+  notes:
+    base_path: /notes
+    service: notes
+    access: public

@@ -1,0 +1,90 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+  port: 5000
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: systemd_app_db
+
+deploy:
+  runtime: systemd
+  name: backend-service
+  port: 5000
+  systemd:
+    user: www-data
+    restart: always
+
+entities:
+  log_entry:
+    fields:
+      id: { type: id }
+      level:
+        type: enum
+        values: [debug, info, warning, error, critical]
+        default: info
+      message: { type: string, required: true }
+      timestamp: { type: datetime }
+      service: { type: string }
+      metadata: { type: object }
+
+  metric:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      value: { type: number, required: true }
+      unit: { type: string }
+      timestamp: { type: datetime }
+      tags: { type: array, items: { type: string } }
+
+repositories:
+  logs:
+    entity: log_entry
+    crud: [create, list, get]
+    operations:
+      by_level:
+        query:
+          command: find
+          filter: { level: "{{level}}" }
+          options: { sort: { timestamp: -1 }, limit: 100 }
+      recent:
+        query:
+          command: find
+          filter: { timestamp: { $gte: "{{start_time}}" } }
+          options: { sort: { timestamp: -1 } }
+
+  metrics:
+    entity: metric
+    crud: [create, list, get]
+    operations:
+      by_name:
+        query:
+          command: find
+          filter: { name: "{{name}}" }
+          options: { sort: { timestamp: -1 }, limit: 50 }
+      aggregate_by_name:
+        query:
+          command: aggregate
+          pipeline:
+            - { $match: { name: "{{name}}" } }
+            - { $group: { _id: "$name", avg: { $avg: "$value" }, min: { $min: "$value" }, max: { $max: "$value" } } }
+
+services:
+  logs:
+    repository: logs
+
+  metrics:
+    repository: metrics
+
+controllers:
+  logs:
+    base_path: /logs
+    service: logs
+    access: public
+
+  metrics:
+    base_path: /metrics
+    service: metrics
+    access: public

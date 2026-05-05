@@ -3,7 +3,9 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from ..base import CodeGenerator
+from yaml_api_generator.utils.strings import to_pascal_case
+from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
+from ..utils import find_identity, group_by_collection, extract_identity_fields
 from . import type_mapper
 from yaml_api_generator.ir.when import (
     And,
@@ -23,7 +25,11 @@ _TEMPLATES_DIR = _BACKEND_GENERATORS / "drf" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
 
 
-class DRFGenerator(CodeGenerator):
+class DRFGenerator(TemplateBasedGenerator):
+    def __init__(self):
+        super().__init__()
+        self._dir_prefix = "api"
+
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         env = Environment(
             loader=ChoiceLoader([
@@ -35,13 +41,13 @@ class DRFGenerator(CodeGenerator):
             lstrip_blocks=True,
         )
         env.filters["drf_field"] = type_mapper.drf_field
-        env.filters["capitalize_collection"] = _capitalize_collection
-        env.filters["when_to_python"] = _when_to_python
+        env.filters["capitalize_collection"] = to_pascal_case
+        env.filters["rule_to_python"] = _rule_to_python
         env.tests["needs_document"] = _needs_document_test
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        collections_by_name = _group_by_collection(context)
+        collections_by_name = group_by_collection(context)
 
         self._render_project_scaffold(env, context, output_dir)
         self._render_serializers(env, context, collections_by_name, output_dir)
@@ -50,7 +56,13 @@ class DRFGenerator(CodeGenerator):
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
         self._render_urls(env, context, output_dir)
-        self._render_requirements(env, output_dir)
+        self._render_single_file(
+            env, context, output_dir,
+            SingleFileRenderConfig(
+                template_name="requirements.txt.jinja",
+                output_path="requirements.txt",
+            )
+        )
 
     def _render_project_scaffold(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -60,16 +72,16 @@ class DRFGenerator(CodeGenerator):
         (project_dir / "__init__.py").write_text("")
 
         for template_name, filename in [
-            ("settings.py.j2", "settings.py"),
-            ("project_urls.py.j2", "urls.py"),
-            ("asgi.py.j2", "asgi.py"),
-            ("wsgi.py.j2", "wsgi.py"),
+            ("settings.py.jinja", "settings.py"),
+            ("project_urls.py.jinja", "urls.py"),
+            ("asgi.py.jinja", "asgi.py"),
+            ("wsgi.py.jinja", "wsgi.py"),
         ]:
             template = env.get_template(template_name)
             content = template.render(ctx=context)
             (project_dir / filename).write_text(content)
 
-        template = env.get_template("manage.py.j2")
+        template = env.get_template("manage.py.jinja")
         (output_dir / "manage.py").write_text(template.render())
 
     def _render_serializers(
@@ -79,25 +91,17 @@ class DRFGenerator(CodeGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        serializers_dir = output_dir / "api" / "serializers"
-        serializers_dir.mkdir(parents=True, exist_ok=True)
-
-        template = env.get_template("serializers.py.j2")
-        init_imports: list[str] = []
-
-        for col_name, col_data in collections_by_name.items():
-            models = col_data["models"]
-            if not models:
-                continue
-            content = template.render(models=models)
-            (serializers_dir / f"{col_name}.py").write_text(content)
-            class_names = [m.name for m in models]
-            init_imports.append(
-                f"from .{col_name} import {', '.join(class_names)}"
+        self._render_collection_based(
+            env, context, collections_by_name, output_dir,
+            RenderConfig(
+                template_name="serializers.py.jinja",
+                output_subdir="serializers",
+                context_builder=lambda col_name, col_data, ctx: {
+                    "models": col_data["models"],
+                },
+                should_render=lambda col_name, col_data, ctx: bool(col_data["models"]),
             )
-
-        init_content = "\n".join(init_imports) + "\n" if init_imports else ""
-        (serializers_dir / "__init__.py").write_text(init_content)
+        )
 
     def _render_services(
         self,
@@ -106,46 +110,31 @@ class DRFGenerator(CodeGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        services_dir = output_dir / "api" / "services"
-        services_dir.mkdir(parents=True, exist_ok=True)
-
-        exc_template = env.get_template("exceptions.py.j2")
-        (services_dir / "exceptions.py").write_text(exc_template.render())
-
-        svc_template = env.get_template("service.py.j2")
-        init_imports: list[str] = []
-
-        for col_name in collections_by_name:
-            identity = _find_identity(context, col_name)
-            is_identity = identity is not None
-            password_via = is_identity and identity.has_password
-
-            identity_fields: list[str] = []
-            if is_identity:
-                seen: set[str] = set()
-                for b in identity.bindings:
-                    if b.identifier not in seen:
-                        identity_fields.append(b.identifier)
-                        seen.add(b.identifier)
-
-            content = svc_template.render(
-                collection_name=col_name,
-                is_async=False,
-                is_identity_collection=is_identity,
-                password_via=password_via,
-                identity_fields=identity_fields,
-                import_prefix="api.repositories",
-                auth_import_prefix="api.authentication.auth",
-                service_import_prefix="api.services",
+        self._render_collection_based(
+            env, context, collections_by_name, output_dir,
+            RenderConfig(
+                template_name="service.py.jinja",
+                output_subdir="services",
+                import_class_suffix="Service",
+                context_builder=self._build_service_context,
+                additional_files=[("exceptions.py.jinja", "exceptions.py")],
             )
-            (services_dir / f"{col_name}.py").write_text(content)
-            class_name = _capitalize_collection(col_name)
-            init_imports.append(
-                f"from .{col_name} import {class_name}Service"
-            )
+        )
 
-        init_content = "\n".join(init_imports) + "\n" if init_imports else ""
-        (services_dir / "__init__.py").write_text(init_content)
+    def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
+        identity = find_identity(context, col_name)
+        is_identity = identity is not None
+
+        return {
+            "collection_name": col_name,
+            "is_async": True,
+            "is_identity_collection": is_identity,
+            "password_via": is_identity and identity.has_password,
+            "identity_fields": extract_identity_fields(context, col_name),
+            "import_prefix": "api.repositories",
+            "auth_import_prefix": "api.authentication.auth",
+            "service_import_prefix": "api.services",
+        }
 
     def _render_views(
         self,
@@ -154,37 +143,28 @@ class DRFGenerator(CodeGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        views_dir = output_dir / "api" / "views"
-        views_dir.mkdir(parents=True, exist_ok=True)
-
-        template = env.get_template("views.py.j2")
-        init_imports: list[str] = []
-
-        for col_name, col_data in collections_by_name.items():
-            routes = col_data["routes"]
-            if not routes:
-                continue
-            model_index = {m.name: m for m in col_data["models"]}
-            content = template.render(
-                ctx=context,
-                collection_name=col_name,
-                routes=routes,
-                model_index=model_index,
-                auth=context.auth,
+        self._render_collection_based(
+            env, context, collections_by_name, output_dir,
+            RenderConfig(
+                template_name="views.py.jinja",
+                output_subdir="views",
+                import_pattern="from .{col_name} import {class_name}ListView, {class_name}DetailView",
+                context_builder=lambda col_name, col_data, ctx: {
+                    "ctx": ctx,
+                    "collection_name": col_name,
+                    "routes": col_data["routes"],
+                    "model_index": {m.name: m for m in col_data["models"]},
+                    "auth": ctx.auth,
+                },
+                should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
             )
-            (views_dir / f"{col_name}.py").write_text(content)
-            cap = _capitalize_collection(col_name)
-            init_imports.append(
-                f"from .{col_name} import {cap}ListView, {cap}DetailView"
-            )
+        )
 
         if context.auth.has_password_auth:
-            login_template = env.get_template("login_views.py.j2")
+            views_dir = output_dir / self.dir_prefix / "views"
+            login_template = env.get_template("login_views.py.jinja")
             login_content = login_template.render(auth=context.auth)
             (views_dir / "login.py").write_text(login_content)
-
-        init_content = "\n".join(init_imports) + "\n" if init_imports else ""
-        (views_dir / "__init__.py").write_text(init_content)
 
     def _render_repositories(
         self,
@@ -193,128 +173,107 @@ class DRFGenerator(CodeGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        repos_dir = output_dir / "api" / "repositories"
-        repos_dir.mkdir(parents=True, exist_ok=True)
-
-        template = env.get_template("repository.py.j2")
-        init_imports: list[str] = []
-
-        for col_name in collections_by_name:
-            col_info = context.collections[col_name]
-            content = template.render(
-                collection_name=col_name,
-                id_field=col_info["id_field"],
-                id_field_format=col_info["id_format"],
+        self._render_collection_based(
+            env, context, collections_by_name, output_dir,
+            RenderConfig(
+                template_name="repository.py.jinja",
+                output_subdir="repositories",
+                import_class_suffix="Repository",
+                context_builder=lambda col_name, col_data, ctx: {
+                    "collection_name": col_name,
+                    "id_field": ctx.collections[col_name]["id_field"],
+                    "id_field_format": ctx.collections[col_name]["id_format"],
+                    "custom_operations": ctx.repository_operations.get(col_name, []),
+                },
             )
-            (repos_dir / f"{col_name}.py").write_text(content)
-            class_name = _capitalize_collection(col_name)
-            init_imports.append(
-                f"from .{col_name} import {class_name}Repository"
-            )
-
-        init_content = "\n".join(init_imports) + "\n" if init_imports else ""
-        (repos_dir / "__init__.py").write_text(init_content)
+        )
 
     def _render_authentication(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        auth_dir = output_dir / "api" / "authentication"
-        auth_dir.mkdir(parents=True, exist_ok=True)
-
-        mongo_template = env.get_template("mongodb.py.j2")
-        (auth_dir / "mongodb.py").write_text(mongo_template.render())
-
-        init_lines = ["from .mongodb import get_database, connect_db"]
+        files = [("mongodb.py.jinja", "mongodb.py")]
+        init_imports = ["from .mongodb import get_database, connect_db"]
 
         if context.auth.enabled:
-            auth_template = env.get_template("auth.py.j2")
-            content = auth_template.render(auth=context.auth)
-            (auth_dir / "auth.py").write_text(content)
-            init_lines.append("from .auth import resolve_principal")
+            files.append(("auth.py.jinja", "auth.py"))
+            init_imports.append("from .auth import resolve_principal")
 
         if context.auth.has_password_auth:
-            jwt_template = env.get_template("jwt_utils.py.j2")
-            (auth_dir / "jwt_utils.py").write_text(jwt_template.render())
-            init_lines.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
+            files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
+            init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 
-        init_content = "\n".join(init_lines) + "\n"
-        (auth_dir / "__init__.py").write_text(init_content)
+        self._render_directory(
+            env, context, output_dir,
+            subdir="authentication",
+            files=files,
+            init_imports=init_imports,
+        )
 
     def _render_urls(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        template = env.get_template("api_urls.py.j2")
-        content = template.render(collections=context.collections, auth=context.auth)
-        api_dir = output_dir / "api"
+        api_dir = output_dir / self.dir_prefix
         api_dir.mkdir(parents=True, exist_ok=True)
-        (api_dir / "urls.py").write_text(content)
+
+        template = env.get_template("api_urls.py.jinja")
+        collections_with_routes = {route.collection for route in context.routes if route.collection}
+        (api_dir / "urls.py").write_text(template.render(collections=collections_with_routes, auth=context.auth))
 
         (api_dir / "__init__.py").write_text("")
 
-        apps_template = env.get_template("apps.py.j2")
+        apps_template = env.get_template("apps.py.jinja")
         (api_dir / "apps.py").write_text(apps_template.render())
 
-    def _render_requirements(self, env: Environment, output_dir: Path) -> None:
-        template = env.get_template("requirements.txt.j2")
-        (output_dir / "requirements.txt").write_text(template.render())
+
+def _build_symbol_map(rule) -> dict[str, str]:
+    symbol_map: dict[str, str] = {}
+    if hasattr(rule, 'identity_symbols'):
+        for symbol_name in rule.identity_symbols:
+            symbol_map[symbol_name] = symbol_name
+    if hasattr(rule, 'document_symbols'):
+        for symbol_name in rule.document_symbols:
+            symbol_map[symbol_name] = symbol_name
+    return symbol_map
 
 
-def _capitalize_collection(name: str) -> str:
-    return "".join(part.capitalize() for part in name.split("_"))
-
-
-def _find_identity(
-    context: CompileContext, col_name: str
-) -> IdentityCollectionDescriptor | None:
-    for ic in context.auth.identity_collections:
-        if ic.name == col_name:
-            return ic
-    return None
-
-
-def _operand_to_python(expr: WhenExpr) -> str:
+def _operand_to_python(expr: WhenExpr, symbol_map: dict[str, str]) -> str:
     if isinstance(expr, StringLiteral):
         return f'"{expr.value}"'
     if isinstance(expr, FieldRef):
-        if expr.root == "principal":
-            if len(expr.path) == 1 and expr.path[0] == "sub":
-                return 'principal.get("sub")'
-            if len(expr.path) >= 2 and expr.path[0] == "record":
-                return f'principal.get("record", {{}}).get("{expr.path[1]}")'
-        elif expr.root == "document":
-            if len(expr.path) == 1:
-                return f'document.get("{expr.path[0]}")'
+        var_name = symbol_map.get(expr.root, expr.root)
+        if not expr.path:
+            return f'{var_name}.get("sub")'
+        if len(expr.path) == 1:
+            return f'{var_name}.get("{expr.path[0]}")'
+        if len(expr.path) >= 2 and expr.path[0] == "record":
+            return f'{var_name}.get("record", {{}}).get("{expr.path[1]}")'
+        nested = ".".join(f'get("{p}")' for p in expr.path)
+        return f'{var_name}.{nested}'
     return "None"
 
 
-def _when_to_python(expr: WhenExpr) -> str:
+def _when_to_python(expr: WhenExpr, symbol_map: dict[str, str] | None = None) -> str:
+    if symbol_map is None:
+        symbol_map = {}
     if isinstance(expr, Equals):
-        return f"{_operand_to_python(expr.left)} == {_operand_to_python(expr.right)}"
+        return f"{_operand_to_python(expr.left, symbol_map)} == {_operand_to_python(expr.right, symbol_map)}"
     if isinstance(expr, NotEquals):
-        return f"{_operand_to_python(expr.left)} != {_operand_to_python(expr.right)}"
+        return f"{_operand_to_python(expr.left, symbol_map)} != {_operand_to_python(expr.right, symbol_map)}"
     if isinstance(expr, And):
-        return f"({_when_to_python(expr.left)} and {_when_to_python(expr.right)})"
+        return f"({_when_to_python(expr.left, symbol_map)} and {_when_to_python(expr.right, symbol_map)})"
     if isinstance(expr, Or):
-        return f"({_when_to_python(expr.left)} or {_when_to_python(expr.right)})"
+        return f"({_when_to_python(expr.left, symbol_map)} or {_when_to_python(expr.right, symbol_map)})"
     if isinstance(expr, Not):
-        return f"(not {_when_to_python(expr.operand)})"
+        return f"(not {_when_to_python(expr.operand, symbol_map)})"
     return "False"
+
+
+def _rule_to_python(rule) -> str:
+    if not hasattr(rule, 'when') or rule.when is None:
+        return "True"
+    symbol_map = _build_symbol_map(rule)
+    return _when_to_python(rule.when, symbol_map)
 
 
 def _needs_document_test(expr: WhenExpr) -> bool:
     return needs_document(expr)
-
-
-def _group_by_collection(context: CompileContext) -> dict[str, dict]:
-    groups: dict[str, dict] = {}
-    for col_name in context.collections:
-        groups[col_name] = {"models": [], "routes": []}
-
-    for model in context.models:
-        groups[model.collection]["models"].append(model)
-    for route in context.routes:
-        if route.collection is None:
-            continue
-        groups[route.collection]["routes"].append(route)
-
-    return groups
