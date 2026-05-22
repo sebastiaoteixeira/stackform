@@ -1,0 +1,165 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+import { Button } from '../__generated__/components/Button';
+import { Badge } from '../__generated__/components/Badge';
+import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
+
+interface {{ entity.name | pascal_case }}ArticleProps {
+  basePath?: string;
+  publicView?: boolean;
+}
+
+export function {{ entity.name | pascal_case }}Article({
+  basePath = '{{ view.path if view else "/" }}',
+  publicView = false
+}: {{ entity.name | pascal_case }}ArticleProps) {
+  const { id } = useParams<{ id: string }>();
+  const [record, setRecord] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const { token } = useAuth();
+
+  useEffect(() => {
+    if (!id) return;
+    const fetchRecord = async () => {
+      try {
+        const headers: Record<string, string> = {};
+        if (token && !publicView) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { headers });
+        if (!res.ok) throw new Error(res.status === 404 ? 'Record not found' : `Error: ${res.status}`);
+        setRecord(await res.json());
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRecord();
+  }, [id, token, publicView]);
+
+  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+  {% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+  {% set content_field = entity.fields[roles.content] if roles.content is defined else none %}
+  {% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
+  {% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+  {% set author_field = entity.fields[roles.author] if roles.author is defined else none %}
+  {% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+
+  if (error) {
+    return (
+      <div className="px-4 py-8">
+        <div className="wf-card border-wf-danger bg-wf-danger-soft p-4 max-w-[580px] mx-auto">
+          <p className="text-wf-ink text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!record) return null;
+
+  return (
+    <article className="min-h-screen bg-wf-bg py-10 px-4">
+      <div style={{ "{{" }} maxWidth: '580px' {{ "}}" }} className="mx-auto">
+        {/* Metadata header */}
+        <div className="flex items-center gap-2.5 mb-4 text-sm text-wf-ink-dim">
+          {% if status_field %}
+          <Badge
+            value={String(record.{{ status_field.name }})}
+            variant={record.{{ status_field.name }} === 'published' ? 'success' : 'default'}
+            size="sm"
+          />
+          {% endif %}
+          {% if date_field %}
+          <span>{new Date(record.{{ date_field.name }}).toLocaleDateString()}</span>
+          <span className="text-wf-line">·</span>
+          {% endif %}
+          <span>{{ entity.name | title }}</span>
+        </div>
+
+        {/* Title */}
+        {% if title_field %}
+        <h1 className="font-title text-[32px] leading-tight text-wf-ink mb-5">
+          {record.{{ title_field.name }}}
+        </h1>
+        {% endif %}
+
+        {/* Author section */}
+        {% if author_field %}
+        <div className="flex items-center gap-3 mb-6">
+          {/* Avatar */}
+          <div className="w-9 h-9 rounded-full bg-wf-fill-2 border border-wf-line flex items-center justify-center flex-shrink-0">
+            <span className="text-sm font-medium text-wf-ink-dim">
+              {typeof record.{{ author_field.name }} === 'string' ? record.{{ author_field.name }}[0]?.toUpperCase() : '?'}
+            </span>
+          </div>
+          <div className="text-sm">
+            <div className="font-medium text-wf-ink">
+              {typeof record.{{ author_field.name }} === 'string' ? record.{{ author_field.name }} : 'Author'}
+            </div>
+            <div className="text-wf-ink-dim text-2xs">
+              {% if author_field.name == 'authorId' %}Author{% else %}{{ author_field.name | title }}{% endif %}
+            </div>
+          </div>
+          {!publicView && (
+            <div className="ml-auto">
+              <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
+                Edit
+              </Button>
+            </div>
+          )}
+        </div>
+        {% endif %}
+
+        {/* Hero image */}
+        {% if image_field %}
+        {record.{{ image_field.name }} && (
+          <div className="mb-7 -mx-4 overflow-hidden rounded-wf">
+            <img
+              src={record.{{ image_field.name }}}
+              alt=""
+              className="w-full max-h-[340px] object-cover"
+            />
+          </div>
+        )}
+        {% endif %}
+
+        {/* Body */}
+        <div className="wf-card p-6">
+          {% if content_field %}
+          <div className="whitespace-pre-wrap text-wf-ink text-sm leading-relaxed">
+            {record.{{ content_field.name }}}
+          </div>
+          {% else %}
+          <dl className="space-y-3">
+            {% for field in entity.fields.values() %}
+            {% if field.name not in ([entity.pk_field] + (roles.values() | list)) %}
+            <div>
+              <dt className="text-2xs uppercase tracking-wide text-wf-ink-faint mb-0.5">{{ field.name | title }}</dt>
+              <dd className="text-sm text-wf-ink">{String(record.{{ field.name }} ?? '—')}</dd>
+            </div>
+            {% endif %}
+            {% endfor %}
+          </dl>
+          {% endif %}
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 pt-5 border-t border-wf-line">
+          <button
+            onClick={() => navigate(-1)}
+            className="text-wf-accent-ink hover:text-wf-accent text-sm font-medium"
+          >
+            ← Back
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export default {{ entity.name | pascal_case }}Article;

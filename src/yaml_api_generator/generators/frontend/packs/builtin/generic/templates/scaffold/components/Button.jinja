@@ -1,0 +1,45 @@
+interface ButtonProps {
+  children: React.ReactNode;
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+  disabled?: boolean;
+  className?: string;
+}
+
+export function Button({
+  children,
+  variant = 'secondary',
+  size = 'md',
+  onClick,
+  type = 'button',
+  disabled = false,
+  className = ''
+}: ButtonProps) {
+  const baseClasses = 'inline-flex items-center justify-center gap-1.5 font-title whitespace-nowrap rounded-[5px] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+
+  const variantClasses = {
+    primary: 'bg-wf-accent border-wf-accent text-white hover:opacity-90',
+    secondary: 'bg-wf-surface border-wf-line-strong text-wf-ink hover:bg-wf-fill',
+    danger: 'bg-wf-danger border-wf-danger text-white hover:opacity-90',
+    ghost: 'bg-transparent border-transparent text-wf-ink-dim hover:text-wf-ink hover:bg-wf-fill'
+  };
+
+  const sizeClasses = {
+    sm: 'h-[26px] px-2.5 text-[13px]',
+    md: 'h-8 px-3.5 text-sm',
+    lg: 'h-[38px] px-[18px] text-base'
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}

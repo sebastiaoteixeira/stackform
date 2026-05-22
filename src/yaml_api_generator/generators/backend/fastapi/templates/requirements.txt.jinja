@@ -3,3 +3,5 @@ uvicorn
 pydantic
 pymongo
 pyjwt
+uuid_utils
+{% if ctx.auth.has_oidc_auth %}httpx{% endif %}

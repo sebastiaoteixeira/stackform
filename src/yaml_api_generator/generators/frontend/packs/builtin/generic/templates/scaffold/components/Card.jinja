@@ -1,0 +1,59 @@
+import { Link } from 'react-router-dom';
+
+interface CardProps {
+  title: string;
+  subtitle?: string;
+  image?: string;
+  badge?: React.ReactNode;
+  footer?: React.ReactNode;
+  link?: string;
+  onClick?: () => void;
+  children?: React.ReactNode;
+}
+
+export function Card({
+  title,
+  subtitle,
+  image,
+  badge,
+  footer,
+  link,
+  onClick,
+  children
+}: CardProps) {
+  const content = (
+    <div className="bg-wf-surface border border-wf-line rounded-wf overflow-hidden hover:border-wf-line-strong transition-colors">
+      {image ? (
+        <div className="h-[100px] w-full bg-wf-fill relative overflow-hidden">
+          <img src={image} alt={title} className="w-full h-full object-cover" />
+        </div>
+      ) : (
+        <div className="h-[100px] w-full bg-wf-fill relative flex items-center justify-center">
+          <svg className="absolute inset-0 w-full h-full">
+            <line x1="0" y1="0" x2="100%" y2="100%" stroke="var(--wf-line-strong)" strokeWidth="0.8" />
+            <line x1="100%" y1="0" x2="0" y2="100%" stroke="var(--wf-line-strong)" strokeWidth="0.8" />
+          </svg>
+        </div>
+      )}
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h3 className="font-title text-lg text-wf-ink line-clamp-2">{title}</h3>
+          {badge && <div className="flex-shrink-0">{badge}</div>}
+        </div>
+        {subtitle && <p className="text-sm text-wf-ink-dim line-clamp-2">{subtitle}</p>}
+        {children && <div className="mt-2">{children}</div>}
+        {footer && <div className="mt-3 pt-2 border-t border-dashed border-wf-line">{footer}</div>}
+      </div>
+    </div>
+  );
+
+  if (link) {
+    return <Link to={link} className="block">{content}</Link>;
+  }
+
+  if (onClick) {
+    return <div onClick={onClick} className="cursor-pointer">{content}</div>;
+  }
+
+  return content;
+}

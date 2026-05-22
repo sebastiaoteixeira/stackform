@@ -5,6 +5,7 @@ from typing import Any
 
 from yaml_api_generator.ir import IRDocument
 from yaml_api_generator.ir.ui import (
+    AuthProviderInfo,
     ComponentNode,
     EntityFieldInfo,
     EntityInfo,
@@ -71,6 +72,20 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
         ir.collections[k].entity_name for k in ir.identityCollections.keys()
     }
 
+    base_url = (ir.api.basePath or "").rstrip("/")
+    if ir.api.version:
+        base_url = f"{base_url}/{ir.api.version}"
+
+    repo_to_base_path: dict[str, str] = {}
+    for route in ir.routes:
+        if route.service and route.operation == "list":
+            service = ir.services.get(route.service)
+            if service and service.repository:
+                path = route.path
+                if path.startswith(base_url):
+                    path = path[len(base_url):]
+                repo_to_base_path[service.repository] = path
+
     for col_name, ir_col in ir.collections.items():
         entity_name = ir_col.entity_name
         fields: dict[str, EntityFieldInfo] = {}
@@ -88,13 +103,22 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
                 enum_values=field_config.get("values"),
                 ref_entity=field_config.get("ref"),
                 default=field_config.get("default"),
+                readonly=field_config.get("readonly", False),
             )
 
         auth_identifier = None
+        auth_providers: list[AuthProviderInfo] = []
         identity = ir.identityCollections.get(col_name)
         if identity:
             pw_binding = identity.get_binding("password")
             auth_identifier = pw_binding.identifier if pw_binding else None
+            auth_providers = [
+                AuthProviderInfo(name=b.provider, type=ir.providers[b.provider].type)
+                for b in identity.bindings
+                if b.provider not in ("password", "apiKey") and b.provider in ir.providers
+            ]
+
+        api_base_path = repo_to_base_path.get(col_name)
 
         entities[entity_name] = EntityInfo(
             name=entity_name,
@@ -103,6 +127,8 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
             pk_field=ir_col.idField,
             repository_name=col_name,
             auth_identifier=auth_identifier,
+            api_base_path=api_base_path,
+            auth_providers=auth_providers,
         )
 
     return entities
@@ -233,20 +259,30 @@ def _parse_components(
 def _parse_component_node(
     raw: dict[str, Any],
     pack_components: dict[str, PackComponentDef],
+    user_components: dict[str, UIComponent] | None = None,
 ) -> ComponentNode:
     component_name = raw.get("component", "")
     if not component_name:
         raise ValueError("Component node missing 'component' field")
-    if component_name not in pack_components:
+    all_known = set(pack_components)
+    if user_components:
+        all_known |= set(user_components)
+    if component_name not in all_known:
         raise ValueError(
             f"Component '{component_name}' not found in pack. "
-            f"Available: {list(pack_components.keys())}"
+            f"Available: {sorted(all_known)}"
         )
 
+    pack_def = pack_components.get(component_name)
     props_raw = raw.get("props", {})
     props: dict[str, PropValue] = {}
     for prop_name, prop_val in props_raw.items():
-        props[prop_name] = _parse_prop_value(prop_val, pack_components)
+        declared_type = None
+        if pack_def and prop_name in pack_def.props:
+            declared_type = pack_def.props[prop_name].type
+        props[prop_name] = _parse_prop_value(
+            prop_val, pack_components, declared_type=declared_type
+        )
 
     return ComponentNode(component=component_name, props=props)
 
@@ -254,12 +290,15 @@ def _parse_component_node(
 def _parse_prop_value(
     raw: Any,
     pack_components: dict[str, PackComponentDef],
+    declared_type: str | None = None,
 ) -> PropValue:
     if isinstance(raw, str) and raw.startswith("$"):
         return PropValue(kind="ref", value=raw[1:])
     if isinstance(raw, dict) and "component" in raw:
         node = _parse_component_node(raw, pack_components)
         return PropValue(kind="component", value=node)
+    if declared_type == "component" and isinstance(raw, str):
+        return PropValue(kind="component_ref", value=raw)
     return PropValue(kind="literal", value=raw)
 
 
@@ -298,10 +337,16 @@ def _parse_views(
                 f"in YAML components or pack components"
             )
 
+        pack_def = pack_components.get(component)
         props_raw = view_raw.get("props", {})
         props: dict[str, PropValue] = {}
         for prop_name, prop_val in props_raw.items():
-            props[prop_name] = _parse_prop_value(prop_val, pack_components)
+            declared_type = None
+            if pack_def and prop_name in pack_def.props:
+                declared_type = pack_def.props[prop_name].type
+            props[prop_name] = _parse_prop_value(
+                prop_val, pack_components, declared_type=declared_type
+            )
 
         result[view_name] = UIView(
             name=view_name, path=path, component=component, props=props

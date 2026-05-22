@@ -1,0 +1,32 @@
+interface EmptyCenteredProps {
+  title?: string;
+  subtitle?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  icon?: string;
+}
+
+export function EmptyCentered({
+  title = 'No {{ entity.name | lower | plural }} yet',
+  subtitle = 'Create your first record to get started.',
+  actionLabel = '+ New {{ entity.name | title }}',
+  onAction,
+  icon = '∅',
+}: EmptyCenteredProps) {
+  return (
+    <div className="flex items-center justify-center" style={{ "{{" }} minHeight: '400px' {{ "}}" }}>
+      <div className="text-center border-[1.5px] border-dashed border-wf-line rounded-wf px-10 py-12 max-w-sm w-full">
+        <div className="w-[60px] h-[60px] mx-auto mb-5 border-[1.5px] border-dashed border-wf-line rounded-lg flex items-center justify-center">
+          <span className="font-title text-2xl text-wf-ink-faint">{icon}</span>
+        </div>
+        <h3 className="font-title text-xl text-wf-ink mb-2">{title}</h3>
+        <p className="text-sm text-wf-ink-dim mb-6">{subtitle}</p>
+        {onAction && actionLabel && (
+          <button onClick={onAction} className="wf-btn wf-btn-primary">
+            {actionLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

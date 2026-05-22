@@ -13,7 +13,7 @@ export function {{ collection_name | pascal_case }}CardGrid({ data, columns = 3 
         </button>
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+      <div className="grid gap-4" style={{ "{{" }} gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` {{ "}}" }}>
         {data.map((item, i) => (
           <div
             key={item.id || i}

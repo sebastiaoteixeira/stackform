@@ -70,6 +70,13 @@ class EntityFieldInfo:
     enum_values: list[str] | None = None
     ref_entity: str | None = None
     default: Any = None
+    readonly: bool = False
+
+
+@dataclass
+class AuthProviderInfo:
+    name: str
+    type: str
 
 
 @dataclass
@@ -80,6 +87,8 @@ class EntityInfo:
     pk_field: str = "id"
     repository_name: str | None = None
     auth_identifier: str | None = None
+    api_base_path: str | None = None
+    auth_providers: list[AuthProviderInfo] = field(default_factory=list)
 
 
 @dataclass

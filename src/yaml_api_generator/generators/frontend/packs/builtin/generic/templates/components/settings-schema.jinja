@@ -1,0 +1,83 @@
+{% set PALETTE = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'] %}
+
+interface FieldDef {
+  name: string;
+  type: string;
+  required?: boolean;
+}
+
+interface EntityDef {
+  name: string;
+  fields: FieldDef[];
+  color: string;
+}
+
+interface SettingsSchemaProps {
+  onSelectEntity?: (name: string) => void;
+}
+
+const SCHEMA: EntityDef[] = [
+  {% for entity in entities %}
+  {
+    name: '{{ entity.name }}',
+    color: '{{ PALETTE[loop.index0 % PALETTE | length] }}',
+    fields: [
+      {% for field in entity.fields.values() %}
+      { name: '{{ field.name }}', type: '{{ field.type }}', required: {{ 'true' if field.required else 'false' }} },
+      {% endfor %}
+    ],
+  },
+  {% endfor %}
+];
+
+export function SettingsSchema({ onSelectEntity }: SettingsSchemaProps) {
+  return (
+    <div className="p-6 bg-wf-bg min-h-full">
+      <div className="wf-toolbar mb-5">
+        <h1 className="font-title text-2xl text-wf-ink">Schema browser</h1>
+        <span className="wf-mono text-wf-ink-dim">{SCHEMA.length} entities</span>
+      </div>
+
+      <div className="grid gap-4" style={{ "{{" }} gridTemplateColumns: 'repeat(3, 1fr)' {{ "}}" }}>
+        {SCHEMA.map((entity) => (
+          <div
+            key={entity.name}
+            onClick={() => onSelectEntity?.(entity.name)}
+            className="wf-card hover:border-wf-line-strong transition-colors cursor-pointer"
+          >
+            {/* Entity header */}
+            <div className="flex items-center gap-2.5 mb-3">
+              <span
+                className="w-4 h-4 rounded-sm flex-shrink-0"
+                style={{ "{{" }} backgroundColor: entity.color {{ "}}" }}
+              />
+              <span className="font-title text-[18px] text-wf-ink flex-1">{entity.name}</span>
+              <span className="wf-mono text-wf-ink-faint">entity</span>
+            </div>
+
+            {/* Fields list */}
+            <div className="space-y-1">
+              {entity.fields.map((field) => (
+                <div key={field.name} className="flex items-center gap-2 py-0.5">
+                  <span className="text-sm text-wf-ink flex-1">{field.name}</span>
+                  <span
+                    className={`wf-mono text-xs ${
+                      field.type === 'relation' || field.type === 'ref'
+                        ? 'text-wf-accent-ink bg-wf-accent-soft px-1 rounded'
+                        : 'text-wf-ink-faint'
+                    }`}
+                  >
+                    {field.type}
+                  </span>
+                  {field.required && (
+                    <span className="text-wf-danger text-xs">*</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

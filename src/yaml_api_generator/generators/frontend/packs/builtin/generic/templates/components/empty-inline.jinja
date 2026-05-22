@@ -1,0 +1,69 @@
+import { useState } from 'react';
+
+interface EmptyInlineProps {
+  columns: string[];
+  onCommit: (row: Record<string, string>) => void;
+  placeholder?: Record<string, string>;
+}
+
+export function EmptyInline({ columns, onCommit, placeholder = {} }: EmptyInlineProps) {
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  const handleKeyDown = (e: React.KeyboardEvent, col: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (Object.values(draft).some(Boolean)) {
+        onCommit(draft);
+        setDraft({});
+      }
+    }
+  };
+
+  return (
+    <div className="flex flex-col">
+      <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+        <table className="wf-table">
+          <thead>
+            <tr>
+              {columns.map((col) => (
+                <th key={col}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {/* Active new-row */}
+            <tr className="border-b border-wf-accent/40 bg-wf-accent-soft/30">
+              {columns.map((col) => (
+                <td key={col} className="p-0">
+                  <input
+                    type="text"
+                    value={draft[col] ?? ''}
+                    placeholder={placeholder[col] ?? col}
+                    onChange={(e) => setDraft({ ...draft, [col]: e.target.value })}
+                    onKeyDown={(e) => handleKeyDown(e, col)}
+                    className="w-full px-3 py-2 text-sm bg-transparent outline-none border-[1.5px] border-transparent focus:border-wf-accent rounded-sm text-wf-ink placeholder:text-wf-ink-faint"
+                  />
+                </td>
+              ))}
+            </tr>
+
+            {/* Placeholder empty rows */}
+            {[...Array(4)].map((_, i) => (
+              <tr key={i} className="opacity-30 pointer-events-none select-none">
+                {columns.map((col) => (
+                  <td key={col} className="px-3 py-2">
+                    <div className="h-4 rounded bg-wf-line w-3/4" />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 text-center text-xs text-wf-ink-faint">
+        Start typing above, or press Cmd+K
+      </p>
+    </div>
+  );
+}

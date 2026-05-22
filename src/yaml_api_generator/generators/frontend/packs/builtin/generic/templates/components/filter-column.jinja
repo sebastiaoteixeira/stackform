@@ -1,0 +1,297 @@
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+type SortDir = 'asc' | 'desc' | null;
+
+interface ColumnFilter {
+  search: string;
+  selected: Set<string>;
+}
+
+{% set display_fields = [] %}
+{% set ns = namespace(count=0) %}
+{% for field in entity.fields.values() %}
+{% if ns.count < 5 %}
+{% set _ = display_fields.append(field) %}
+{% set ns.count = ns.count + 1 %}
+{% endif %}
+{% endfor %}
+
+const COLUMNS = [
+  { key: '{{ entity.pk_field }}', label: 'ID' },
+  {% set ns = namespace(count=0) %}
+  {% for field in entity.fields.values() %}
+  {% if field.name != entity.pk_field and ns.count < 5 %}
+  { key: '{{ field.name }}', label: '{{ field.name | title }}' },
+  {% set ns.count = ns.count + 1 %}
+  {% endif %}
+  {% endfor %}
+];
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // Per-column sort: only one active at a time
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
+  // Per-column checkbox filters
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({});
+  const [appliedFilters, setAppliedFilters] = useState<Record<string, Set<string>>>({});
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpenDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const uniqueValues = useMemo(() =>
+    COLUMNS.reduce((acc, col) => {
+      const vals = [...new Set(items.map(item => String((item as any)[col.key] ?? '')))].sort();
+      acc[col.key] = vals;
+      return acc;
+    }, {} as Record<string, string[]>),
+    [items]
+  );
+
+  const getFilter = (key: string): ColumnFilter =>
+    columnFilters[key] ?? { search: '', selected: new Set() };
+
+  const setFilter = (key: string, patch: Partial<ColumnFilter>) =>
+    setColumnFilters(prev => ({
+      ...prev,
+      [key]: { ...getFilter(key), ...patch },
+    }));
+
+  const toggleValue = (key: string, val: string) => {
+    const f = getFilter(key);
+    const next = new Set(f.selected);
+    if (next.has(val)) next.delete(val); else next.add(val);
+    setFilter(key, { selected: next });
+  };
+
+  const applyColumn = (key: string) => {
+    const f = getFilter(key);
+    setAppliedFilters(prev => ({
+      ...prev,
+      [key]: f.selected.size > 0 ? new Set(f.selected) : new Set(),
+    }));
+    if (sortCol === key) {
+      // sort direction toggled via header click — nothing extra needed
+    }
+    setOpenDropdown(null);
+  };
+
+  const sortColumn = (key: string) => {
+    if (sortCol === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : d === 'desc' ? null : 'asc');
+      if (sortDir === null) setSortCol(null);
+    } else {
+      setSortCol(key);
+      setSortDir('asc');
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let result = items.filter(item =>
+      COLUMNS.every(col => {
+        const active = appliedFilters[col.key];
+        if (!active || active.size === 0) return true;
+        return active.has(String((item as any)[col.key] ?? ''));
+      })
+    );
+    if (sortCol && sortDir) {
+      result = [...result].sort((a, b) => {
+        const av = String((a as any)[sortCol] ?? '');
+        const bv = String((b as any)[sortCol] ?? '');
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      });
+    }
+    return result;
+  }, [items, appliedFilters, sortCol, sortDir]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono">{filtered.length} of {items.length}</span>
+        <div className="flex-1" />
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Table with column-header filters */}
+      <div className="flex-1 overflow-auto px-6 pb-6" ref={dropdownRef}>
+        <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+          <table className="wf-table">
+            <thead>
+              <tr>
+                {COLUMNS.map(col => {
+                  const isOpen = openDropdown === col.key;
+                  const hasFilter = (appliedFilters[col.key]?.size ?? 0) > 0;
+                  const hasSort = sortCol === col.key && sortDir;
+                  return (
+                    <th
+                      key={col.key}
+                      className={`relative select-none ${isOpen || hasFilter ? 'bg-wf-accent-soft text-wf-accent-ink' : ''}`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => sortColumn(col.key)}
+                          className="flex items-center gap-1 hover:text-wf-ink"
+                        >
+                          {col.label}
+                          {hasSort && <span>{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                        </button>
+                        <button
+                          onClick={() => setOpenDropdown(isOpen ? null : col.key)}
+                          className={`ml-auto text-[10px] leading-none hover:text-wf-ink ${hasFilter ? 'text-wf-accent' : 'text-wf-ink-faint'}`}
+                          title="Filter"
+                        >
+                          {hasFilter ? '▼' : '⌄'}
+                        </button>
+                      </div>
+
+                      {/* Dropdown */}
+                      {isOpen && (() => {
+                        const f = getFilter(col.key);
+                        const vals = (uniqueValues[col.key] ?? []).filter(v =>
+                          !f.search || v.toLowerCase().includes(f.search.toLowerCase())
+                        );
+                        return (
+                          <div className="absolute top-full left-0 mt-1 z-30 bg-wf-surface border-[1.5px] border-wf-line-strong rounded-wf shadow-xl p-2 min-w-[180px]">
+                            <input
+                              value={f.search}
+                              onChange={e => setFilter(col.key, { search: e.target.value })}
+                              placeholder="Search values..."
+                              className="w-full wf-input text-xs h-6 px-2 mb-2"
+                              autoFocus
+                            />
+                            <div className="max-h-40 overflow-y-auto space-y-0.5 mb-2">
+                              {vals.map(val => (
+                                <label key={val} className="flex items-center gap-2 px-1 py-0.5 hover:bg-wf-fill rounded cursor-pointer text-xs text-wf-ink">
+                                  <input
+                                    type="checkbox"
+                                    checked={f.selected.has(val)}
+                                    onChange={() => toggleValue(col.key, val)}
+                                    className="w-3 h-3 accent-wf-accent"
+                                  />
+                                  <span className="truncate">{val || '(empty)'}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <div className="flex gap-1 border-t border-wf-line pt-2">
+                              <button
+                                onClick={() => { setSortCol(col.key); setSortDir('asc'); setOpenDropdown(null); }}
+                                className="wf-btn wf-btn-sm flex-1 text-xs"
+                              >
+                                Sort A→Z
+                              </button>
+                              <button
+                                onClick={() => applyColumn(col.key)}
+                                className="wf-btn wf-btn-sm wf-btn-primary flex-1 text-xs"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="py-12 text-center text-wf-ink-faint">
+                    No results match the column filters.
+                  </td>
+                </tr>
+              ) : filtered.map(item => (
+                <tr
+                  key={item.{{ entity.pk_field }}}
+                  onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                  className="cursor-pointer"
+                >
+                  {COLUMNS.map(col => (
+                    <td key={col.key}>
+                      {col.key === '{{ entity.pk_field }}' ? (
+                        <span className="wf-mono">{String((item as any)[col.key]).slice(0, 8)}…</span>
+                      ) : (
+                        String((item as any)[col.key] ?? '—')
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between mt-4 text-sm text-wf-ink-dim">
+          <span>{filtered.length} of {items.length} records</span>
+          <div className="flex gap-1">
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>←</button>
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

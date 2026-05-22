@@ -1,10 +1,51 @@
+{%- set fonts = pack_config.get('fonts', {}) -%}
+{%- set ui_font = fonts.get('ui', 'Inter') -%}
+{%- set hand_font = fonts.get('hand', 'Caveat') -%}
+{%- set mono_font = fonts.get('mono', 'JetBrains Mono') -%}
+
 export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        wf: {
+          bg: 'var(--wf-bg)',
+          surface: 'var(--wf-surface)',
+          ink: 'var(--wf-ink)',
+          'ink-dim': 'var(--wf-ink-dim)',
+          'ink-faint': 'var(--wf-ink-faint)',
+          line: 'var(--wf-line)',
+          'line-strong': 'var(--wf-line-strong)',
+          fill: 'var(--wf-fill)',
+          'fill-2': 'var(--wf-fill-2)',
+          accent: 'var(--wf-accent)',
+          'accent-soft': 'var(--wf-accent-soft)',
+          'accent-ink': 'var(--wf-accent-ink)',
+          danger: 'var(--wf-danger)',
+          'danger-soft': 'var(--wf-danger-soft)',
+          success: 'var(--wf-success)',
+          'success-soft': 'var(--wf-success-soft)',
+          warn: 'var(--wf-warn)',
+          'warn-soft': 'var(--wf-warn-soft)',
+        },
+      },
+      fontFamily: {
+        ui: ['{{ ui_font }}', 'system-ui', 'sans-serif'],
+        hand: ['{{ hand_font }}', 'Bradley Hand', 'cursive'],
+        mono: ['{{ mono_font }}', 'Menlo', 'monospace'],
+        title: 'var(--wf-font-title)',
+      },
+      borderRadius: {
+        wf: '6px',
+      },
+      fontSize: {
+        '2xs': '10px',
+      },
+    },
   },
   plugins: [],
 }

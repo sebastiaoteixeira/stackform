@@ -1,0 +1,69 @@
+interface EmptyImportProps {
+  onCreateNew?: () => void;
+  onImportCsv?: () => void;
+  onLoadSample?: () => void;
+  entityLabel?: string;
+}
+
+export function EmptyImport({
+  onCreateNew,
+  onImportCsv,
+  onLoadSample,
+  entityLabel = '{{ entity.name | title }}',
+}: EmptyImportProps) {
+  return (
+    <div className="flex justify-center px-4 py-12">
+      <div className="text-center w-full" style={{ "{{" }} maxWidth: '680px' {{ "}}" }}>
+        <div className="w-[52px] h-[52px] mx-auto mb-5 border-[1.5px] border-dashed border-wf-line rounded-lg flex items-center justify-center">
+          <span className="font-title text-xl text-wf-ink-faint">∅</span>
+        </div>
+        <h3 className="font-title text-2xl text-wf-ink mb-2">No {entityLabel} records yet</h3>
+        <p className="text-sm text-wf-ink-dim mb-8">Choose how you'd like to get started.</p>
+
+        <div className="grid grid-cols-3 gap-4">
+          {/* Create new */}
+          <div className="flex flex-col items-center gap-3 p-5 rounded-wf border-[1.5px] border-wf-line bg-wf-surface hover:border-wf-accent transition-colors">
+            <div className="w-9 h-9 rounded-md border-[1.5px] border-wf-line-strong bg-wf-fill flex items-center justify-center text-wf-ink-dim text-lg">
+              +
+            </div>
+            <div>
+              <div className="text-sm font-medium text-wf-ink mb-0.5">Create new</div>
+              <div className="text-xs text-wf-ink-faint">Start from scratch</div>
+            </div>
+            <button onClick={onCreateNew} className="wf-btn wf-btn-sm wf-btn-primary w-full">
+              Create
+            </button>
+          </div>
+
+          {/* Import CSV */}
+          <div className="flex flex-col items-center gap-3 p-5 rounded-wf border-[1.5px] border-wf-line bg-wf-surface hover:border-wf-accent transition-colors">
+            <div className="w-9 h-9 rounded-md border-[1.5px] border-wf-line-strong bg-wf-fill flex items-center justify-center text-wf-ink-dim text-lg">
+              ↑
+            </div>
+            <div>
+              <div className="text-sm font-medium text-wf-ink mb-0.5">Import CSV</div>
+              <div className="text-xs text-wf-ink-faint">Upload a spreadsheet</div>
+            </div>
+            <button onClick={onImportCsv} className="wf-btn wf-btn-sm w-full">
+              Import
+            </button>
+          </div>
+
+          {/* Sample data */}
+          <div className="flex flex-col items-center gap-3 p-5 rounded-wf border-[1.5px] border-wf-line bg-wf-surface hover:border-wf-accent transition-colors">
+            <div className="w-9 h-9 rounded-md border-[1.5px] border-wf-line-strong bg-wf-fill flex items-center justify-center text-wf-ink-dim text-lg">
+              ≡
+            </div>
+            <div>
+              <div className="text-sm font-medium text-wf-ink mb-0.5">Sample data</div>
+              <div className="text-xs text-wf-ink-faint">Explore with examples</div>
+            </div>
+            <button onClick={onLoadSample} className="wf-btn wf-btn-sm w-full">
+              Load
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

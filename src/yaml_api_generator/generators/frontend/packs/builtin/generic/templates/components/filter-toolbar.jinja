@@ -1,0 +1,278 @@
+import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+interface ActiveFilter {
+  field: string;
+  value: string;
+}
+
+{% set sortable_fields = entity.fields.values() | list %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+
+const FILTERABLE_FIELDS = [
+  {% for field in entity.fields.values() %}
+  {% if field.name != entity.pk_field %}
+  { name: '{{ field.name }}', label: '{{ field.name | title }}' },
+  {% endif %}
+  {% endfor %}
+];
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+  const [sortField, setSortField] = useState<string>('{{ sortable_fields[0].name if sortable_fields else entity.pk_field }}');
+  const [sortAsc, setSortAsc] = useState(true);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [pendingField, setPendingField] = useState(FILTERABLE_FIELDS[0]?.name ?? '');
+  const [pendingValue, setPendingValue] = useState('');
+  const filterRef = useRef<HTMLDivElement>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const addFilter = () => {
+    if (!pendingValue.trim()) return;
+    setActiveFilters(prev => [...prev.filter(f => f.field !== pendingField), { field: pendingField, value: pendingValue.trim() }]);
+    setPendingValue('');
+    setFilterOpen(false);
+  };
+
+  const removeFilter = (field: string) =>
+    setActiveFilters(prev => prev.filter(f => f.field !== field));
+
+  const filtered = items
+    .filter(item => {
+      if (search) {
+        const q = search.toLowerCase();
+        return Object.values(item).some(v => String(v).toLowerCase().includes(q));
+      }
+      return true;
+    })
+    .filter(item =>
+      activeFilters.every(f => String((item as any)[f.field] ?? '').toLowerCase().includes(f.value.toLowerCase()))
+    )
+    .sort((a, b) => {
+      const av = String((a as any)[sortField] ?? '');
+      const bv = String((b as any)[sortField] ?? '');
+      return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <div className="flex-1" />
+
+        {/* Search */}
+        <div className="flex items-center gap-2 px-2.5 h-8 border border-wf-line-strong rounded-wf bg-wf-surface min-w-[200px] text-sm focus-within:border-wf-accent focus-within:ring-1 focus-within:ring-wf-accent">
+          <span className="text-wf-ink-faint">⌕</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search..."
+            className="flex-1 bg-transparent outline-none text-wf-ink placeholder:text-wf-ink-faint"
+          />
+        </div>
+
+        {/* Filter popover trigger */}
+        <div className="relative" ref={filterRef}>
+          <button
+            onClick={() => setFilterOpen(o => !o)}
+            className={`wf-btn ${activeFilters.length > 0 ? 'border-wf-accent text-wf-accent-ink bg-wf-accent-soft' : ''}`}
+          >
+            + Filter
+            {activeFilters.length > 0 && (
+              <span className="wf-badge wf-badge-accent ml-1">{activeFilters.length}</span>
+            )}
+          </button>
+
+          {filterOpen && (
+            <div className="absolute top-full right-0 mt-1 w-72 wf-card border-[1.5px] border-wf-line-strong shadow-lg z-20 p-3 space-y-2">
+              <p className="text-xs font-medium text-wf-ink-dim uppercase tracking-wide">Add filter</p>
+              <select
+                value={pendingField}
+                onChange={e => setPendingField(e.target.value)}
+                className="w-full wf-input text-sm"
+              >
+                {FILTERABLE_FIELDS.map(f => (
+                  <option key={f.name} value={f.name}>{f.label}</option>
+                ))}
+              </select>
+              <input
+                value={pendingValue}
+                onChange={e => setPendingValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addFilter()}
+                placeholder="Value..."
+                className="w-full wf-input text-sm"
+              />
+              <button onClick={addFilter} className="wf-btn wf-btn-primary w-full">
+                Apply filter
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Sort */}
+        <button
+          onClick={() => setSortAsc(a => !a)}
+          className="wf-btn"
+        >
+          Sort: {sortField} {sortAsc ? '↑' : '↓'}
+        </button>
+
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Active filter chips */}
+      {(activeFilters.length > 0 || search) && (
+        <div className="flex items-center gap-2 flex-wrap px-6 pb-2">
+          {search && (
+            <span className="wf-badge wf-badge-accent gap-1">
+              search = {search}
+              <button onClick={() => setSearch('')} className="ml-1 text-wf-accent-ink hover:text-wf-danger">×</button>
+            </span>
+          )}
+          {activeFilters.map(f => (
+            <span key={f.field} className="wf-badge wf-badge-accent gap-1">
+              {f.field} = {f.value}
+              <button onClick={() => removeFilter(f.field)} className="ml-1 text-wf-accent-ink hover:text-wf-danger">×</button>
+            </span>
+          ))}
+          <button
+            onClick={() => { setSearch(''); setActiveFilters([]); }}
+            className="text-xs text-wf-ink-dim hover:text-wf-ink underline"
+          >
+            Clear all
+          </button>
+          <span className="wf-mono ml-auto">{filtered.length} of {items.length}</span>
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto px-6 pb-6">
+        <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+          <table className="wf-table">
+            <thead>
+              <tr>
+                <th className="w-24">ID</th>
+                {% set ns = namespace(count=0) %}
+                {% for field in entity.fields.values() %}
+                {% if field.name != entity.pk_field and ns.count < 5 %}
+                <th
+                  className="cursor-pointer select-none hover:text-wf-ink"
+                  onClick={() => { if (sortField === '{{ field.name }}') { setSortAsc(a => !a); } else { setSortField('{{ field.name }}'); setSortAsc(true); } }}
+                >
+                  {{ field.name | title }}
+                  {sortField === '{{ field.name }}' && <span className="ml-1">{sortAsc ? '↑' : '↓'}</span>}
+                </th>
+                {% set ns.count = ns.count + 1 %}
+                {% endif %}
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={99} className="py-12 text-center text-wf-ink-faint">
+                    No results match the current filters.
+                  </td>
+                </tr>
+              ) : filtered.map(item => (
+                <tr
+                  key={item.{{ entity.pk_field }}}
+                  onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                  className="cursor-pointer"
+                >
+                  <td>
+                    <span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span>
+                  </td>
+                  {% set ns = namespace(count=0) %}
+                  {% for field in entity.fields.values() %}
+                  {% if field.name != entity.pk_field and ns.count < 5 %}
+                  <td>
+                    {% if field.type == 'enum' %}
+                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    {% else %}
+                    {String(item.{{ field.name }} ?? '—')}
+                    {% endif %}
+                  </td>
+                  {% set ns.count = ns.count + 1 %}
+                  {% endif %}
+                  {% endfor %}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between mt-4 text-sm text-wf-ink-dim">
+          <span>{filtered.length} of {items.length} records</span>
+          <div className="flex gap-1">
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>←</button>
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

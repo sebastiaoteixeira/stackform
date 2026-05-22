@@ -1,0 +1,280 @@
+import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+{% set entity_plural = entity.name | lower + 's' %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set role_names = roles.values() | list %}
+{% set role_fields = [] %}
+{% for name in role_names %}
+{% if name in entity.fields %}{% if role_fields.append(entity.fields[name]) %}{% endif %}{% endif %}
+{% endfor %}
+{% set other_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('name', 'in', role_names) | list %}
+{% set display_fields = (role_fields + other_fields)[:4] %}
+
+type OperationState =
+  | { status: 'idle' }
+  | { status: 'running'; label: string; total: number; done: number; cancelled: boolean; cancel: () => void }
+  | { status: 'done'; label: string; total: number; undoable: boolean }
+  | { status: 'cancelled'; label: string; done: number };
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [operation, setOperation] = useState<OperationState>({ status: 'idle' });
+  const abortRef = useRef<AbortController | null>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () =>
+    setSelectedIds(selectedIds.size === items.length
+      ? new Set()
+      : new Set(items.map(i => i.{{ entity.pk_field }}))
+    );
+
+  const runBulkArchive = async () => {
+    const ids = [...selectedIds];
+    const total = ids.length;
+    abortRef.current = new AbortController();
+    const { signal } = abortRef.current;
+
+    let done = 0;
+    setOperation({
+      status: 'running',
+      label: 'Archiving',
+      total,
+      done: 0,
+      cancelled: false,
+      cancel: () => { abortRef.current?.abort(); },
+    });
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    for (const id of ids) {
+      if (signal.aborted) break;
+      try {
+        await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ status: 'archived' }),
+          signal,
+        });
+      } catch (_) {
+        // abort or network error — stop gracefully
+        break;
+      }
+      done++;
+      setOperation(prev =>
+        prev.status === 'running' ? { ...prev, done } : prev
+      );
+    }
+
+    if (signal.aborted) {
+      setOperation({ status: 'cancelled', label: 'Archive', done });
+    } else {
+      setOperation({ status: 'done', label: 'Archived', total, undoable: true });
+      setItems(prev => prev.filter(i => !selectedIds.has(i.{{ entity.pk_field }})));
+      setSelectedIds(new Set());
+    }
+
+    setTimeout(() => setOperation({ status: 'idle' }), 5000);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono">{items.length} records</span>
+        <div className="flex-1" />
+        {selectedIds.size > 0 && operation.status === 'idle' && (
+          <button onClick={runBulkArchive} className="wf-btn">
+            Archive {selectedIds.size} selected
+          </button>
+        )}
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Progress / undo banner */}
+      {operation.status !== 'idle' && (
+        <div className="mx-6 mb-3 px-4 py-3 rounded-wf bg-wf-accent-soft border border-wf-accent flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-wf-accent-ink">
+              {operation.status === 'running' && (
+                <>Archiving {(operation as any).total} {{ entity_plural }}…</>
+              )}
+              {operation.status === 'done' && (
+                <>{(operation as any).label} {(operation as any).total} {{ entity_plural }}</>
+              )}
+              {operation.status === 'cancelled' && (
+                <>Archive cancelled after {(operation as any).done} {{ entity_plural }}</>
+              )}
+            </span>
+
+            {operation.status === 'running' && (
+              <span className="wf-mono text-wf-accent-ink">
+                {(operation as any).done}/{(operation as any).total}
+              </span>
+            )}
+
+            <div className="flex items-center gap-2">
+              {operation.status === 'running' && (
+                <button
+                  onClick={(operation as any).cancel}
+                  className="wf-btn wf-btn-sm"
+                >
+                  Cancel
+                </button>
+              )}
+              {operation.status === 'done' && (operation as any).undoable && (
+                <button
+                  onClick={() => setOperation({ status: 'idle' })}
+                  className="wf-btn wf-btn-sm"
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                onClick={() => setOperation({ status: 'idle' })}
+                className="text-wf-ink-faint hover:text-wf-ink"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          {operation.status === 'running' && (
+            <div className="w-full bg-wf-line rounded-full overflow-hidden" style={{ "{{" }} height: '6px' {{ "}}" }}>
+              <div
+                className="h-full bg-wf-accent rounded-full transition-all duration-200"
+                style={{ "{{" }} width: `${((operation as any).done / (operation as any).total) * 100}%` {{ "}}" }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto px-6 pb-6">
+        <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+          <table className="wf-table">
+            <thead>
+              <tr>
+                <th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === items.length && items.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-wf-line-strong accent-wf-accent"
+                  />
+                </th>
+                <th className="w-24">ID</th>
+                {% for field in display_fields %}
+                <th>{{ field.name | title }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item => (
+                <tr
+                  key={item.{{ entity.pk_field }}}
+                  className={selectedIds.has(item.{{ entity.pk_field }}) ? 'is-selected' : ''}
+                >
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.{{ entity.pk_field }})}
+                      onChange={() => toggleSelect(item.{{ entity.pk_field }})}
+                      className="w-4 h-4 rounded border-wf-line-strong accent-wf-accent"
+                    />
+                  </td>
+                  <td>
+                    <span
+                      className="wf-mono cursor-pointer hover:text-wf-accent"
+                      onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                    >
+                      {String(item.{{ entity.pk_field }}).slice(0, 8)}…
+                    </span>
+                  </td>
+                  {% for field in display_fields %}
+                  <td>
+                    {% if field.type == 'enum' %}
+                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    {% else %}
+                    {String(item.{{ field.name }} ?? '—')}
+                    {% endif %}
+                  </td>
+                  {% endfor %}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between mt-4 text-sm text-wf-ink-dim">
+          <span>1–{items.length} of {items.length}</span>
+          <div className="flex gap-1">
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>←</button>
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -54,10 +54,24 @@ class IdentityTransformer:
                 if role_errors:
                     raise ConfigErrors(role_errors)
 
-            bindings = tuple(
+            via_bindings = [
                 IRProviderBinding(provider=p, identifier=identifier or "")
                 for p in via
                 if identifier
+            ]
+            explicit_bindings = [
+                IRProviderBinding(
+                    provider=b["provider"],
+                    identifier=b.get("identifier", identifier or ""),
+                    claim_mapping=b.get("claim_mapping", {}),
+                    auto_provision=b.get("auto_provision", True),
+                )
+                for b in (auth_data.get("bindings") or [] if isinstance(auth_data, dict) else [])
+                if isinstance(b, dict) and "provider" in b
+            ]
+            via_providers = {b.provider for b in via_bindings}
+            bindings = tuple(
+                via_bindings + [b for b in explicit_bindings if b.provider not in via_providers]
             )
             identity_collections[repo_name] = IRIdentityCollection(
                 name=repo_name,

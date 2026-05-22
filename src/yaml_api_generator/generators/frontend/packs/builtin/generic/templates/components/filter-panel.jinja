@@ -1,0 +1,82 @@
+import { useState } from 'react';
+import { Button } from '../__generated__/components/Button';
+import { Input } from '../__generated__/components/Input';
+import { Badge } from '../__generated__/components/Badge';
+
+interface FilterPanelProps {
+  fields: Array<{
+    name: string;
+    label: string;
+    type: 'string' | 'number' | 'enum' | 'boolean' | 'date';
+    options?: string[];
+  }>;
+  activeFilters: Record<string, any>;
+  onFilterChange: (filters: Record<string, any>) => void;
+}
+
+export function FilterPanel({ fields, activeFilters, onFilterChange }: FilterPanelProps) {
+  const [localFilters, setLocalFilters] = useState(activeFilters);
+
+  const handleApply = () => {
+    onFilterChange(localFilters);
+  };
+
+  const handleClear = () => {
+    setLocalFilters({});
+    onFilterChange({});
+  };
+
+  const activeCount = Object.keys(activeFilters).filter(k => activeFilters[k]).length;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-medium text-gray-900">Filters</h3>
+        {activeCount > 0 && (
+          <Badge value={`${activeCount} active`} variant="info" size="sm" />
+        )}
+      </div>
+
+      <div className="space-y-3">
+        {fields.map((field) => (
+          <div key={field.name}>
+            {field.type === 'enum' && field.options ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {field.label}
+                </label>
+                <select
+                  value={localFilters[field.name] || ''}
+                  onChange={(e) => setLocalFilters({ ...localFilters, [field.name]: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="">All</option>
+                  {field.options.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <Input
+                label={field.label}
+                name={field.name}
+                type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+                value={localFilters[field.name] || ''}
+                onChange={(e) => setLocalFilters({ ...localFilters, [field.name]: e.target.value })}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-200">
+        <Button variant="primary" onClick={handleApply} size="sm" className="flex-1">
+          Apply
+        </Button>
+        <Button variant="ghost" onClick={handleClear} size="sm">
+          Clear
+        </Button>
+      </div>
+    </div>
+  );
+}

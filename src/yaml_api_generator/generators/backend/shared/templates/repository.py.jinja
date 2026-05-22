@@ -1,5 +1,10 @@
-{% if id_field_format in ["uuidv7", "uuidv4"] %}
+{% if id_field_format == "uuidv4" %}
 import uuid
+{% elif id_field_format == "uuidv7" %}
+try:
+    from uuid import uuid7
+except ImportError:
+    from uuid_utils import uuid7
 {% endif %}
 from typing import Any
 
@@ -35,11 +40,11 @@ class {{ class_name }}Repository:
 
     async def create(self, data: dict[str, Any]) -> dict[str, Any]:
 {% if id_field_format == "natural" %}
-        pass  # natural key — no auto-generation
+        pass  # natural key - no auto-generation
 {% elif id_field_format == "uuidv4" %}
         data[self.ID_FIELD] = str(uuid.uuid4())
-{% else %}
-        data[self.ID_FIELD] = str(uuid.uuid7())
+{% elif id_field_format == "uuidv7" %}
+        data[self.ID_FIELD] = str(uuid7())
 {% endif %}
         await self._col.insert_one(data)
         return self._normalize(data)

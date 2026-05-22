@@ -1,0 +1,288 @@
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+{% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+{% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
+
+interface Action {
+  id: string;
+  label: string;
+  shortcut?: string;
+  handler: () => void;
+}
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [cursor, setCursor] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  const actions: Action[] = useMemo(() => [
+    { id: 'new', label: 'Create {{ entity.name | title }}', shortcut: 'C', handler: () => navigate('{{ view.path }}/new') },
+    { id: 'settings', label: 'Settings', shortcut: ',', handler: () => {} },
+  ], [navigate]);
+
+  const matchedItems = useMemo(() =>
+    query.trim()
+      ? items.filter(item =>
+          Object.values(item).some(v => String(v).toLowerCase().includes(query.toLowerCase()))
+        ).slice(0, 6)
+      : items.slice(0, 6),
+    [items, query]
+  );
+
+  const matchedActions = useMemo(() =>
+    query.trim()
+      ? actions.filter(a => a.label.toLowerCase().includes(query.toLowerCase()))
+      : actions,
+    [actions, query]
+  );
+
+  const totalResults = matchedItems.length + matchedActions.length;
+
+  const openPalette = useCallback(() => {
+    setOpen(true);
+    setQuery('');
+    setCursor(0);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  const closePalette = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        open ? closePalette() : openPalette();
+      }
+      if (!open) return;
+      if (e.key === 'Escape') closePalette();
+      if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(c + 1, totalResults - 1)); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (cursor < matchedItems.length) {
+          const item = matchedItems[cursor];
+          navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`);
+          closePalette();
+        } else {
+          const action = matchedActions[cursor - matchedItems.length];
+          action?.handler();
+          closePalette();
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open, cursor, matchedItems, matchedActions, totalResults, navigate, openPalette, closePalette]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono">{items.length} records</span>
+        <div className="flex-1" />
+        <button onClick={openPalette} className="wf-btn gap-2">
+          <span className="text-wf-ink-faint">⌕</span>
+          <span className="text-wf-ink-dim">Search or jump to...</span>
+          <span className="wf-mono">⌘K</span>
+        </button>
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto px-6 pb-6">
+        <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+          <table className="wf-table">
+            <thead>
+              <tr>
+                <th className="w-24">ID</th>
+                {% set ns = namespace(count=0) %}
+                {% for field in entity.fields.values() %}
+                {% if field.name != entity.pk_field and ns.count < 5 %}
+                <th>{{ field.name | title }}</th>
+                {% set ns.count = ns.count + 1 %}
+                {% endif %}
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item => (
+                <tr
+                  key={item.{{ entity.pk_field }}}
+                  onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                  className="cursor-pointer"
+                >
+                  <td><span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span></td>
+                  {% set ns = namespace(count=0) %}
+                  {% for field in entity.fields.values() %}
+                  {% if field.name != entity.pk_field and ns.count < 5 %}
+                  <td>
+                    {% if field.type == 'enum' %}
+                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    {% else %}
+                    {String(item.{{ field.name }} ?? '—')}
+                    {% endif %}
+                  </td>
+                  {% set ns.count = ns.count + 1 %}
+                  {% endif %}
+                  {% endfor %}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Command palette overlay */}
+      {open && (
+        <div
+          className="wf-overlay z-50"
+          onClick={e => { if (e.target === e.currentTarget) closePalette(); }}
+        >
+          <div
+            className="bg-wf-surface border-[1.5px] border-wf-line-strong rounded-lg shadow-2xl overflow-hidden flex flex-col"
+            style={{ "{{" }} width: '520px', maxHeight: '480px' {{ "}}" }}
+          >
+            {/* Search input */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-wf-line">
+              <span className="text-wf-ink-faint text-lg">⌕</span>
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={e => { setQuery(e.target.value); setCursor(0); }}
+                placeholder="Search {{ entity.name | lower }}s, actions..."
+                className="flex-1 bg-transparent outline-none text-wf-ink text-[15px] placeholder:text-wf-ink-faint"
+              />
+              <kbd className="wf-mono text-[10px]">ESC</kbd>
+            </div>
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto">
+              {/* Entity results */}
+              {matchedItems.length > 0 && (
+                <div>
+                  <p className="px-4 pt-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-wf-ink-faint">
+                    {{ entity.name | upper }}S
+                  </p>
+                  {matchedItems.map((item, i) => (
+                    <button
+                      key={item.{{ entity.pk_field }}}
+                      onClick={() => { navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`); closePalette(); }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-wf-fill transition-colors ${cursor === i ? 'bg-wf-accent-soft' : ''}`}
+                    >
+                      <span className="w-7 h-7 rounded-wf bg-wf-fill-2 border border-wf-line flex items-center justify-center text-xs text-wf-ink-dim flex-shrink-0">
+                        {{ entity.name[0] | upper }}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium text-wf-ink truncate">
+                          {% if title_field %}
+                          {String(item.{{ title_field.name }} ?? item.{{ entity.pk_field }})}
+                          {% else %}
+                          {String(item.{{ entity.pk_field }})}
+                          {% endif %}
+                        </span>
+                        <span className="block text-xs text-wf-ink-dim truncate wf-mono">
+                          {String(item.{{ entity.pk_field }}).slice(0, 16)}
+                        </span>
+                      </span>
+                      {% if status_field %}
+                      <span className="wf-badge flex-shrink-0">{String(item.{{ status_field.name }} ?? '')}</span>
+                      {% endif %}
+                      {% if date_field %}
+                      <span className="text-xs text-wf-ink-faint flex-shrink-0">
+                        {new Date(item.{{ date_field.name }}).toLocaleDateString()}
+                      </span>
+                      {% endif %}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Actions */}
+              {matchedActions.length > 0 && (
+                <div>
+                  <p className="px-4 pt-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-wf-ink-faint">
+                    ACTIONS
+                  </p>
+                  {matchedActions.map((action, i) => (
+                    <button
+                      key={action.id}
+                      onClick={() => { action.handler(); closePalette(); }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-wf-fill transition-colors ${cursor === matchedItems.length + i ? 'bg-wf-accent-soft' : ''}`}
+                    >
+                      <span className="flex-1 text-sm text-wf-ink">{action.label}</span>
+                      {action.shortcut && (
+                        <kbd className="wf-mono text-[10px]">{action.shortcut}</kbd>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchedItems.length === 0 && matchedActions.length === 0 && (
+                <div className="py-12 text-center text-wf-ink-faint text-sm">
+                  No results for "{query}"
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

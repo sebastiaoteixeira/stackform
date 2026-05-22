@@ -1,0 +1,232 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+{% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+{% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        const arr = Array.isArray(data) ? data : [];
+        setItems(arr);
+        if (arr.length > 0) setSelectedId(arr[0].{{ entity.pk_field }});
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [token]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center p-12 border-[1.5px] border-dashed border-wf-line rounded-lg max-w-md">
+          <div className="w-[60px] h-[60px] mx-auto mb-4 border-[1.5px] border-dashed border-wf-line rounded-lg flex items-center justify-center">
+            <span className="font-title text-2xl text-wf-ink-faint">∅</span>
+          </div>
+          <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
+          <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+          <button onClick={() => navigate('{{ view.path }}/new')} className="wf-btn wf-btn-primary">
+            + New {{ entity.name | title }}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const selectedItem = items.find(i => i.{{ entity.pk_field }} === selectedId);
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono text-wf-ink-dim">{items.length} records</span>
+        <div className="flex-1" />
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Split layout: table left, preview right */}
+      <div className="flex-1 overflow-hidden px-6 pb-6" style={{ "{{" }} display: 'grid', gridTemplateColumns: '1fr 340px', gap: '16px' {{ "}}" }}>
+
+        {/* Table panel */}
+        <div className="flex flex-col overflow-hidden border border-wf-line rounded-wf bg-wf-surface">
+          <div className="overflow-auto flex-1">
+            <table className="wf-table">
+              <thead>
+                <tr>
+                  {% if title_field %}
+                  <th>{{ title_field.name | title }}</th>
+                  {% else %}
+                  <th className="w-36">ID</th>
+                  {% endif %}
+                  {% if status_field %}
+                  <th className="w-28">{{ status_field.name | title }}</th>
+                  {% endif %}
+                  {% if date_field %}
+                  <th className="w-28">{{ date_field.name | title }}</th>
+                  {% endif %}
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr
+                    key={item.{{ entity.pk_field }}}
+                    onClick={() => setSelectedId(item.{{ entity.pk_field }})}
+                    className={`cursor-pointer ${selectedId === item.{{ entity.pk_field }} ? 'is-selected' : ''}`}
+                  >
+                    {% if title_field %}
+                    <td className="font-medium text-wf-ink">
+                      {String(item.{{ title_field.name }} || '—')}
+                    </td>
+                    {% else %}
+                    <td>
+                      <span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span>
+                    </td>
+                    {% endif %}
+                    {% if status_field %}
+                    <td>
+                      <span className="wf-badge">{String(item.{{ status_field.name }} || '—')}</span>
+                    </td>
+                    {% endif %}
+                    {% if date_field %}
+                    <td>
+                      <span className="wf-mono text-wf-ink-dim">
+                        {new Date(item.{{ date_field.name }}).toLocaleDateString()}
+                      </span>
+                    </td>
+                    {% endif %}
+                    <td className="text-center">
+                      {selectedId === item.{{ entity.pk_field }} && (
+                        <span className="text-wf-accent text-xs">▸</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-2 border-t border-wf-line text-sm text-wf-ink-dim">
+            <span>1–{items.length} of {items.length}</span>
+            <div className="flex gap-1">
+              <button className="wf-btn wf-btn-sm" disabled>←</button>
+              <button className="wf-btn wf-btn-sm" disabled>→</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Preview card */}
+        <div className="wf-card overflow-auto">
+          {selectedItem ? (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-title text-lg text-wf-ink">Preview</h3>
+                <div className="flex gap-2">
+                  <button
+                    className="wf-btn wf-btn-sm"
+                    onClick={() => navigate(`{{ view.path }}/${selectedItem.{{ entity.pk_field }}}/edit`)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="wf-btn wf-btn-sm"
+                    onClick={() => navigate(`{{ view.path }}/${selectedItem.{{ entity.pk_field }}}`)}
+                  >
+                    ⋯
+                  </button>
+                </div>
+              </div>
+
+              {% if title_field %}
+              <h2 className="font-title text-xl text-wf-ink mb-1">
+                {selectedItem.{{ title_field.name }}}
+              </h2>
+              {% endif %}
+              <p className="wf-mono text-xs text-wf-ink-faint mb-4">
+                {selectedItem.{{ entity.pk_field }}}
+              </p>
+
+              <hr className="border-wf-line mb-4" />
+
+              <dl className="space-y-3">
+                {% for field in entity.fields.values() %}
+                {% if field.name != entity.pk_field and (not title_field or field.name != title_field.name) %}
+                <div>
+                  <dt className="text-xs text-wf-ink-dim mb-0.5">{{ field.name | title }}</dt>
+                  <dd className="text-sm text-wf-ink">
+                    {% if field.type == 'enum' %}
+                    <span className="wf-badge">{String(selectedItem.{{ field.name }} || '—')}</span>
+                    {% else %}
+                    {String(selectedItem.{{ field.name }} || '—')}
+                    {% endif %}
+                  </dd>
+                </div>
+                {% endif %}
+                {% endfor %}
+              </dl>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-full text-wf-ink-faint text-sm">
+              Select a row to preview
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,124 @@
+import { useNavigate } from 'react-router-dom';
+import { Button } from '../__generated__/components/Button';
+import { Badge } from '../__generated__/components/Badge';
+
+interface {{ entity.name | pascal_case }}DrawerProps {
+  record: any;
+  basePath?: string;
+  onClose?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}
+
+export function {{ entity.name | pascal_case }}Drawer({
+  record,
+  basePath = '{{ view.path if view else "/" }}',
+  onClose,
+  onEdit,
+  onDelete
+}: {{ entity.name | pascal_case }}DrawerProps) {
+  const navigate = useNavigate();
+
+  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+  {% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+  {% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
+  {% set content_field = entity.fields[roles.content] if roles.content is defined else none %}
+  {% set meta_fields = entity.fields.values() | rejectattr('name', 'in', ([entity.pk_field] + (roles.values() | list)) | select | list) | list %}
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/20 backdrop-blur-[1px] z-30"
+        onClick={onClose}
+      />
+
+      {/* Drawer */}
+      <div
+        className="fixed inset-y-0 right-0 bg-wf-surface border-l border-wf-line-strong shadow-2xl overflow-y-auto z-40 flex flex-col"
+        style={{ "{{" }} width: '380px' {{ "}}" }}
+      >
+        {/* Drawer header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-wf-line sticky top-0 bg-wf-surface z-10">
+          <div className="min-w-0">
+            {% if title_field %}
+            <h2 className="font-title text-lg text-wf-ink truncate">{record.{{ title_field.name }}}</h2>
+            {% else %}
+            <h2 className="font-title text-lg text-wf-ink">{{ entity.name | title }}</h2>
+            {% endif %}
+            <p className="wf-mono mt-0.5">{record.{{ entity.pk_field }}}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="wf-btn wf-btn-ghost wf-btn-sm ml-3 flex-shrink-0 text-wf-ink-dim hover:text-wf-ink"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Drawer body */}
+        <div className="flex-1 p-5 space-y-5">
+          {% if image_field %}
+          {record.{{ image_field.name }} && (
+            <div className="rounded-wf overflow-hidden -mx-1">
+              <img
+                src={record.{{ image_field.name }}}
+                alt=""
+                className="w-full max-h-48 object-cover"
+              />
+            </div>
+          )}
+          {% endif %}
+
+          {% if content_field %}
+          <p className="text-sm text-wf-ink leading-relaxed line-clamp-4">
+            {record.{{ content_field.name }}}
+          </p>
+          {% endif %}
+
+          {/* Metadata grid */}
+          <div className="wf-card space-y-2.5">
+            <p className="text-2xs uppercase tracking-wider text-wf-ink-faint font-medium">Details</p>
+            <dl className="space-y-2">
+              {% for field in meta_fields %}
+              <div className="flex items-start gap-3">
+                <dt className="text-2xs uppercase tracking-wide text-wf-ink-faint w-24 flex-shrink-0 pt-0.5">
+                  {{ field.name | title }}
+                </dt>
+                <dd className="text-sm text-wf-ink flex-1 min-w-0">
+                  {% if field.type == 'enum' %}
+                  <Badge value={String(record.{{ field.name }})} size="sm" />
+                  {% elif field.type in ['datetime', 'date'] or field.name in ['createdAt', 'updatedAt', 'publishedAt', 'date'] %}
+                  {record.{{ field.name }} ? new Date(record.{{ field.name }}).toLocaleDateString() : '—'}
+                  {% else %}
+                  <span className="truncate block">{String(record.{{ field.name }} ?? '—')}</span>
+                  {% endif %}
+                </dd>
+              </div>
+              {% endfor %}
+            </dl>
+          </div>
+        </div>
+
+        {/* Drawer footer actions */}
+        <div className="px-5 py-4 border-t border-wf-line sticky bottom-0 bg-wf-surface flex items-center gap-2">
+          <Button variant="primary" onClick={onEdit} className="flex-1">
+            Edit
+          </Button>
+          <Button variant="danger" onClick={onDelete}>
+            Delete
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => navigate(`${basePath}/${record.{{ entity.pk_field }}}`)}
+            title="Open full record"
+          >
+            ↗
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default {{ entity.name | pascal_case }}Drawer;

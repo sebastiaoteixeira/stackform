@@ -1,0 +1,196 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+import { Button } from '../__generated__/components/Button';
+import { Badge } from '../__generated__/components/Badge';
+import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
+
+type Tab = 'fields' | 'relations' | 'activity' | 'json';
+
+interface {{ entity.name | pascal_case }}TabbedProps {
+  basePath?: string;
+}
+
+export function {{ entity.name | pascal_case }}Tabbed({
+  basePath = '{{ view.path if view else "/" }}'
+}: {{ entity.name | pascal_case }}TabbedProps) {
+  const { id } = useParams<{ id: string }>();
+  const [record, setRecord] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('fields');
+  const navigate = useNavigate();
+  const { token } = useAuth();
+
+  useEffect(() => {
+    if (!id) return;
+    const fetchRecord = async () => {
+      try {
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { headers });
+        if (!res.ok) throw new Error(res.status === 404 ? 'Record not found' : `Error: ${res.status}`);
+        setRecord(await res.json());
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRecord();
+  }, [id, token]);
+
+  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+  {% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+  {% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+  {% set relation_fields = entity.fields.values() | selectattr('type', 'equalto', 'relation') | list %}
+  {% set non_relation_fields = entity.fields.values() | rejectattr('type', 'equalto', 'relation') | rejectattr('name', 'equalto', entity.pk_field) | list %}
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="wf-card border-wf-danger bg-wf-danger-soft p-4">
+          <p className="text-wf-ink text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!record) return null;
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'fields', label: 'Fields' },
+    { id: 'relations', label: 'Relations ({{ relation_fields | length }})' },
+    { id: 'activity', label: 'Activity' },
+    { id: 'json', label: 'JSON' },
+  ];
+
+  return (
+    <div className="p-6 min-h-full bg-wf-bg">
+      {/* Header */}
+      <div className="mb-5 flex items-start justify-between">
+        <div>
+          <button
+            onClick={() => navigate(-1)}
+            className="text-wf-ink-dim text-sm hover:text-wf-ink mb-2 flex items-center gap-1"
+          >
+            ← Back
+          </button>
+          {% if title_field %}
+          <h1 className="font-title text-2xl text-wf-ink">{record.{{ title_field.name }}}</h1>
+          {% endif %}
+          <p className="wf-mono mt-1">{record.{{ entity.pk_field }}}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {% if status_field %}
+          <Badge value={String(record.{{ status_field.name }})} />
+          {% endif %}
+          <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
+            Edit
+          </Button>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-0 border-b border-wf-line mb-5">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === tab.id
+                ? 'border-wf-accent text-wf-accent-ink'
+                : 'border-transparent text-wf-ink-dim hover:text-wf-ink'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Fields tab */}
+      {activeTab === 'fields' && (
+        <div className="wf-card">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+            {% for field in non_relation_fields %}
+            <div className="flex flex-col gap-1">
+              <span className="text-2xs uppercase tracking-wide text-wf-ink-faint font-medium">
+                {{ field.name | title }}
+                <span className="wf-mono ml-1.5">{{ field.type }}</span>
+              </span>
+              {% if field.type == 'enum' %}
+              <Badge value={String(record.{{ field.name }})} size="sm" />
+              {% elif field.type in ['datetime', 'date'] or field.name in ['createdAt', 'updatedAt', 'publishedAt', 'date'] %}
+              <span className="text-sm text-wf-ink">
+                {record.{{ field.name }} ? new Date(record.{{ field.name }}).toLocaleString() : '—'}
+              </span>
+              {% elif field.type == 'boolean' %}
+              <span className="text-sm text-wf-ink">
+                {record.{{ field.name }} ? 'true' : 'false'}
+              </span>
+              {% else %}
+              <span className="text-sm text-wf-ink whitespace-pre-wrap">
+                {String(record.{{ field.name }} ?? '—')}
+              </span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      )}
+
+      {/* Relations tab */}
+      {activeTab === 'relations' && (
+        <div className="wf-card">
+          {% if relation_fields %}
+          <div className="space-y-3">
+            {% for field in relation_fields %}
+            <div className="flex items-center gap-4 py-2 border-b border-wf-line last:border-0">
+              <span className="text-sm font-medium text-wf-ink w-40">{{ field.name | title }}</span>
+              <span className="wf-mono">{{ field.type }}</span>
+              <span className="text-sm text-wf-ink flex-1">{String(record.{{ field.name }} ?? '—')}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p className="text-wf-ink-faint text-sm">No relations defined.</p>
+          {% endif %}
+        </div>
+      )}
+
+      {/* Activity tab */}
+      {activeTab === 'activity' && (
+        <div className="wf-card">
+          <div className="space-y-3">
+            {% if roles.date is defined and entity.fields[roles.date] %}
+            {% set date_field = entity.fields[roles.date] %}
+            <div className="flex items-center gap-3 text-sm">
+              <span className="w-2 h-2 rounded-full bg-wf-accent flex-shrink-0" />
+              <span className="text-wf-ink-dim w-24">{{ date_field.name | title }}</span>
+              <span className="text-wf-ink">
+                {record.{{ date_field.name }} ? new Date(record.{{ date_field.name }}).toLocaleString() : '—'}
+              </span>
+            </div>
+            {% else %}
+            <p className="text-wf-ink-faint text-sm">No activity timestamps available.</p>
+            {% endif %}
+          </div>
+        </div>
+      )}
+
+      {/* JSON tab */}
+      {activeTab === 'json' && (
+        <div className="wf-card">
+          <pre className="text-xs font-mono text-wf-ink-dim overflow-auto leading-relaxed">
+            {JSON.stringify(record, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default {{ entity.name | pascal_case }}Tabbed;

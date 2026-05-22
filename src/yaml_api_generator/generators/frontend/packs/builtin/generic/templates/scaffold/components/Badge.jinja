@@ -1,0 +1,28 @@
+interface BadgeProps {
+  value: string;
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'accent';
+  size?: 'sm' | 'md';
+}
+
+export function Badge({ value, variant = 'default', size = 'md' }: BadgeProps) {
+  const baseClasses = 'inline-flex items-center justify-center rounded-full border text-xs';
+
+  const variantClasses = {
+    default: 'bg-wf-fill-2 border-wf-line text-wf-ink-dim',
+    success: 'bg-wf-success-soft border-wf-success text-wf-ink',
+    warning: 'bg-wf-warn-soft border-wf-warn text-wf-ink',
+    danger: 'bg-wf-danger-soft border-wf-danger text-wf-ink',
+    accent: 'bg-wf-accent-soft border-wf-accent-soft text-wf-accent-ink'
+  };
+
+  const sizeClasses = {
+    sm: 'h-4 px-1.5 text-2xs',
+    md: 'h-[18px] px-2'
+  };
+
+  return (
+    <span className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]}`}>
+      {value}
+    </span>
+  );
+}

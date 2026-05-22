@@ -1,0 +1,137 @@
+import { useState } from 'react';
+import { useAuth } from '../__generated__/App';
+
+interface DangerAction {
+  id: string;
+  title: string;
+  description: string;
+  label: string;
+  dangerous?: boolean;
+}
+
+const ACTIONS: DangerAction[] = [
+  {
+    id: 'export',
+    title: 'Export all data',
+    description: 'Download a full JSON backup of all records in this app.',
+    label: 'Export',
+  },
+  {
+    id: 'regenerate',
+    title: 'Regenerate from YAML',
+    description: 'Re-run the generator against the current spec. Existing files will be overwritten.',
+    label: 'Regenerate',
+  },
+  {
+    id: 'reset',
+    title: 'Reset all records',
+    description: 'Permanently delete all records from every collection. The schema is preserved.',
+    label: 'Reset records',
+    dangerous: true,
+  },
+  {
+    id: 'delete',
+    title: 'Delete app',
+    description: 'Permanently destroy this app and all its data. This cannot be undone.',
+    label: 'Delete app',
+    dangerous: true,
+  },
+];
+
+interface SettingsDangerProps {
+  appName?: string;
+  onAction?: (id: string) => Promise<void>;
+}
+
+export function SettingsDanger({
+  appName = '{{ context.app_name | default("App") }}',
+  onAction,
+}: SettingsDangerProps) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { token } = useAuth();
+
+  const handleAction = async (id: string, dangerous?: boolean) => {
+    if (dangerous && confirming !== id) {
+      setConfirming(id);
+      return;
+    }
+    setLoading(true);
+    try {
+      await onAction?.(id);
+    } finally {
+      setLoading(false);
+      setConfirming(null);
+    }
+  };
+
+  const safeActions = ACTIONS.filter((a) => !a.dangerous);
+  const dangerActions = ACTIONS.filter((a) => a.dangerous);
+
+  return (
+    <div className="p-8 bg-wf-bg min-h-full">
+      <div className="max-w-[640px] space-y-4">
+        <h1 className="font-title text-2xl text-wf-ink mb-6">Manage {appName}</h1>
+
+        {/* Safe actions */}
+        {safeActions.map((action) => (
+          <div key={action.id} className="wf-card flex items-center gap-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-wf-ink">{action.title}</p>
+              <p className="text-xs text-wf-ink-dim mt-0.5">{action.description}</p>
+            </div>
+            <button
+              onClick={() => handleAction(action.id)}
+              disabled={loading}
+              className="wf-btn wf-btn-sm flex-shrink-0 disabled:opacity-50"
+            >
+              {action.label}
+            </button>
+          </div>
+        ))}
+
+        {/* Danger zone */}
+        <div className="mt-8 rounded-wf border-[1.5px] border-wf-danger bg-wf-danger-soft overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-wf-danger">
+            <p className="text-sm font-medium text-wf-danger">Danger zone</p>
+          </div>
+          <div className="p-4 space-y-3">
+            {dangerActions.map((action) => (
+              <div key={action.id} className="flex items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-wf-ink">{action.title}</p>
+                  <p className="text-xs text-wf-ink-dim mt-0.5">{action.description}</p>
+                </div>
+                {confirming === action.id ? (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-wf-danger font-medium">Are you sure?</span>
+                    <button
+                      onClick={() => setConfirming(null)}
+                      className="wf-btn wf-btn-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleAction(action.id, true)}
+                      disabled={loading}
+                      className="wf-btn wf-btn-sm wf-btn-danger disabled:opacity-50"
+                    >
+                      {loading ? '...' : 'Confirm'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleAction(action.id, true)}
+                    className="wf-btn wf-btn-sm wf-btn-danger flex-shrink-0"
+                  >
+                    {action.label}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

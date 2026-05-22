@@ -1,0 +1,73 @@
+interface ActiveFilter {
+  key: string;
+  label: string;
+}
+
+interface EmptyFilteredProps {
+  activeFilters: ActiveFilter[];
+  onRemoveFilter: (key: string) => void;
+  onClearAll: () => void;
+  onNewRecord?: () => void;
+  entityLabel?: string;
+}
+
+export function EmptyFiltered({
+  activeFilters,
+  onRemoveFilter,
+  onClearAll,
+  onNewRecord,
+  entityLabel = '{{ entity.name | title }}',
+}: EmptyFilteredProps) {
+  return (
+    <div className="flex flex-col">
+      {/* Filter badge toolbar */}
+      <div className="wf-toolbar px-6 py-2 flex-wrap gap-y-2">
+        <span className="text-xs text-wf-ink-faint uppercase tracking-wider">Filters</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {activeFilters.map((f) => (
+            <span
+              key={f.key}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-wf-accent-soft text-wf-accent border border-wf-accent/30"
+            >
+              {f.label}
+              <button
+                onClick={() => onRemoveFilter(f.key)}
+                className="hover:text-wf-accent-ink leading-none"
+                aria-label={`Remove ${f.label} filter`}
+              >
+                x
+              </button>
+            </span>
+          ))}
+        </div>
+        <button
+          onClick={onClearAll}
+          className="text-xs text-wf-accent hover:text-wf-accent-ink underline underline-offset-2 ml-1"
+        >
+          Clear all
+        </button>
+      </div>
+
+      {/* Empty result area */}
+      <div className="flex items-center justify-center" style={{ "{{" }} minHeight: '400px' {{ "}}" }}>
+        <div className="text-center border-[1.5px] border-dashed border-wf-line rounded-wf px-10 py-12 max-w-sm">
+          <div className="w-[52px] h-[52px] mx-auto mb-4 border-[1.5px] border-dashed border-wf-line rounded-lg flex items-center justify-center">
+            <span className="font-title text-xl text-wf-ink-faint">⌕</span>
+          </div>
+          <h3 className="font-title text-xl text-wf-ink mb-1">No matching records</h3>
+          <p className="text-sm text-wf-ink-dim mb-6">Try removing a filter to broaden your search.</p>
+          <div className="flex items-center justify-center gap-2">
+            <button onClick={onClearAll} className="wf-btn wf-btn-sm">
+              Clear filters
+            </button>
+            {onNewRecord && (
+              <button onClick={onNewRecord} className="wf-btn wf-btn-sm wf-btn-primary">
+                + New {entityLabel}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
