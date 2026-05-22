@@ -1,0 +1,87 @@
+import { useState } from 'react';
+
+interface CascadeRelation {
+  label: string;
+  count: number;
+}
+
+interface DeleteBulkCascadeProps {
+  count: number;
+  entityLabel?: string;
+  relations: CascadeRelation[];
+  onConfirm: (cascade: boolean) => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+export function DeleteBulkCascade({
+  count,
+  entityLabel = '{{ entity.name | lower | plural }}',
+  relations,
+  onConfirm,
+  onCancel,
+  loading = false,
+}: DeleteBulkCascadeProps) {
+  const [cascade, setCascade] = useState(false);
+
+  return (
+    <div className="wf-overlay">
+      <div className="wf-modal max-w-md w-full">
+        <div className="p-6">
+          <h3 className="font-title text-xl text-wf-ink mb-1">
+            Delete {count} {entityLabel}?
+          </h3>
+          <p className="text-sm text-wf-ink-dim mb-4">
+            This action is irreversible. Review what will be affected.
+          </p>
+
+          {/* Cascade warning */}
+          {relations.length > 0 && (
+            <div className="mb-4 rounded-wf border border-wf-danger/30 bg-wf-danger-soft px-4 py-3">
+              <p className="text-xs font-medium text-wf-danger mb-2 uppercase tracking-wide">
+                Related records affected
+              </p>
+              <ul className="space-y-1">
+                {relations.map((rel) => (
+                  <li key={rel.label} className="flex items-center justify-between text-sm">
+                    <span className="text-wf-ink">{rel.label}</span>
+                    <span className="wf-mono text-wf-ink-dim">{rel.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Cascade checkbox */}
+          <label className="flex items-start gap-2.5 mb-5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={cascade}
+              onChange={(e) => setCascade(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-wf-line-strong accent-wf-danger"
+            />
+            <div>
+              <span className="text-sm text-wf-ink">Also delete all related records</span>
+              <p className="text-xs text-wf-ink-faint mt-0.5">
+                Uncheck to keep related records orphaned instead.
+              </p>
+            </div>
+          </label>
+
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={onCancel} disabled={loading} className="wf-btn">
+              Cancel
+            </button>
+            <button
+              onClick={() => onConfirm(cascade)}
+              disabled={loading}
+              className="wf-btn wf-btn-danger"
+            >
+              {loading ? 'Deleting...' : `Delete ${count} ${entityLabel}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

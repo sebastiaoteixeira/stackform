@@ -1,0 +1,173 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+import { Button } from '../__generated__/components/Button';
+{% set has_enum = entity.fields.values() | selectattr('type', 'equalto', 'enum') | list | length > 0 %}
+{% if has_enum %}
+import { Badge } from '../__generated__/components/Badge';
+{% endif %}
+import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
+
+interface {{ entity.name | pascal_case }}TwoColumnProps {
+  basePath?: string;
+  onDelete?: (id: string) => void;
+}
+
+export function {{ entity.name | pascal_case }}TwoColumn({
+  basePath = '{{ view.path if view else "/" }}',
+  onDelete
+}: {{ entity.name | pascal_case }}TwoColumnProps) {
+  const { id } = useParams<{ id: string }>();
+  const [record, setRecord] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const { token } = useAuth();
+
+  useEffect(() => {
+    if (!id) return;
+    const fetchRecord = async () => {
+      try {
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { headers });
+        if (!res.ok) throw new Error(res.status === 404 ? 'Record not found' : `Error: ${res.status}`);
+        setRecord(await res.json());
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRecord();
+  }, [id, token]);
+
+  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+  {% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+  {% set content_field = entity.fields[roles.content] if roles.content is defined else none %}
+  {% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
+  {% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+  {% set relation_fields = entity.fields.values() | selectattr('type', 'equalto', 'relation') | list %}
+  {% set meta_fields = entity.fields.values() | rejectattr('name', 'in', ([entity.pk_field] + (roles.values() | list)) | select | list) | list %}
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="wf-card border-wf-danger bg-wf-danger-soft p-4">
+          <p className="text-wf-ink text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!record) return null;
+
+  return (
+    <div className="p-6 min-h-full bg-wf-bg">
+      {/* Toolbar */}
+      <div className="wf-toolbar mb-5">
+        <button
+          onClick={() => navigate(-1)}
+          className="wf-btn wf-btn-ghost text-wf-ink-dim"
+        >
+          ← Back
+        </button>
+        <span className="text-wf-line-strong">|</span>
+        {% if title_field %}
+        <h1 className="font-title text-xl text-wf-ink flex-1">{record.{{ title_field.name }}}</h1>
+        {% else %}
+        <h1 className="font-title text-xl text-wf-ink flex-1 wf-mono">{record.{{ entity.pk_field }}}</h1>
+        {% endif %}
+        {% if status_field %}
+        <Badge value={String(record.{{ status_field.name }})} size="sm" />
+        {% endif %}
+        <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
+          Edit
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={() => { onDelete?.(id!); navigate(basePath); }}
+        >
+          Delete
+        </Button>
+      </div>
+
+      {/* Two-column layout: 1fr main + 280px metadata rail */}
+      <div className="grid gap-5" style={{ "{{" }} gridTemplateColumns: '1fr 280px' {{ "}}" }}>
+        {/* Main content card */}
+        <div className="wf-card space-y-5">
+          <p className="text-xs font-medium text-wf-ink-faint uppercase tracking-wider">Content</p>
+
+          {% if image_field %}
+          {record.{{ image_field.name }} && (
+            <div className="rounded-wf overflow-hidden -mx-3 -mt-1">
+              <img
+                src={record.{{ image_field.name }}}
+                alt=""
+                className="w-full max-h-72 object-cover"
+              />
+            </div>
+          )}
+          {% endif %}
+
+          {% if content_field %}
+          <div className="whitespace-pre-wrap text-wf-ink text-sm leading-relaxed">
+            {record.{{ content_field.name }}}
+          </div>
+          {% else %}
+          <p className="text-wf-ink-faint text-sm italic">No content fields defined.</p>
+          {% endif %}
+        </div>
+
+        {/* Metadata rail */}
+        <div className="space-y-4">
+          {/* Metadata grid */}
+          <div className="wf-card">
+            <p className="text-xs font-medium text-wf-ink-faint uppercase tracking-wider mb-3">Metadata</p>
+            <dl className="space-y-2.5">
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-2xs uppercase tracking-wide text-wf-ink-faint">ID</dt>
+                <dd className="wf-mono">{record.{{ entity.pk_field }}}</dd>
+              </div>
+              {% for field in meta_fields %}
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-2xs uppercase tracking-wide text-wf-ink-faint">{{ field.name | title }}</dt>
+                <dd className="text-sm text-wf-ink">
+                  {% if field.type == 'enum' %}
+                  <Badge value={String(record.{{ field.name }})} size="sm" />
+                  {% elif field.type in ['datetime', 'date'] or field.name in ['createdAt', 'updatedAt', 'publishedAt', 'date'] %}
+                  {record.{{ field.name }} ? new Date(record.{{ field.name }}).toLocaleString() : '—'}
+                  {% else %}
+                  {String(record.{{ field.name }} ?? '—')}
+                  {% endif %}
+                </dd>
+              </div>
+              {% endfor %}
+            </dl>
+          </div>
+
+          {% if relation_fields %}
+          {/* Relations */}
+          <div className="wf-card">
+            <p className="text-xs font-medium text-wf-ink-faint uppercase tracking-wider mb-3">Relations</p>
+            <dl className="space-y-2.5">
+              {% for field in relation_fields %}
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-2xs uppercase tracking-wide text-wf-ink-faint">{{ field.name | title }}</dt>
+                <dd className="wf-mono">{String(record.{{ field.name }} ?? '—')}</dd>
+              </div>
+              {% endfor %}
+            </dl>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default {{ entity.name | pascal_case }}TwoColumn;

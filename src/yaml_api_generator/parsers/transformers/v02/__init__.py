@@ -6,6 +6,7 @@ Coordinates specialized transformers to convert v0.2 YAML specifications into IR
 from typing import Any
 
 from yaml_api_generator.ir import IRDocument
+from yaml_api_generator.ir.api import IROIDCProvider, IRProvider, IRSAMLProvider
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 
 from .access_transformer import AccessTransformer
@@ -45,6 +46,7 @@ class V02Transformer:
         services_data: dict[str, Any] = resolved.get("services", {})
         controllers_data: dict[str, Any] = resolved.get("controllers", {})
         roles_data: dict[str, Any] = resolved.get("roles", {})
+        providers_data: dict[str, Any] = resolved.get("providers", {})
 
         repo_entity_map: dict[str, str] = {
             repo_name: repo_cfg["entity"]
@@ -95,6 +97,8 @@ class V02Transformer:
             entity_to_collection,
         )
 
+        providers = self._parse_providers(providers_data)
+
         mongo_config = resolved.get("mongo", {})
         return IRDocument(
             version=str(resolved["version"]),
@@ -107,5 +111,14 @@ class V02Transformer:
             mongo=self._route.build_mongo(mongo_config),
             deploy=self._route.build_deploy(resolved.get("deploy"), resolved, mongo_config),
             repositories=repositories,
+            providers=providers,
             ui_config=resolved.get("ui"),
         )
+
+    def _parse_providers(self, providers_data: dict[str, Any]) -> dict[str, IRProvider]:
+        _CONSTRUCTORS: dict[str, type] = {"oidc": IROIDCProvider, "saml": IRSAMLProvider}
+        return {
+            name: _CONSTRUCTORS[cfg["type"]](name=name, **{k: v for k, v in cfg.items() if k != "type"})
+            for name, cfg in providers_data.items()
+            if isinstance(cfg, dict) and cfg.get("type") in _CONSTRUCTORS
+        }

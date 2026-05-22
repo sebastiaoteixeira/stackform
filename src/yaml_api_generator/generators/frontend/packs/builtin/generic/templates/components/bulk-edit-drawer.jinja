@@ -1,0 +1,276 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+{% set editable_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | list %}
+{% set entity_plural = entity.name | lower + 's' %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set role_names = roles.values() | list %}
+{% set role_fields = [] %}
+{% for name in role_names %}
+{% if name in entity.fields %}{% if role_fields.append(entity.fields[name]) %}{% endif %}{% endif %}
+{% endfor %}
+{% set other_fields = editable_fields | rejectattr('name', 'in', role_names) | list %}
+{% set display_fields = (role_fields + other_fields)[:4] %}
+
+interface BulkPatch {
+  [field: string]: string;
+}
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [enabledFields, setEnabledFields] = useState<Set<string>>(new Set());
+  const [patch, setPatch] = useState<BulkPatch>({});
+  const [applying, setApplying] = useState(false);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () =>
+    setSelectedIds(selectedIds.size === items.length
+      ? new Set()
+      : new Set(items.map(i => i.{{ entity.pk_field }}))
+    );
+
+  const toggleField = (name: string) =>
+    setEnabledFields(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+
+  const applyBulkEdit = async () => {
+    const activePatch = Object.fromEntries(
+      Object.entries(patch).filter(([k]) => enabledFields.has(k))
+    );
+    if (Object.keys(activePatch).length === 0) return;
+
+    setApplying(true);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    await Promise.all([...selectedIds].map(id =>
+      fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(activePatch),
+      })
+    ));
+
+    // Optimistically update local state
+    setItems(prev => prev.map(item =>
+      selectedIds.has(item.{{ entity.pk_field }})
+        ? { ...item, ...activePatch }
+        : item
+    ));
+    setApplying(false);
+    setDrawerOpen(false);
+    setEnabledFields(new Set());
+    setPatch({});
+    setSelectedIds(new Set());
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono">{items.length} records</span>
+        <div className="flex-1" />
+        {selectedIds.size > 0 && (
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="wf-btn border-wf-accent text-wf-accent-ink bg-wf-accent-soft"
+          >
+            Bulk edit {selectedIds.size}
+          </button>
+        )}
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Grid: table + drawer */}
+      <div
+        className="flex-1 overflow-hidden px-6 pb-6"
+        style={{ "{{" }} display: 'grid', gridTemplateColumns: drawerOpen ? '1fr 340px' : '1fr', gap: '16px', transition: 'grid-template-columns 0.2s' {{ "}}" }}
+      >
+        {/* Table */}
+        <div className="overflow-auto border border-wf-line rounded-wf bg-wf-surface">
+          <table className="wf-table">
+            <thead>
+              <tr>
+                <th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === items.length && items.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-wf-line-strong accent-wf-accent"
+                  />
+                </th>
+                <th className="w-24">ID</th>
+                {% for field in display_fields %}
+                <th>{{ field.name | title }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item => (
+                <tr
+                  key={item.{{ entity.pk_field }}}
+                  className={selectedIds.has(item.{{ entity.pk_field }}) ? 'is-selected' : ''}
+                >
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.{{ entity.pk_field }})}
+                      onChange={() => toggleSelect(item.{{ entity.pk_field }})}
+                      className="w-4 h-4 rounded border-wf-line-strong accent-wf-accent"
+                    />
+                  </td>
+                  <td><span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span></td>
+                  {% for field in display_fields %}
+                  <td>
+                    {% if field.type == 'enum' %}
+                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    {% else %}
+                    {String(item.{{ field.name }} ?? '—')}
+                    {% endif %}
+                  </td>
+                  {% endfor %}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Bulk edit drawer */}
+        {drawerOpen && (
+          <div className="wf-card overflow-y-auto flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <span className="font-title text-lg text-wf-ink">Bulk edit</span>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="text-wf-ink-faint hover:text-wf-ink"
+              >
+                ×
+              </button>
+            </div>
+            <p className="text-xs text-wf-ink-dim">
+              Applies to <strong className="text-wf-ink">{selectedIds.size}</strong> selected {selectedIds.size === 1 ? '{{ entity.name | lower }}' : '{{ entity_plural }}'}
+            </p>
+
+            <hr className="border-wf-line" />
+
+            <div className="space-y-3 flex-1">
+              {% for field in editable_fields %}
+              <div className="space-y-1">
+                <label className="flex items-center gap-2 text-sm text-wf-ink cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enabledFields.has('{{ field.name }}')}
+                    onChange={() => toggleField('{{ field.name }}')}
+                    className="w-3.5 h-3.5 accent-wf-accent"
+                  />
+                  {{ field.name | title }}
+                </label>
+                {enabledFields.has('{{ field.name }}') && (
+                  {% if field.type == 'enum' and field.options %}
+                  <select
+                    value={patch['{{ field.name }}'] ?? ''}
+                    onChange={e => setPatch(p => ({ ...p, '{{ field.name }}': e.target.value }))}
+                    className="w-full wf-input text-sm"
+                  >
+                    <option value="">— keep —</option>
+                    {% for opt in field.options %}
+                    <option value="{{ opt }}">{{ opt }}</option>
+                    {% endfor %}
+                  </select>
+                  {% else %}
+                  <input
+                    value={patch['{{ field.name }}'] ?? ''}
+                    onChange={e => setPatch(p => ({ ...p, '{{ field.name }}': e.target.value }))}
+                    placeholder="New value..."
+                    type="{% if field.type == 'number' %}number{% elif field.type == 'boolean' %}text{% else %}text{% endif %}"
+                    className="w-full wf-input text-sm"
+                  />
+                  {% endif %}
+                )}
+              </div>
+              {% endfor %}
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-wf-line">
+              <button
+                onClick={() => { setDrawerOpen(false); setEnabledFields(new Set()); setPatch({}); }}
+                className="wf-btn flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyBulkEdit}
+                disabled={applying || enabledFields.size === 0}
+                className="wf-btn wf-btn-primary flex-1 disabled:opacity-50"
+              >
+                {applying ? 'Applying…' : 'Apply'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

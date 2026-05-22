@@ -1,18 +1,24 @@
+{% if ctx.include %}
+include:
+  {% for path in ctx.include %}
+  - {{ path }}
+  {% endfor %}
+
+{% endif %}
 services:
   app:
     {% if ctx.image %}
     image: {{ ctx.image }}
     {% else %}
-    build: .
+    build: ./backend
     {% endif %}
-    ports:
-      - "{{ ctx.port }}:{{ ctx.port }}"
     environment:
-      {% if ctx.mongo_local %}
-      - MONGO_URI=mongodb://mongodb:27017
-      - MONGO_DB={{ ctx.mongo_db }}
-      {% endif %}
-      - PORT={{ ctx.port }}
+      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017}
+      - MONGO_DB=${MONGO_DB:-{{ ctx.mongo_db }}}
+      - PORT=${PORT:-{{ ctx.port }}}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+    ports:
+      - "${APP_PORT:-{{ ctx.port }}}:{{ ctx.port }}"
     env_file:
       - .env
     restart: unless-stopped
@@ -32,16 +38,35 @@ services:
   {% if ctx.has_frontend %}
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:{{ ctx.port }}/api/v1}
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
       - app
     restart: unless-stopped
   {% endif %}
 
-{% if ctx.mongo_local %}
+  {% for svc_name, svc_config in ctx.extra_services %}
+  {{ svc_name }}:
+{{ svc_config | to_yaml | indent(4, first=True) }}
+  {% endfor %}
+
+{% set extra_volumes = [] %}
+{% for _, svc_config in ctx.extra_services %}
+{% for vol in svc_config.get("volumes", []) %}
+{% if ":" in vol and not vol.split(":")[0].startswith((".", "/")) %}
+{% if extra_volumes.append(vol.split(":")[0]) %}{% endif %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if ctx.mongo_local or extra_volumes %}
 volumes:
+  {% if ctx.mongo_local %}
   mongo_data:
+  {% endif %}
+  {% for vol in extra_volumes %}
+  {{ vol }}:
+  {% endfor %}
 {% endif %}

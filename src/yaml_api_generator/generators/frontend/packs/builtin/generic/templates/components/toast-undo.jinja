@@ -1,0 +1,56 @@
+import { useEffect, useState } from 'react';
+
+interface ToastUndoProps {
+  entityLabel?: string;
+  onUndo: () => void;
+  onDismiss: () => void;
+  /** Countdown duration in seconds */
+  duration?: number;
+}
+
+export function ToastUndo({
+  entityLabel = '{{ entity.name | title }}',
+  onUndo,
+  onDismiss,
+  duration = 8,
+}: ToastUndoProps) {
+  const [remaining, setRemaining] = useState(duration);
+
+  useEffect(() => {
+    if (remaining <= 0) {
+      onDismiss();
+      return;
+    }
+    const t = setTimeout(() => setRemaining((r) => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [remaining, onDismiss]);
+
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+      <div
+        className="flex items-center gap-3 px-4 py-3 rounded-wf shadow-xl"
+        style={{ "{{" }} backgroundColor: 'var(--wf-ink)', color: 'white', minWidth: '280px' {{ "}}" }}
+      >
+        {/* Checkmark */}
+        <div className="flex-shrink-0 w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs">
+          v
+        </div>
+
+        <span className="text-sm flex-1">{entityLabel} deleted</span>
+
+        {/* Divider */}
+        <div className="w-px h-4 bg-white/20" />
+
+        <button
+          onClick={onUndo}
+          className="text-sm font-medium underline underline-offset-2 hover:no-underline flex-shrink-0"
+          style={{ "{{" }} color: 'var(--wf-accent-soft, #a5c8ff)' {{ "}}" }}
+        >
+          Undo
+        </button>
+
+        <span className="wf-mono text-xs opacity-50 flex-shrink-0">{remaining}s</span>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,280 @@
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+{% set entity_plural = entity.name | lower + 's' %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+{% set role_names = roles.values() | list %}
+{% set role_fields = [] %}
+{% for name in role_names %}
+{% if name in entity.fields %}{% if role_fields.append(entity.fields[name]) %}{% endif %}{% endif %}
+{% endfor %}
+{% set other_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('name', 'in', role_names) | list %}
+{% set display_fields = (role_fields + other_fields)[:4] %}
+
+interface MenuPosition { x: number; y: number }
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<{ pos: MenuPosition; targetId: string } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const openMenu = useCallback((e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    // Ensure the right-clicked row is always in the selection
+    setSelectedIds(prev => prev.has(id) ? prev : new Set([id]));
+    setMenu({ pos: { x: e.clientX, y: e.clientY }, targetId: id });
+  }, []);
+
+  const closeMenu = () => setMenu(null);
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () =>
+    setSelectedIds(selectedIds.size === items.length
+      ? new Set()
+      : new Set(items.map(i => i.{{ entity.pk_field }}))
+    );
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete ${selectedIds.size} record(s)?`)) { closeMenu(); return; }
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    await Promise.all([...selectedIds].map(id =>
+      fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { method: 'DELETE', headers })
+    ));
+    setItems(prev => prev.filter(i => !selectedIds.has(i.{{ entity.pk_field }})));
+    setSelectedIds(new Set());
+    closeMenu();
+  };
+
+  const copyIds = () => {
+    navigator.clipboard.writeText([...selectedIds].join('\n'));
+    closeMenu();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const n = selectedIds.size;
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono">{items.length} records</span>
+        <div className="flex-1" />
+        {n > 0 && (
+          <span className="wf-mono">{n} selected</span>
+        )}
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto px-6 pb-6">
+        <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+          <table className="wf-table">
+            <thead>
+              <tr>
+                <th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === items.length && items.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-wf-line-strong accent-wf-accent"
+                  />
+                </th>
+                <th className="w-24">ID</th>
+                {% for field in display_fields %}
+                <th>{{ field.name | title }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item => (
+                <tr
+                  key={item.{{ entity.pk_field }}}
+                  onContextMenu={e => openMenu(e, item.{{ entity.pk_field }})}
+                  className={`cursor-context-menu ${selectedIds.has(item.{{ entity.pk_field }}) ? 'is-selected' : ''}`}
+                >
+                  <td onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.{{ entity.pk_field }})}
+                      onChange={() => toggleSelect(item.{{ entity.pk_field }})}
+                      className="w-4 h-4 rounded border-wf-line-strong accent-wf-accent"
+                    />
+                  </td>
+                  <td>
+                    <span
+                      className="wf-mono cursor-pointer hover:text-wf-accent"
+                      onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                    >
+                      {String(item.{{ entity.pk_field }}).slice(0, 8)}…
+                    </span>
+                  </td>
+                  {% for field in display_fields %}
+                  <td>
+                    {% if field.type == 'enum' %}
+                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    {% else %}
+                    {String(item.{{ field.name }} ?? '—')}
+                    {% endif %}
+                  </td>
+                  {% endfor %}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Context menu */}
+      {menu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-wf-surface border-[1.5px] border-wf-line-strong rounded-wf shadow-xl py-1 text-sm"
+          style={{ "{{" }} left: menu.pos.x, top: menu.pos.y, width: '220px' {{ "}}" }}
+        >
+          {/* Header */}
+          <div className="px-3 py-1.5 border-b border-wf-line mb-1">
+            <span className="text-xs font-medium text-wf-ink-dim">
+              {n} {n === 1 ? '{{ entity.name | lower }}' : '{{ entity_plural }}'} selected
+            </span>
+          </div>
+
+          {/* Primary actions */}
+          <button
+            onClick={() => { navigate(`{{ view.path }}/${menu.targetId}`); closeMenu(); }}
+            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
+          >
+            Open <kbd className="wf-mono">↵</kbd>
+          </button>
+          <button
+            onClick={() => { navigate(`{{ view.path }}/${menu.targetId}/edit`); closeMenu(); }}
+            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
+          >
+            Edit <kbd className="wf-mono">E</kbd>
+          </button>
+          <button
+            onClick={closeMenu}
+            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
+          >
+            Duplicate <kbd className="wf-mono">D</kbd>
+          </button>
+
+          <div className="my-1 border-t border-wf-line" />
+
+          {/* Status / assign / tag submenus (stub) */}
+          {% if status_field %}
+          <button className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink">
+            Change status <span className="text-wf-ink-faint">▸</span>
+          </button>
+          {% endif %}
+          <button className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink">
+            Assign to <span className="text-wf-ink-faint">▸</span>
+          </button>
+          <button className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink">
+            Add tag <span className="text-wf-ink-faint">▸</span>
+          </button>
+
+          <div className="my-1 border-t border-wf-line" />
+
+          {/* Export / copy */}
+          <button
+            onClick={closeMenu}
+            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
+          >
+            Export <kbd className="wf-mono">⇧E</kbd>
+          </button>
+          <button
+            onClick={copyIds}
+            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
+          >
+            Copy IDs <kbd className="wf-mono">⌘C</kbd>
+          </button>
+
+          <div className="my-1 border-t border-wf-line" />
+
+          {/* Destructive */}
+          <button
+            onClick={closeMenu}
+            className="w-full flex items-center px-3 py-1.5 hover:bg-wf-fill text-wf-ink-dim"
+          >
+            Archive
+          </button>
+          <button
+            onClick={handleDelete}
+            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-danger-soft text-wf-danger"
+          >
+            Delete <kbd className="wf-mono">⌫</kbd>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

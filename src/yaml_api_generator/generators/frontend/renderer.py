@@ -39,6 +39,11 @@ def _render_scaffold(
         "postcss.config.js",
     }
 
+    crud_views = {
+        name for name, view in context.views.items()
+        if _resolve_pack_component(view, context) == "crud"
+    }
+
     for item in context.pack_scaffold:
         template_path = f"scaffold/{item}.jinja"
         content = _try_render(
@@ -50,6 +55,7 @@ def _render_scaffold(
                 "entities": context.entities,
                 "collections": context.collections,
                 "pack_config": context.pack_config,
+                "crud_views": crud_views,
             },
         )
         if content is not None:
@@ -196,51 +202,87 @@ def _render_views(
         pack_component = _resolve_pack_component(view, context)
         component_tree = _build_component_tree(view, context)
 
-        collection = None
-        for prop_val in view.props.values():
-            if prop_val.kind == "literal" and isinstance(prop_val.value, str):
-                col_ref = _parse_collection_ref(prop_val.value)
-                if col_ref and col_ref in context.collections:
-                    collection = context.collections[col_ref]
-                    break
+        collection = _resolve_collection(view, context)
+        entity = _resolve_entity(view, context, pack_component)
 
-        entity = None
-        for prop_val in view.props.values():
-            if prop_val.kind == "literal" and isinstance(prop_val.value, str):
-                if prop_val.value in context.entities:
-                    entity = context.entities[prop_val.value]
-                    break
+        base_vars = {
+            "view": view,
+            "collection": collection,
+            "entity": entity,
+            "context": context,
+            "pack_config": context.pack_config,
+            "component_tree": component_tree,
+            "props": view.props,
+        }
 
-        if pack_component == "auth" and entity is None:
-            for eid in context.identity_entities:
-                entity = context.entities.get(eid)
-                if entity:
-                    break
-
-        template_path = f"components/{pack_component}.jinja"
-        content = _try_render(
-            env,
-            template_path,
-            {
-                "view": view,
-                "collection": collection,
-                "entity": entity,
-                "context": context,
-                "pack_config": context.pack_config,
-                "component_tree": component_tree,
-                "props": view.props,
-            },
-        )
-        if content is not None:
-            files.append(
-                OutputFile(
+        if pack_component == "crud":
+            effective = _resolve_effective_props(view, context, "crud")
+            list_comp = effective.get("list", "list-table")
+            pages = [
+                (f"{_pascal(view_name)}", list_comp),
+                (f"{_pascal(view_name)}Form", effective.get("form", "form-stacked")),
+                (f"{_pascal(view_name)}Detail", effective.get("detail", "detail-two-column")),
+            ]
+            for file_stem, sub_component in pages:
+                content = _try_render(env, f"components/{sub_component}.jinja", base_vars)
+                if content is not None:
+                    files.append(OutputFile(
+                        path=f"{output.pages_dir}/{file_stem}.{ext}",
+                        content=content,
+                        zone="editable",
+                    ))
+        else:
+            content = _try_render(env, f"components/{pack_component}.jinja", base_vars)
+            if content is not None:
+                files.append(OutputFile(
                     path=f"{output.pages_dir}/{_pascal(view_name)}.{ext}",
                     content=content,
                     zone="editable",
-                )
-            )
+                ))
 
     return files
+
+
+def _resolve_collection(view: UIView, context: GeneratorContext) -> Any:
+    for prop_val in view.props.values():
+        if prop_val.kind == "literal" and isinstance(prop_val.value, str):
+            col_ref = _parse_collection_ref(prop_val.value)
+            if col_ref and col_ref in context.collections:
+                return context.collections[col_ref]
+    return None
+
+
+def _resolve_entity(view: UIView, context: GeneratorContext, pack_component: str) -> Any:
+    for prop_val in view.props.values():
+        if prop_val.kind == "literal" and isinstance(prop_val.value, str):
+            if prop_val.value in context.entities:
+                return context.entities[prop_val.value]
+    if pack_component.startswith("auth"):
+        for eid in context.identity_entities:
+            entity = context.entities.get(eid)
+            if entity:
+                return entity
+    return None
+
+
+def _resolve_effective_props(
+    view: UIView, context: GeneratorContext, pack_component: str
+) -> dict[str, str]:
+    """Resolve component_ref props by merging view props with pack defaults."""
+    pack_def = context.pack_components.get(pack_component)
+    if pack_def is None:
+        return {}
+
+    result: dict[str, str] = {}
+    for prop_name, pack_prop in pack_def.props.items():
+        if pack_prop.type != "component":
+            continue
+        view_prop = view.props.get(prop_name)
+        if view_prop is not None and view_prop.kind == "component_ref":
+            result[prop_name] = str(view_prop.value)
+        elif pack_prop.default is not None:
+            result[prop_name] = str(pack_prop.default)
+    return result
 
 
 def _resolve_pack_component(view: UIView, context: GeneratorContext) -> str:

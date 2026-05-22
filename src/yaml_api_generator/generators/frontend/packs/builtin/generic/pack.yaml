@@ -2,34 +2,312 @@ name: generic
 version: 1.0.0
 language: typescript
 framework: react
-description: Clean, minimal CRUD UI with table/card layouts
+description: Clean, minimal CRUD UI with multiple view variants based on wireframe designs
 
 components:
+  # List variants (V1-V5)
   table:
     props:
       collection: { type: collection, required: true }
       columns: { type: array }
-      onRowClick: { type: function }
-  card_grid:
+      searchable: { type: boolean, default: true }
+      sortable: { type: boolean, default: true }
+      pagination: { type: boolean, default: true }
+      selectable: { type: boolean, default: true }
+
+  list-table:
     props:
       collection: { type: collection, required: true }
-      columns: { type: number, default: 3 }
-  detail:
+      columns: { type: array }
+      searchable: { type: boolean, default: true }
+      sortable: { type: boolean, default: true }
+      pagination: { type: boolean, default: true }
+      selectable: { type: boolean, default: true }
+
+  list-split-pane:
     props:
       collection: { type: collection, required: true }
-      record: { type: object, required: true }
-  form:
+      preview: { type: boolean, default: true }
+
+  list-grouped:
+    props:
+      collection: { type: collection, required: true }
+      groupBy: { type: string }
+      collapsible: { type: boolean, default: true }
+
+  list-card-grid:
+    props:
+      collection: { type: collection, required: true }
+      columns: { type: number, default: 4 }
+      searchable: { type: boolean, default: true }
+
+  list-spreadsheet:
+    props:
+      collection: { type: collection, required: true }
+      inline_edit: { type: boolean, default: true }
+
+  # Detail variants (V1-V5)
+  detail-two-column:
+    props:
+      collection: { type: collection, required: true }
+
+  detail-tabbed:
+    props:
+      collection: { type: collection, required: true }
+      tabs: { type: array, default: [fields, relations, activity, json] }
+
+  detail-article:
+    props:
+      collection: { type: collection, required: true }
+      public: { type: boolean, default: false }
+
+  detail-drawer:
+    props:
+      collection: { type: collection, required: true }
+      onClose: { type: function }
+
+  detail-schema:
+    props:
+      collection: { type: collection, required: true }
+
+  # Form variants (V1-V5)
+  form-stacked:
     props:
       collection: { type: collection, required: true }
       mode: { type: string, default: create }
-      onSubmit: { type: function }
-  auth:
+
+  form-sectioned:
     props:
-      mode: { type: string, default: login }
-  empty_state:
+      collection: { type: collection, required: true }
+      mode: { type: string, default: create }
+      sections: { type: array }
+
+  form-modal:
+    props:
+      collection: { type: collection, required: true }
+      onClose: { type: function }
+      onSuccess: { type: function }
+
+  form-preview:
+    props:
+      collection: { type: collection, required: true }
+      mode: { type: string, default: create }
+
+  form-inline-row:
+    props:
+      collection: { type: collection, required: true }
+      record: { type: object }
+
+  # Auth variants (V1-V5)
+  auth-centered:
+    props:
+      providers: { type: array }
+      allow_register: { type: boolean, default: true }
+
+  auth-hero-split:
+    props:
+      providers: { type: array }
+      hero_content: { type: object }
+
+  auth-signup-role:
+    props:
+      providers: { type: array }
+      default_role: { type: string }
+
+  auth-tabbed:
+    props:
+      providers: { type: array }
+
+  auth-error:
+    props:
+      providers: { type: array }
+      show_password_toggle: { type: boolean, default: true }
+
+  # Empty state variants (V1-V5)
+  empty-centered:
+    props:
+      title: { type: string }
+      message: { type: string }
+      action_label: { type: string }
+
+  empty-onboarding:
+    props:
+      title: { type: string, required: true }
+      subtitle: { type: string }
+      steps: { type: array, required: true }
+
+  empty-import:
+    props:
+      title: { type: string }
+      options: { type: array }
+
+  empty-filtered:
+    props:
+      filters: { type: array }
+      message: { type: string }
+
+  empty-inline:
+    props:
+      collection: { type: collection, required: true }
+
+  # Delete modal variants (V1-V5)
+  delete-simple:
+    props:
+      entity: { type: string }
+      onConfirm: { type: function }
+      onCancel: { type: function }
+
+  delete-type-confirm:
+    props:
+      entity: { type: string }
+      confirm_text: { type: string }
+      onConfirm: { type: function }
+
+  delete-bulk-cascade:
+    props:
+      count: { type: number }
+      relations: { type: array }
+      onConfirm: { type: function }
+
+  delete-soft:
+    props:
+      entity: { type: string }
+      onArchive: { type: function }
+      onDelete: { type: function }
+
+  toast-undo:
     props:
       message: { type: string }
+      duration: { type: number, default: 8 }
+      onUndo: { type: function }
+
+  # Filter/Search variants (V1-V5)
+  filter-toolbar:
+    props:
+      fields: { type: array }
+      active_filters: { type: object }
+
+  filter-builder:
+    props:
+      fields: { type: array }
+      rules: { type: array }
+
+  filter-facets:
+    props:
+      fields: { type: array }
+      facets: { type: object }
+
+  filter-column:
+    props:
+      column: { type: string }
+      values: { type: array }
+
+  command-palette:
+    props:
+      collections: { type: array }
+      actions: { type: array }
+
+  # Bulk action variants (V1-V5)
+  bulk-floating:
+    props:
+      selected: { type: array }
+      actions: { type: array }
+
+  bulk-toolbar:
+    props:
+      selected: { type: array }
+      total: { type: number }
+      actions: { type: array }
+
+  bulk-edit-drawer:
+    props:
+      selected: { type: array }
+      fields: { type: array }
+
+  bulk-progress:
+    props:
       action: { type: string }
+      current: { type: number }
+      total: { type: number }
+
+  context-menu:
+    props:
+      selected: { type: array }
+      actions: { type: array }
+
+  # Settings variants (V1-V5)
+  settings-sectioned:
+    props:
+      sections: { type: array }
+
+  settings-yaml:
+    props:
+      spec: { type: object }
+
+  settings-roles:
+    props:
+      roles: { type: array }
+      entities: { type: array }
+
+  settings-schema:
+    props:
+      entities: { type: array }
+
+  settings-danger:
+    props:
+      actions: { type: array }
+
+  # Composition components
+  crud:
+    props:
+      collection: { type: collection, required: true }
+      list: { type: component, default: list-table }
+      form: { type: component, default: form-stacked }
+      detail: { type: component, default: detail-two-column }
+      delete: { type: component, default: delete-simple }
+
+  split-pane:
+    props:
+      collection: { type: collection, required: true }
+      left: { type: component, required: true }
+      right: { type: component, required: true }
+      ratio: { type: string, default: "1:1" }
+
+  sidebar-layout:
+    props:
+      brand: { type: string }
+      nav_items: { type: array }
+
+  # Ref picker variants (V1-V5)
+  ref-dropdown:
+    props:
+      target: { type: string, required: true }
+      value: { type: string }
+      onChange: { type: function }
+
+  ref-multi-chips:
+    props:
+      target: { type: string, required: true }
+      values: { type: array }
+      onChange: { type: function }
+
+  ref-picker-modal:
+    props:
+      target: { type: string, required: true }
+      onSelect: { type: function }
+
+  ref-radio-list:
+    props:
+      target: { type: string, required: true }
+      value: { type: string }
+      onChange: { type: function }
+
+  ref-selected-card:
+    props:
+      target: { type: string, required: true }
+      value: { type: object }
+      onSwap: { type: function }
+      onClear: { type: function }
 
 scaffold:
   - routing
@@ -38,12 +316,21 @@ scaffold:
   - tsconfig.json
   - tsconfig.node.json
   - index.html
+  - .env.example
   - main
   - App
   - api
+  - config.ts
+  - auth.tsx
   - index.css
   - tailwind.config.js
   - postcss.config.js
+  - components/Button
+  - components/Badge
+  - components/Card
+  - components/Input
+  - components/LoadingSpinner
+  - components/EmptyState
 
 output:
   extension: tsx

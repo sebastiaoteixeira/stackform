@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import yaml
 from jinja2 import Environment, FileSystemLoader
 
 from ..base import DeployGenerator
@@ -17,13 +18,16 @@ class DockerDeployGenerator(DeployGenerator):
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        env.filters["to_yaml"] = lambda v: yaml.dump(
+            v, default_flow_style=False, sort_keys=False
+        ).rstrip()
         output_dir.mkdir(parents=True, exist_ok=True)
 
         always = [
             ("inventory.yml.jinja", "inventory.yml"),
             ("playbook.yml.jinja", "playbook.yml"),
             ("docker-compose.yml.jinja", "docker-compose.yml"),
-            ("Dockerfile.jinja", "Dockerfile"),
+            ("Dockerfile.jinja", "backend/Dockerfile"),
             ("env.example.jinja", ".env.example"),
             ("README.md.jinja", "README.md"),
         ]
@@ -32,7 +36,7 @@ class DockerDeployGenerator(DeployGenerator):
 
         if ctx.has_frontend:
             self._render(env, "nginx.conf.jinja", ctx, output_dir / "nginx.conf")
-            self._render(env, "Dockerfile.frontend.jinja", ctx, output_dir / "Dockerfile.frontend")
+            self._render(env, "Dockerfile.frontend.jinja", ctx, output_dir / "frontend" / "Dockerfile")
 
         env_content = env.get_template("env.example.jinja").render(ctx=ctx)
         (output_dir / ".env").write_text(env_content)

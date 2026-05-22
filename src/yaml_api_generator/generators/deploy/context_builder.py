@@ -32,7 +32,12 @@ def build_deploy_context(
 
     if deploy.runtime == "docker":
         image = deploy.docker.image if deploy.docker else None
-        return DockerDeployContext(**common, image=image)
+        return DockerDeployContext(
+            **common,
+            image=image,
+            extra_services=deploy.extra_services,
+            include=deploy.include,
+        )
 
     if deploy.runtime == "systemd":
         sd = deploy.systemd

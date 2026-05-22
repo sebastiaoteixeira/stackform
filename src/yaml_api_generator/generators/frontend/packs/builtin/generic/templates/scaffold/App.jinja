@@ -1,45 +1,304 @@
-import { Routes, Route, Link } from 'react-router-dom';
+{% set ns = namespace(login_view=none) %}
+{% for view in views.values() %}
+{% if view.path == '/login' %}
+{% set ns.login_view = view %}
+{% endif %}
+{% endfor %}
+{% set login_view = ns.login_view %}
+import { useState, useEffect, createContext, useContext } from 'react';
+import { Routes, Route, Link, {% if context.identity_entities %}useNavigate, {% endif %}useLocation } from 'react-router-dom';
+import { API_BASE_URL } from './config';
+{% if context.identity_entities and not login_view %}
+import { Auth } from './auth.tsx';
+{% endif %}
 {% for view in views.values() %}
 import {{ view.name | pascal_case }} from '../pages/{{ view.name | pascal_case }}';
+{% if view.name in crud_views %}
+import {{ view.name | pascal_case }}Form from '../pages/{{ view.name | pascal_case }}Form';
+import {{ view.name | pascal_case }}Detail from '../pages/{{ view.name | pascal_case }}Detail';
+{% endif %}
 {% endfor %}
 
-function App() {
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold">{{ pack_config.app_name or 'App' }}</h1>
-              </div>
-              <div className="ml-6 flex space-x-8">
-                {% for view in views.values() %}
-                {% if view.path %}
-                <Link
-                  to="{{ view.path }}"
-                  className="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-900 hover:text-gray-600"
-                >
-                  {{ view.path.strip('/') | title }}
-                </Link>
-                {% endif %}
-                {% endfor %}
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
+interface AuthContextType {
+  token: string | null;
+  user: any | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+}
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <Routes>
-          <Route path="/" element={<div className="text-center py-12"><h2 className="text-2xl font-semibold">Welcome to {{ pack_config.app_name or 'App' }}</h2></div>} />
-          {% for view in views.values() %}
-          {% if view.path %}
-          <Route path="{{ view.path }}" element={<{{ view.name | pascal_case }} />} />
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be inside AuthProvider');
+  return ctx;
+}
+
+{% if context.identity_entities %}
+export function ExternalProviders({ collection }: { collection: string }) {
+  const [providers, setProviders] = useState<{ name: string; type: string }[]>([]);
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/${collection}/auth/providers`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(setProviders)
+      .catch(() => setProviders([]));
+  }, [collection]);
+  if (!providers.length) return null;
+  return (
+    <>
+      <div style={{ "{{" }} textAlign: 'center', margin: '6px 0', color: 'var(--wf-ink-faint)', fontSize: 12 {{ "}}" }}>or</div>
+      <div style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 8 {{ "}}" }}>
+        {providers.map(p => (
+          <button
+            key={p.name}
+            type="button"
+            onClick={() => { window.location.href = `${API_BASE_URL}/${collection}/auth/${p.name}`; }}
+            style={{ "{{" }} width: '100%', height: 36, borderRadius: 5, background: 'var(--wf-surface)', border: '1.5px solid var(--wf-line-strong)', color: 'var(--wf-ink)', fontSize: 14, cursor: 'pointer' {{ "}}" }}
+          >
+            Continue with {p.name.charAt(0).toUpperCase() + p.name.slice(1)}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+{% endif %}
+
+{% if context.identity_entities and not login_view %}
+function LoginPage() {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [error, setError] = useState('');
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (formData: any) => {
+    setError('');
+
+    try {
+      if (mode === 'register') {
+        const res = await fetch(`${API_BASE_URL}/{{ identity_collection or "users" }}/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'Registration failed');
+        }
+        setMode('login');
+        return;
+      }
+
+      await login(formData.email, formData.password);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
+    }
+  };
+
+  {% set auth_entity = context.entities[context.identity_entities[0]] if context.identity_entities else none %}
+  return (
+    <>
+      {error && (
+        <div className="fixed top-4 right-4 max-w-md p-4 bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf shadow-lg z-50">
+          <p className="text-wf-ink text-sm">{error}</p>
+        </div>
+      )}
+      <Auth
+        mode={mode}
+        onSubmit={handleSubmit}
+        onToggleMode={() => setMode(mode === 'login' ? 'register' : 'login')}
+      />
+      <ExternalProviders collection="{{ auth_entity.repository_name }}" />
+    </>
+  );
+}
+{% endif %}
+
+{% if context.identity_entities %}
+function AuthCallback({ onToken }: { onToken: (t: string) => void }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (token) {
+      onToken(token);
+      navigate('/', { replace: true });
+    } else {
+      navigate('/login', { replace: true });
+    }
+  }, []);
+  return null;
+}
+{% endif %}
+
+function App() {
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [user, setUser] = useState<any | null>(null);
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+  };
+
+  const login = async (email: string, password: string) => {
+    const res = await fetch(`${API_BASE_URL}/{{ identity_collection or 'users' }}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Invalid credentials');
+    }
+    const data = await res.json();
+    localStorage.setItem('token', data.token);
+    setToken(data.token);
+    setUser(data.user);
+  };
+
+  {% if context.identity_entities %}
+  const handleExternalToken = (t: string) => {
+    localStorage.setItem('token', t);
+    setToken(t);
+  };
+  {% endif %}
+
+  return (
+    <AuthContext.Provider value={{ "{{" }} token, user, login, logout {{ "}}" }}>
+      <Routes>
+        {% if context.identity_entities %}
+        <Route path="/auth/callback" element={<AuthCallback onToken={handleExternalToken} />} />
+        {% if login_view %}
+        <Route path="/login" element={<{{ login_view.name | pascal_case }} />} />
+        {% else %}
+        <Route path="/login" element={<LoginPage />} />
+        {% endif %}
+        {% if pack_config.get('require_auth', true) %}
+        {% if login_view %}
+        <Route path="/*" element={token ? <AppLayout /> : <{{ login_view.name | pascal_case }} />} />
+        {% else %}
+        <Route path="/*" element={token ? <AppLayout /> : <LoginPage />} />
+        {% endif %}
+        {% else %}
+        <Route path="/*" element={<AppLayout />} />
+        {% endif %}
+        {% else %}
+        <Route path="/*" element={<AppLayout />} />
+        {% endif %}
+      </Routes>
+    </AuthContext.Provider>
+  );
+}
+
+function AppLayout() {
+  const { {% if context.identity_entities %}token, {% endif %}logout } = useAuth();
+  const location = useLocation();
+
+  const navItems = [
+    { path: '/', label: 'Dashboard', icon: '○' },
+    {% for view in views.values() %}
+    {% if view.path and view.path != '/' and view.path != '/login' %}
+    { path: '{{ view.path }}', label: '{{ view.path.strip("/").replace("_", " ") | title }}', icon: '≡' },
+    {% endif %}
+    {% endfor %}
+  ];
+
+  return (
+    <div className="flex h-screen bg-wf-bg">
+      {/* Sidebar */}
+      <aside className="wf-sidebar">
+        {/* Brand */}
+        <div className="flex items-center gap-2 px-2 py-3 border-b border-dashed border-wf-line mb-2">
+          <div className="w-[22px] h-[22px] border-[1.5px] border-wf-line-strong rounded-[5px] bg-wf-surface flex items-center justify-center">
+            <span className="text-xs font-bold text-wf-ink-dim">{{ pack_config.app_name[0] if pack_config.app_name else 'A' }}</span>
+          </div>
+          <span className="text-[13px] font-medium text-wf-ink font-title">{{ pack_config.app_name or 'myapp' }}</span>
+        </div>
+
+        {/* Section label */}
+        <div className="text-2xs uppercase tracking-wider text-wf-ink-faint px-2 py-1.5">
+          Collections
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 flex flex-col gap-0.5 px-2 overflow-y-auto">
+          {navItems.map((item) => (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`wf-sidebar-item ${location.pathname === item.path ? 'is-active' : ''}`}
+            >
+              <span className="w-4 text-center text-wf-ink-faint">{item.icon}</span>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="mt-auto border-t border-dashed border-wf-line px-2 py-2">
+          {% if context.identity_entities %}
+          {token ? (
+            <button
+              onClick={logout}
+              className="wf-sidebar-item w-full"
+            >
+              <span className="w-4 text-center text-wf-ink-faint">↩</span>
+              Logout
+            </button>
+          ) : (
+            <Link to="/login" className="wf-sidebar-item w-full">
+              <span className="w-4 text-center text-wf-ink-faint">→</span>
+              Login
+            </Link>
+          )}
           {% endif %}
-          {% endfor %}
-        </Routes>
-      </main>
+        </div>
+      </aside>
+
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Topbar */}
+        <header className="flex items-center justify-between px-5 py-2.5 border-b border-wf-line bg-wf-surface min-h-[48px]">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-wf-ink-dim">{{ pack_config.app_name or 'App' }}</span>
+            <span className="text-wf-ink-faint">/</span>
+            <span className="text-wf-ink font-medium">
+              {navItems.find(i => i.path === location.pathname)?.label || 'Dashboard'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 border border-wf-line rounded-[5px] bg-wf-bg min-w-[200px] text-wf-ink-faint text-sm">
+              <span>⌕</span>
+              <span>Search...</span>
+            </div>
+            <div className="w-7 h-7 rounded-full border-[1.5px] border-wf-line-strong bg-wf-fill" />
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 overflow-auto">
+          <Routes>
+            <Route path="/" element={
+              <div className="p-6">
+                <h1 className="font-title text-3xl text-wf-ink mb-2">Dashboard</h1>
+                <p className="text-wf-ink-dim">Welcome to {{ pack_config.app_name or 'App' }}</p>
+              </div>
+            } />
+            {% for view in views.values() %}
+            {% if view.path and view.path != '/login' %}
+            <Route path="{{ view.path }}" element={<{{ view.name | pascal_case }} />} />
+            {% if view.name in crud_views %}
+            <Route path="{{ view.path }}/new" element={<{{ view.name | pascal_case }}Form />} />
+            <Route path="{{ view.path }}/:id" element={<{{ view.name | pascal_case }}Detail />} />
+            <Route path="{{ view.path }}/:id/edit" element={<{{ view.name | pascal_case }}Form />} />
+            {% endif %}
+            {% endif %}
+            {% endfor %}
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,183 @@
+{% set identifier = (entity.auth_identifier if entity else none) or 'email' %}
+{% set pk = (entity.pk_field if entity else 'id') %}
+{% set login_fields = [] %}
+{% set register_fields = [] %}
+{% if entity %}
+{% for f in entity.fields.values() if f.name != pk and not f.readonly %}
+{% if f.name == identifier %}
+{% set _ = login_fields.insert(0, f) %}
+{% set _ = register_fields.insert(0, f) %}
+{% else %}
+{% set _ = register_fields.append(f) %}
+{% endif %}
+{% endfor %}
+{% endif %}
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth, ExternalProviders } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+{% macro input_type(field) %}{% if field.type == 'number' %}number{% elif field.type == 'datetime' %}datetime-local{% elif field.type == 'boolean' %}checkbox{% elif field.name == identifier %}{{ identifier }}{% else %}text{% endif %}{% endmacro %}
+
+{% macro field_input(field) -%}
+          <div style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 5 {{ "}}" }}>
+            <label style={{ "{{" }} display: 'flex', alignItems: 'center', gap: 4, color: 'var(--wf-ink-dim)', fontSize: 13 {{ "}}" }}>
+              {{ field.name | replace("_", " ") | title }}{% if field.required %} <span style={{ "{{" }} color: 'var(--wf-danger)' {{ "}}" }}>*</span>{% endif %}
+            </label>
+            <input
+              name="{{ field.name }}"
+              type="{{ input_type(field) | trim }}"
+              value={formData.{{ field.name }}}
+              onChange={e => setFormData({ ...formData, {{ field.name }}: e.target.value })}
+              {{ 'required' if field.required else '' }}
+              style={{ "{{" }} border: '1.5px solid var(--wf-line-strong)', borderRadius: 5, background: 'var(--wf-surface)', padding: '0 12px', minHeight: 36, fontSize: 14, color: 'var(--wf-ink)', outline: 'none' {{ "}}" }}
+            />
+          </div>
+{%- endmacro %}
+
+export default function Login() {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [error, setError] = useState('');
+  const [formData, setFormData] = useState({
+    {% for f in register_fields %}{{ f.name }}: '',
+    {% endfor %}password: '',
+    confirmPassword: '',
+  });
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    try {
+      if (mode === 'register') {
+        if (formData.password !== formData.confirmPassword) {
+          setError('Passwords do not match');
+          return;
+        }
+        const { confirmPassword, ...submitData } = formData;
+        const res = await fetch(`${API_BASE_URL}/{{ identity_collection or "users" }}/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(submitData),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'Registration failed');
+        }
+        setMode('login');
+        return;
+      }
+      await login(formData.{{ identifier }}, formData.password);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
+    }
+  };
+
+  return (
+    <div className="grid h-screen w-full grid-cols-1 lg:grid-cols-2">
+      {error && (
+        <div className="fixed top-4 right-4 max-w-md p-4 bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf shadow-lg z-50">
+          <p className="text-wf-ink text-sm">{error}</p>
+        </div>
+      )}
+
+      {/* Brand side */}
+      <div className="hidden lg:flex" style={{ "{{" }} background: 'var(--wf-fill)', padding: 40, flexDirection: 'column', justifyContent: 'center' {{ "}}" }}>
+        <div style={{ "{{" }} width: 28, height: 28, border: '1.5px solid var(--wf-line-strong)', borderRadius: 5, background: 'var(--wf-surface)', marginBottom: 20 {{ "}}" }} />
+        {% set hero = props.hero_content.value if props.hero_content is defined and props.hero_content.value else {} %}
+        <div style={{ "{{" }} fontFamily: 'var(--wf-font-title, var(--wf-font-hand))', fontSize: 40, lineHeight: 1.1, marginBottom: 10, color: 'var(--wf-ink)' {{ "}}" }}>
+          {mode === 'login' ? '{{ hero.title or "Welcome back." }}' : '{{ hero.signup_title or "Get started." }}'}
+        </div>
+        {% if hero.subtitle %}
+        <div style={{ "{{" }} color: 'var(--wf-ink-dim)', fontSize: 14, marginBottom: 4 {{ "}}" }}>
+          {{ hero.subtitle }}
+        </div>
+        {% endif %}
+        {% if hero.quote %}
+        <hr style={{ "{{" }} border: 0, borderTop: '1px dashed var(--wf-line)', margin: '12px 0' {{ "}}" }} />
+        <div style={{ "{{" }} color: 'var(--wf-ink-faint)', fontSize: 13, fontFamily: 'var(--wf-font-title, var(--wf-font-hand))' {{ "}}" }}>
+          &ldquo;{{ hero.quote }}&rdquo;
+        </div>
+        {% endif %}
+      </div>
+
+      {/* Form side */}
+      <div className="flex flex-col justify-center items-center lg:items-start p-6 sm:p-10">
+        <div className="w-full max-w-sm">
+        <div style={{ "{{" }} fontFamily: 'var(--wf-font-title, var(--wf-font-hand))', fontSize: 22, color: 'var(--wf-ink)' {{ "}}" }}>
+          {mode === 'login' ? 'Sign in' : 'Create account'}
+        </div>
+        <div style={{ "{{" }} color: 'var(--wf-ink-dim)', fontSize: 13, marginBottom: 18 {{ "}}" }}>
+          {mode === 'login' ? 'Use your {{ identifier | replace("_", " ") }}' : 'Fill in your details'}
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 12 {{ "}}" }}>
+          {/* Login fields (always visible) */}
+          {% for field in login_fields %}
+{{ field_input(field) }}
+          {% endfor %}
+
+          {/* Register-only fields */}
+          {% for field in register_fields if field.name != identifier %}
+          {mode === 'register' && (
+{{ field_input(field) }}
+          )}
+          {% endfor %}
+
+          <div style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 5 {{ "}}" }}>
+            <label style={{ "{{" }} display: 'flex', alignItems: 'center', gap: 4, color: 'var(--wf-ink-dim)', fontSize: 13 {{ "}}" }}>
+              Password <span style={{ "{{" }} color: 'var(--wf-danger)' {{ "}}" }}>*</span>
+            </label>
+            <input
+              name="password"
+              type="password"
+              value={formData.password}
+              onChange={e => setFormData({ ...formData, password: e.target.value })}
+              required
+              style={{ "{{" }} border: '1.5px solid var(--wf-line-strong)', borderRadius: 5, background: 'var(--wf-surface)', padding: '0 12px', minHeight: 36, fontSize: 14, color: 'var(--wf-ink)', outline: 'none' {{ "}}" }}
+            />
+          </div>
+
+          {mode === 'register' && (
+          <div style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 5 {{ "}}" }}>
+            <label style={{ "{{" }} display: 'flex', alignItems: 'center', gap: 4, color: 'var(--wf-ink-dim)', fontSize: 13 {{ "}}" }}>
+              Confirm password <span style={{ "{{" }} color: 'var(--wf-danger)' {{ "}}" }}>*</span>
+            </label>
+            <input
+              name="confirmPassword"
+              type="password"
+              value={formData.confirmPassword}
+              onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+              required
+              style={{ "{{" }} border: '1.5px solid var(--wf-line-strong)', borderRadius: 5, background: 'var(--wf-surface)', padding: '0 12px', minHeight: 36, fontSize: 14, color: 'var(--wf-ink)', outline: 'none' {{ "}}" }}
+            />
+          </div>
+          )}
+
+          <button
+            type="submit"
+            style={{ "{{" }} width: '100%', height: 36, borderRadius: 5, background: 'var(--wf-accent)', border: '1px solid var(--wf-accent)', color: 'white', fontFamily: 'var(--wf-font-title, var(--wf-font-hand))', fontSize: 14, cursor: 'pointer' {{ "}}" }}
+          >
+            {mode === 'login' ? 'Sign in' : 'Create account'}
+          </button>
+        </form>
+
+        <ExternalProviders collection="{{ entity.repository_name if entity else (identity_collection or 'users') }}" />
+
+        <div style={{ "{{" }} marginTop: 16, fontSize: 13, color: 'var(--wf-ink-dim)' {{ "}}" }}>
+          {mode === 'login' ? 'New here? ' : 'Already have an account? '}
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+            style={{ "{{" }} background: 'none', border: 'none', padding: 0, color: 'var(--wf-accent-ink)', fontFamily: 'var(--wf-font-title, var(--wf-font-hand))', fontSize: 15, cursor: 'pointer' {{ "}}" }}
+          >
+            {mode === 'login' ? 'Create account' : 'Sign in'}
+          </button>
+        </div>
+        </div>
+      </div>
+    </div>
+  );
+}

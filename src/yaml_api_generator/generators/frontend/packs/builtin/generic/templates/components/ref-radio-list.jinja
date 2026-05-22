@@ -1,0 +1,108 @@
+import { useEffect, useState } from 'react';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface RefOption {
+  id: string;
+  name: string;
+  subtitle?: string;
+  avatar?: string;
+}
+
+interface RefRadioListProps {
+  target: string;
+  targetEndpoint: string;
+  value?: string | null;
+  onChange?: (id: string | null) => void;
+  maxVisible?: number;
+}
+
+function Avatar({ src, name }: { src?: string; name: string }) {
+  if (src) {
+    return <img src={src} alt={name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />;
+  }
+  return (
+    <span className="w-7 h-7 rounded-full bg-wf-accent-soft flex items-center justify-center text-xs font-medium text-wf-accent-ink flex-shrink-0">
+      {name.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+export function RefRadioList({
+  target,
+  targetEndpoint,
+  value,
+  onChange,
+  maxVisible = 6,
+}: RefRadioListProps) {
+  const [options, setOptions] = useState<RefOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { token } = useAuth();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}${targetEndpoint}`, { headers })
+      .then((r) => r.json())
+      .then((data) => setOptions(Array.isArray(data) ? data : []))
+      .catch(() => setOptions([]))
+      .finally(() => setLoading(false));
+  }, [token, targetEndpoint]);
+
+  const visible = options.slice(0, maxVisible);
+
+  if (loading) {
+    return (
+      <div className="border-[1.5px] border-wf-line-strong rounded-wf p-4 text-sm text-wf-ink-dim">
+        Loading {target}s...
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-[1.5px] border-wf-line-strong rounded-wf overflow-hidden">
+      {visible.map((option, index) => {
+        const isSelected = value === option.id;
+        return (
+          <label
+            key={option.id}
+            className={`flex items-center gap-3 px-3.5 py-2.5 cursor-pointer transition-colors ${
+              isSelected ? 'bg-wf-accent-soft' : 'bg-wf-surface hover:bg-wf-fill'
+            } ${index > 0 ? 'border-t border-wf-line' : ''}`}
+          >
+            <input
+              type="radio"
+              name={`ref-${target}`}
+              value={option.id}
+              checked={isSelected}
+              onChange={() => onChange?.(option.id)}
+              className="w-4 h-4 accent-wf-accent flex-shrink-0"
+            />
+            <Avatar src={option.avatar} name={option.name} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm ${isSelected ? 'text-wf-accent-ink font-medium' : 'text-wf-ink'} truncate`}>
+                {option.name}
+              </p>
+              {option.subtitle && (
+                <p className="text-xs text-wf-ink-dim truncate">{option.subtitle}</p>
+              )}
+            </div>
+          </label>
+        );
+      })}
+
+      {options.length > maxVisible && (
+        <div className="px-3.5 py-2 border-t border-wf-line bg-wf-fill text-xs text-wf-ink-dim">
+          +{options.length - maxVisible} more {target}s
+        </div>
+      )}
+
+      {options.length === 0 && (
+        <div className="px-3.5 py-4 text-sm text-wf-ink-dim text-center">
+          No {target}s found
+        </div>
+      )}
+    </div>
+  );
+}

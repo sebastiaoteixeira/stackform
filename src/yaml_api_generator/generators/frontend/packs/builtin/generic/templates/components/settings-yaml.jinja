@@ -1,0 +1,141 @@
+import { useState } from 'react';
+
+interface YamlSummary {
+  entities: number;
+  collections: number;
+  views: number;
+  pack: string;
+}
+
+interface YamlWarning {
+  field: string;
+  message: string;
+}
+
+interface SettingsYamlProps {
+  initialSpec?: string;
+  summary?: YamlSummary;
+  warnings?: YamlWarning[];
+  onValidate?: (spec: string) => Promise<{ valid: boolean; errors?: string[] }>;
+  onApply?: (spec: string) => Promise<void>;
+}
+
+export function SettingsYaml({
+  initialSpec = '{{ context.spec_yaml | default("# spec.yaml\nversion: \\"1.0\\"") }}',
+  summary = { entities: {{ entities | length }}, collections: {{ entities | length }}, views: {{ views | length if views else 0 }}, pack: 'generic' },
+  warnings = [],
+  onValidate,
+  onApply,
+}: SettingsYamlProps) {
+  const [spec, setSpec] = useState(initialSpec);
+  const [status, setStatus] = useState<'valid' | 'invalid' | 'pending'>('valid');
+  const [errors, setErrors] = useState<string[]>([]);
+  const [applying, setApplying] = useState(false);
+
+  const handleValidate = async () => {
+    if (!onValidate) return;
+    setStatus('pending');
+    const result = await onValidate(spec);
+    setStatus(result.valid ? 'valid' : 'invalid');
+    setErrors(result.errors ?? []);
+  };
+
+  const handleApply = async () => {
+    if (!onApply) return;
+    setApplying(true);
+    try {
+      await onApply(spec);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const statusBadge = {
+    valid: <span className="wf-badge wf-badge-success">valid</span>,
+    invalid: <span className="wf-badge wf-badge-danger">invalid</span>,
+    pending: <span className="wf-badge">checking...</span>,
+  }[status];
+
+  return (
+    <div className="h-full flex flex-col bg-wf-bg">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-5 pt-4 pb-3 border-b border-wf-line bg-wf-surface flex-shrink-0">
+        <span className="font-title text-lg text-wf-ink">spec.yaml</span>
+        {statusBadge}
+        <div className="flex-1" />
+        <button onClick={handleValidate} className="wf-btn wf-btn-sm">
+          Validate
+        </button>
+        <button
+          onClick={handleApply}
+          disabled={applying || status === 'invalid'}
+          className="wf-btn wf-btn-sm wf-btn-primary disabled:opacity-50"
+        >
+          {applying ? 'Applying...' : 'Apply'}
+        </button>
+      </div>
+
+      {/* Body: editor + sidebar */}
+      <div className="flex-1 overflow-hidden grid" style={{ "{{" }} gridTemplateColumns: '1fr 280px' {{ "}}" }}>
+
+        {/* Code editor */}
+        <div className="overflow-auto bg-wf-fill border-r border-wf-line">
+          {errors.length > 0 && (
+            <div className="px-4 py-2 bg-wf-danger-soft border-b border-wf-danger">
+              {errors.map((e, i) => (
+                <p key={i} className="text-xs text-wf-danger font-mono">{e}</p>
+              ))}
+            </div>
+          )}
+          <textarea
+            value={spec}
+            onChange={(e) => { setSpec(e.target.value); setStatus('pending'); }}
+            spellCheck={false}
+            className="w-full h-full min-h-full p-5 font-mono text-[13px] text-wf-ink bg-transparent resize-none outline-none leading-relaxed"
+          />
+        </div>
+
+        {/* Summary sidebar */}
+        <div className="overflow-auto p-4 space-y-4 bg-wf-surface">
+          <div className="wf-card space-y-3">
+            <p className="text-[10px] uppercase tracking-widest text-wf-ink-faint font-medium">Summary</p>
+
+            {(
+              [
+                ['Entities', summary.entities],
+                ['Collections', summary.collections],
+                ['Views', summary.views],
+              ] as [string, number][]
+            ).map(([label, count]) => (
+              <div key={label} className="flex items-center justify-between">
+                <span className="text-sm text-wf-ink-dim">{label}</span>
+                <span className="wf-mono text-wf-ink font-medium">{count}</span>
+              </div>
+            ))}
+
+            <div className="flex items-center justify-between pt-2 border-t border-wf-line">
+              <span className="text-sm text-wf-ink-dim">Pack</span>
+              <span className="wf-mono">{summary.pack}</span>
+            </div>
+          </div>
+
+          {warnings.length > 0 && (
+            <div className="wf-card border-wf-warn bg-wf-warn-soft">
+              <p className="text-[10px] uppercase tracking-widest text-wf-ink-faint font-medium mb-2">
+                Warnings
+              </p>
+              <div className="space-y-2">
+                {warnings.map((w, i) => (
+                  <div key={i}>
+                    <p className="wf-mono text-xs text-wf-ink">{w.field}</p>
+                    <p className="text-xs text-wf-ink-dim">{w.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,92 @@
+interface InputProps {
+  label?: string;
+  type?: string;
+  name: string;
+  value: any;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+  error?: string;
+  help?: string;
+  multiline?: boolean;
+  rows?: number;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export function Input({
+  label,
+  type = 'text',
+  name,
+  value,
+  onChange,
+  placeholder,
+  required = false,
+  disabled = false,
+  error,
+  help,
+  multiline = false,
+  rows = 3,
+  options
+}: InputProps) {
+  const baseInputClasses = 'w-full px-3 min-h-[36px] border-[1.5px] rounded-[5px] bg-wf-surface focus:outline-none focus:border-wf-accent focus:ring-1 focus:ring-wf-accent disabled:bg-wf-fill disabled:cursor-not-allowed';
+  const errorClasses = error ? 'border-wf-danger focus:border-wf-danger focus:ring-wf-danger' : 'border-wf-line-strong';
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {label && (
+        <label htmlFor={name} className="flex items-center gap-1 text-sm text-wf-ink-dim">
+          {label}
+          {required && <span className="text-wf-danger font-title">*</span>}
+        </label>
+      )}
+
+      {multiline ? (
+        <textarea
+          id={name}
+          name={name}
+          value={value || ''}
+          onChange={onChange}
+          placeholder={placeholder}
+          required={required}
+          disabled={disabled}
+          rows={rows}
+          className={`${baseInputClasses} ${errorClasses} py-2.5`}
+        />
+      ) : options ? (
+        <div className={`${baseInputClasses} ${errorClasses} flex items-center justify-between pr-2`}>
+          <select
+            id={name}
+            name={name}
+            value={value || ''}
+            onChange={onChange}
+            required={required}
+            disabled={disabled}
+            className="flex-1 bg-transparent outline-none appearance-none cursor-pointer"
+          >
+            <option value="">Select...</option>
+            {options.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <span className="text-wf-ink-faint text-xs">▾</span>
+        </div>
+      ) : (
+        <input
+          id={name}
+          type={type}
+          name={name}
+          value={value || ''}
+          onChange={onChange}
+          placeholder={placeholder}
+          required={required}
+          disabled={disabled}
+          className={`${baseInputClasses} ${errorClasses}`}
+        />
+      )}
+
+      {help && !error && <p className="text-xs text-wf-ink-faint">{help}</p>}
+      {error && <p className="text-xs text-wf-danger">{error}</p>}
+    </div>
+  );
+}

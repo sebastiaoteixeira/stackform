@@ -150,7 +150,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         if context.auth.has_oidc_auth:
             oidc_template = env.get_template("oidc_routes.py.jinja")
-            oidc_content = oidc_template.render(auth=context.auth)
+            base_prefix = context.app.base_path
+            if context.app.api_version:
+                base_prefix = f"{base_prefix}/{context.app.api_version}"
+            oidc_content = oidc_template.render(auth=context.auth, base_prefix=base_prefix)
             (routes_dir / "oidc_routes.py").write_text(oidc_content)
             auth_imports.append("from .oidc_routes import router as oidc_router")
 

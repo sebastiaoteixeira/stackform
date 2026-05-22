@@ -1,0 +1,77 @@
+import { useState } from 'react';
+
+interface DeleteTypeConfirmProps {
+  entityLabel?: string;
+  recordSlug: string;
+  recordPreview?: Record<string, string>;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+export function DeleteTypeConfirm({
+  entityLabel = '{{ entity.name | title }}',
+  recordSlug,
+  recordPreview,
+  onConfirm,
+  onCancel,
+  loading = false,
+}: DeleteTypeConfirmProps) {
+  const [typed, setTyped] = useState('');
+  const confirmed = typed === recordSlug;
+
+  return (
+    <div className="wf-overlay">
+      <div className="wf-modal max-w-md w-full">
+        <div className="p-6">
+          {/* Danger icon */}
+          <div className="w-10 h-10 rounded-full bg-wf-danger-soft border border-wf-danger/30 flex items-center justify-center mb-4">
+            <span className="text-wf-danger text-lg leading-none">!</span>
+          </div>
+
+          <h3 className="font-title text-xl text-wf-ink mb-1">Delete {entityLabel} permanently?</h3>
+          <p className="text-sm text-wf-ink-dim mb-4">
+            This cannot be undone. All associated data will be lost.
+          </p>
+
+          {/* Record preview card */}
+          {recordPreview && (
+            <div className="mb-4 px-3 py-2.5 rounded-wf bg-wf-fill border border-wf-line text-sm space-y-1">
+              {Object.entries(recordPreview).map(([k, v]) => (
+                <div key={k} className="flex gap-2">
+                  <span className="text-wf-ink-faint w-20 flex-shrink-0">{k}</span>
+                  <span className="text-wf-ink truncate">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-xs text-wf-ink-dim mb-1.5">
+            Type <span className="wf-mono text-wf-ink">{recordSlug}</span> to confirm:
+          </p>
+          <input
+            type="text"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={recordSlug}
+            className="wf-input mb-5 w-full"
+            autoFocus
+          />
+
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={onCancel} disabled={loading} className="wf-btn">
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={!confirmed || loading}
+              className="wf-btn wf-btn-danger disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Deleting...' : 'Delete permanently'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

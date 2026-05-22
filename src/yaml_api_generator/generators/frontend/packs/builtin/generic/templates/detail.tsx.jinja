@@ -1,59 +1,142 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+import { Button } from '../__generated__/components/Button';
+import { Badge } from '../__generated__/components/Badge';
+import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
+
 interface {{ collection_name | pascal_case }}DetailProps {
-  record: any;
-  onEdit?: () => void;
-  onDelete?: () => void;
+  basePath?: string;
 }
 
-export function {{ collection_name | pascal_case }}Detail({ record, onEdit, onDelete }: {{ collection_name | pascal_case }}DetailProps) {
+export function {{ collection_name | pascal_case }}Detail({
+  basePath = '{{ view.path if view else "/" }}'
+}: {{ collection_name | pascal_case }}DetailProps) {
+  const { id } = useParams<{ id: string }>();
+  const [record, setRecord] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
+  const { token } = useAuth();
+
+  useEffect(() => {
+    const fetchRecord = async () => {
+      try {
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { headers });
+
+        if (!res.ok) {
+          throw new Error(res.status === 404 ? 'Record not found' : `Error: ${res.status}`);
+        }
+
+        const data = await res.json();
+        setRecord(data);
+        setLoading(false);
+      } catch (err: any) {
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+
+    if (id) fetchRecord();
+  }, [id, token]);
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to delete this record?')) return;
+
+    setDeleting(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (!res.ok) throw new Error('Failed to delete');
+
+      navigate(basePath);
+    } catch (err: any) {
+      alert('Error deleting: ' + err.message);
+      setDeleting(false);
+    }
+  };
+
+  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+
+  if (loading) return <LoadingSpinner message="Loading details..." />;
+
+  if (error) {
+    return (
+      <div className="px-4 py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-800">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!record) return null;
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">{{ collection_name | title }} Details</h2>
+    <div className="px-4 py-6">
+      <div className="mb-6 flex items-center gap-4">
+        <button
+          onClick={() => navigate(basePath)}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          ←
+        </button>
+        <h2 className="text-xl font-semibold flex-1 truncate">
+          {record.{{ roles.title if roles.title is defined else entity.pk_field }}}
+        </h2>
         <div className="flex items-center gap-2">
-          <button
-            onClick={onEdit}
-            className="px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 text-sm"
-          >
+          <Button onClick={() => navigate(`${basePath}/${id}/edit`)} variant="secondary">
             Edit
-          </button>
-          <button
-            onClick={onDelete}
-            className="px-3 py-1.5 border border-red-300 text-red-600 rounded-md hover:bg-red-50 text-sm"
-          >
-            Delete
-          </button>
+          </Button>
+          <Button onClick={handleDelete} variant="danger" disabled={deleting}>
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <span className="text-sm text-gray-500">ID</span>
-            <div className="font-mono text-sm">{record.id}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <h3 className="text-lg font-medium mb-4">Details</h3>
+            <div className="space-y-4">
+              {% for field in entity.fields.values() %}
+              <div>
+                <dt className="text-sm text-gray-500 mb-1">{{ field.name | title }}</dt>
+                <dd className="text-gray-900">
+                  {% if field.type == 'enum' %}
+                  <Badge value={String(record.{{ field.name }})} />
+                  {% else %}
+                  {String(record.{{ field.name }} || '—')}
+                  {% endif %}
+                </dd>
+              </div>
+              {% endfor %}
+            </div>
           </div>
-          {% for field in detail_fields %}
-          <div>
-            <span className="text-sm text-gray-500">{{ field.label }}</span>
-            <div className="font-medium">{record.{{ field.name }}}</div>
-          </div>
-          {% endfor %}
         </div>
 
-        {% if relationships %}
-        <div className="pt-6 border-t border-gray-200">
-          <h3 className="font-medium mb-4">Related Records</h3>
-          <div className="space-y-2">
-            {% for rel in relationships %}
-            <div className="text-sm">
-              <span className="text-gray-500">{{ rel.label }}:</span>{' '}
-              <span className="text-blue-600 hover:underline cursor-pointer">
-                View {{ rel.count }} records
-              </span>
-            </div>
-            {% endfor %}
+        <div className="lg:col-span-1">
+          <div className="bg-white border border-gray-200 rounded-lg p-6 sticky top-6">
+            <h3 className="text-lg font-medium mb-4">Metadata</h3>
+            <dl className="space-y-3 text-sm">
+              <div>
+                <dt className="text-gray-500">ID</dt>
+                <dd className="font-mono text-xs text-gray-900 break-all">{record.{{ entity.pk_field }}}</dd>
+              </div>
+            </dl>
           </div>
         </div>
-        {% endif %}
       </div>
     </div>
   );

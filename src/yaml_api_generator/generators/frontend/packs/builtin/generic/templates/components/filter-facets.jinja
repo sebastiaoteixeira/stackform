@@ -1,0 +1,231 @@
+import { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+{% set facet_fields = entity.fields.values() | selectattr('type', 'in', ['enum', 'boolean']) | list %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+{% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
+
+const FACET_FIELDS: { name: string; label: string; multi: boolean }[] = [
+  {% for field in facet_fields %}
+  { name: '{{ field.name }}', label: '{{ field.name | title }}', multi: {% if field.type == 'enum' %}true{% else %}false{% endif %} },
+  {% endfor %}
+];
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  // Map from field name to set of selected values
+  const [selected, setSelected] = useState<Record<string, Set<string>>>({});
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  const facetCounts = useMemo(() =>
+    FACET_FIELDS.reduce((acc, facet) => {
+      const counts: Record<string, number> = {};
+      items.forEach(item => {
+        const v = String((item as any)[facet.name] ?? '');
+        counts[v] = (counts[v] ?? 0) + 1;
+      });
+      acc[facet.name] = counts;
+      return acc;
+    }, {} as Record<string, Record<string, number>>),
+    [items]
+  );
+
+  const filtered = useMemo(() =>
+    items.filter(item => {
+      if (search) {
+        const q = search.toLowerCase();
+        if (!Object.values(item).some(v => String(v).toLowerCase().includes(q))) return false;
+      }
+      return FACET_FIELDS.every(facet => {
+        const sel = selected[facet.name];
+        if (!sel || sel.size === 0) return true;
+        return sel.has(String((item as any)[facet.name] ?? ''));
+      });
+    }),
+    [items, search, selected]
+  );
+
+  const toggleFacet = (fieldName: string, value: string, multi: boolean) => {
+    setSelected(prev => {
+      const cur = new Set(prev[fieldName] ?? []);
+      if (cur.has(value)) {
+        cur.delete(value);
+      } else {
+        if (!multi) cur.clear();
+        cur.add(value);
+      }
+      return { ...prev, [fieldName]: cur };
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex overflow-hidden">
+      {/* Sidebar facets */}
+      <aside className="flex-shrink-0 border-r border-wf-line bg-wf-fill overflow-y-auto flex flex-col gap-1 py-4" style={{ "{{" }} width: '200px' {{ "}}" }}>
+        {/* Sidebar search */}
+        <div className="px-3 mb-2">
+          <div className="flex items-center gap-1.5 wf-input text-sm">
+            <span className="text-wf-ink-faint">⌕</span>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="flex-1 bg-transparent outline-none text-wf-ink placeholder:text-wf-ink-faint"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="text-wf-ink-faint hover:text-wf-danger">×</button>
+            )}
+          </div>
+        </div>
+
+        {FACET_FIELDS.map(facet => {
+          const counts = facetCounts[facet.name] ?? {};
+          const selSet = selected[facet.name] ?? new Set();
+          return (
+            <div key={facet.name} className="px-3">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-wf-ink-faint mb-1.5 mt-3">
+                {facet.label}
+              </p>
+              <div className="space-y-0.5">
+                {Object.entries(counts).map(([val, count]) => (
+                  <label
+                    key={val}
+                    className="flex items-center justify-between gap-2 py-1 px-1 rounded cursor-pointer hover:bg-wf-fill-2 text-sm text-wf-ink-dim"
+                  >
+                    <span className="flex items-center gap-2">
+                      <input
+                        type={facet.multi ? 'checkbox' : 'radio'}
+                        name={facet.name}
+                        checked={selSet.has(val)}
+                        onChange={() => toggleFacet(facet.name, val, facet.multi)}
+                        className="w-3.5 h-3.5 accent-wf-accent"
+                      />
+                      <span className="truncate max-w-[90px]">{val}</span>
+                    </span>
+                    <span className="wf-mono flex-shrink-0">{count}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Toolbar */}
+        <div className="wf-toolbar px-6 pt-4">
+          <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+          <span className="wf-mono">{filtered.length} of {items.length}</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => navigate('{{ view.path }}/new')}
+            className="wf-btn wf-btn-primary"
+          >
+            + New
+          </button>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-auto px-6 pb-6">
+          <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+            <table className="wf-table">
+              <thead>
+                <tr>
+                  {% if title_field %}
+                  <th>{{ title_field.name | title }}</th>
+                  {% else %}
+                  <th className="w-28">ID</th>
+                  {% endif %}
+                  {% for field in facet_fields %}
+                  <th className="w-28">{{ field.name | title }}</th>
+                  {% endfor %}
+                  {% if date_field %}
+                  <th className="w-28">{{ date_field.name | title }}</th>
+                  {% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={99} className="py-12 text-center text-wf-ink-faint">
+                      No results match the selected facets.
+                    </td>
+                  </tr>
+                ) : filtered.map(item => (
+                  <tr
+                    key={item.{{ entity.pk_field }}}
+                    onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                    className="cursor-pointer"
+                  >
+                    {% if title_field %}
+                    <td className="font-medium text-wf-ink">{String(item.{{ title_field.name }} ?? '—')}</td>
+                    {% else %}
+                    <td><span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span></td>
+                    {% endif %}
+                    {% for field in facet_fields %}
+                    <td><span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span></td>
+                    {% endfor %}
+                    {% if date_field %}
+                    <td>
+                      <span className="wf-mono text-wf-ink-dim">
+                        {new Date(item.{{ date_field.name }}).toLocaleDateString()}
+                      </span>
+                    </td>
+                    {% endif %}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

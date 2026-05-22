@@ -217,6 +217,11 @@ class RouteTransformer:
 
         env_vars = self._extract_env_vars(full_config)
 
+        extra_services = tuple(
+            (name, config) for name, config in deploy_data.get("services", {}).items()
+        )
+        include = tuple(deploy_data.get("include", []))
+
         return IRDeploy(
             runtime=str(runtime),
             name=deploy_data.get("name"),
@@ -225,6 +230,8 @@ class RouteTransformer:
             env_vars=tuple(env_vars),
             docker=docker,
             systemd=systemd,
+            extra_services=extra_services,
+            include=include,
         )
 
     def _extract_env_vars(self, config: dict[str, Any]) -> list[str]:

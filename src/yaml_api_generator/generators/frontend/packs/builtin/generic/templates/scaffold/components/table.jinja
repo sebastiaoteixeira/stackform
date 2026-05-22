@@ -1,0 +1,129 @@
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+import { Button } from '../__generated__/components/Button';
+import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
+import { EmptyState } from '../__generated__/components/EmptyState';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        setItems(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [token]);
+
+  if (loading) {
+    return <LoadingSpinner message="Loading {{ entity.name | title }}..." />;
+  }
+
+  if (error) {
+    return (
+      <div className="px-4 py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <h3 className="text-red-800 font-medium mb-1">Error loading data</h3>
+          <p className="text-red-600 text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="px-4">
+        <EmptyState
+          title="No {{ entity.name | title }} found"
+          message="Get started by creating your first {{ entity.name | lower }}."
+          actionLabel="Create {{ entity.name | title }}"
+          onAction={() => navigate('{{ view.path }}/new')}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 sm:px-6 lg:px-8">
+      <div className="sm:flex sm:items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">{{ entity.name | title }}</h1>
+          <p className="mt-1 text-sm text-gray-600">{items.length} total</p>
+        </div>
+        <Button onClick={() => navigate('{{ view.path }}/new')}>
+          + New {{ entity.name | title }}
+        </Button>
+      </div>
+
+      <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
+        <table className="min-w-full divide-y divide-gray-300 bg-white">
+          <thead className="bg-gray-50">
+            <tr>
+              {% set ns = namespace(count=0) %}
+              {% for field in entity.fields.values() %}
+              {% if ns.count < 5 %}
+              <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">
+                {{ field.name | title }}
+              </th>
+              {% set ns.count = ns.count + 1 %}
+              {% endif %}
+              {% endfor %}
+              <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 bg-white">
+            {items.map((item) => (
+              <tr key={item.{{ entity.pk_field }}} className="hover:bg-gray-50">
+                {% set ns = namespace(count=0) %}
+                {% for field in entity.fields.values() %}
+                {% if ns.count < 5 %}
+                <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-900">
+                  {String(item.{{ field.name }})}
+                </td>
+                {% set ns.count = ns.count + 1 %}
+                {% endif %}
+                {% endfor %}
+                <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm sm:pr-6">
+                  <Link
+                    to={`{{ view.path }}/${item.{{ entity.pk_field }}}`}
+                    className="text-blue-600 hover:text-blue-900 font-medium"
+                  >
+                    View
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

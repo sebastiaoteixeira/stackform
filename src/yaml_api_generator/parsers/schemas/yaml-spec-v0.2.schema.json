@@ -157,7 +157,11 @@
                 { "type": "array", "items": { "type": "string" }, "minItems": 1 }
               ]
             },
-            "roles": { "type": "string" }
+            "roles": { "type": "string" },
+            "bindings": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ProviderBinding" }
+            }
           }
         }
       },
@@ -216,6 +220,20 @@
       },
       "additionalProperties": false
     },
+    "ProviderBinding": {
+      "type": "object",
+      "required": ["provider"],
+      "properties": {
+        "provider": { "type": "string" },
+        "identifier": { "type": "string" },
+        "claim_mapping": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "auto_provision": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "ProviderConfig": {
       "oneOf": [
         { "$ref": "#/$defs/OIDCProviderConfig" },
@@ -270,7 +288,8 @@
           "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
         },
         "additionalProperties": { "type": "boolean" },
-        "ref": { "type": "string" }
+        "ref": { "type": "string" },
+        "readonly": { "type": "boolean" }
       },
       "allOf": [
         {
@@ -404,6 +423,31 @@
         "name": { "type": "string" },
         "port": { "type": "integer", "default": 8000 },
         "runtime": { "type": "string", "enum": ["docker", "systemd"] },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["image"],
+            "properties": {
+              "image": { "type": "string" },
+              "ports": { "type": "array", "items": { "oneOf": [{"type": "integer"}, {"type": "string"}] } },
+              "environment": { "oneOf": [
+                { "type": "object", "additionalProperties": { "type": "string" } },
+                { "type": "array", "items": { "type": "string" } }
+              ]},
+              "volumes": { "type": "array", "items": { "type": "string" } },
+              "depends_on": { "oneOf": [
+                { "type": "array", "items": { "type": "string" } },
+                { "type": "object" }
+              ]},
+              "command": { "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}] }
+            }
+          }
+        },
+        "include": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "mongo": {
           "type": "object",
           "properties": {

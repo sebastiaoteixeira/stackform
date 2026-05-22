@@ -78,6 +78,8 @@ class ModelBuilder:
                 continue
             if field_name == "_auth":
                 continue
+            if raw_config.get("readonly", False):
+                continue
 
             field_type = raw_config.get("type", "string")
             required = bool(raw_config.get("required", False))

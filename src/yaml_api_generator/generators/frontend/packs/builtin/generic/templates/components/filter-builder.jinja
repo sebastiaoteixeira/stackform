@@ -1,0 +1,339 @@
+import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+type Operator = 'contains' | 'equals' | 'starts_with' | 'ends_with' | 'gt' | 'lt';
+type Conjunction = 'where' | 'and' | 'or';
+
+interface FilterRule {
+  id: number;
+  conjunction: Conjunction;
+  field: string;
+  operator: Operator;
+  value: string;
+}
+
+const FIELDS = [
+  {% for field in entity.fields.values() %}
+  {% if field.name != entity.pk_field %}
+  { name: '{{ field.name }}', label: '{{ field.name | title }}', type: '{{ field.type }}' },
+  {% endif %}
+  {% endfor %}
+];
+
+const OPERATORS: Record<string, { value: Operator; label: string }[]> = {
+  string: [
+    { value: 'contains', label: 'contains' },
+    { value: 'equals', label: 'equals' },
+    { value: 'starts_with', label: 'starts with' },
+    { value: 'ends_with', label: 'ends with' },
+  ],
+  number: [
+    { value: 'equals', label: '=' },
+    { value: 'gt', label: '>' },
+    { value: 'lt', label: '<' },
+  ],
+  enum: [{ value: 'equals', label: 'equals' }],
+  boolean: [{ value: 'equals', label: 'equals' }],
+};
+
+function matchesRule(value: unknown, rule: FilterRule): boolean {
+  const v = String(value ?? '').toLowerCase();
+  const q = rule.value.toLowerCase();
+  switch (rule.operator) {
+    case 'contains': return v.includes(q);
+    case 'equals': return v === q;
+    case 'starts_with': return v.startsWith(q);
+    case 'ends_with': return v.endsWith(q);
+    case 'gt': return parseFloat(v) > parseFloat(q);
+    case 'lt': return parseFloat(v) < parseFloat(q);
+    default: return true;
+  }
+}
+
+let nextId = 1;
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [rules, setRules] = useState<FilterRule[]>([]);
+  const [appliedRules, setAppliedRules] = useState<FilterRule[]>([]);
+  const [open, setOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        return res.json();
+      })
+      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, [token]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const addRule = () => {
+    const defaultField = FIELDS[0];
+    setRules(prev => [...prev, {
+      id: nextId++,
+      conjunction: prev.length === 0 ? 'where' : 'and',
+      field: defaultField?.name ?? '',
+      operator: 'contains',
+      value: '',
+    }]);
+  };
+
+  const updateRule = (id: number, patch: Partial<FilterRule>) =>
+    setRules(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+
+  const removeRule = (id: number) =>
+    setRules(prev => {
+      const next = prev.filter(r => r.id !== id);
+      if (next.length > 0 && next[0].conjunction !== 'where') {
+        next[0] = { ...next[0], conjunction: 'where' };
+      }
+      return next;
+    });
+
+  const applyRules = () => {
+    setAppliedRules(rules.filter(r => r.value.trim() !== ''));
+    setOpen(false);
+  };
+
+  const clearAll = () => {
+    setRules([]);
+    setAppliedRules([]);
+  };
+
+  const filtered = items.filter(item => {
+    if (appliedRules.length === 0) return true;
+    return appliedRules.reduce((acc, rule, i) => {
+      const match = matchesRule((item as any)[rule.field], rule);
+      if (i === 0) return match;
+      return rule.conjunction === 'or' ? acc || match : acc && match;
+    }, false as boolean);
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono">{filtered.length} of {items.length}</span>
+        <div className="flex-1" />
+
+        <div className="relative" ref={popoverRef}>
+          <button
+            onClick={() => setOpen(o => !o)}
+            className={`wf-btn ${appliedRules.length > 0 ? 'border-wf-accent bg-wf-accent-soft text-wf-accent-ink' : ''}`}
+          >
+            Filter rules
+            {appliedRules.length > 0 && (
+              <span className="wf-badge wf-badge-accent ml-1">{appliedRules.length}</span>
+            )}
+          </button>
+
+          {open && (
+            <div
+              className="absolute top-full right-0 mt-1 z-30 bg-wf-surface border-[1.5px] border-wf-line-strong rounded-wf shadow-xl"
+              style={{ "{{" }} width: '440px' {{ "}}" }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-wf-line">
+                <span className="font-title text-base text-wf-ink">Filter rules</span>
+                {rules.length > 0 && (
+                  <span className="wf-mono">{rules.length} rule{rules.length > 1 ? 's' : ''}</span>
+                )}
+              </div>
+
+              {/* Rules */}
+              <div className="p-3 space-y-2 max-h-72 overflow-y-auto">
+                {rules.length === 0 && (
+                  <p className="text-center text-wf-ink-faint text-sm py-4">No filter rules yet.</p>
+                )}
+                {rules.map(rule => {
+                  const fieldMeta = FIELDS.find(f => f.name === rule.field);
+                  const ops = OPERATORS[fieldMeta?.type ?? 'string'] ?? OPERATORS['string'];
+                  return (
+                    <div key={rule.id} className="flex items-center gap-2">
+                      {/* Conjunction label */}
+                      <div className="w-12 text-right">
+                        {rule.conjunction === 'where' ? (
+                          <span className="text-xs text-wf-ink-dim font-medium">where</span>
+                        ) : (
+                          <select
+                            value={rule.conjunction}
+                            onChange={e => updateRule(rule.id, { conjunction: e.target.value as Conjunction })}
+                            className="wf-input text-xs h-6 px-1"
+                          >
+                            <option value="and">AND</option>
+                            <option value="or">OR</option>
+                          </select>
+                        )}
+                      </div>
+
+                      {/* Field */}
+                      <select
+                        value={rule.field}
+                        onChange={e => updateRule(rule.id, { field: e.target.value, operator: 'contains' })}
+                        className="wf-input text-xs flex-1 h-7 px-2"
+                      >
+                        {FIELDS.map(f => <option key={f.name} value={f.name}>{f.label}</option>)}
+                      </select>
+
+                      {/* Operator */}
+                      <select
+                        value={rule.operator}
+                        onChange={e => updateRule(rule.id, { operator: e.target.value as Operator })}
+                        className="wf-input text-xs w-28 h-7 px-2"
+                      >
+                        {ops.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+                      </select>
+
+                      {/* Value */}
+                      <input
+                        value={rule.value}
+                        onChange={e => updateRule(rule.id, { value: e.target.value })}
+                        placeholder="value"
+                        className="wf-input text-xs flex-1 h-7 px-2"
+                      />
+
+                      {/* Remove */}
+                      <button
+                        onClick={() => removeRule(rule.id)}
+                        className="text-wf-ink-faint hover:text-wf-danger text-base leading-none"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-4 py-3 border-t border-wf-line gap-2">
+                <button
+                  onClick={addRule}
+                  className="wf-btn wf-btn-sm wf-btn-ghost text-wf-accent"
+                >
+                  + Add rule
+                </button>
+                <div className="flex gap-2">
+                  <button onClick={clearAll} className="wf-btn wf-btn-sm">Clear</button>
+                  <button onClick={applyRules} className="wf-btn wf-btn-sm wf-btn-primary">Apply</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto px-6 pb-6">
+        <div className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+          <table className="wf-table">
+            <thead>
+              <tr>
+                <th className="w-24">ID</th>
+                {% set ns = namespace(count=0) %}
+                {% for field in entity.fields.values() %}
+                {% if field.name != entity.pk_field and ns.count < 5 %}
+                <th>{{ field.name | title }}</th>
+                {% set ns.count = ns.count + 1 %}
+                {% endif %}
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={99} className="py-12 text-center text-wf-ink-faint">
+                    No results match the filter rules.
+                  </td>
+                </tr>
+              ) : filtered.map(item => (
+                <tr
+                  key={item.{{ entity.pk_field }}}
+                  onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                  className="cursor-pointer"
+                >
+                  <td><span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span></td>
+                  {% set ns = namespace(count=0) %}
+                  {% for field in entity.fields.values() %}
+                  {% if field.name != entity.pk_field and ns.count < 5 %}
+                  <td>
+                    {% if field.type == 'enum' %}
+                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    {% else %}
+                    {String(item.{{ field.name }} ?? '—')}
+                    {% endif %}
+                  </td>
+                  {% set ns.count = ns.count + 1 %}
+                  {% endif %}
+                  {% endfor %}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between mt-4 text-sm text-wf-ink-dim">
+          <span>{filtered.length} of {items.length} records</span>
+          <div className="flex gap-1">
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>←</button>
+            <button className="wf-btn wf-btn-sm wf-btn-ghost" disabled>→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

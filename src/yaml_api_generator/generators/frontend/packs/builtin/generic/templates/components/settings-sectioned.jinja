@@ -1,0 +1,183 @@
+import { useState } from 'react';
+
+type NavItem = {
+  id: string;
+  label: string;
+  danger?: boolean;
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { id: 'general', label: 'General' },
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'auth', label: 'Auth & roles' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'danger', label: 'Danger zone', danger: true },
+];
+
+interface SettingsSectionedProps {
+  appName?: string;
+  initialTheme?: 'light' | 'dark' | 'system';
+  initialBrandColor?: string;
+  initialFont?: string;
+  onSave?: (data: Record<string, unknown>) => void;
+}
+
+export function SettingsSectioned({
+  appName = '{{ context.app_name | default("App") }}',
+  initialTheme = 'system',
+  initialBrandColor = '#6366f1',
+  initialFont = 'Inter',
+  onSave,
+}: SettingsSectionedProps) {
+  const [activeSection, setActiveSection] = useState('appearance');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(initialTheme);
+  const [brandColor, setBrandColor] = useState(initialBrandColor);
+  const [font, setFont] = useState(initialFont);
+  const [notifications, setNotifications] = useState(true);
+
+  const handleSave = () => {
+    onSave?.({ theme, brandColor, font, notifications });
+  };
+
+  return (
+    <div className="min-h-full bg-wf-bg">
+      {/* Header */}
+      <div className="wf-toolbar px-6 pt-5 pb-4 border-b border-wf-line bg-wf-surface">
+        <h1 className="font-title text-2xl text-wf-ink">Settings</h1>
+        <div className="flex-1" />
+        <button onClick={handleSave} className="wf-btn wf-btn-primary">
+          Save changes
+        </button>
+      </div>
+
+      {/* Body: sidebar + main */}
+      <div className="grid h-[calc(100%-57px)]" style={{ "{{" }} gridTemplateColumns: '180px 1fr' {{ "}}" }}>
+
+        {/* Sidebar nav */}
+        <nav className="border-r border-wf-line bg-wf-fill p-3 flex flex-col gap-0.5">
+          <p className="px-2.5 py-1 text-[10px] uppercase tracking-widest text-wf-ink-faint font-medium mb-1">
+            Settings
+          </p>
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveSection(item.id)}
+              className={`wf-sidebar-item text-left ${
+                activeSection === item.id ? 'is-active' : ''
+              } ${item.danger && activeSection !== item.id ? 'text-wf-danger' : ''}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Main content */}
+        <div className="p-8 overflow-auto">
+          {activeSection === 'appearance' && (
+            <div className="max-w-xl">
+              <h2 className="font-title text-[24px] text-wf-ink mb-1">Appearance</h2>
+              <p className="text-sm text-wf-ink-dim mb-8">
+                Customize how {appName} looks and feels.
+              </p>
+
+              <div className="space-y-6">
+                {/* Theme radio */}
+                <div>
+                  <label className="block text-sm font-medium text-wf-ink mb-2">Theme</label>
+                  <div className="flex gap-3">
+                    {(['light', 'dark', 'system'] as const).map((t) => (
+                      <label
+                        key={t}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-wf border-[1.5px] cursor-pointer text-sm capitalize transition-colors ${
+                          theme === t
+                            ? 'border-wf-accent bg-wf-accent-soft text-wf-accent-ink'
+                            : 'border-wf-line bg-wf-surface text-wf-ink'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="theme"
+                          value={t}
+                          checked={theme === t}
+                          onChange={() => setTheme(t)}
+                          className="sr-only"
+                        />
+                        <span
+                          className={`w-3.5 h-3.5 rounded-full border-[1.5px] flex items-center justify-center ${
+                            theme === t ? 'border-wf-accent' : 'border-wf-line-strong'
+                          }`}
+                        >
+                          {theme === t && (
+                            <span className="w-2 h-2 rounded-full bg-wf-accent block" />
+                          )}
+                        </span>
+                        {t}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Brand color */}
+                <div>
+                  <label className="block text-sm font-medium text-wf-ink mb-2">Brand color</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={brandColor}
+                      onChange={(e) => setBrandColor(e.target.value)}
+                      className="w-10 h-10 rounded-wf border border-wf-line cursor-pointer bg-transparent"
+                    />
+                    <span className="wf-mono">{brandColor}</span>
+                  </div>
+                </div>
+
+                {/* Font select */}
+                <div>
+                  <label className="block text-sm font-medium text-wf-ink mb-2">UI font</label>
+                  <select
+                    value={font}
+                    onChange={(e) => setFont(e.target.value)}
+                    className="wf-input w-full text-sm text-wf-ink bg-wf-surface"
+                    style={{ "{{" }} outline: 'none' {{ "}}" }}
+                  >
+                    {['Inter', 'Geist', 'JetBrains Mono', 'System UI'].map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Toggle */}
+                <div className="flex items-center justify-between py-3 border-t border-wf-line">
+                  <div>
+                    <p className="text-sm font-medium text-wf-ink">Email notifications</p>
+                    <p className="text-xs text-wf-ink-dim mt-0.5">Receive updates about activity</p>
+                  </div>
+                  <button
+                    onClick={() => setNotifications((v) => !v)}
+                    className={`relative w-10 h-5 rounded-full border transition-colors ${
+                      notifications
+                        ? 'bg-wf-accent border-wf-accent'
+                        : 'bg-wf-fill-2 border-wf-line-strong'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                        notifications ? 'translate-x-5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection !== 'appearance' && (
+            <div className="flex items-center justify-center h-48 text-wf-ink-faint text-sm">
+              {NAV_ITEMS.find((n) => n.id === activeSection)?.label} — coming soon
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,44 @@
+import { Button } from '../__generated__/components/Button';
+
+interface DeleteDialogProps {
+  entityName: string;
+  recordName?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+export function DeleteDialog({
+  entityName,
+  recordName,
+  onConfirm,
+  onCancel,
+  loading = false
+}: DeleteDialogProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          Delete {entityName}?
+        </h3>
+        <p className="text-sm text-gray-600 mb-6">
+          {recordName ? (
+            <>
+              Are you sure you want to delete <strong>{recordName}</strong>? This action cannot be undone.
+            </>
+          ) : (
+            `Are you sure you want to delete this ${entityName}? This action cannot be undone.`
+          )}
+        </p>
+        <div className="flex items-center justify-end gap-3">
+          <Button variant="secondary" onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

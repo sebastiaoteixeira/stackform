@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,8 @@ class DeployContext:
 @dataclass(frozen=True)
 class DockerDeployContext(DeployContext):
     image: str | None = None
+    extra_services: tuple[tuple[str, dict], ...] = field(default_factory=tuple)
+    include: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

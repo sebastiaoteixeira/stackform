@@ -1,0 +1,173 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../__generated__/App';
+import { API_BASE_URL } from '../__generated__/config';
+
+interface {{ entity.name | pascal_case }} {
+  {{ entity.pk_field }}: string;
+  {% for field in entity.fields.values() %}
+  {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
+  {% endfor %}
+}
+
+{% set enum_fields = entity.fields.values() | selectattr('type', 'equalto', 'enum') | list %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+{% set group_field = view.props.groupBy.value if view.props.groupBy else (enum_fields | map(attribute='name') | first) %}
+
+export default function {{ view.name | pascal_case }}() {
+  const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const { token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        setItems(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [token]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-wf-ink-dim">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf p-4">
+          <p className="text-wf-ink font-medium mb-1">Error loading data</p>
+          <p className="text-wf-ink-dim text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center p-12 border-[1.5px] border-dashed border-wf-line rounded-lg max-w-md">
+          <div className="w-[60px] h-[60px] mx-auto mb-4 border-[1.5px] border-dashed border-wf-line rounded-lg flex items-center justify-center">
+            <span className="font-title text-2xl text-wf-ink-faint">∅</span>
+          </div>
+          <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
+          <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+          <button onClick={() => navigate('{{ view.path }}/new')} className="wf-btn wf-btn-primary">
+            + New {{ entity.name | title }}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const groups = items.reduce<Record<string, {{ entity.name | pascal_case }}[]>>((acc, item) => {
+    const key = String((item as any)['{{ group_field }}'] || 'Uncategorized');
+    (acc[key] ??= []).push(item);
+    return acc;
+  }, {});
+
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="wf-toolbar px-6 pt-4">
+        <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
+        <span className="wf-mono text-wf-ink-dim">{items.length} records</span>
+        <div className="flex-1" />
+        <button
+          onClick={() => navigate('{{ view.path }}/new')}
+          className="wf-btn wf-btn-primary"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Groups */}
+      <div className="flex-1 overflow-auto px-6 pb-6 space-y-3">
+        {Object.entries(groups).map(([groupKey, groupItems]) => {
+          const isCollapsed = collapsedGroups.has(groupKey);
+
+          return (
+            <div key={groupKey} className="border border-wf-line rounded-wf overflow-hidden bg-wf-surface">
+
+              {/* Group header */}
+              <button
+                onClick={() => toggleGroup(groupKey)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 bg-wf-fill hover:bg-wf-fill-2 transition-colors border-b border-wf-line"
+              >
+                <span className="wf-badge">{groupKey}</span>
+                <span className="wf-mono text-xs text-wf-ink-dim">{groupItems.length}</span>
+                <span className="flex-1" />
+                <span className="text-wf-ink-faint text-xs">{isCollapsed ? '▸' : '▾'}</span>
+              </button>
+
+              {!isCollapsed && (
+                <table className="wf-table">
+                  <tbody>
+                    {groupItems.map((item) => (
+                      <tr
+                        key={item.{{ entity.pk_field }}}
+                        onClick={() => navigate(`{{ view.path }}/${item.{{ entity.pk_field }}}`)}
+                        className="cursor-pointer"
+                      >
+                        <td className="w-8">
+                          <input
+                            type="checkbox"
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-4 h-4 rounded border-wf-line-strong accent-wf-accent"
+                          />
+                        </td>
+                        <td className="font-medium text-wf-ink">
+                          {% if title_field %}
+                          {item.{{ title_field.name }}}
+                          {% else %}
+                          <span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span>
+                          {% endif %}
+                        </td>
+                        {% set ns = namespace(count=0) %}
+                        {% for field in entity.fields.values() %}
+                        {% if ns.count < 2 and field.name != group_field and field.name != entity.pk_field and (not title_field or field.name != title_field.name) %}
+                        <td className="text-wf-ink-dim text-sm">
+                          {String(item.{{ field.name }} || '—')}
+                        </td>
+                        {% set ns.count = ns.count + 1 %}
+                        {% endif %}
+                        {% endfor %}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

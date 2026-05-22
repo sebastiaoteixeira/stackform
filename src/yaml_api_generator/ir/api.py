@@ -66,6 +66,8 @@ class IRDeploy:
     env_vars: tuple[str, ...] = field(default_factory=tuple)
     docker: IRDeployDocker | None = None
     systemd: IRDeploySystemd | None = None
+    extra_services: tuple[tuple[str, dict], ...] = field(default_factory=tuple)
+    include: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

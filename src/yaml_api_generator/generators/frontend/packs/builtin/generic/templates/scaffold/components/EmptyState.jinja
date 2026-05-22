@@ -1,0 +1,48 @@
+import { Button } from './Button';
+
+interface EmptyStateProps {
+  title?: string;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  icon?: React.ReactNode;
+  bordered?: boolean;
+}
+
+export function EmptyState({
+  title = 'No data',
+  message,
+  actionLabel,
+  onAction,
+  icon,
+  bordered = true
+}: EmptyStateProps) {
+  const content = (
+    <div className="flex flex-col items-center justify-center py-16 px-4 gap-4">
+      {icon ? (
+        <div className="text-wf-ink-faint text-4xl">{icon}</div>
+      ) : (
+        <div className="w-[60px] h-[60px] border-[1.5px] border-dashed border-wf-line rounded-lg flex items-center justify-center">
+          <span className="font-title text-2xl text-wf-ink-faint">∅</span>
+        </div>
+      )}
+      <h3 className="font-title text-xl text-wf-ink">{title}</h3>
+      <p className="text-sm text-wf-ink-dim text-center max-w-sm">{message}</p>
+      {actionLabel && onAction && (
+        <Button onClick={onAction} variant="primary" className="mt-2">
+          {actionLabel}
+        </Button>
+      )}
+    </div>
+  );
+
+  if (bordered) {
+    return (
+      <div className="border-[1.5px] border-dashed border-wf-line rounded-lg">
+        {content}
+      </div>
+    );
+  }
+
+  return content;
+}

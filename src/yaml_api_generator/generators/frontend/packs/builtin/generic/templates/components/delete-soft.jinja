@@ -1,0 +1,100 @@
+import { useState } from 'react';
+
+interface DeleteSoftProps {
+  entityLabel?: string;
+  onConfirm: (mode: 'archive' | 'delete') => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+export function DeleteSoft({
+  entityLabel = '{{ entity.name | title }}',
+  onConfirm,
+  onCancel,
+  loading = false,
+}: DeleteSoftProps) {
+  const [mode, setMode] = useState<'archive' | 'delete'>('archive');
+
+  return (
+    <div className="wf-overlay">
+      <div className="wf-modal max-w-md w-full">
+        <div className="p-6">
+          <h3 className="font-title text-xl text-wf-ink mb-1">Remove {entityLabel}?</h3>
+          <p className="text-sm text-wf-ink-dim mb-5">Choose what happens to this record.</p>
+
+          <div className="flex flex-col gap-2 mb-6">
+            {/* Archive option */}
+            <label
+              className={`flex items-start gap-3 p-4 rounded-wf border-[1.5px] cursor-pointer transition-colors ${
+                mode === 'archive'
+                  ? 'border-wf-accent bg-wf-accent-soft'
+                  : 'border-wf-line bg-wf-surface hover:border-wf-line-strong'
+              }`}
+            >
+              <input
+                type="radio"
+                name="delete-mode"
+                value="archive"
+                checked={mode === 'archive'}
+                onChange={() => setMode('archive')}
+                className="mt-0.5 accent-wf-accent"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-sm font-medium text-wf-ink">Archive</span>
+                  <span className="px-1.5 py-0.5 rounded text-2xs bg-wf-accent text-white font-medium uppercase tracking-wide">
+                    Recommended
+                  </span>
+                </div>
+                <p className="text-xs text-wf-ink-dim">
+                  Hidden from views but recoverable. Safe choice.
+                </p>
+              </div>
+            </label>
+
+            {/* Hard delete option */}
+            <label
+              className={`flex items-start gap-3 p-4 rounded-wf border-[1.5px] cursor-pointer transition-colors ${
+                mode === 'delete'
+                  ? 'border-wf-danger bg-wf-danger-soft'
+                  : 'border-wf-line bg-wf-surface hover:border-wf-line-strong'
+              }`}
+            >
+              <input
+                type="radio"
+                name="delete-mode"
+                value="delete"
+                checked={mode === 'delete'}
+                onChange={() => setMode('delete')}
+                className="mt-0.5 accent-wf-danger"
+              />
+              <div>
+                <div className="text-sm font-medium text-wf-ink mb-0.5">Delete permanently</div>
+                <p className="text-xs text-wf-ink-dim">
+                  Removed from the database. Cannot be recovered.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={onCancel} disabled={loading} className="wf-btn">
+              Cancel
+            </button>
+            <button
+              onClick={() => onConfirm(mode)}
+              disabled={loading}
+              className={`wf-btn ${mode === 'delete' ? 'wf-btn-danger' : 'wf-btn-primary'}`}
+            >
+              {loading
+                ? 'Processing...'
+                : mode === 'archive'
+                  ? 'Archive'
+                  : 'Delete permanently'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

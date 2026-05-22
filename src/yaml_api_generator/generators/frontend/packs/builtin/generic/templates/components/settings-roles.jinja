@@ -1,0 +1,140 @@
+import { useState } from 'react';
+
+type CrudLetter = 'C' | 'R' | 'U' | 'D';
+type Permission = Record<CrudLetter, boolean>;
+type RoleMatrix = Record<string, Record<string, Permission>>;
+
+const CRUD: CrudLetter[] = ['C', 'R', 'U', 'D'];
+
+const DEFAULT_ROLES = ['admin', 'editor', 'reader', 'public'];
+
+const DEFAULT_ENTITIES = [
+  {% for entity in entities %}
+  '{{ entity.name }}',
+  {% endfor %}
+];
+
+function makeDefaultMatrix(entities: string[], roles: string[]): RoleMatrix {
+  return Object.fromEntries(
+    entities.map((entity) => [
+      entity,
+      Object.fromEntries(
+        roles.map((role) => [
+          role,
+          {
+            C: role === 'admin' || role === 'editor',
+            R: role !== 'public' || true,
+            U: role === 'admin' || role === 'editor',
+            D: role === 'admin',
+          } satisfies Permission,
+        ])
+      ),
+    ])
+  );
+}
+
+interface SettingsRolesProps {
+  entities?: string[];
+  initialRoles?: string[];
+  onSave?: (matrix: RoleMatrix) => void;
+}
+
+export function SettingsRoles({
+  entities = DEFAULT_ENTITIES,
+  initialRoles = DEFAULT_ROLES,
+  onSave,
+}: SettingsRolesProps) {
+  const [roles, setRoles] = useState(initialRoles);
+  const [matrix, setMatrix] = useState<RoleMatrix>(() => makeDefaultMatrix(entities, initialRoles));
+
+  const toggle = (entity: string, role: string, letter: CrudLetter) => {
+    setMatrix((prev) => ({
+      ...prev,
+      [entity]: {
+        ...prev[entity],
+        [role]: {
+          ...prev[entity][role],
+          [letter]: !prev[entity][role][letter],
+        },
+      },
+    }));
+  };
+
+  const addRole = () => {
+    const name = prompt('New role name:');
+    if (!name || roles.includes(name)) return;
+    setRoles((r) => [...r, name]);
+    setMatrix((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).map(([entity, roleMap]) => [
+          entity,
+          { ...roleMap, [name]: { C: false, R: false, U: false, D: false } },
+        ])
+      )
+    );
+  };
+
+  return (
+    <div className="p-6 bg-wf-bg min-h-full">
+      <div className="wf-toolbar mb-5">
+        <h1 className="font-title text-2xl text-wf-ink">Roles & permissions</h1>
+        <div className="flex-1" />
+        <button onClick={addRole} className="wf-btn wf-btn-sm">
+          + Role
+        </button>
+        <button onClick={() => onSave?.(matrix)} className="wf-btn wf-btn-sm wf-btn-primary">
+          Save
+        </button>
+      </div>
+
+      <div className="wf-card overflow-auto p-0">
+        <table className="wf-table">
+          <thead>
+            <tr>
+              <th className="text-left w-40">Entity</th>
+              {roles.map((role) => (
+                <th key={role} className="text-center capitalize">
+                  {role}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {entities.map((entity) => (
+              <tr key={entity}>
+                <td className="font-title text-[15px] text-wf-ink">{entity}</td>
+                {roles.map((role) => (
+                  <td key={role} className="text-center">
+                    <div className="flex items-center justify-center gap-0.5">
+                      {CRUD.map((letter) => {
+                        const on = matrix[entity]?.[role]?.[letter] ?? false;
+                        return (
+                          <button
+                            key={letter}
+                            title={`${role}: ${letter}`}
+                            onClick={() => toggle(entity, role, letter)}
+                            className={`w-5 h-5 rounded text-[10px] font-mono font-medium transition-colors ${
+                              on
+                                ? 'bg-wf-accent text-white'
+                                : 'bg-wf-fill text-wf-ink-faint'
+                            }`}
+                          >
+                            {letter}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 text-xs text-wf-ink-faint">
+        C = Create, R = Read, U = Update, D = Delete
+      </p>
+    </div>
+  );
+}

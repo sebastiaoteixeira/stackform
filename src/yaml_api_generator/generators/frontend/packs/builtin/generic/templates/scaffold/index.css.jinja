@@ -1,3 +1,172 @@
+{%- set fonts = pack_config.get('fonts', {}) -%}
+{%- set ui_font = fonts.get('ui', 'Inter') -%}
+{%- set hand_font = fonts.get('hand', 'Caveat') -%}
+{%- set mono_font = fonts.get('mono', 'JetBrains Mono') -%}
+{%- set import_fonts = fonts.get('import_from_google', true) -%}
+{%- set use_handwritten_titles = fonts.get('use_handwritten_titles', true) -%}
+{%- set colors = pack_config.get('colors', {}) -%}
+{%- set colors_dark = pack_config.get('colors_dark', {}) -%}
+
+{%- if import_fonts -%}
+@import url('https://fonts.googleapis.com/css2?family={{ hand_font.replace(' ', '+') }}:wght@400;500;600;700&family={{ ui_font.replace(' ', '+') }}:wght@400;500;600;700&family={{ mono_font.replace(' ', '+') }}:wght@400;500&display=swap');
+{%- endif -%}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --wf-font-ui: '{{ ui_font }}', system-ui, sans-serif;
+  --wf-font-hand: '{{ hand_font }}', 'Bradley Hand', cursive;
+  --wf-font-mono: '{{ mono_font }}', 'Menlo', monospace;
+  --wf-font-title: {% if use_handwritten_titles %}var(--wf-font-hand){% else %}var(--wf-font-ui){% endif %};
+
+  --wf-bg: {{ colors.get('bg', 'oklch(0.985 0.004 85)') }};
+  --wf-surface: {{ colors.get('surface', 'oklch(1 0 0)') }};
+  --wf-ink: {{ colors.get('ink', 'oklch(0.28 0.008 70)') }};
+  --wf-ink-dim: {{ colors.get('ink_dim', 'oklch(0.52 0.008 70)') }};
+  --wf-ink-faint: {{ colors.get('ink_faint', 'oklch(0.72 0.008 70)') }};
+  --wf-line: {{ colors.get('line', 'oklch(0.85 0.006 70)') }};
+  --wf-line-strong: {{ colors.get('line_strong', 'oklch(0.70 0.008 70)') }};
+  --wf-fill: {{ colors.get('fill', 'oklch(0.94 0.006 70)') }};
+  --wf-fill-2: {{ colors.get('fill_2', 'oklch(0.91 0.008 70)') }};
+  --wf-accent: {{ colors.get('accent', 'oklch(0.62 0.15 250)') }};
+  --wf-accent-soft: {{ colors.get('accent_soft', 'oklch(0.92 0.04 250)') }};
+  --wf-accent-ink: {{ colors.get('accent_ink', 'oklch(0.35 0.12 250)') }};
+  --wf-danger: {{ colors.get('danger', 'oklch(0.60 0.18 25)') }};
+  --wf-danger-soft: {{ colors.get('danger_soft', 'oklch(0.94 0.04 25)') }};
+  --wf-success: {{ colors.get('success', 'oklch(0.65 0.14 150)') }};
+  --wf-success-soft: {{ colors.get('success_soft', 'oklch(0.92 0.05 150)') }};
+  --wf-warn: {{ colors.get('warn', 'oklch(0.72 0.14 75)') }};
+  --wf-warn-soft: {{ colors.get('warn_soft', 'oklch(0.94 0.05 75)') }};
+  --wf-radius: {{ colors.get('radius', '6px') }};
+}
+
+.dark {
+  --wf-bg: {{ colors_dark.get('bg', 'oklch(0.17 0.006 260)') }};
+  --wf-surface: {{ colors_dark.get('surface', 'oklch(0.21 0.008 260)') }};
+  --wf-ink: {{ colors_dark.get('ink', 'oklch(0.92 0.005 260)') }};
+  --wf-ink-dim: {{ colors_dark.get('ink_dim', 'oklch(0.72 0.008 260)') }};
+  --wf-ink-faint: {{ colors_dark.get('ink_faint', 'oklch(0.50 0.008 260)') }};
+  --wf-line: {{ colors_dark.get('line', 'oklch(0.33 0.008 260)') }};
+  --wf-line-strong: {{ colors_dark.get('line_strong', 'oklch(0.48 0.008 260)') }};
+  --wf-fill: {{ colors_dark.get('fill', 'oklch(0.26 0.008 260)') }};
+  --wf-fill-2: {{ colors_dark.get('fill_2', 'oklch(0.30 0.008 260)') }};
+  --wf-accent: {{ colors_dark.get('accent', 'oklch(0.72 0.14 250)') }};
+  --wf-accent-soft: {{ colors_dark.get('accent_soft', 'oklch(0.32 0.08 250)') }};
+  --wf-accent-ink: {{ colors_dark.get('accent_ink', 'oklch(0.85 0.12 250)') }};
+  --wf-danger: {{ colors_dark.get('danger', 'oklch(0.68 0.18 25)') }};
+  --wf-danger-soft: {{ colors_dark.get('danger_soft', 'oklch(0.32 0.08 25)') }};
+  --wf-success: {{ colors_dark.get('success', 'oklch(0.70 0.14 150)') }};
+  --wf-success-soft: {{ colors_dark.get('success_soft', 'oklch(0.32 0.05 150)') }};
+  --wf-warn: {{ colors_dark.get('warn', 'oklch(0.75 0.14 75)') }};
+  --wf-warn-soft: {{ colors_dark.get('warn_soft', 'oklch(0.35 0.06 75)') }};
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--wf-font-ui, 'Inter', system-ui, sans-serif);
+  background: var(--wf-bg);
+  color: var(--wf-ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+@layer components {
+  .wf-btn {
+    @apply inline-flex items-center justify-center gap-1.5 px-3.5 h-8 rounded-wf border border-wf-line-strong bg-wf-surface text-wf-ink font-title text-sm whitespace-nowrap cursor-pointer;
+  }
+  .wf-btn-sm {
+    @apply h-6 px-2.5 text-xs;
+  }
+  .wf-btn-lg {
+    @apply h-9 px-4 text-base;
+  }
+  .wf-btn-primary {
+    @apply bg-wf-accent border-wf-accent text-white;
+  }
+  .wf-btn-danger {
+    @apply bg-wf-danger border-wf-danger text-white;
+  }
+  .wf-btn-ghost {
+    @apply bg-transparent border-transparent;
+  }
+
+  .wf-input {
+    @apply border-[1.5px] border-wf-line-strong rounded-wf bg-wf-surface px-3 flex items-center min-h-[36px];
+  }
+  .wf-input:focus-within {
+    @apply border-wf-accent ring-1 ring-wf-accent;
+  }
+
+  .wf-badge {
+    @apply inline-flex items-center justify-center h-[18px] px-2 rounded-full bg-wf-fill-2 border border-wf-line text-xs;
+  }
+  .wf-badge-accent {
+    @apply bg-wf-accent-soft border-wf-accent-soft text-wf-accent-ink;
+  }
+  .wf-badge-success {
+    @apply bg-wf-success-soft border-wf-success text-wf-ink;
+  }
+  .wf-badge-warn {
+    @apply bg-wf-warn-soft border-wf-warn text-wf-ink;
+  }
+  .wf-badge-danger {
+    @apply bg-wf-danger-soft border-wf-danger text-wf-ink;
+  }
+
+  .wf-card {
+    @apply border border-wf-line rounded-wf p-3 bg-wf-surface;
+  }
+
+  .wf-sidebar {
+    @apply w-[200px] border-r border-wf-line bg-wf-fill flex flex-col;
+  }
+
+  .wf-sidebar-item {
+    @apply flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] text-wf-ink-dim cursor-pointer;
+  }
+  .wf-sidebar-item:hover {
+    @apply bg-wf-fill-2;
+  }
+  .wf-sidebar-item.is-active {
+    @apply bg-wf-accent-soft text-wf-accent-ink font-medium;
+  }
+
+  .wf-table {
+    @apply w-full border-collapse text-[13px];
+  }
+  .wf-table thead th {
+    @apply text-left py-2 px-2.5 border-b border-wf-line text-wf-ink-dim font-medium text-[11px] uppercase tracking-wide bg-wf-fill sticky top-0;
+  }
+  .wf-table tbody td {
+    @apply py-1.5 px-2.5 border-b border-wf-line align-middle;
+  }
+  .wf-table tbody tr:hover {
+    @apply bg-wf-fill;
+  }
+  .wf-table tbody tr.is-selected {
+    @apply bg-wf-accent-soft;
+  }
+
+  .wf-overlay {
+    @apply fixed inset-0 bg-black/25 flex items-center justify-center backdrop-blur-[1px];
+  }
+  .wf-modal {
+    @apply bg-wf-surface border-[1.5px] border-wf-line-strong rounded-lg shadow-xl p-5 min-w-[380px] max-w-[480px];
+  }
+
+  .wf-toolbar {
+    @apply flex items-center gap-2 pb-3 flex-wrap;
+  }
+
+  .wf-mono {
+    @apply font-mono text-[11px] text-wf-ink-dim bg-wf-fill px-1 py-0.5 rounded;
+  }
+}
