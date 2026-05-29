@@ -1,0 +1,84 @@
+import uuid
+from collections.abc import Callable
+from typing import Any
+
+from pymongo import ReturnDocument
+from pymongo.asynchronous.database import AsyncDatabase
+
+
+def make_id_generator(id_format: str) -> Callable[[], str] | None:
+    if id_format == "uuidv4":
+        return lambda: str(uuid.uuid4())
+    if id_format == "uuidv7":
+        try:
+            from uuid import uuid7
+        except ImportError:
+            from uuid_utils import uuid7
+        return lambda: str(uuid7())
+    return None
+
+
+class RepositoryBase:
+    COLLECTION: str
+    ID_FIELD: str
+    ID_FORMAT: str = "natural"
+
+    def __init__(self, db: AsyncDatabase) -> None:
+        self._db = db
+        self._col = db[self.COLLECTION]
+        self._generate_id = make_id_generator(self.ID_FORMAT)
+
+    def _match_filter(self, document_id: str) -> dict[str, Any]:
+        return {self.ID_FIELD: document_id}
+
+    def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
+        if doc is None:
+            return None
+        return {k: v for k, v in doc.items() if not k.startswith("_")}
+
+
+class ListOp:
+    async def list(self) -> list[dict[str, Any]]:
+        cursor = self._col.find({})
+        docs = await cursor.to_list(length=None)
+        return [self._normalize(d) for d in docs]
+
+
+class GetOp:
+    async def get(self, document_id: str) -> dict[str, Any] | None:
+        doc = await self._col.find_one(self._match_filter(document_id))
+        return self._normalize(doc)
+
+
+class CreateOp:
+    async def create(self, data: dict[str, Any]) -> dict[str, Any]:
+        if self._generate_id is not None:
+            data[self.ID_FIELD] = self._generate_id()
+        await self._col.insert_one(data)
+        return self._normalize(data)
+
+
+class UpdateOp:
+    async def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await self._col.find_one_and_update(
+            self._match_filter(document_id),
+            {"$set": data},
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(doc)
+
+
+class ReplaceOp:
+    async def replace(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await self._col.find_one_and_replace(
+            self._match_filter(document_id),
+            data,
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(doc)
+
+
+class DeleteOp:
+    async def delete(self, document_id: str) -> dict[str, Any] | None:
+        doc = await self._col.find_one_and_delete(self._match_filter(document_id))
+        return self._normalize(doc)

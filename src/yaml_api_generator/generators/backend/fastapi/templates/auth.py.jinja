@@ -5,8 +5,10 @@ import os
 import secrets
 from typing import Any
 
-from fastapi import Request
+from fastapi import Depends, HTTPException, Request
 from pymongo.database import Database
+
+from dependencies.mongodb import get_database
 
 {% if auth.has_password_auth %}
 from dependencies.jwt_utils import decode_jwt_token
@@ -141,3 +143,13 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 {% endfor %}
 
     return None
+
+
+async def require_principal(
+    request: Request,
+    db: Database = Depends(get_database),
+) -> dict[str, Any]:
+    principal = await resolve_principal(request, db)
+    if principal is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return principal

@@ -34,7 +34,9 @@ class AccessTransformer:
             - access_rules: List of access rules if defined, None otherwise
             - errors: List of validation errors
         """
-        if access is None or access == "public":
+        if access is None:
+            return False, None, []
+        if access == "public":
             return True, None, []
         if access in ("*", "authenticated"):
             return False, None, []
@@ -67,7 +69,7 @@ class AccessTransformer:
             if errors:
                 return False, None, errors
             return False, (rules if rules else None), []
-        return True, None, []
+        return False, None, []
 
     def _parse_access_string(
         self,

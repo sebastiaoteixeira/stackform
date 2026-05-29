@@ -1,36 +1,21 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.encoders import jsonable_encoder
+from fastapi import Request
 
-from dependencies.mongodb import get_database
 from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
-from services.exceptions import NotFoundError, ValidationError
-{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
-{% set ns = namespace(needs_models=false, model_imports=[]) %}
+from ._crud_factory import make_crud_router
+{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("handler") | list %}
+{% set custom_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("handler") | list %}
+{% set ns = namespace(model_imports=[]) %}
 {% for route in crud_routes %}
-{% if route.body_model %}
-{% set ns.needs_models = true %}
-{% if route.body_model not in ns.model_imports %}
+{% if route.body_model and route.body_model not in ns.model_imports %}
 {% set _ = ns.model_imports.append(route.body_model) %}
 {% endif %}
-{% endif %}
 {% endfor %}
-{% if ns.needs_models %}
+{% if ns.model_imports %}
 from models.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
 {% endif %}
-{% set needs_auth = crud_routes | selectattr("needs_auth") | list %}
-{% if needs_auth %}
-from dependencies.auth import resolve_principal
-{% endif %}
-
-router = APIRouter()
-
-{% for route in crud_routes %}
-{% set handler_name = route.operation ~ "_" ~ collection_name %}
-
-{% if route.needs_auth %}
 {% set security_schemes = [] %}
 {% if auth.has_api_key_auth %}
 {% set _ = security_schemes.append({"ApiKeyAuth": []}) %}
@@ -40,44 +25,38 @@ router = APIRouter()
 {% set _ = security_schemes.append({"BasicAuth": []}) %}
 {% set _ = security_schemes.append({"BearerAuth": []}) %}
 {% endif %}
-@router.{{ route.method | lower }}("{{ route.path }}", tags=["{{ collection_name | capitalize_collection }}"], openapi_extra={"security": {{ security_schemes }}})
-{% else %}
+
+
+def _service_factory(db):
+    return {{ collection_name | capitalize_collection }}Service({{ collection_name | capitalize_collection }}Repository(db))
+
+
+router = make_crud_router(
+    tag="{{ collection_name | capitalize_collection }}",
+    prefix="",
+    service_factory=_service_factory,
+    operations=[
+{% for route in crud_routes %}
+        {"operation": "{{ route.operation }}", "method": "{{ route.method }}", "path": "{{ route.path }}", "needs_auth": {{ route.needs_auth | lower | capitalize }}, "has_id_param": {{ route.has_id_param | lower | capitalize }}{% if route.body_model %}, "body_model": "{{ route.body_model }}"{% endif %}},
+{% endfor %}
+    ],
+    payloads={
+{% for model in ns.model_imports %}
+        "{{ model }}": {{ model }},
+{% endfor %}
+    },
+{% if security_schemes %}
+    security_schemes={{ security_schemes }},
+{% endif %}
+)
+{% for route in custom_routes %}
+{% set handler_name = route.operation ~ "_" ~ collection_name %}
+
+
 @router.{{ route.method | lower }}("{{ route.path }}", tags=["{{ collection_name | capitalize_collection }}"])
-{% endif %}
-async def {{ handler_name }}(request: Request{% if route.has_id_param %}, id: str{% endif %}{% if route.body_model %}, payload: {{ route.body_model }}{% endif %}) -> Any:
-    db = get_database()
-    repo = {{ collection_name | capitalize_collection }}Repository(db)
-    service = {{ collection_name | capitalize_collection }}Service(repo)
-{% if route.needs_auth %}
-    principal = await resolve_principal(request, db)
-    if principal is None:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-{% endif %}
-    try:
-{% if route.operation == "list" %}
-        documents = await service.list()
-        return jsonable_encoder(documents)
-{% elif route.operation == "get" %}
-        document = await service.get(id)
-        return jsonable_encoder(document)
-{% elif route.operation == "create" %}
-        data = payload.model_dump(exclude_unset=True)
-        document = await service.create(data)
-        return jsonable_encoder(document)
-{% elif route.operation == "update" %}
-        data = payload.model_dump(exclude_unset=True)
-        document = await service.update(id, data)
-        return jsonable_encoder(document)
-{% elif route.operation == "replace" %}
-        data = payload.model_dump(exclude_unset=True)
-        document = await service.replace(id, data)
-        return jsonable_encoder(document)
-{% elif route.operation == "delete" %}
-        document = await service.delete(id)
-        return jsonable_encoder(document)
-{% endif %}
-    except NotFoundError:
-        raise HTTPException(status_code=404, detail="Resource not found")
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.message)
+async def {{ handler_name }}(request: Request) -> Any:
+    from importlib import import_module
+    module_path, func_name = "{{ route.handler }}".rsplit(".", 1)
+    module = import_module(module_path)
+    return await getattr(module, func_name)(request)
 {% endfor %}

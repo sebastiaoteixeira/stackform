@@ -1,0 +1,160 @@
+from collections.abc import Callable
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel
+from pymongo.database import Database
+
+from dependencies.mongodb import get_database
+from services.exceptions import NotFoundError, ValidationError
+{% if auth.enabled %}
+from dependencies.auth import require_principal
+{% endif %}
+
+
+def make_crud_router(
+    *,
+    tag: str,
+    prefix: str,
+    service_factory: Callable[[Database], Any],
+    operations: list[dict[str, Any]],
+    payloads: dict[str, type[BaseModel]],
+    security_schemes: list[dict[str, list]] | None = None,
+) -> APIRouter:
+    router = APIRouter(prefix=prefix, tags=[tag])
+    for op in operations:
+        _add_route(router, op, service_factory, payloads, security_schemes or [])
+    return router
+
+
+def _add_route(
+    router: APIRouter,
+    op: dict[str, Any],
+    service_factory: Callable[[Database], Any],
+    payloads: dict[str, type[BaseModel]],
+    security_schemes: list[dict[str, list]],
+) -> None:
+    method: str = op["method"]
+    path: str = op["path"]
+    needs_auth: bool = op["needs_auth"]
+    openapi_extra = {"security": security_schemes} if needs_auth and security_schemes else {}
+
+    handler = _build_handler(op["operation"], service_factory, needs_auth, op.get("body_model"), op.get("has_id_param", False), payloads)
+    kwargs: dict[str, Any] = {"methods": [method]}
+    if openapi_extra:
+        kwargs["openapi_extra"] = openapi_extra
+    router.add_api_route(path, handler, **kwargs)
+
+
+def _build_public_handler(
+    impl: Callable,
+    service_factory: Callable[[Database], Any],
+    payload_cls: type[BaseModel] | None,
+    has_id_param: bool,
+) -> Callable:
+    if payload_cls and has_id_param:
+        async def handler(request: Request, id: str, payload: payload_cls) -> Any:  # type: ignore[valid-type]
+            return await _run(impl, service_factory, id, payload)
+    elif payload_cls:
+        async def handler(request: Request, payload: payload_cls) -> Any:  # type: ignore[no-redef,valid-type]
+            return await _run(impl, service_factory, None, payload)
+    elif has_id_param:
+        async def handler(request: Request, id: str) -> Any:  # type: ignore[no-redef]
+            return await _run(impl, service_factory, id, None)
+    else:
+        async def handler(request: Request) -> Any:  # type: ignore[no-redef]
+            return await _run(impl, service_factory, None, None)
+    return handler
+
+{% if auth.enabled %}
+def _build_auth_handler(
+    impl: Callable,
+    service_factory: Callable[[Database], Any],
+    payload_cls: type[BaseModel] | None,
+    has_id_param: bool,
+) -> Callable:
+    if payload_cls and has_id_param:
+        async def handler(request: Request, id: str, payload: payload_cls, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[valid-type]
+            return await _run(impl, service_factory, id, payload)
+    elif payload_cls:
+        async def handler(request: Request, payload: payload_cls, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[no-redef,valid-type]
+            return await _run(impl, service_factory, None, payload)
+    elif has_id_param:
+        async def handler(request: Request, id: str, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[no-redef]
+            return await _run(impl, service_factory, id, None)
+    else:
+        async def handler(request: Request, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[no-redef]
+            return await _run(impl, service_factory, None, None)
+    return handler
+{% endif %}
+
+
+def _build_handler(
+    operation: str,
+    service_factory: Callable[[Database], Any],
+    needs_auth: bool,
+    body_model: str | None,
+    has_id_param: bool,
+    payloads: dict[str, type[BaseModel]],
+) -> Callable:
+    impl = _resolve_impl(operation)
+    payload_cls = payloads.get(body_model) if body_model else None
+{% if auth.enabled %}
+    if needs_auth:
+        return _build_auth_handler(impl, service_factory, payload_cls, has_id_param)
+{% endif %}
+    return _build_public_handler(impl, service_factory, payload_cls, has_id_param)
+
+
+def _resolve_impl(operation: str) -> Callable:
+    return {
+        "list":    _do_list,
+        "get":     _do_get,
+        "create":  _do_create,
+        "update":  _do_update,
+        "replace": _do_replace,
+        "delete":  _do_delete,
+    }[operation]
+
+
+async def _run(
+    impl: Callable,
+    service_factory: Callable[[Database], Any],
+    id: str | None,
+    payload: BaseModel | None,
+) -> Any:
+    service = service_factory(get_database())
+    try:
+        return await impl(service, id, payload)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.message)
+
+
+async def _do_list(service: Any, _id: str | None, _payload: BaseModel | None) -> Any:
+    return jsonable_encoder(await service.list())
+
+
+async def _do_get(service: Any, id: str | None, _payload: BaseModel | None) -> Any:
+    return jsonable_encoder(await service.get(id))
+
+
+async def _do_create(service: Any, _id: str | None, payload: BaseModel | None) -> Any:
+    assert payload is not None
+    return jsonable_encoder(await service.create(payload.model_dump(exclude_unset=True)))
+
+
+async def _do_update(service: Any, id: str | None, payload: BaseModel | None) -> Any:
+    assert payload is not None
+    return jsonable_encoder(await service.update(id, payload.model_dump(exclude_unset=True)))
+
+
+async def _do_replace(service: Any, id: str | None, payload: BaseModel | None) -> Any:
+    assert payload is not None
+    return jsonable_encoder(await service.replace(id, payload.model_dump(exclude_unset=True)))
+
+
+async def _do_delete(service: Any, id: str | None, _payload: BaseModel | None) -> Any:
+    return jsonable_encoder(await service.delete(id))
