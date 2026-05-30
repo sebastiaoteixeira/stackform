@@ -89,6 +89,8 @@ class EntityInfo:
     auth_identifier: str | None = None
     api_base_path: str | None = None
     auth_providers: list[AuthProviderInfo] = field(default_factory=list)
+    operations: frozenset[str] = field(default_factory=frozenset)
+    public_operations: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass

@@ -84,9 +84,12 @@ export function {{ entity.name | pascal_case }}TwoColumn({
         {% if status_field %}
         <Badge value={String(record.{{ status_field.name }})} size="sm" />
         {% endif %}
+        {% if 'update' in entity.operations %}
         <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
           Edit
         </Button>
+        {% endif %}
+        {% if 'delete' in entity.operations %}
         <Button
           size="sm"
           variant="danger"
@@ -94,6 +97,7 @@ export function {{ entity.name | pascal_case }}TwoColumn({
         >
           Delete
         </Button>
+        {% endif %}
       </div>
 
       {/* Two-column layout: 1fr main + 280px metadata rail */}

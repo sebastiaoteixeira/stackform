@@ -43,6 +43,10 @@ def _render_scaffold(
         name for name, view in context.views.items()
         if _resolve_pack_component(view, context) == "crud"
     }
+    view_entities = {
+        name: _resolve_entity(view, context, _resolve_pack_component(view, context))
+        for name, view in context.views.items()
+    }
 
     for item in context.pack_scaffold:
         template_path = f"scaffold/{item}.jinja"
@@ -56,6 +60,7 @@ def _render_scaffold(
                 "collections": context.collections,
                 "pack_config": context.pack_config,
                 "crud_views": crud_views,
+                "view_entities": view_entities,
             },
         )
         if content is not None:

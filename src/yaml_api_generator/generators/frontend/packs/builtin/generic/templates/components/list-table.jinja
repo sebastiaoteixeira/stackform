@@ -83,6 +83,7 @@ export default function {{ view.name | pascal_case }}() {
             <span className="font-title text-2xl text-wf-ink-faint">∅</span>
           </div>
           <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
+          {% if 'create' in entity.operations %}
           <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
           <button
             onClick={() => navigate('{{ view.path }}/new')}
@@ -90,6 +91,7 @@ export default function {{ view.name | pascal_case }}() {
           >
             + New {{ entity.name | title }}
           </button>
+          {% endif %}
         </div>
       </div>
     );
@@ -112,12 +114,14 @@ export default function {{ view.name | pascal_case }}() {
         <button className="wf-btn">
           Sort ↓
         </button>
+        {% if 'create' in entity.operations %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endif %}
       </div>
 
       {/* Table */}
@@ -178,12 +182,14 @@ export default function {{ view.name | pascal_case }}() {
                   </td>
                   {% endfor %}
                   <td>
+                    {% if 'get' in entity.operations %}
                     <Link
                       to={`{{ view.path }}/${item.{{ entity.pk_field }}}`}
                       className="text-wf-accent hover:text-wf-accent-ink text-sm"
                     >
                       View
                     </Link>
+                    {% endif %}
                   </td>
                 </tr>
               ))}
