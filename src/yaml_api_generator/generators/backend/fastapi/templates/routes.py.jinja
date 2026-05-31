@@ -5,6 +5,20 @@ from fastapi import Request
 from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from ._crud_factory import make_crud_router
+{% if auth.enabled %}
+from dependencies.authorization import AccessRule
+from dependencies.when_eval import (
+    FieldRef,
+    StringLiteral,
+    Equals,
+    NotEquals,
+    And,
+    Or,
+    Not,
+    In,
+    NotIn,
+)
+{% endif %}
 {% set crud_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("handler") | list %}
 {% set custom_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("handler") | list %}
 {% set ns = namespace(model_imports=[]) %}
@@ -37,7 +51,7 @@ router = make_crud_router(
     service_factory=_service_factory,
     operations=[
 {% for route in crud_routes %}
-        {"operation": "{{ route.operation }}", "method": "{{ route.method }}", "path": "{{ route.path }}", "needs_auth": {{ route.needs_auth | lower | capitalize }}, "has_id_param": {{ route.has_id_param | lower | capitalize }}{% if route.body_model %}, "body_model": "{{ route.body_model }}"{% endif %}},
+        {"operation": "{{ route.operation }}", "method": "{{ route.method }}", "path": "{{ route.path }}", "needs_auth": {{ route.needs_auth | py_bool }}, "has_id_param": {{ route.has_id_param | py_bool }}{% if route.body_model %}, "body_model": "{{ route.body_model }}"{% endif %}{% if auth.enabled %}, "access_rules": [{% for rule in route.access_rules or [] %}{{ rule | access_rule_py }}{% if not loop.last %}, {% endif %}{% endfor %}], "post_fetch": {{ (route is needs_post_fetch) | py_bool }}{% endif %}},
 {% endfor %}
     ],
     payloads={

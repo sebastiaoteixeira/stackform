@@ -10,6 +10,7 @@ from dependencies.mongodb import get_database
 from services.exceptions import NotFoundError, ValidationError
 {% if auth.enabled %}
 from dependencies.auth import require_principal
+from dependencies.authorization import AccessRule, authorize_pre, authorize_post
 {% endif %}
 
 
@@ -40,7 +41,16 @@ def _add_route(
     needs_auth: bool = op["needs_auth"]
     openapi_extra = {"security": security_schemes} if needs_auth and security_schemes else {}
 
-    handler = _build_handler(op["operation"], service_factory, needs_auth, op.get("body_model"), op.get("has_id_param", False), payloads)
+    handler = _build_handler(
+        op["operation"],
+        service_factory,
+        needs_auth,
+        op.get("body_model"),
+        op.get("has_id_param", False),
+        payloads,
+        op.get("access_rules", []),
+        op.get("post_fetch", False),
+    )
     kwargs: dict[str, Any] = {"methods": [method]}
     if openapi_extra:
         kwargs["openapi_extra"] = openapi_extra
@@ -73,19 +83,21 @@ def _build_auth_handler(
     service_factory: Callable[[Database], Any],
     payload_cls: type[BaseModel] | None,
     has_id_param: bool,
+    rules: list,
+    post_fetch: bool,
 ) -> Callable:
     if payload_cls and has_id_param:
         async def handler(request: Request, id: str, payload: payload_cls, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[valid-type]
-            return await _run(impl, service_factory, id, payload)
+            return await _run_authorized(impl, service_factory, id, payload, rules, principal, post_fetch)
     elif payload_cls:
         async def handler(request: Request, payload: payload_cls, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[no-redef,valid-type]
-            return await _run(impl, service_factory, None, payload)
+            return await _run_authorized(impl, service_factory, None, payload, rules, principal, post_fetch)
     elif has_id_param:
         async def handler(request: Request, id: str, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[no-redef]
-            return await _run(impl, service_factory, id, None)
+            return await _run_authorized(impl, service_factory, id, None, rules, principal, post_fetch)
     else:
         async def handler(request: Request, principal: dict[str, Any] = Depends(require_principal)) -> Any:  # type: ignore[no-redef]
-            return await _run(impl, service_factory, None, None)
+            return await _run_authorized(impl, service_factory, None, None, rules, principal, post_fetch)
     return handler
 {% endif %}
 
@@ -97,12 +109,14 @@ def _build_handler(
     body_model: str | None,
     has_id_param: bool,
     payloads: dict[str, type[BaseModel]],
+    access_rules: list,
+    post_fetch: bool,
 ) -> Callable:
     impl = _resolve_impl(operation)
     payload_cls = payloads.get(body_model) if body_model else None
 {% if auth.enabled %}
     if needs_auth:
-        return _build_auth_handler(impl, service_factory, payload_cls, has_id_param)
+        return _build_auth_handler(impl, service_factory, payload_cls, has_id_param, access_rules, post_fetch)
 {% endif %}
     return _build_public_handler(impl, service_factory, payload_cls, has_id_param)
 
@@ -131,6 +145,32 @@ async def _run(
         raise HTTPException(status_code=404, detail="Resource not found")
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.message)
+
+{% if auth.enabled %}
+
+async def _run_authorized(
+    impl: Callable,
+    service_factory: Callable[[Database], Any],
+    id: str | None,
+    payload: BaseModel | None,
+    rules: list,
+    principal: dict[str, Any],
+    post_fetch: bool,
+) -> Any:
+    authorize_pre(rules, principal)
+    if not post_fetch:
+        return await _run(impl, service_factory, id, payload)
+
+    service = service_factory(get_database())
+    try:
+        existing = jsonable_encoder(await service.get(id))
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    authorize_post(rules, principal, existing if isinstance(existing, dict) else None)
+    if impl is _do_get:
+        return existing
+    return await _run(impl, service_factory, id, payload)
+{% endif %}
 
 
 async def _do_list(service: Any, _id: str | None, _payload: BaseModel | None) -> Any:

@@ -6,7 +6,7 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from . import type_mapper
+from . import access_filters, type_mapper
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
@@ -39,6 +39,11 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["python_type"] = type_mapper.python_type
         env.filters["python_annotation"] = type_mapper.python_annotation
         env.filters["capitalize_collection"] = to_pascal_case
+        env.filters["py_bool"] = access_filters.py_bool
+        env.filters["py_literal"] = access_filters.py_literal
+        env.filters["access_rule_py"] = access_filters.access_rule_py
+        env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
+        env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.globals["needs_datetime_import"] = type_mapper.needs_datetime_import
         env.globals["needs_literal_import"] = type_mapper.needs_literal_import
         env.globals["needs_any_import"] = type_mapper.needs_any_import
@@ -217,7 +222,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         if context.auth.enabled:
             files.append(("auth.py.jinja", "auth.py"))
+            files.append(("when_eval.py.jinja", "when_eval.py"))
+            files.append(("authorization.py.jinja", "authorization.py"))
             init_imports.append("from .auth import resolve_principal, require_principal")
+            init_imports.append("from .authorization import AccessRule, authorize_pre, authorize_post")
 
         if context.auth.has_password_auth:
             files.append(("jwt_utils.py.jinja", "jwt_utils.py"))

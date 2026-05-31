@@ -19,6 +19,7 @@ The IR serves as the single source of truth for code generation,
 eliminating repeated YAML parsing and validation.
 """
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -177,6 +178,32 @@ class IRRolesConfig:
     values: tuple[str, ...]
     default: str
     hierarchy: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+def flatten_role_hierarchy(
+    hierarchy: dict[str, Iterable[str]],
+) -> dict[str, set[str]]:
+    """Transitively expand role inclusions.
+
+    Given {admin: [moderator], moderator: [user]},
+    produces {admin: {moderator, user}, moderator: {user}}.
+    """
+    flattened: dict[str, set[str]] = {}
+
+    def _expand(role: str) -> set[str]:
+        if role in flattened:
+            return flattened[role]
+        result: set[str] = set()
+        for included in hierarchy.get(role, ()):
+            result.add(included)
+            result |= _expand(included)
+        flattened[role] = result
+        return result
+
+    for role in hierarchy:
+        _expand(role)
+
+    return flattened
 
 
 @dataclass(frozen=True)
