@@ -11,8 +11,10 @@ from yaml_api_generator.ir.when import (
     And,
     Equals,
     FieldRef,
+    In,
     Not,
     NotEquals,
+    NotIn,
     Or,
     StringLiteral,
     WhenExpr,
@@ -265,6 +267,10 @@ def _when_to_python(expr: WhenExpr, symbol_map: dict[str, str] | None = None) ->
         return f"({_when_to_python(expr.left, symbol_map)} or {_when_to_python(expr.right, symbol_map)})"
     if isinstance(expr, Not):
         return f"(not {_when_to_python(expr.operand, symbol_map)})"
+    if isinstance(expr, In):
+        return f"{_operand_to_python(expr.left, symbol_map)} in {tuple(expr.values)!r}"
+    if isinstance(expr, NotIn):
+        return f"{_operand_to_python(expr.left, symbol_map)} not in {tuple(expr.values)!r}"
     return "False"
 
 

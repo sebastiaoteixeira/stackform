@@ -5,8 +5,10 @@ from yaml_api_generator.ir.when import (
     And,
     Equals,
     FieldRef,
+    In,
     Not,
     NotEquals,
+    NotIn,
     Or,
     StringLiteral,
     WhenExpr,
@@ -125,3 +127,27 @@ class TestEvaluateWhen:
             pass
 
         assert _eval(UnknownExpr(), _PRINCIPAL, _DOCUMENT) is False
+
+    def test_176_in_field_matching(self):
+        expr = In(left=_princ_record_field("role"), values=("admin", "editor"))
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
+
+    def test_177_in_field_non_matching(self):
+        expr = In(left=_doc_field("status"), values=("draft", "archived"))
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
+
+    def test_178_in_string_literal(self):
+        expr = In(left=StringLiteral(value="admin"), values=("admin", "editor"))
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
+
+    def test_179_not_in_field_non_member(self):
+        expr = NotIn(left=_doc_field("status"), values=("draft", "archived"))
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is True
+
+    def test_180_not_in_field_member(self):
+        expr = NotIn(left=_princ_record_field("role"), values=("admin", "editor"))
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
+
+    def test_181_not_in_string_literal(self):
+        expr = NotIn(left=StringLiteral(value="admin"), values=("admin", "editor"))
+        assert _eval(expr, _PRINCIPAL, _DOCUMENT) is False
