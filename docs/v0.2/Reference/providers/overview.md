@@ -1,25 +1,31 @@
 ---
 title: "Providers Overview"
-description: The top-level `providers:` section declares external identity providers (OIDC, SAML) that can be referenced in entity `via:` bindings.
+description: The top-level providers section declares external identity providers (OIDC, SAML) that auth entities attach to through auth.bindings.
 ---
 
-The top-level `providers:` section declares external identity providers (OIDC, SAML) that can be referenced in entity `via:` bindings.
+The top-level `providers:` section declares external identity providers (OIDC and
+SAML) that auth entities can attach to. A declared provider does nothing on its own:
+it becomes active only once an auth entity references it from `auth.bindings`. The
+built-in `password` and `apiKey` providers are not declared here; they are selected
+with `auth.via`.
 
 ## Structure
 
 ```yaml
 providers:
-  google:
+  myoidc:
     type: oidc
-    client_id: ${GOOGLE_CLIENT_ID}
-    client_secret: ${GOOGLE_CLIENT_SECRET}
-  okta:
+    client_id: my-app
+    client_secret: ${OIDC_CLIENT_SECRET}
+    discovery_url: ${OIDC_DISCOVERY_URL}
+  mysaml:
     type: saml
-    idp_metadata_url: ${OKTA_METADATA_URL}
+    idp_metadata_url: ${SAML_METADATA_URL}
     sp_entity_id: ${APP_URL}
 ```
 
-Each key under `providers:` is a provider name. The name is referenced in the `auth.via` field on auth entities:
+Each key under `providers:` is the provider name. That name is what an auth entity
+references in a binding:
 
 ```yaml
 entities:
@@ -27,31 +33,90 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: google      # references providers.google
+      via: password           # built-in providers go in `via`
+      bindings:               # external providers attach here
+        - provider: myoidc   # references providers.myoidc
+          identifier: email
 ```
+
+`auth.via` selects built-in providers (`password`, `apiKey`). External OIDC/SAML
+providers attach through `auth.bindings`, where each entry carries the provider
+name plus its own `identifier`, optional `claim_mapping`, and `auto_provision`
+(defaults to true). See [Claim mapping](../auth/claim-mapping.md) for the binding
+fields and [Login, SSO, and the token flow](../auth/login-and-sso.md) for the
+runtime flow.
 
 ## Provider types
 
 | Type | Description |
 |------|-------------|
-| `oidc` | OpenID Connect. Uses discovery URL to get endpoints. |
-| `saml` | SAML 2.0 service provider. |
+| `oidc` | OpenID Connect. The backend reads the provider's `discovery_url` at request time to find the authorization, token, and userinfo endpoints. |
+| `saml` | SAML 2.0 service provider. The backend fetches the IdP metadata at request time. |
 
-## Well-known providers
+## Required fields per type
 
-These provider names have built-in discovery URLs and do not require a `discovery_url:` field:
+Each provider config is closed (`additionalProperties: false`): only the fields
+below are accepted, and unknown keys fail schema validation.
 
-| Name | Discovery URL |
-|------|---------------|
-| `google` | `https://accounts.google.com/.well-known/openid-configuration` |
-| `microsoft` | `https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration` |
-| `apple` | `https://appleid.apple.com/.well-known/openid-configuration` |
+### OIDC
 
-## Built-in providers (no declaration needed)
+| Field | Required | Description |
+|-------|----------|-------------|
+| `type` | yes | Must be `oidc`. |
+| `client_id` | yes | OAuth client identifier issued by the IdP. |
+| `client_secret` | yes | OAuth client secret. |
+| `discovery_url` | yes (in practice) | OpenID configuration URL (`.../.well-known/openid-configuration`). The schema lists it as optional, but the backend needs it to resolve endpoints and an OIDC provider built without it will fail. Always set it. |
 
-These do not need to appear in `providers:`:
+There is no built-in discovery for any provider name. Names such as `google`,
+`microsoft`, or `apple` are not special; you must supply `discovery_url` for every
+OIDC provider.
 
-- `password` — built-in, always available
-- `apiKey` — built-in, always available
+### SAML
 
-Only external (OIDC/SAML) providers need to be declared in `providers:`.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `type` | yes | Must be `saml`. |
+| `idp_metadata_url` | yes | IdP metadata URL (fetched at request time). |
+| `sp_entity_id` | yes | This service provider's entity ID. |
+
+## Environment interpolation
+
+Any value may use `${VAR}` interpolation, resolved before schema validation. This
+keeps secrets out of the spec. A `${VAR:-default}` form supplies a fallback when
+the variable is unset:
+
+```yaml
+providers:
+  myoidc:
+    type: oidc
+    client_id: my-app
+    client_secret: ${OIDC_CLIENT_SECRET}
+    discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/realms/my-realm/.well-known/openid-configuration}
+```
+
+A referenced variable that has no value and no default aborts generation. See
+[Environment variables](../configuration/environment-variables.md).
+
+## Routes a bound provider adds
+
+Once an auth entity binds an OIDC provider, the generated backend exposes these
+routes under the entity's collection (the full path is
+`{api.basePath}[/{api.version}]/{collection}/...`). With
+`api: { basePath: /api, version: v1 }` and a `users` collection bound to a
+`myoidc` provider:
+
+| Method and path | Purpose |
+|-----------------|---------|
+| `GET /api/v1/users/auth/providers` | Lists the external providers bound to this collection (consumed by the generated login page). |
+| `GET /api/v1/users/auth/myoidc` | Starts the login: 302 redirect to the IdP. |
+| `GET /api/v1/users/auth/myoidc/callback` | Completes the login: exchanges the `code`, maps claims, finds or provisions the user, mints an app JWT, and redirects to `{FRONTEND_URL}/auth/callback?token=<jwt>`. |
+
+These routes exist only when an entity actually binds the provider; a declared but
+unbound provider emits nothing.
+
+## See also
+
+- [OIDC provider](./oidc.md) -- OIDC config and callback flow in detail.
+- [SAML provider](./saml.md) -- SAML config and the ACS callback.
+- [Claim mapping](../auth/claim-mapping.md) -- binding fields and auto-provisioning.
+- [Login, SSO, and the token flow](../auth/login-and-sso.md) -- the full lifecycle.

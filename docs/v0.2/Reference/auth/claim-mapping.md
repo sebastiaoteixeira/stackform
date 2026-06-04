@@ -1,39 +1,69 @@
 ---
 title: "Claim Mapping and Auto-Provision"
-description: Controls how external provider (OIDC, SAML) identity data maps to entity fields and whether new records are created automatically on first login.
+description: How an external provider's identity claims (OIDC, SAML) map to entity fields on a per-binding basis, and whether a new record is created automatically on first SSO login.
 ---
 
-Controls how external provider (OIDC, SAML) identity data maps to entity fields and whether new records are created automatically on first login.
+External providers are attached to an auth entity through `auth.bindings`. Each binding
+names a configured `provider`, the local `identifier` field used to match an existing
+record, an optional `claim_mapping` (provider claim -> entity field), and `auto_provision`
+(create a record on first login). Claim mapping and auto-provision are properties of a
+binding, not of `auth.via`. `via` is for the built-in `password` and `apiKey` providers.
+
+> **Enforcement status**
+>
+> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> are enforced by the generated FastAPI backend, the generated DRF backend, and the
+> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
+> found, checked before ownership). Two current limitations: role hierarchy (for
+> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
+> during enforcement -- only exact role matches are checked; and conditional or
+> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
 
 ## Syntax
 
 ```yaml
+providers:
+  myoidc:
+    type: oidc
+    client_id: ${OIDC_CLIENT_ID}
+    client_secret: ${OIDC_CLIENT_SECRET}
+    discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/.well-known/openid-configuration}
+
 entities:
-  user:
+  myEntity:
     type: auth
     auth:
       identifier: email
       via: password
+      bindings:
+        - provider: myoidc
+          identifier: email
+          claim_mapping:
+            displayName: name      # entity field: provider claim
+            avatarUrl: picture
+          auto_provision: true
     fields:
       id: { type: id }
-      email: { type: string, required: true, unique: true }
+      email: { type: string, required: true, unique: true, format: email }
       displayName: { type: string, required: true }
       avatarUrl: { type: string }
-
-# Auth block with external provider and claim mapping:
-auth:
-  identifier: email
-  via: [password, google]
-  claim_mapping:
-    displayName: name       # entity field: provider claim
-    avatarUrl: picture
-  auto_provision: true
 ```
+
+OIDC providers require `discovery_url`; the callback flow reads
+`authorization_endpoint`, `token_endpoint`, and `userinfo_endpoint` from that document.
+There is no built-in inference of well-known endpoints for any provider name.
 
 ## Behavior
 
-- **Parse time:** `claim_mapping` keys are validated as entity field names. `auto_provision` defaults to `false`.
-- **Runtime (login):** The provider returns claims. The engine maps claims to entity fields using `claim_mapping`. If `auto_provision: true` and no matching record exists, a new one is created.
+- **Parse time:** A binding requires `provider` and `identifier`. `claim_mapping` keys are
+  taken verbatim; they are not validated against `fields:`. `auto_provision` defaults to
+  `true`.
+- **Runtime (SSO login):** The provider returns claims. For every `entity field: claim`
+  pair in `claim_mapping`, if that claim is present in the provider response, the value is
+  copied to the entity field. The binding's `identifier` value is used to look up an
+  existing record. If none is found and `auto_provision: true`, a record is created from
+  the mapped fields.
 
 ## Options
 
@@ -43,101 +73,165 @@ Maps entity field names (left) to provider claim names (right).
 
 ```yaml
 claim_mapping:
-  displayName: name       # entity field "displayName" <- provider claim "name"
-  avatarUrl: picture      # entity field "avatarUrl" <- provider claim "picture"
+  displayName: name       # entity field "displayName" from provider claim "name"
+  avatarUrl: picture      # entity field "avatarUrl" from provider claim "picture"
 ```
 
-Fields with identical names in both the entity and the provider are mapped automatically without needing `claim_mapping`.
+Only the keys you list are copied. There is no automatic mapping of identically named
+claims; an unmapped claim is ignored.
 
-For OIDC, standard claims include: `email`, `name`, `picture`, `sub`, `given_name`, `family_name`.
+If the binding's `identifier` field is not produced by `claim_mapping`, the engine fills
+it from a fallback so the user can still be matched:
 
-For SAML, claim names are the attribute names from the IdP assertion.
+- OIDC: the first present of `email`, `login`, then `sub`.
+- SAML: the assertion `NameID`.
+
+For OIDC, standard claims include `email`, `name`, `picture`, `sub`, `given_name`,
+`family_name`. For SAML, claim names are the attribute names from the IdP assertion (each
+attribute's first value is used).
 
 ### `auto_provision`
 
 | Value | Behavior |
 |-------|----------|
-| `true` | If no matching record exists (by `identifier`), create one using mapped claims + default role. |
-| `false` (default) | If no matching record exists, return 401. The user must already exist. |
+| `true` (default) | If no record matches the binding `identifier`, create one from the mapped claim values. The generated id is a `uuid4`. No role is assigned at provision time. |
+| `false` | If no record matches, return 403 with detail `User not found and auto-provisioning is disabled`. The user must already exist. |
+
+A provisioned record contains only the mapped claim fields plus the generated id. Any
+field with a YAML `default:` is not auto-filled by the SSO path, and no role is set, so a
+default role for SSO users must come from another flow.
 
 ## Examples
 
-### Google login with auto-provision
+### OIDC login with auto-provision
 
 ```yaml
+api:
+  basePath: /api
+  version: v1
+  operations:
+    auth:
+      login: true
+
+providers:
+  myoidc:
+    type: oidc
+    client_id: ${OIDC_CLIENT_ID}
+    client_secret: ${OIDC_CLIENT_SECRET}
+    discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/.well-known/openid-configuration}
+
 entities:
-  user:
+  myEntity:
     type: auth
     auth:
       identifier: email
       via: password
-    roles:
-      values: [admin, user]
-      default: user
+      bindings:
+        - provider: myoidc
+          identifier: email
+          claim_mapping:
+            displayName: name
+            avatarUrl: picture
+          auto_provision: true
     fields:
       id: { type: id }
-      email: { type: string, required: true, unique: true }
+      email: { type: string, required: true, unique: true, format: email }
       displayName: { type: string, required: true }
       avatarUrl: { type: string }
-
-providers:
-  google:
-    type: oidc
-    client_id: ${GOOGLE_CLIENT_ID}
-    client_secret: ${GOOGLE_CLIENT_SECRET}
 ```
 
-With the entity's `auth` block and a Google provider binding:
+On first SSO login (the browser visits `GET /api/v1/my-collection/auth/myoidc`):
 
-```yaml
-auth:
-  identifier: email
-  via: [password, google]
-  claim_mapping:
-    displayName: name
-    avatarUrl: picture
-  auto_provision: true
-```
-
-On first Google login:
-1. Engine receives `email` and `name` claims from Google.
-2. No user record exists with that `email`.
-3. `auto_provision: true` triggers record creation: `email` from claim, `displayName` from `name` claim, role defaults to the `roles.default` value.
-4. JWT is issued. Subsequent logins match the existing record.
+1. The engine redirects to the provider, then the callback exchanges the `code` and fetches
+   the userinfo claims.
+2. `email`, `name`, and `picture` are read from the claims; `displayName` and `avatarUrl`
+   are populated via `claim_mapping`, and `email` is the identifier.
+3. No record matches that `email`, so `auto_provision: true` creates one with `email`,
+   `displayName`, `avatarUrl`, and a generated `uuid4` id.
+4. An application JWT is minted and the browser is redirected to
+   `{FRONTEND_URL}/auth/callback?token=<jwt>`. Subsequent logins match the existing record.
 
 ### Invite-only (no auto-provision)
 
 ```yaml
 auth:
   identifier: email
-  via: google
-  claim_mapping:
-    displayName: name
-  auto_provision: false
+  via: password
+  bindings:
+    - provider: myoidc
+      identifier: email
+      claim_mapping:
+        displayName: name
+      auto_provision: false
 ```
 
-The user must already exist (created manually or via another flow). If no record matches the `identifier`, login returns 401.
+The user must already exist (created via password registration or another flow). If no
+record matches the binding `identifier`, the SSO callback returns 403 with detail
+`User not found and auto-provisioning is disabled`.
+
+## What a successful SSO login returns
+
+The two SSO callbacks differ in shape:
+
+- **OIDC** (`GET .../auth/{provider}/callback?code=...`): on success, the engine mints an
+  application JWT and issues a 302 redirect to `{FRONTEND_URL}/auth/callback?token=<jwt>`
+  (when `FRONTEND_URL` is unset, the request base URL is used). The token is the
+  application's own JWT, not the provider token.
+- **SAML** (`POST .../auth/{provider}/callback`): on success, the engine returns JSON
+  `{"token": "<jwt>", "user": {...}}` with `_id` and `_auth` stripped from the user object.
+
+With `api: { basePath: /api, version: v1 }`, the OIDC routes are
+`/api/v1/{collection}/auth/{provider}` and `/api/v1/{collection}/auth/{provider}/callback`,
+plus `/api/v1/{collection}/auth/providers` listing the configured external providers.
+
+### GitHub special case
+
+GitHub does not implement OIDC userinfo. When the provider name is `github`, the callback
+fetches the profile from `https://api.github.com/user` (using the access token) instead of
+a discovery `userinfo_endpoint`; everything else (claim mapping, matching, provisioning) is
+the same.
+
+### Environment-variable interpolation
+
+`client_id`, `client_secret`, and `discovery_url` accept `${VAR}` interpolation, so secrets
+stay out of the spec:
+
+```yaml
+providers:
+  myoidc:
+    type: oidc
+    client_id: my-app
+    client_secret: ${OIDC_CLIENT_SECRET}
+    discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/.well-known/openid-configuration}
+```
 
 ## Edge Cases
 
-- **Missing claim from provider.** If a mapped claim is missing from the provider response, the corresponding entity field is set to `null` (not omitted).
+- **Missing claim from provider.** If a mapped claim is absent from the provider response,
+  the corresponding entity field is simply omitted from the created record (not set to
+  `null`).
 
-- **Mapping to non-existent entity field.** If `claim_mapping` maps to a field name that does not exist in `fields:`, no parse-time error is raised. The mapped value is stored, but it is not in the Pydantic model, so it gets stripped from API responses.
+- **Mapping to a non-existent entity field.** `claim_mapping` keys are not validated against
+  `fields:` at parse time. The mapped value is written to the record verbatim, but a field
+  not declared in the Pydantic model is stripped from CRUD API responses.
 
-- **`identifier` field must be mappable.** The `identifier` field must either be in `claim_mapping` or match a claim name exactly. Otherwise the system cannot match the user to a provider identity.
+- **`identifier` not in `claim_mapping`.** The engine fills the identifier from the fallback
+  (OIDC: `email`/`login`/`sub`; SAML: `NameID`). If none of those are present either, the
+  lookup uses an empty value and likely fails to match.
 
-- **`auto_provision: true` with existing user.** If a user already exists (matched by `identifier`) and logs in via an external provider, the existing record is used. Claims are NOT used to update existing fields. Only new records are provisioned with claim data.
-
-- **`auto_provision: true` with unique constraint failure.** If auto-provision tries to create a user but the unique constraint on the identifier fails (user already exists due to a race), the system treats it as a login instead.
-
-- **`auto_provision: false` with no matching user.** Returns 401 Unauthorized.
+- **Existing user.** If a record already matches the binding `identifier`, that record is
+  used and a fresh application JWT is issued. Mapped claims are NOT written back to the
+  existing record; only new records receive claim data.
 
 ## Errors
 
 | Condition | HTTP Status | Response |
 |-----------|-------------|----------|
-| No matching user and `auto_provision: false` | 401 | Unauthorized |
-| Provider returns invalid/missing claims | depends on claim | Field set to `null` |
+| OIDC token exchange fails | 401 | `Token exchange failed` |
+| OIDC userinfo fetch fails | 401 | `Failed to fetch user info` |
+| Provider token already expired | 401 | `Token expired` |
+| SAML assertion error / not authenticated | 401 | `SAML error: ...` / `SAML authentication failed` |
+| No matching record and `auto_provision: false` | 403 | `User not found and auto-provisioning is disabled` |
 
 ## See Also
 
