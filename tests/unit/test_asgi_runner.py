@@ -47,7 +47,7 @@ class _InMemoryRepo(BaseRepository):
     def connect(self):
         pass
 
-    def close(self):
+    async def close(self):
         pass
 
     async def list(self, collection_name):

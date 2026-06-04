@@ -30,9 +30,9 @@ class MongoRepository(BaseRepository):
             raise RuntimeError("Failed to initialize Mongo client")
         self._db = self._client[self._config.database]
 
-    def close(self) -> None:
+    async def close(self) -> None:
         if self._client is not None:
-            self._client.close()
+            await self._client.close()
             self._client = None
             self._db = None
 
@@ -81,6 +81,7 @@ class MongoRepository(BaseRepository):
         document_id: str,
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
+        payload[self._id_fields.get(collection_name, "id")] = document_id
         document = await self.collection(collection_name).find_one_and_replace(
             self._match_filter(document_id, collection_name),
             payload,
