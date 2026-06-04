@@ -33,7 +33,7 @@ ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + 
 {% endif %}
 {% endfor %}
 {% for identity in ctx.auth.identity_collections %}
-{% if "password" in identity.via and identity.identifier %}
+{% if identity.has_password and identity.identifier %}
 ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}))
 {% endif %}
 {% endfor %}
@@ -55,7 +55,7 @@ class ASGIApp:
                 connect_db()
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
-                close_db()
+                await close_db()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
 

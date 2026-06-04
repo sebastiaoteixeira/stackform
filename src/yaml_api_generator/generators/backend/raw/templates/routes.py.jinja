@@ -10,6 +10,7 @@ import validation
 
 
 {% for route in routes %}
+{% if route.operation != "login" %}
 {% set handler_name = "handle_" ~ route.operation ~ "_" ~ collection_name %}
 async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any) -> tuple[int, Any]:
     repo = {{ collection_name | capitalize_collection }}Repository(db)
@@ -53,4 +54,5 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
     except ValidationError as exc:
         return 422, {"detail": exc.message}
 
+{% endif %}
 {% endfor %}
