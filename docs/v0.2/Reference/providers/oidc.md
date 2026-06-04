@@ -1,20 +1,26 @@
 ---
 title: "OIDC Provider"
-description: OpenID Connect provider configuration for external SSO login.
+description: OpenID Connect single sign-on provider configuration and the generated login/callback flow.
 ---
 
-OpenID Connect provider configuration for external SSO login.
+OpenID Connect provider configuration for external SSO login. A provider is
+declared once under the top-level `providers:` block, then attached to an auth
+entity through `auth.bindings` (see [Entity binding](#entity-binding) below).
 
 ## Schema
 
 ```yaml
 providers:
-  providerName:
+  myoidc:
     type: oidc
-    client_id: ${CLIENT_ID}
-    client_secret: ${CLIENT_SECRET}
-    discovery_url: https://auth.example.com/.well-known/openid-configuration  # optional for well-known
+    client_id: my-app
+    client_secret: ${OIDC_CLIENT_SECRET}
+    discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/.well-known/openid-configuration}
 ```
+
+The provider object is closed (`additionalProperties: false`): only the four
+fields below are accepted. Any value supports `${VAR}` interpolation, including
+the `${VAR:-default}` form, so secrets and URLs stay out of the spec.
 
 ## Fields
 
@@ -23,75 +29,123 @@ providers:
 | `type` | yes | Must be `oidc`. |
 | `client_id` | yes | OAuth2 client ID from the provider's developer console. |
 | `client_secret` | yes | OAuth2 client secret. Always use `${VAR}` interpolation. |
-| `discovery_url` | no | OIDC discovery endpoint. Inferred automatically for well-known providers. |
-
-## Well-known providers
-
-These provider names infer `discovery_url` automatically:
-
-```yaml
-providers:
-  google:
-    type: oidc
-    client_id: ${GOOGLE_CLIENT_ID}
-    client_secret: ${GOOGLE_CLIENT_SECRET}
-    # discovery_url is inferred
-
-  microsoft:
-    type: oidc
-    client_id: ${MS_CLIENT_ID}
-    client_secret: ${MS_CLIENT_SECRET}
-
-  apple:
-    type: oidc
-    client_id: ${APPLE_CLIENT_ID}
-    client_secret: ${APPLE_CLIENT_SECRET}
-```
+| `discovery_url` | yes (effectively) | OIDC discovery endpoint (`.../.well-known/openid-configuration`). The JSON schema marks it optional, but the generated routes read `authorization_endpoint`, `token_endpoint`, and `userinfo_endpoint` from it, so login fails without it. There is no automatic inference for "well-known" provider names -- always supply it. |
 
 ## Custom OIDC provider
 
-For any other OIDC-compliant provider, supply `discovery_url:` explicitly:
+Any standards-compliant OIDC identity provider works the same way -- supply its
+`discovery_url` and the credentials
+issued for your client. You can declare several providers side by side:
 
 ```yaml
 providers:
-  okta:
+  myoidc:
     type: oidc
-    client_id: ${OKTA_CLIENT_ID}
-    client_secret: ${OKTA_CLIENT_SECRET}
-    discovery_url: https://${OKTA_DOMAIN}/.well-known/openid-configuration
+    client_id: ${OIDC_CLIENT_ID}
+    client_secret: ${OIDC_CLIENT_SECRET}
+    discovery_url: ${OIDC_DISCOVERY_URL}
 
-  auth0:
+  myotheroidc:
     type: oidc
-    client_id: ${AUTH0_CLIENT_ID}
-    client_secret: ${AUTH0_CLIENT_SECRET}
-    discovery_url: https://${AUTH0_DOMAIN}/.well-known/openid-configuration
+    client_id: ${OTHER_OIDC_CLIENT_ID}
+    client_secret: ${OTHER_OIDC_CLIENT_SECRET}
+    discovery_url: ${OTHER_OIDC_DISCOVERY_URL}
 ```
 
-## Generated routes
+### GitHub special case
 
-For each entity with an OIDC provider binding, the engine generates:
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/{base_path}/auth/{providerName}` | Redirect to provider's authorization endpoint |
-| GET | `/{base_path}/auth/{providerName}/callback` | Handle OAuth2 callback, issue JWT |
-
-Example with `base_path: /users` and provider `google`:
-
-```
-GET /users/auth/google             → redirect to Google
-GET /users/auth/google/callback    → handle Google callback
-```
+GitHub does not implement OIDC. When the provider name is `github`, the
+generated callback skips the discovery `userinfo_endpoint` and fetches the
+profile from `https://api.github.com/user` instead. You still declare it as
+`type: oidc` with a `discovery_url` (used only for the authorization and token
+endpoints).
 
 ## Entity binding
 
+A provider is inert until an auth entity binds to it. Attach it through
+`auth.bindings` (not `auth.via`, which is reserved for the built-in `password`
+and `apiKey` providers):
+
 ```yaml
+api:
+  basePath: /api
+  version: v1
+
 entities:
-  user:
+  myEntity:
     type: auth
     auth:
       identifier: email
-      via: google
+      via: password
+      bindings:
+        - provider: myoidc
+          identifier: email
+          claim_mapping:
+            email: email
+            name: name
+            firstName: given_name
+            lastName: family_name
+          auto_provision: true
 ```
 
-For `claim_mapping` and `auto_provision` configuration with external providers, see [claim-mapping](../auth/claim-mapping.md).
+| Binding field | Required | Description |
+|---------------|----------|-------------|
+| `provider` | yes | Name of a provider declared under `providers:`. |
+| `identifier` | no | Local field used to find/create the user. Defaults to the entity's `auth.identifier`. |
+| `claim_mapping` | no | Maps local field names to OIDC claim names (`localField: oidcClaim`). |
+| `auto_provision` | no | Create the user on first login when no match is found. Defaults to `true`. |
+
+If `claim_mapping` does not supply the identifier, the callback falls back to
+the `email`, `login`, or `sub` claim, in that order.
+
+## Generated routes
+
+Routes are emitted only for identity collections that actually bind an OIDC
+provider. Paths are prefixed with the API base path and version from your `api:`
+block (`{basePath}[/{version}]`). With the binding above and
+`api: { basePath: /api, version: v1 }`, the identity collection `users`
+produces:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/users/auth/providers` | List the external providers bound to this collection (`[{name, type}]`). |
+| GET | `/api/v1/users/auth/myoidc` | Redirect to the provider's `authorization_endpoint`. |
+| GET | `/api/v1/users/auth/myoidc/callback?code=...` | Handle the OAuth2 callback and issue an app JWT. |
+
+The provider name in the path is the key from `providers:` (here `myoidc`),
+and the collection segment is the repository/identity-collection name.
+
+## Login and callback flow
+
+1. The browser hits `GET /api/v1/users/auth/myoidc`. The server reads the
+   discovery document and 302-redirects to the provider's
+   `authorization_endpoint` with `response_type=code` and
+   `scope=openid email profile`. The `redirect_uri` is this app's own
+   `.../auth/myoidc/callback` URL.
+2. The provider authenticates the user and redirects back to the callback with
+   a `code` query parameter.
+3. The callback exchanges the code at the `token_endpoint`, then fetches the
+   profile from the `userinfo_endpoint` (or `api.github.com/user` for `github`).
+4. Claims are mapped to local fields via `claim_mapping`; the user is matched on
+   `identifier`. An existing user is logged in; a new one is created when
+   `auto_provision` is `true`.
+5. The server mints an app JWT and 302-redirects to
+   `{FRONTEND_URL}/auth/callback?token=<jwt>`. The single-page frontend reads
+   the token from the query string. When `FRONTEND_URL` is unset, the redirect
+   falls back to this app's own base URL.
+
+Set the `FRONTEND_URL` environment variable on the generated backend so the
+final redirect lands on your UI rather than the API host.
+
+## Errors during login
+
+| Status | Condition |
+|--------|-----------|
+| 401 `Token exchange failed` | The `token_endpoint` rejected the authorization code. |
+| 401 `Failed to fetch user info` | The `userinfo` (or GitHub user) request failed. |
+| 401 `Token expired` | The provider returned an already-expired `exp` claim. |
+| 403 `User not found and auto-provisioning is disabled` | No matching user and `auto_provision: false`. |
+
+For the full credential and token lifecycle (password login plus SSO), see
+[login-and-sso](../auth/login-and-sso.md). For claim mapping and
+auto-provisioning detail, see [claim-mapping](../auth/claim-mapping.md).
