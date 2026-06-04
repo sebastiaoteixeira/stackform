@@ -953,3 +953,139 @@ def test_124_mongo_defaults_applied_when_section_missing():
     ir = V02Transformer().transform(config)
     assert ir.mongo.uri == "mongodb://localhost:27017"
     assert ir.mongo.database == "yaml_api"
+
+
+# ---- Name Validation ----
+
+from yaml_api_generator.parsers.transformers.name_validation import validate_spec_names
+
+
+def _codes(spec):
+    return {e.code for e in validate_spec_names(spec)}
+
+
+def test_125_field_name_python_keyword_rejected():
+    spec = {"entities": {"post": {"fields": {"class": {"type": "string"}}}}}
+    assert "INVALID_FIELD_NAME" in _codes(spec)
+
+
+def test_126_field_name_shadowing_pydantic_api_rejected():
+    spec = {"entities": {"post": {"fields": {"model_config": {"type": "string"}}}}}
+    assert "INVALID_FIELD_NAME" in _codes(spec)
+
+
+def test_127_field_name_model_prefix_rejected():
+    spec = {"entities": {"post": {"fields": {"model_dump": {"type": "string"}}}}}
+    assert "INVALID_FIELD_NAME" in _codes(spec)
+
+
+def test_128_field_name_schema_rejected():
+    spec = {"entities": {"post": {"fields": {"schema": {"type": "string"}}}}}
+    assert "INVALID_FIELD_NAME" in _codes(spec)
+
+
+def test_129_entity_name_python_keyword_rejected():
+    spec = {"entities": {"import": {"fields": {"id": {"type": "id"}}}}}
+    assert "INVALID_NAME" in _codes(spec)
+
+
+def test_130_repository_name_python_keyword_rejected():
+    spec = {"repositories": {"import": {"entity": "post"}}}
+    assert "INVALID_NAME" in _codes(spec)
+
+
+def test_131_service_name_python_keyword_rejected():
+    spec = {"services": {"return": {"repository": "posts"}}}
+    assert "INVALID_NAME" in _codes(spec)
+
+
+def test_132_controller_name_python_keyword_rejected():
+    spec = {"controllers": {"lambda": {"service": "posts"}}}
+    assert "INVALID_NAME" in _codes(spec)
+
+
+def test_133_provider_name_not_identifier_validated():
+    """Provider names appear only as route-path segments and as sanitized
+    identifiers (py_identifier), so hyphenated or keyword names are accepted."""
+    assert "INVALID_NAME" not in _codes({"providers": {"def": {"type": "oidc"}}})
+    assert "INVALID_NAME" not in _codes({"providers": {"my-oidc": {"type": "oidc"}}})
+
+
+def test_134_name_shadowing_pydantic_api_rejected():
+    spec = {"repositories": {"schema": {"entity": "post"}}}
+    assert "INVALID_NAME" in _codes(spec)
+
+
+def test_135_soft_keyword_name_rejected():
+    spec = {"entities": {"match": {"fields": {"id": {"type": "id"}}}}}
+    assert "INVALID_NAME" in _codes(spec)
+
+
+def test_136_valid_names_accepted():
+    spec = {
+        "entities": {"post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}}},
+        "repositories": {"posts": {"entity": "post"}},
+        "services": {"posts": {"repository": "posts"}},
+        "controllers": {"posts": {"service": "posts"}},
+    }
+    assert validate_spec_names(spec) == []
+
+
+def test_137_keyword_field_rejected_end_to_end(tmp_path):
+    with pytest.raises(ConfigErrors) as exc_info:
+        _parse("""
+            version: "0.2"
+            api:
+              basePath: /api
+              version: v1
+            mongo:
+              uri: mongodb://localhost:27017
+              database: testdb
+            entities:
+              post:
+                fields:
+                  id: { type: id }
+                  class: { type: string }
+            repositories:
+              posts:
+                entity: post
+            services:
+              posts:
+                repository: posts
+            controllers:
+              posts:
+                service: posts
+                base_path: /posts
+                access: public
+        """, tmp_path)
+    assert "INVALID_FIELD_NAME" in {e.code for e in exc_info.value.errors}
+
+
+def test_138_keyword_repository_rejected_end_to_end(tmp_path):
+    with pytest.raises(ConfigErrors) as exc_info:
+        _parse("""
+            version: "0.2"
+            api:
+              basePath: /api
+              version: v1
+            mongo:
+              uri: mongodb://localhost:27017
+              database: testdb
+            entities:
+              post:
+                fields:
+                  id: { type: id }
+                  title: { type: string }
+            repositories:
+              import:
+                entity: post
+            services:
+              posts:
+                repository: import
+            controllers:
+              posts:
+                service: posts
+                base_path: /posts
+                access: public
+        """, tmp_path)
+    assert "INVALID_NAME" in {e.code for e in exc_info.value.errors}

@@ -35,23 +35,24 @@ async def list_{{ col.name }}_auth_providers() -> list[dict[str, str]]:
 {% set provider = auth.providers.get(binding.provider) %}
 {% if provider and provider.type == "oidc" %}
 {% set provider_name = binding.provider %}
+{% set sym = (col.name ~ "_" ~ provider_name) | py_identifier %}
 
-_{{ col.name }}_{{ provider_name }}_discovery: dict[str, Any] | None = None
+_{{ sym }}_discovery: dict[str, Any] | None = None
 
 
-async def _get_{{ col.name }}_{{ provider_name }}_discovery() -> dict[str, Any]:
-    global _{{ col.name }}_{{ provider_name }}_discovery
-    if _{{ col.name }}_{{ provider_name }}_discovery is None:
+async def _get_{{ sym }}_discovery() -> dict[str, Any]:
+    global _{{ sym }}_discovery
+    if _{{ sym }}_discovery is None:
         async with httpx.AsyncClient() as client:
             resp = await client.get("{{ provider.discovery_url }}")
             resp.raise_for_status()
-            _{{ col.name }}_{{ provider_name }}_discovery = resp.json()
-    return _{{ col.name }}_{{ provider_name }}_discovery
+            _{{ sym }}_discovery = resp.json()
+    return _{{ sym }}_discovery
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}")
-async def oidc_{{ col.name }}_{{ provider_name }}_login(request: Request) -> RedirectResponse:
-    discovery = await _get_{{ col.name }}_{{ provider_name }}_discovery()
+async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
+    discovery = await _get_{{ sym }}_discovery()
     auth_endpoint = discovery["authorization_endpoint"]
     callback_url = str(request.base_url).rstrip("/") + "{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback"
     params = {
@@ -64,8 +65,8 @@ async def oidc_{{ col.name }}_{{ provider_name }}_login(request: Request) -> Red
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def oidc_{{ col.name }}_{{ provider_name }}_callback(request: Request, code: str) -> Any:
-    discovery = await _get_{{ col.name }}_{{ provider_name }}_discovery()
+async def oidc_{{ sym }}_callback(request: Request, code: str) -> Any:
+    discovery = await _get_{{ sym }}_discovery()
     token_endpoint = discovery["token_endpoint"]
     callback_url = str(request.base_url).rstrip("/") + "{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback"
 

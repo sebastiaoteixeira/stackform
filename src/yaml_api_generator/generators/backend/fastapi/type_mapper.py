@@ -13,7 +13,7 @@ _TYPE_MAP: dict[str, str] = {
 
 def python_type(field: FieldDescriptor) -> str:
     if field.type == "enum" and field.enum_values:
-        quoted = ", ".join(f'"{v}"' for v in field.enum_values)
+        quoted = ", ".join(repr(v) for v in field.enum_values)
         return f"Literal[{quoted}]"
 
     if field.type == "array":

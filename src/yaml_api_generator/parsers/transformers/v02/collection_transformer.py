@@ -3,13 +3,11 @@
 Validates entity definitions and builds collection IR objects.
 """
 
-import re
 from typing import Any, cast
 
 from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.parsers.transformers.name_validation import validate_name
 from yaml_api_generator.parsers.yaml_parser import ConfigError
-
-FIELD_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 
 
 class CollectionTransformer:
@@ -151,13 +149,9 @@ class CollectionTransformer:
     ) -> list[ConfigError]:
         errors: list[ConfigError] = []
         for field_name in fields:
-            if not FIELD_NAME_PATTERN.match(field_name):
-                errors.append(
-                    ConfigError(
-                        code="INVALID_FIELD_NAME",
-                        message=f"Invalid field name '{field_name}'",
-                        path=f"entities.{entity_name}.fields.{field_name}",
-                        hint="Field names must start with a letter and contain only letters, numbers, or underscores",
-                    )
-                )
+            error = validate_name(
+                field_name, f"entities.{entity_name}.fields.{field_name}", field=True
+            )
+            if error is not None:
+                errors.append(error)
         return errors
