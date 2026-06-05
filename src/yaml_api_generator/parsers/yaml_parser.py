@@ -239,8 +239,23 @@ def load_and_generate_ir(
         if constraint_errors:
             raise ConfigErrors(constraint_errors)
 
+        from .transformers.access_validation import validate_spec_access
+        access_errors = validate_spec_access(resolved)
+        if access_errors:
+            raise ConfigErrors(access_errors)
+
+        from .transformers.auth_validation import validate_spec_auth
+        auth_errors = validate_spec_auth(resolved)
+        if auth_errors:
+            raise ConfigErrors(auth_errors)
+
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
+
+        from .transformers.path_validation import validate_spec_paths
+        path_errors = validate_spec_paths(resolved)
+        if path_errors:
+            raise ConfigErrors(path_errors)
 
     ui_block = resolved.get("ui", None)
 

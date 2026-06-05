@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+from yaml_api_generator.utils.strings import to_pascal_case
 
 NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 
@@ -100,4 +101,33 @@ def validate_spec_names(spec: dict[str, Any]) -> list[ConfigError]:
             )
             if error is not None:
                 errors.append(error)
+    errors.extend(_pascal_case_collisions(spec.get("entities") or {}))
+    return errors
+
+
+def _pascal_case_collisions(entities: dict[str, Any]) -> list[ConfigError]:
+    """Reject distinct entity names that map to the same PascalCase class.
+
+    Each entity becomes a generated model class named ``to_pascal_case(name)``.
+    The conversion is many-to-one (``userProfile`` and ``user_profile`` both
+    yield ``UserProfile``), so colliding names would emit two classes with the
+    same name and clobber each other in the generated package's imports.
+    """
+    errors: list[ConfigError] = []
+    by_class: dict[str, str] = {}
+    for name in entities:
+        class_name = to_pascal_case(str(name))
+        prior = by_class.get(class_name)
+        if prior is not None:
+            errors.append(ConfigError(
+                code="NAME_PASCAL_CASE_COLLISION",
+                message=(
+                    f"entity '{name}' and '{prior}' both map to the model class "
+                    f"'{class_name}'"
+                ),
+                path=f"entities.{name}",
+                hint="Rename one entity so their PascalCase model names differ",
+            ))
+        else:
+            by_class[class_name] = str(name)
     return errors

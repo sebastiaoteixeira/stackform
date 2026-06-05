@@ -578,6 +578,7 @@ def test_103_unscoped_role_with_multiple_auth_entities_raises_ambiguous_error(tm
         fields:
           id: { type: id }
           clientId: { type: string, required: true }
+          apiKey: { type: string, required: true }
       post:
         fields:
           id: { type: id }
