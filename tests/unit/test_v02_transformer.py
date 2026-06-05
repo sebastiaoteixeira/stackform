@@ -1016,9 +1016,11 @@ def test_134_name_shadowing_pydantic_api_rejected():
     assert "INVALID_NAME" in _codes(spec)
 
 
-def test_135_soft_keyword_name_rejected():
-    spec = {"entities": {"match": {"fields": {"id": {"type": "id"}}}}}
-    assert "INVALID_NAME" in _codes(spec)
+def test_135_soft_keyword_name_accepted():
+    # Soft keywords (match, case, type, _) are contextual and stay valid as
+    # plain identifiers, so they must not be rejected.
+    spec = {"entities": {"match": {"fields": {"id": {"type": "id"}, "type": {"type": "string"}}}}}
+    assert _codes(spec) == set()
 
 
 def test_136_valid_names_accepted():

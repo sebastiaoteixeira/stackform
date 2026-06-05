@@ -224,10 +224,20 @@ def load_and_generate_ir(
     version = str(resolved.get("version", "0.1"))
 
     if version == "0.2":
+        from .transformers.shape_validation import validate_spec_shape
+        shape_errors = validate_spec_shape(resolved)
+        if shape_errors:
+            raise ConfigErrors(shape_errors)
+
         from .transformers.name_validation import validate_spec_names
         name_errors = validate_spec_names(resolved)
         if name_errors:
             raise ConfigErrors(name_errors)
+
+        from .transformers.constraint_validation import validate_spec_constraints
+        constraint_errors = validate_spec_constraints(resolved)
+        if constraint_errors:
+            raise ConfigErrors(constraint_errors)
 
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)

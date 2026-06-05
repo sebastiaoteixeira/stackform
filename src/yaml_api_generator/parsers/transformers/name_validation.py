@@ -30,7 +30,10 @@ PYDANTIC_RESERVED_NAMES = frozenset({
 
 
 def _reserved_reason(name: str) -> str | None:
-    if keyword.iskeyword(name) or keyword.issoftkeyword(name):
+    # Soft keywords (match, case, type, _) are contextual and remain valid as
+    # plain identifiers, attributes and Pydantic field names, so only hard
+    # keywords (which raise SyntaxError) are rejected.
+    if keyword.iskeyword(name):
         return "is a Python keyword"
     if name in PYDANTIC_RESERVED_NAMES or name.startswith("model_"):
         return "shadows the Pydantic BaseModel API"
