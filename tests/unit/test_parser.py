@@ -272,6 +272,86 @@ def test_deeply_nested_vars_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result["a"]["b"]["c"]["d"] == "deep_value"
 
 
+# --- Test 17b: Nested reference inside a default resolves fully ---
+
+
+def test_default_with_reference_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OUTER", raising=False)
+    monkeypatch.setenv("INNER", "inner_value")
+    errors: list = []
+    result = _resolve_interpolation({"key": "${OUTER:-${INNER}}"}, tuple(), errors)
+    assert result["key"] == "inner_value"
+    assert errors == []
+
+
+def test_default_with_reference_embedded(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OUTER", raising=False)
+    monkeypatch.setenv("KEY", "dbkey")
+    errors: list = []
+    result = _resolve_interpolation(
+        {"key": "prefix-${OUTER:-${KEY}}-suffix"}, tuple(), errors
+    )
+    assert result["key"] == "prefix-dbkey-suffix"
+    assert errors == []
+
+
+# --- Test 17c: Env value that itself contains a reference resolves ---
+
+
+def test_env_value_containing_reference_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("A", "${B}")
+    monkeypatch.setenv("B", "b_value")
+    errors: list = []
+    result = _resolve_interpolation({"key": "${A}"}, tuple(), errors)
+    assert result["key"] == "b_value"
+    assert errors == []
+
+
+# --- Test 17d: Escaped braces in a default produce literal braces ---
+
+
+def test_escaped_braces_in_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("J", raising=False)
+    errors: list = []
+    result = _resolve_interpolation({"key": r"${J:-foo\}bar}"}, tuple(), errors)
+    assert result["key"] == "foo}bar"
+    assert errors == []
+
+
+def test_escaped_braces_outside_tokens_preserved() -> None:
+    errors: list = []
+    result = _resolve_interpolation({"key": r"a \{ b \} c"}, tuple(), errors)
+    assert result["key"] == "a { b } c"
+    assert errors == []
+
+
+# --- Test 17e: Malformed tokens flagged rather than emitted verbatim ---
+
+
+def test_malformed_token_empty_var_flagged() -> None:
+    errors: list = []
+    _resolve_interpolation({"key": "x${}y"}, tuple(), errors)
+    assert [e.code for e in errors] == ["INTERPOLATION_MALFORMED_TOKEN"]
+
+
+def test_malformed_token_with_space_flagged() -> None:
+    errors: list = []
+    _resolve_interpolation({"key": "${MY VAR}"}, tuple(), errors)
+    assert [e.code for e in errors] == ["INTERPOLATION_MALFORMED_TOKEN"]
+
+
+def test_missing_var_reported_once_with_resolved_sibling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PRESENT", "ok")
+    monkeypatch.delenv("ABSENT", raising=False)
+    errors: list = []
+    _resolve_interpolation({"key": "${PRESENT}:${ABSENT}"}, tuple(), errors)
+    assert [e.code for e in errors] == ["INTERPOLATION_MISSING_VAR"]
+
+
 # --- Test 18: Interpolation errors halt pipeline ---
 
 
