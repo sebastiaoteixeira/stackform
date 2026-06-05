@@ -18,7 +18,7 @@ collections:
       replace: authenticated
       delete:
         - principal: identity:users
-          when: "principal.sub == document.id"
+          when: "principal.sub equals document.id"
     fields:
       id:
         type: id

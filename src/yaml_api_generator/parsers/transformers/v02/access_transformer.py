@@ -8,6 +8,7 @@ from typing import Any
 from yaml_api_generator.ir import IRAccessRule, IRDocumentBinding, IRIdentityBinding
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 from yaml_api_generator.parsers.when_parser import parse_document_binding, parse_when_list
+from yaml_api_generator.parsers.transformers.principal_resolver import resolve_principal
 
 
 class AccessTransformer:
@@ -78,56 +79,12 @@ class AccessTransformer:
         auth_entities: set[str],
         entity_to_collection: dict[str, str],
     ) -> tuple[IRAccessRule | None, list[ConfigError]]:
-        if value in ("public", "*", "authenticated"):
-            return None, []
-
-        if value.startswith("identity:"):
-            entity_name = value[len("identity:"):]
-            collection = entity_to_collection.get(entity_name)
-            if collection is None:
-                return None, [
-                    ConfigError(
-                        code="ACCESS_UNKNOWN_ENTITY",
-                        message=f"Unknown auth entity '{entity_name}' in access rule",
-                        path=path,
-                    )
-                ]
-            return IRAccessRule(principal=f"identity:{collection}"), []
-
-        if ":" in value:
-            entity_part, role_part = value.split(":", 1)
-            if entity_part not in auth_entities:
-                return None, [
-                    ConfigError(
-                        code="ACCESS_UNKNOWN_ENTITY",
-                        message=f"Unknown auth entity '{entity_part}' in access rule",
-                        path=path,
-                    )
-                ]
-            collection = entity_to_collection[entity_part]
-            if role_part == "*":
-                return IRAccessRule(principal=f"identity:{collection}"), []
-            return IRAccessRule(principal=f"identity:{collection}", required_role=role_part), []
-
-        if not auth_entities:
-            return None, [
-                ConfigError(
-                    code="ACCESS_NO_AUTH_ENTITY",
-                    message=f"Cannot use role '{value}' without auth entities",
-                    path=path,
-                )
-            ]
-        if len(auth_entities) > 1:
-            return None, [
-                ConfigError(
-                    code="ACCESS_AMBIGUOUS_ROLE",
-                    message=f"Unscoped role '{value}' is ambiguous with multiple auth entities; use 'entity:{value}'",
-                    path=path,
-                )
-            ]
-        entity_name = next(iter(auth_entities))
-        collection = entity_to_collection[entity_name]
-        return IRAccessRule(principal=f"identity:{collection}", required_role=value), []
+        resolved, errors = resolve_principal(value, path, auth_entities, entity_to_collection)
+        if resolved is None or resolved.is_public or resolved.principal is None:
+            return None, errors
+        return IRAccessRule(
+            principal=resolved.principal, required_role=resolved.required_role
+        ), errors
 
     def _parse_access_rule_object(
         self,

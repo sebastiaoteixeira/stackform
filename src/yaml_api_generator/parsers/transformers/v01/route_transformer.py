@@ -5,7 +5,10 @@ Builds routes from collection operations and access policies.
 
 from typing import Any
 
-from yaml_api_generator.ir import IRIdentityCollection, IROperations, IRRoute
+from yaml_api_generator.ir import IRAccessRule, IRIdentityCollection, IROperations, IRRoute
+from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
+from yaml_api_generator.parsers.when_parser import parse_when_expr
+from yaml_api_generator.parsers.transformers.principal_resolver import resolve_principal
 
 
 class RouteTransformer:
@@ -40,21 +43,33 @@ class RouteTransformer:
 
         Returns:
             List of route IR objects
+
+        Raises:
+            ConfigErrors: If access rule parsing fails
         """
+        auth_entities = set(identity_collections.keys())
+        entity_to_collection = {name: name for name in auth_entities}
+
         collection_operations: dict[str, IROperations] = {
             name: self._normalize_operations(global_defaults, collections_data[name].get("operations"))
             for name in collection_names
         }
 
         routes: list[IRRoute] = []
+        errors: list[ConfigError] = []
         for name in collection_names:
-            routes.extend(
-                self._build_collection_routes(
-                    name,
-                    collection_operations[name],
-                    collection_access_policies.get(name, {}),
-                )
+            collection_routes, route_errors = self._build_collection_routes(
+                name,
+                collection_operations[name],
+                collection_access_policies.get(name, {}),
+                auth_entities,
+                entity_to_collection,
             )
+            routes.extend(collection_routes)
+            errors.extend(route_errors)
+
+        if errors:
+            raise ConfigErrors(errors)
 
         for name, identity in identity_collections.items():
             if identity.has_password:
@@ -88,15 +103,22 @@ class RouteTransformer:
         collection: str,
         operations: IROperations,
         collection_access: dict[str, Any],
-    ) -> list[IRRoute]:
+        auth_entities: set[str],
+        entity_to_collection: dict[str, str],
+    ) -> tuple[list[IRRoute], list[ConfigError]]:
         op_map = operations.__dict__
         routes: list[IRRoute] = []
+        errors: list[ConfigError] = []
         for operation in self._OPERATION_NAMES:
             if not op_map[operation]:
                 continue
-            is_public = self._is_operation_public(collection_access.get(operation))
-            if is_public is None:
-                is_public = True
+            is_public, access_rules, access_errors = self._parse_access(
+                collection_access.get(operation),
+                f"collections.{collection}.access.{operation}",
+                auth_entities,
+                entity_to_collection,
+            )
+            errors.extend(access_errors)
             method, path_template = self._ROUTE_MAPPING[operation]
             routes.append(
                 IRRoute(
@@ -105,37 +127,88 @@ class RouteTransformer:
                     operation=operation,
                     collection=collection,
                     is_public=is_public,
+                    access_rules=access_rules or None,
                 )
             )
-        return routes
+        return routes, errors
 
-    def _is_operation_public(self, access_value: Any) -> bool | None:
-        if access_value is None:
-            return None
-        if isinstance(access_value, str):
-            normalized = access_value.strip().lower()
-            if normalized == "public":
-                return True
-            if normalized in {"authenticated", } or normalized.startswith("identity:"):
-                return False
-            return None
-        if not isinstance(access_value, list):
-            return None
-        saw_rule = False
-        for rule in access_value:
-            if not isinstance(rule, dict):
+    def _parse_access(
+        self,
+        access: Any,
+        path: str,
+        auth_entities: set[str],
+        entity_to_collection: dict[str, str],
+    ) -> tuple[bool, list[IRAccessRule], list[ConfigError]]:
+        if access is None:
+            return True, [], []
+        if isinstance(access, str):
+            return self._parse_access_items([access], path, auth_entities, entity_to_collection)
+        if isinstance(access, list):
+            return self._parse_access_items(access, path, auth_entities, entity_to_collection)
+        return True, [], []
+
+    def _parse_access_items(
+        self,
+        items: list[Any],
+        path: str,
+        auth_entities: set[str],
+        entity_to_collection: dict[str, str],
+    ) -> tuple[bool, list[IRAccessRule], list[ConfigError]]:
+        rules: list[IRAccessRule] = []
+        errors: list[ConfigError] = []
+        is_public = False
+        for index, item in enumerate(items):
+            principal_value, when_raw, extras = self._unpack_item(item)
+            if principal_value is None:
                 continue
-            principal = rule.get("principal")
-            if not isinstance(principal, str):
-                continue
-            principal_normalized = principal.strip().lower()
-            principal_type = (
-                "identity" if principal_normalized.startswith("identity:")
-                else principal_normalized
+            item_path = f"{path}[{index}]"
+            resolved, resolve_errors = resolve_principal(
+                principal_value, item_path, auth_entities, entity_to_collection
             )
-            if not principal_type:
+            errors.extend(resolve_errors)
+            if resolved is None:
                 continue
-            saw_rule = True
-            if principal_type == "public":
-                return True
-        return False if saw_rule else None
+            if resolved.is_public:
+                is_public = True
+                continue
+            when_expr = None
+            if when_raw is not None:
+                when_expr, when_errors = parse_when_expr(when_raw, f"{item_path}.when")
+                errors.extend(when_errors)
+            if self._is_bare_authenticated(resolved, when_expr, extras):
+                continue
+            rules.append(
+                IRAccessRule(
+                    principal=resolved.principal or "",
+                    required_role=resolved.required_role,
+                    when=when_expr,
+                    **extras,
+                )
+            )
+        return is_public, rules, errors
+
+    @staticmethod
+    def _is_bare_authenticated(resolved, when_expr, extras: dict[str, Any]) -> bool:
+        """A plain 'authenticated' principal carries no identity, role, or constraint,
+        so it adds nothing beyond requiring authentication; no rule is emitted."""
+        return (
+            resolved.principal is None
+            and resolved.required_role is None
+            and when_expr is None
+            and not extras.get("filter")
+            and not extras.get("write_fields")
+        )
+
+    @staticmethod
+    def _unpack_item(item: Any) -> tuple[str | None, str | None, dict[str, Any]]:
+        if isinstance(item, str):
+            return item, None, {}
+        if isinstance(item, dict):
+            principal = item.get("principal")
+            extras = {
+                "filter": item.get("filter"),
+                "write_fields": item.get("writeFields", []),
+                "reason": item.get("reason"),
+            }
+            return (principal if isinstance(principal, str) else None), item.get("when"), extras
+        return None, None, {}
