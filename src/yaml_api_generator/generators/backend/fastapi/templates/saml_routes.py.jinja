@@ -49,9 +49,10 @@ async def _prepare_saml_request(request: Request) -> dict[str, Any]:
 {% set provider = auth.providers.get(binding.provider) %}
 {% if provider and provider.type == "saml" %}
 {% set provider_name = binding.provider %}
+{% set sym = (col.name ~ "_" ~ provider_name) | py_identifier %}
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}")
-async def saml_{{ col.name }}_{{ provider_name }}_login(request: Request) -> RedirectResponse:
+async def saml_{{ sym }}_login(request: Request) -> RedirectResponse:
     base = str(request.base_url).rstrip("/")
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"
@@ -67,7 +68,7 @@ async def saml_{{ col.name }}_{{ provider_name }}_login(request: Request) -> Red
 
 
 @router.post("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def saml_{{ col.name }}_{{ provider_name }}_callback(
+async def saml_{{ sym }}_callback(
     request: Request, SAMLResponse: str = Form(...)
 ) -> Any:
     base = str(request.base_url).rstrip("/")
@@ -126,7 +127,7 @@ async def saml_{{ col.name }}_{{ provider_name }}_callback(
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/metadata")
-async def saml_{{ col.name }}_{{ provider_name }}_metadata(request: Request) -> Response:
+async def saml_{{ sym }}_metadata(request: Request) -> Response:
     base = str(request.base_url).rstrip("/")
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"

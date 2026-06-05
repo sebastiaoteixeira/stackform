@@ -7,6 +7,7 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
+from ..fastapi import access_filters
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
@@ -34,6 +35,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         )
         env.filters["path_to_regex"] = _path_to_regex
         env.filters["capitalize_collection"] = to_pascal_case
+        env.filters["py_literal"] = access_filters.py_literal
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -171,6 +173,10 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 collection_name=col_name,
                 routes=col_data["routes"],
                 needs_auth=needs_auth,
+                repo_queries={
+                    op["name"]: op["query"]
+                    for op in context.repository_operations.get(col_name, [])
+                },
             )
             (routes_dir / f"{col_name}.py").write_text(content)
 

@@ -18,6 +18,7 @@ from yaml_api_generator.ir.when import (
     Or,
     StringLiteral,
     WhenExpr,
+    needs_document,
 )
 
 
@@ -78,5 +79,6 @@ def role_hierarchies_py(hierarchies: dict[str, dict[str, set[str]]]) -> str:
 
 def needs_post_fetch(route: RouteDescriptor) -> bool:
     return route.operation in _POST_FETCH_OPERATIONS and any(
-        rule.document_symbols for rule in route.access_rules or ()
+        rule.document_symbols or (rule.when is not None and needs_document(rule.when))
+        for rule in route.access_rules or ()
     )

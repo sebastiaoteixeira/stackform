@@ -137,7 +137,7 @@ def test_fastapi_type_mapper_all_field_types():
     assert python_type(fields[1]) == "float"
     assert python_type(fields[2]) == "bool"
     assert python_type(fields[3]) == "datetime"
-    assert 'Literal["a", "b"]' in python_type(fields[4])
+    assert "Literal['a', 'b']" in python_type(fields[4])
     assert python_type(fields[5]) == "list[str]"
     assert python_type(fields[6]) == "dict[str, Any]"
     assert python_type(fields[7]) == "str"

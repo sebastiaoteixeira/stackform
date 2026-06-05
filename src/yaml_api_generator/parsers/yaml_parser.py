@@ -13,7 +13,8 @@ Key functions:
 
 Environment variable interpolation:
 - Syntax: ${VAR_NAME} or ${VAR_NAME:-default}
-- Supports nested interpolation
+- Nested and default-with-reference forms resolve via a fixed-point loop
+- Literal braces in a default are escaped as \\{ and \\}
 - Env vars expanded before schema validation
 """
 
@@ -28,7 +29,10 @@ from jsonschema import Draft202012Validator
 
 from ..ir import IRDocument
 
-INTERPOLATION_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
+INTERPOLATION_PATTERN = re.compile(r"\$\{([^{}]*?)\}")
+INTERPOLATION_TOKEN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$", re.DOTALL)
+INTERPOLATION_MAX_DEPTH = 10
+_BRACE_ESCAPES = ((r"\{", "\x00"), (r"\}", "\x01"))
 
 
 @dataclass(frozen=True)
@@ -68,26 +72,49 @@ def _join_path(parts: tuple[str, ...]) -> str:
 def _interpolate_string(
     value: str, path: tuple[str, ...], errors: list[ConfigError]
 ) -> str:
-    def replace(match: re.Match[str]) -> str:
-        var_name = match.group(1)
-        default = match.group(2)
-        env_value = os.environ.get(var_name)
+    def resolve(match: re.Match[str]) -> str:
+        token = INTERPOLATION_TOKEN.match(match.group(1))
+        if token is None:
+            return match.group(0)
+        env_value = os.environ.get(token.group(1))
         if env_value is not None:
             return env_value
-        if default is not None:
-            return default
+        return match.group(0) if token.group(2) is None else token.group(2)
 
-        errors.append(
-            ConfigError(
-                code="INTERPOLATION_MISSING_VAR",
-                message=f"Environment variable '{var_name}' is required",
-                path=_join_path(path),
-                hint=f"Set {var_name} or use ${{{var_name}:-default}}",
+    for literal, sentinel in _BRACE_ESCAPES:
+        value = value.replace(literal, sentinel)
+
+    for _ in range(INTERPOLATION_MAX_DEPTH):
+        substituted = INTERPOLATION_PATTERN.sub(resolve, value)
+        if substituted == value:
+            break
+        value = substituted
+
+    for match in INTERPOLATION_PATTERN.finditer(value):
+        token = INTERPOLATION_TOKEN.match(match.group(1))
+        if token is None:
+            errors.append(
+                ConfigError(
+                    code="INTERPOLATION_MALFORMED_TOKEN",
+                    message=f"Malformed interpolation token '{match.group(0)}'",
+                    path=_join_path(path),
+                    hint="Use ${VAR_NAME} or ${VAR_NAME:-default}",
+                )
             )
-        )
-        return match.group(0)
+        else:
+            var_name = token.group(1)
+            errors.append(
+                ConfigError(
+                    code="INTERPOLATION_MISSING_VAR",
+                    message=f"Environment variable '{var_name}' is required",
+                    path=_join_path(path),
+                    hint=f"Set {var_name} or use ${{{var_name}:-default}}",
+                )
+            )
 
-    return INTERPOLATION_PATTERN.sub(replace, value)
+    for literal, sentinel in _BRACE_ESCAPES:
+        value = value.replace(sentinel, literal[1])
+    return value
 
 
 def _resolve_interpolation(
@@ -224,8 +251,38 @@ def load_and_generate_ir(
     version = str(resolved.get("version", "0.1"))
 
     if version == "0.2":
+        from .transformers.shape_validation import validate_spec_shape
+        shape_errors = validate_spec_shape(resolved)
+        if shape_errors:
+            raise ConfigErrors(shape_errors)
+
+        from .transformers.name_validation import validate_spec_names
+        name_errors = validate_spec_names(resolved)
+        if name_errors:
+            raise ConfigErrors(name_errors)
+
+        from .transformers.constraint_validation import validate_spec_constraints
+        constraint_errors = validate_spec_constraints(resolved)
+        if constraint_errors:
+            raise ConfigErrors(constraint_errors)
+
+        from .transformers.access_validation import validate_spec_access
+        access_errors = validate_spec_access(resolved)
+        if access_errors:
+            raise ConfigErrors(access_errors)
+
+        from .transformers.auth_validation import validate_spec_auth
+        auth_errors = validate_spec_auth(resolved)
+        if auth_errors:
+            raise ConfigErrors(auth_errors)
+
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
+
+        from .transformers.path_validation import validate_spec_paths
+        path_errors = validate_spec_paths(resolved)
+        if path_errors:
+            raise ConfigErrors(path_errors)
 
     ui_block = resolved.get("ui", None)
 

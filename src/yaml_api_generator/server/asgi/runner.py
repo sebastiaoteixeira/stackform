@@ -51,7 +51,7 @@ class ASGIApp:
             if message["type"] == "lifespan.startup":
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
-                self._repository.close()
+                await self._repository.close()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
 

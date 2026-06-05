@@ -22,6 +22,7 @@ from .api import (
     IRProviderBinding,
     IRProvider,
     IRSAMLProvider,
+    RoleHierarchyCycleError,
     flatten_role_hierarchy,
 )
 from .when import (
@@ -82,6 +83,7 @@ __all__ = [
     "IRProvider",
     "IRSAMLProvider",
     "flatten_role_hierarchy",
+    "RoleHierarchyCycleError",
     "And",
     "Equals",
     "FieldRef",

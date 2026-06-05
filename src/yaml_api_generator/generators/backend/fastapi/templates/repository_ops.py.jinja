@@ -70,6 +70,7 @@ class UpdateOp:
 
 class ReplaceOp:
     async def replace(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+        data[self.ID_FIELD] = document_id
         doc = await self._col.find_one_and_replace(
             self._match_filter(document_id),
             data,

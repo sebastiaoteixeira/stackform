@@ -116,6 +116,44 @@ class TestParseWhenList:
         assert result is None
 
 
+class TestParentheses:
+    _P = {"a": "1", "b": "1", "c": "0"}
+
+    def test_grouping_overrides_precedence(self):
+        # (a or b) and c with c false must be False; grouping must bind or first.
+        assert _eval(
+            "(principal.a equals '1' or principal.b equals '1') and principal.c equals '1'",
+            principal=self._P,
+        ) is False
+
+    def test_flat_precedence_differs_from_grouped(self):
+        # Without parentheses, and binds tighter, so the or short-circuits to True.
+        assert _eval(
+            "principal.a equals '1' or principal.b equals '1' and principal.c equals '1'",
+            principal=self._P,
+        ) is True
+
+    def test_nested_parentheses(self):
+        assert _eval(
+            "((principal.a equals '1'))",
+            principal=self._P,
+        ) is True
+
+    def test_not_applies_to_group(self):
+        assert _eval(
+            "not (principal.a equals '1' or principal.b equals '1')",
+            principal=self._P,
+        ) is False
+
+    def test_unbalanced_open_paren_rejected(self):
+        _, errors = parse_when_expr("(principal.a equals '1'", _PATH)
+        assert errors and errors[0].code == "WHEN_EXPR_INVALID"
+
+    def test_stray_close_paren_rejected(self):
+        _, errors = parse_when_expr("principal.a equals '1')", _PATH)
+        assert errors and errors[0].code == "WHEN_EXPR_INVALID"
+
+
 class TestParseDocumentBinding:
     def test_149_collection_only(self):
         result, errors = parse_document_binding("collection", _PATH)

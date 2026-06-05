@@ -9,7 +9,9 @@ from dependencies.auth import resolve_principal
 import validation
 
 
+{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
 {% for route in routes %}
+{% if route.operation != "login" %}
 {% set handler_name = "handle_" ~ route.operation ~ "_" ~ collection_name %}
 async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any) -> tuple[int, Any]:
     repo = {{ collection_name | capitalize_collection }}Repository(db)
@@ -19,6 +21,11 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
     if principal is None:
         return 401, {"detail": "Unauthorized"}
 {% endif %}
+{% if route.operation not in crud_op_names %}
+{% set query = repo_queries[route.operation] %}
+    result = await repo.{{ route.operation }}({% for key, value in (query or {}).items() if key != "command" %}{{ key }}={{ value | py_literal }}{% if not loop.last %}, {% endif %}{% endfor %})
+    return 200, result
+{% else %}
     try:
 {% if route.operation == "list" %}
         documents = await service.list()
@@ -52,5 +59,7 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
         return 404, {"detail": "Resource not found"}
     except ValidationError as exc:
         return 422, {"detail": exc.message}
+{% endif %}
 
+{% endif %}
 {% endfor %}

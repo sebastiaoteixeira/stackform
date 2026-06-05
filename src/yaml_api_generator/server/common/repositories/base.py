@@ -11,7 +11,7 @@ class BaseRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         raise NotImplementedError
 
     @abstractmethod

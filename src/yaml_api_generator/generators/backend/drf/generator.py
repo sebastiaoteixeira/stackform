@@ -7,6 +7,7 @@ from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
 from . import type_mapper
+from ..fastapi import access_filters
 from yaml_api_generator.ir.when import (
     And,
     Equals,
@@ -45,7 +46,10 @@ class DRFGenerator(TemplateBasedGenerator):
         env.filters["drf_field"] = type_mapper.drf_field
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["rule_to_python"] = _rule_to_python
+        env.filters["py_literal"] = access_filters.py_literal
+        env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.tests["needs_document"] = _needs_document_test
+        env.tests["unconditional"] = _is_unconditional
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -275,11 +279,19 @@ def _when_to_python(expr: WhenExpr, symbol_map: dict[str, str] | None = None) ->
 
 
 def _rule_to_python(rule) -> str:
-    if not hasattr(rule, 'when') or rule.when is None:
+    conditions: list[str] = []
+    if getattr(rule, "required_role", None) is not None:
+        conditions.append(f'_principal_has_role(_resolved_principal, "{rule.required_role}")')
+    if getattr(rule, "when", None) is not None:
+        conditions.append(_when_to_python(rule.when, _build_symbol_map(rule)))
+    if not conditions:
         return "True"
-    symbol_map = _build_symbol_map(rule)
-    return _when_to_python(rule.when, symbol_map)
+    return " and ".join(conditions)
 
 
 def _needs_document_test(expr: WhenExpr) -> bool:
     return needs_document(expr)
+
+
+def _is_unconditional(rule) -> bool:
+    return getattr(rule, "when", None) is None and getattr(rule, "required_role", None) is None

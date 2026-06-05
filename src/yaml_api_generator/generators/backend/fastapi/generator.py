@@ -3,7 +3,7 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from yaml_api_generator.utils.strings import to_pascal_case
+from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
 from . import access_filters, type_mapper
@@ -39,6 +39,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["python_type"] = type_mapper.python_type
         env.filters["python_annotation"] = type_mapper.python_annotation
         env.filters["capitalize_collection"] = to_pascal_case
+        env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["access_rule_py"] = access_filters.access_rule_py
@@ -145,6 +146,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
                     "collection_name": col_name,
                     "routes": col_data["routes"],
                     "model_index": {m.name: m for m in col_data["models"]},
+                    "repo_queries": {
+                        op["name"]: op["query"]
+                        for op in ctx.repository_operations.get(col_name, [])
+                    },
                     "auth": ctx.auth,
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
