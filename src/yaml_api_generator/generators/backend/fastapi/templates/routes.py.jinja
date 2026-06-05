@@ -1,3 +1,7 @@
+{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
+{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("handler") | selectattr("operation", "in", crud_op_names) | list %}
+{% set custom_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("handler") | list %}
+{% set repo_op_routes = routes | rejectattr("handler") | rejectattr("operation", "in", crud_op_names) | list %}
 from typing import Any
 
 from fastapi import Request
@@ -5,6 +9,11 @@ from fastapi import Request
 from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from ._crud_factory import make_crud_router
+{% if repo_op_routes %}
+from fastapi.encoders import jsonable_encoder
+
+from dependencies.mongodb import get_database
+{% endif %}
 {% if auth.enabled %}
 from dependencies.authorization import AccessRule
 from dependencies.when_eval import (
@@ -19,8 +28,6 @@ from dependencies.when_eval import (
     NotIn,
 )
 {% endif %}
-{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("handler") | list %}
-{% set custom_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("handler") | list %}
 {% set ns = namespace(model_imports=[]) %}
 {% for route in crud_routes %}
 {% if route.body_model and route.body_model not in ns.model_imports %}
@@ -73,4 +80,14 @@ async def {{ handler_name }}(request: Request) -> Any:
     module_path, func_name = "{{ route.handler }}".rsplit(".", 1)
     module = import_module(module_path)
     return await getattr(module, func_name)(request)
+{% endfor %}
+{% for route in repo_op_routes %}
+{% set handler_name = route.operation ~ "_" ~ collection_name %}
+{% set query = repo_queries[route.operation] %}
+
+
+@router.{{ route.method | lower }}("{{ route.path }}", tags=["{{ collection_name | capitalize_collection }}"])
+async def {{ handler_name }}(request: Request) -> Any:
+    repo = {{ collection_name | capitalize_collection }}Repository(get_database())
+    return jsonable_encoder(await repo.{{ route.operation }}({% for key, value in (query or {}).items() if key != "command" %}{{ key }}={{ value | py_literal }}{% if not loop.last %}, {% endif %}{% endfor %}))
 {% endfor %}

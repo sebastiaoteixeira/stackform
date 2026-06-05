@@ -2,7 +2,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
-{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
+{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete"] %}
+{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("operation", "in", crud_op_names) | list %}
 {% set ns = namespace(needs_models=false, model_imports=[]) %}
 {% for route in crud_routes %}
 {% if route.body_model %}

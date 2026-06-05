@@ -146,6 +146,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
                     "collection_name": col_name,
                     "routes": col_data["routes"],
                     "model_index": {m.name: m for m in col_data["models"]},
+                    "repo_queries": {
+                        op["name"]: op["query"]
+                        for op in ctx.repository_operations.get(col_name, [])
+                    },
                     "auth": ctx.auth,
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
