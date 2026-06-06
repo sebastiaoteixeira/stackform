@@ -265,3 +265,65 @@ def remove_pack(pack_name: str):
 
     shutil.rmtree(user_pack)
     click.echo(f"Removed pack '{pack_name}'")
+
+
+@cli.group()
+def migrate():
+    """Manage relational database migrations (Alembic)."""
+
+
+_spec_arg = click.argument("yaml_file", type=click.Path(exists=True))
+_datastore_opt = click.option("--datastore", default=None, help="Relational datastore name")
+
+
+@migrate.command("new")
+@_spec_arg
+@click.option("-m", "--message", default="auto", help="Revision message")
+@_datastore_opt
+def migrate_new(yaml_file: str, message: str, datastore: str | None):
+    """Autogenerate a revision from the spec (scaffolds Alembic on first run)."""
+    from ..migrations.alembic_support import make_config, new_revision
+
+    new_revision(make_config(yaml_file, datastore), message)
+
+
+@migrate.command("up")
+@_spec_arg
+@click.option("--to", "target", default="head", help="Target revision (default head)")
+@_datastore_opt
+def migrate_up(yaml_file: str, target: str, datastore: str | None):
+    """Apply migrations forward."""
+    from ..migrations.alembic_support import make_config, upgrade
+
+    upgrade(make_config(yaml_file, datastore), target)
+
+
+@migrate.command("down")
+@_spec_arg
+@click.option("--to", "target", default="-1", help="Target revision (default one step back)")
+@_datastore_opt
+def migrate_down(yaml_file: str, target: str, datastore: str | None):
+    """Revert migrations."""
+    from ..migrations.alembic_support import downgrade, make_config
+
+    downgrade(make_config(yaml_file, datastore), target)
+
+
+@migrate.command("status")
+@_spec_arg
+@_datastore_opt
+def migrate_status(yaml_file: str, datastore: str | None):
+    """Show the current revision."""
+    from ..migrations.alembic_support import make_config, status
+
+    status(make_config(yaml_file, datastore))
+
+
+@migrate.command("history")
+@_spec_arg
+@_datastore_opt
+def migrate_history(yaml_file: str, datastore: str | None):
+    """List revisions."""
+    from ..migrations.alembic_support import history, make_config
+
+    history(make_config(yaml_file, datastore))

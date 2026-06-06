@@ -28,14 +28,15 @@ def create_repositories(yaml_file: str, schema_file: str | Path | None = None):
         Tuple of (IRDocument, RepositoryRegistry)
     """
     ir = load_and_generate_ir(yaml_file, schema_file).ir
-    registry = build_registry(ir)
+    manage_schema = not (Path(yaml_file).resolve().parent / "migrations").exists()
+    registry = build_registry(ir, create_schema=manage_schema)
     return ir, registry
 
 
-def build_registry(ir: IRDocument) -> RepositoryRegistry:
+def build_registry(ir: IRDocument, create_schema: bool = True) -> RepositoryRegistry:
     repositories: dict[str, BaseRepository] = {}
     for name, datastore in ir.datastores.items():
-        repo = _build_repository(name, datastore, ir)
+        repo = _build_repository(name, datastore, ir, create_schema)
         repo.connect()
         repositories[name] = repo
 
@@ -46,7 +47,9 @@ def build_registry(ir: IRDocument) -> RepositoryRegistry:
     return RepositoryRegistry(repositories, bindings, ir.default_datastore)
 
 
-def _build_repository(name: str, datastore, ir: IRDocument) -> BaseRepository:
+def _build_repository(
+    name: str, datastore, ir: IRDocument, create_schema: bool = True
+) -> BaseRepository:
     if isinstance(datastore, IRMongo):
         is_default = name == ir.default_datastore
         uri = os.environ.get("YAML_API_MONGO_URI", datastore.uri) if is_default else datastore.uri
@@ -65,6 +68,6 @@ def _build_repository(name: str, datastore, ir: IRDocument) -> BaseRepository:
             if (col.datastore or ir.default_datastore) == name
         ]
         dsn = os.environ.get(f"YAML_API_DB_{name.upper()}_DSN", datastore.dsn)
-        return SQLRepository(dsn=dsn, collections=collections)
+        return SQLRepository(dsn=dsn, collections=collections, create_schema=create_schema)
 
     raise ValueError(f"Unsupported datastore type for '{name}': {type(datastore).__name__}")
