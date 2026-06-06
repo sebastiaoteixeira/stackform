@@ -27,3 +27,10 @@ class RequestContext:
     principal: dict[str, Any] | None
     body: dict[str, Any] | None
     response: Any | None
+    repositories: Any | None = None
+
+    def repository_for(self, collection: str | None) -> Any:
+        """Resolve the repository backing a collection (cross-store access)."""
+        if self.repositories is None:
+            return self.repository
+        return self.repositories.for_collection(collection)

@@ -6,6 +6,8 @@ description: The `mongo:` section sets the compile-time MongoDB connection defau
 The `mongo:` section sets the MongoDB connection defaults that get baked into the
 generated app. The whole block is optional; when omitted, the defaults below apply.
 
+This is the single-datastore shortcut: a spec with `mongo:` behaves as one default MongoDB datastore. To use more than one database, or a relational database, use [`datastores:`](./datastores.md) instead.
+
 ## Schema
 
 ```yaml

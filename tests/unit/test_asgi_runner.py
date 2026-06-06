@@ -11,6 +11,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeRouteDescriptor,
 )
 from yaml_api_generator.server.common.repositories.base import BaseRepository
+from yaml_api_generator.server.common.repositories import RepositoryRegistry
 
 
 def _make_ctx_with_routes(routes):
@@ -141,7 +142,7 @@ async def test_route_matching_by_method_and_path_regex():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     status, data = await _invoke_asgi(app, "GET", "/items")
     assert status == 200
@@ -163,7 +164,7 @@ async def test_no_matching_route_returns_404_json():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     status, data = await _invoke_asgi(app, "GET", "/nonexistent")
     assert status == 404
@@ -183,7 +184,7 @@ async def test_invalid_json_body_returns_400_json():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     scope = {
         "type": "http",
@@ -233,7 +234,7 @@ async def test_error_mapping_401_unauthorized():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, UnauthorizedError)
 
     status, data = await _invoke_asgi(app, "GET", "/items")
@@ -255,7 +256,7 @@ async def test_error_mapping_403_forbidden():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, ForbiddenError)
 
     status, data = await _invoke_asgi(app, "GET", "/items")
@@ -277,7 +278,7 @@ async def test_error_mapping_404_not_found():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, NotFoundError)
 
     status, data = await _invoke_asgi(app, "GET", "/items/abc")
@@ -297,7 +298,7 @@ async def test_error_mapping_422_value_error():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, ValueError)
 
     status, data = await _invoke_asgi(app, "POST", "/items", {"name": "x"})
@@ -324,7 +325,7 @@ async def test_header_decoding_from_asgi_bytes():
     ]
     ctx = _make_ctx_with_routes(routes)
     repo = _InMemoryRepo()
-    app = ASGIApp(ctx, repo)
+    app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     status, data = await _invoke_asgi(
         app, "GET", "/items", headers={"Authorization": "Bearer token123"}

@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from ..common.context_builder import build_runtime_context
-from ..common.loader import create_repository, ensure_spec_dir_importable
+from ..common.loader import create_repositories, ensure_spec_dir_importable
 from .factory import register_fastapi_routes
 
 
@@ -20,7 +20,7 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
         Configured FastAPI application with routes and middleware
     """
     ensure_spec_dir_importable(yaml_file)
-    ir, repository = create_repository(yaml_file, schema_file)
+    ir, registry = create_repositories(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
 
     app = FastAPI()
@@ -35,6 +35,6 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
             allow_credentials=ir.api.cors.credentials,
         )
 
-    register_fastapi_routes(app, ctx, repository)
+    register_fastapi_routes(app, ctx, registry)
 
     return app

@@ -73,6 +73,12 @@
         }
       }
     },
+    "datastores": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DatastoreConfig"
+      }
+    },
     "entities": {
       "type": "object",
       "additionalProperties": {
@@ -311,20 +317,37 @@
       "properties": {
         "query": {
           "type": "object",
-          "required": ["command"],
           "properties": {
             "command": { "type": "string" },
-            "collection": { "type": "string" }
+            "collection": { "type": "string" },
+            "sql": { "type": "string" },
+            "params": { "type": "object" }
           },
           "additionalProperties": true
         },
         "handler": { "type": "string" }
       }
     },
+    "DatastoreConfig": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["mongodb", "mongo", "postgres", "postgresql"]
+        },
+        "uri": { "type": "string" },
+        "database": { "type": "string" },
+        "dsn": { "type": "string" },
+        "default": { "type": "boolean" }
+      }
+    },
     "RepositoryConfig": {
       "type": "object",
       "properties": {
         "entity": {
+          "type": "string"
+        },
+        "datastore": {
           "type": "string"
         },
         "crud": {

@@ -12,6 +12,7 @@ from .server_context import (
     RuntimeCollectionDescriptor,
     RuntimeContext,
     RuntimeIdentityDescriptor,
+    RuntimeOperationDescriptor,
     RuntimeRouteDescriptor,
 )
 
@@ -28,13 +29,30 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         document.identityCollections,
         document.collections,
     )
+    operations = _build_operations(document)
 
     return RuntimeContext(
         app=app,
         collections=collections,
         routes=routes,
         auth=auth,
+        operations=operations,
     )
+
+
+def _build_operations(
+    document: IRDocument,
+) -> dict[str, dict[str, RuntimeOperationDescriptor]]:
+    return {
+        repo_name: {
+            op_name: RuntimeOperationDescriptor(
+                name=op.name, query=op.query, handler=op.handler
+            )
+            for op_name, op in repo.operations.items()
+        }
+        for repo_name, repo in document.repositories.items()
+        if repo.operations
+    }
 
 
 def _build_collections(
@@ -47,6 +65,7 @@ def _build_collections(
             id_field=col.idField,
             id_format=col.idFormat,
             fields=col.fields,
+            datastore=col.datastore,
         )
         for name, col in ir_collections.items()
     }

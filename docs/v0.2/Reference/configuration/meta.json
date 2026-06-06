@@ -2,6 +2,7 @@
   "title": "Configuration",
   "pages": [
     "api",
+    "datastores",
     "mongo",
     "environment-variables"
   ]

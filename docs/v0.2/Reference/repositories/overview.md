@@ -39,6 +39,12 @@ Valid operation names are `list`, `get`, `create`, `update`, `replace`, `delete`
 
 For the full enablement model and resolution precedence, see [composable-crud](composable-crud.md).
 
+### `datastore`
+
+Type: string (datastore name). Optional.
+
+The datastore this repository is stored in, referencing a key in [`datastores:`](../configuration/datastores.md). Omit it to use the default datastore. This is how a single spec keeps different repositories in different databases.
+
 ### `operations`
 
 Type: map. Optional.

@@ -16,7 +16,7 @@ from ..common.server_context import (
 )
 from ..common.pipeline import Pipeline
 from ..common.pipeline_builder import PipelineBuilder
-from ..common.repositories import BaseRepository
+from ..common.repositories import BaseRepository, RepositoryRegistry
 from ..common.steps import ForbiddenError, NotFoundError, UnauthorizedError
 
 
@@ -112,10 +112,10 @@ def create_pydantic_model(
 def register_fastapi_routes(
     app: FastAPI,
     ctx: RuntimeContext,
-    repository: BaseRepository,
+    registry: RepositoryRegistry,
 ) -> dict[tuple[str, str], Pipeline]:
     pipelines: dict[tuple[str, str], Pipeline] = {}
-    pipeline_builder = PipelineBuilder(ctx=ctx, repository=repository)
+    pipeline_builder = PipelineBuilder(ctx=ctx, registry=registry)
 
     for route in ctx.routes:
         pipeline = pipeline_builder.build_for_route(route)

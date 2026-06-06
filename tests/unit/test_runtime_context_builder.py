@@ -12,6 +12,7 @@ from yaml_api_generator.ir import (
     IRRoute,
 )
 from yaml_api_generator.server.common.pipeline_builder import PipelineBuilder
+from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.ir import flatten_role_hierarchy
 from yaml_api_generator.server.common.context_builder import build_runtime_context
 from yaml_api_generator.server.common.steps import ForbiddenError, UnauthorizedError
@@ -110,7 +111,7 @@ async def test_collection_id_field_used_in_repository_operations():
     rc = build_runtime_context(ir)
     repo = InMemoryRepository()
     route = rc.routes[0]
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(body={"name": "Widget"})
     assert "itemId" in result.response
 
@@ -135,7 +136,7 @@ async def test_password_auth_collection_enables_login():
         "u1": {"id": "u1", "email": "a@b.com", "_auth": {"passwordHash": hash_password("secret")}}
     }
     route = rc.routes[0]
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(body={"email": "a@b.com", "password": "secret"})
     assert "token" in result.response
 
@@ -157,7 +158,7 @@ async def test_non_public_route_from_ir_rejects_unauthenticated():
     rc = build_runtime_context(ir)
     repo = InMemoryRepository()
     route = rc.routes[0]
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(UnauthorizedError):
         await pipeline.run(headers={}, body={"email": "x@y.com"})
 
@@ -191,7 +192,7 @@ async def test_role_based_access_rule_from_ir_is_enforced():
     repo.register_id_field("items", "id")
     repo._data["items"] = {"item-1": {"id": "item-1", "name": "Test"}}
     route = rc.routes[0]
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
 
     with pytest.raises(ForbiddenError):
         await pipeline.run(

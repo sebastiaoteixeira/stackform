@@ -84,6 +84,7 @@ class IRRepository:
     entity: str | None = None
     crud: tuple[str, ...] = CRUD_OPERATIONS
     operations: dict[str, IROperation] = field(default_factory=dict)
+    datastore: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,18 @@ class IRApi:
 class IRMongo:
     uri: str = "mongodb://localhost:27017"
     database: str = "yaml_api"
+    type: str = "mongodb"
+
+
+@dataclass(frozen=True)
+class IRPostgres:
+    dsn: str = "postgresql+asyncpg://localhost:5432/yaml_api"
+    type: str = "postgres"
+
+
+IRMongoDatastore = IRMongo
+IRPostgresDatastore = IRPostgres
+IRDatastore = IRMongo | IRPostgres
 
 
 @dataclass(frozen=True)
@@ -126,6 +139,7 @@ class IRCollection:
     idField: str
     idFormat: str
     fields: dict[str, Any]
+    datastore: str | None = None
 
 
 @dataclass(frozen=True)
@@ -259,6 +273,8 @@ class IRDocument:
     role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
+    datastores: dict[str, IRDatastore] = field(default_factory=dict)
+    default_datastore: str = "default"
     deploy: IRDeploy | None = None
     repositories: dict[str, IRRepository] = field(default_factory=dict)
     ui_config: dict[str, Any] | None = None

@@ -24,6 +24,7 @@ from .repositories import (
     RepositoryDeleteStep,
     RepositoryGetStep,
     RepositoryListStep,
+    RepositoryOperationStep,
     RepositoryReplaceStep,
     RepositoryUpdateStep,
 )
@@ -47,4 +48,5 @@ __all__ = [
     "RepositoryUpdateStep",
     "RepositoryReplaceStep",
     "RepositoryDeleteStep",
+    "RepositoryOperationStep",
 ]

@@ -191,3 +191,31 @@ def RepositoryDeleteStep(collection_name: str, id_field: str) -> Step:
         return ctx
 
     return step
+
+
+def RepositoryOperationStep(
+    collection_name: str,
+    query: dict[str, Any],
+    id_field: str,
+) -> Step:
+    async def step(ctx: RequestContext) -> RequestContext:
+        bindings = {
+            "principal": ctx.principal or {},
+            "params": ctx.url_params,
+            "body": ctx.body or {},
+        }
+        result = await _repository(ctx).run_operation(collection_name, query, bindings)
+        ctx.response = _normalize_operation_result(result, id_field)
+        return ctx
+
+    return step
+
+
+def _normalize_operation_result(result: Any, id_field: str) -> Any:
+    if isinstance(result, list):
+        if all(isinstance(item, dict) for item in result):
+            return _inject_canonical_id_list(result, id_field)
+        return result
+    if isinstance(result, dict):
+        return _inject_canonical_id(result, id_field)
+    return result

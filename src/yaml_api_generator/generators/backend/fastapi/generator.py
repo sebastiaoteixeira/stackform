@@ -6,7 +6,7 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from . import access_filters, type_mapper
+from . import access_filters, sql_filters, type_mapper
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
@@ -42,6 +42,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["sql_column"] = sql_filters.sql_column
         env.filters["access_rule_py"] = access_filters.access_rule_py
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
@@ -150,6 +151,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                         op["name"]: op["query"]
                         for op in ctx.repository_operations.get(col_name, [])
                     },
+                    "datastore_type": ctx.collection_datastore_type(col_name),
                     "auth": ctx.auth,
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
@@ -199,47 +201,85 @@ class FastAPIGenerator(TemplateBasedGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        self._render_collection_based(
-            env, context, collections_by_name, output_dir,
-            RenderConfig(
-                template_name="repository.py.jinja",
-                output_subdir="repositories",
-                import_class_suffix="Repository",
-                context_builder=lambda col_name, col_data, ctx: {
-                    "collection_name": col_name,
-                    "operations": _crud_operations(col_data),
-                    "id_field": ctx.collections[col_name]["id_field"],
-                    "id_field_format": ctx.collections[col_name]["id_format"],
-                    "custom_operations": ctx.repository_operations.get(col_name, []),
-                },
-            )
-        )
+        repos_dir = output_dir / "repositories"
+        repos_dir.mkdir(parents=True, exist_ok=True)
 
-        ops_template = env.get_template("repository_ops.py.jinja")
-        ops_content = ops_template.render()
-        (output_dir / "repositories" / "_ops.py").write_text(ops_content)
+        mongo_template = env.get_template("repository.py.jinja")
+        sql_template = env.get_template("repository_sql.py.jinja")
+        init_imports: list[str] = []
+        uses_mongo = uses_sql = False
+
+        for col_name, col_data in collections_by_name.items():
+            meta = context.collections[col_name]
+            is_sql = meta.get("datastore_type") in ("postgres", "postgresql")
+            template_context = {
+                "collection_name": col_name,
+                "operations": _crud_operations(col_data),
+                "id_field": meta["id_field"],
+                "id_field_format": meta["id_format"],
+                "fields": meta["fields"],
+                "custom_operations": ctx_ops if (ctx_ops := context.repository_operations.get(col_name, [])) else [],
+            }
+            template = sql_template if is_sql else mongo_template
+            (repos_dir / f"{col_name}.py").write_text(template.render(**template_context))
+            init_imports.append(
+                f"from .{col_name} import {to_pascal_case(col_name)}Repository"
+            )
+            uses_sql = uses_sql or is_sql
+            uses_mongo = uses_mongo or not is_sql
+
+        (repos_dir / "__init__.py").write_text("\n".join(init_imports) + "\n")
+        if uses_mongo:
+            (repos_dir / "_ops.py").write_text(env.get_template("repository_ops.py.jinja").render())
+        if uses_sql:
+            (repos_dir / "_sql_ops.py").write_text(
+                env.get_template("repository_sql_ops.py.jinja").render()
+            )
 
     def _render_dependencies(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        files = [("mongodb.py.jinja", "mongodb.py")]
-        init_imports = ["from .mongodb import get_database"]
+        col_types = {context.collection_datastore_type(c) for c in context.collections}
+        uses_sql = bool(col_types & {"postgres", "postgresql"})
+        uses_mongo = bool(col_types & {"mongodb", "mongo"}) or not uses_sql
 
+        deps_dir = output_dir / "dependencies"
+        deps_dir.mkdir(parents=True, exist_ok=True)
+
+        if uses_mongo:
+            (deps_dir / "mongodb.py").write_text(
+                env.get_template("mongodb.py.jinja").render(ctx=context, auth=context.auth)
+            )
+        if uses_sql:
+            pg_dsn = next(
+                (ds["dsn"] for ds in context.datastores.values()
+                 if ds["type"] in ("postgres", "postgresql")),
+                "postgresql+asyncpg://localhost/db",
+            )
+            (deps_dir / "postgres.py").write_text(
+                env.get_template("postgres.py.jinja").render(dsn=pg_dsn)
+            )
+
+        init_imports: list[str] = []
+        auth_files = []
         if context.auth.enabled:
-            files.append(("auth.py.jinja", "auth.py"))
-            files.append(("when_eval.py.jinja", "when_eval.py"))
-            files.append(("authorization.py.jinja", "authorization.py"))
+            auth_files += [
+                ("auth.py.jinja", "auth.py"),
+                ("when_eval.py.jinja", "when_eval.py"),
+                ("authorization.py.jinja", "authorization.py"),
+            ]
             init_imports.append("from .auth import resolve_principal, require_principal")
             init_imports.append("from .authorization import AccessRule, authorize_pre, authorize_post")
-
         if context.auth.has_password_auth:
-            files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
+            auth_files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 
-        self._render_directory(
-            env, context, output_dir,
-            subdir="dependencies",
-            files=files,
-            init_imports=init_imports,
+        for template_name, filename in auth_files:
+            (deps_dir / filename).write_text(
+                env.get_template(template_name).render(ctx=context, auth=context.auth)
+            )
+
+        (deps_dir / "__init__.py").write_text(
+            "\n".join(init_imports) + "\n" if init_imports else ""
         )
 

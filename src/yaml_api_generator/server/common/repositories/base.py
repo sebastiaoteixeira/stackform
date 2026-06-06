@@ -6,6 +6,17 @@ class BaseRepository(ABC):
     def register_id_field(self, collection_name: str, id_field: str) -> None:
         pass
 
+    async def run_operation(
+        self,
+        collection_name: str,
+        query: dict[str, Any],
+        bindings: dict[str, Any],
+    ) -> Any:
+        """Execute a declarative custom operation. Overridden per backend."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support custom operations"
+        )
+
     @abstractmethod
     def connect(self) -> None:
         raise NotImplementedError

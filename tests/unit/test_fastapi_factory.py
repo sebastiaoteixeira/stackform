@@ -11,6 +11,7 @@ from yaml_api_generator.server.fastapi.factory import (
     create_pydantic_model,
     register_fastapi_routes,
 )
+from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
@@ -246,7 +247,7 @@ def test_routes_registered_with_correct_methods_and_paths():
             pass
 
     app = FastAPI()
-    register_fastapi_routes(app, ctx, _DummyRepo())
+    register_fastapi_routes(app, ctx, RepositoryRegistry.single(_DummyRepo()))
     registered = [(r.methods, r.path) for r in app.routes if hasattr(r, "methods")]
     assert any("POST" in methods and path == "/api/v1/posts" for methods, path in registered)
 
@@ -278,7 +279,7 @@ def test_all_crud_routes_registered():
             pass
 
     app = FastAPI()
-    register_fastapi_routes(app, ctx, _DummyRepo())
+    register_fastapi_routes(app, ctx, RepositoryRegistry.single(_DummyRepo()))
     registered_paths = {r.path for r in app.routes if hasattr(r, "path") and hasattr(r, "methods")}
     assert "/items" in registered_paths
     assert "/items/{id}" in registered_paths

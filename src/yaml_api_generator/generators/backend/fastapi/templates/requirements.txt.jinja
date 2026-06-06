@@ -1,7 +1,19 @@
+{% set col_types = [] %}
+{% for c in ctx.collections.values() %}
+{% if c.datastore_type not in col_types %}
+{% set _ = col_types.append(c.datastore_type) %}
+{% endif %}
+{% endfor %}
+{% set uses_sql = (col_types | select("in", ["postgres", "postgresql"]) | list | length) > 0 %}
+{% set uses_mongo = ((col_types | select("in", ["mongodb", "mongo"]) | list | length) > 0) or not uses_sql %}
 fastapi
 uvicorn
 pydantic
-pymongo
+{% if uses_mongo %}pymongo
+{% endif %}
+{% if uses_sql %}sqlalchemy[asyncio]
+asyncpg
+{% endif %}
 pyjwt
 uuid_utils
 {% if ctx.auth.has_oidc_auth %}httpx{% endif %}

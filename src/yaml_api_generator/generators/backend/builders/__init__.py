@@ -5,7 +5,7 @@ Orchestrates specialized builders to convert IR into compilation context.
 
 from typing import Any
 
-from yaml_api_generator.ir import IRDocument
+from yaml_api_generator.ir import IRDocument, IRPostgres
 from ..compile_context import AppConfig, CompileContext, CorsConfig
 
 from .auth_builder import AuthBuilder
@@ -55,15 +55,26 @@ class ContextBuilder:
 
         raw_collections: dict[str, Any] = {}
         for name, col in document.collections.items():
+            datastore = col.datastore or document.default_datastore
+            ds = document.datastores.get(datastore)
             raw_collections[name] = {
                 "id_field": col.idField,
                 "id_format": col.idFormat,
                 "type": col.type,
                 "fields": col.fields,
+                "datastore": datastore,
+                "datastore_type": ds.type if ds is not None else "mongodb",
             }
 
         auth = self._auth.build_auth_config(identity_map, document.collections, document.providers)
         repository_operations = self._repository.build_repository_operations(document.repositories)
+
+        datastores: dict[str, dict] = {}
+        for name, ds in document.datastores.items():
+            if isinstance(ds, IRPostgres):
+                datastores[name] = {"type": ds.type, "dsn": ds.dsn}
+            else:
+                datastores[name] = {"type": ds.type, "uri": ds.uri, "database": ds.database}
 
         return CompileContext(
             app=app,
@@ -72,6 +83,7 @@ class ContextBuilder:
             auth=auth,
             collections=raw_collections,
             repository_operations=repository_operations,
+            datastores=datastores,
         )
 
 

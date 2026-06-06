@@ -2,6 +2,7 @@
   "title": "CLI",
   "pages": [
     "build",
-    "run"
+    "run",
+    "migrate"
   ]
 }
