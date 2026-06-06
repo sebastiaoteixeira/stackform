@@ -1,0 +1,21 @@
+{% set class_name = collection_name | capitalize_collection %}
+import sqlalchemy as sa
+
+from dependencies.postgres import metadata
+from ._sql_ops import SQLRepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
+
+
+{{ collection_name }}_table = sa.Table(
+    "{{ collection_name }}",
+    metadata,
+{% for field_name, field_cfg in fields.items() if field_cfg is mapping %}
+    {{ field_name | sql_column(field_cfg, id_field) }},
+{% endfor %}
+)
+
+
+class {{ class_name }}Repository({% for op in operations %}{{ op | capitalize }}Op, {% endfor %}SQLRepositoryBase):
+    COLLECTION = "{{ collection_name }}"
+    ID_FIELD = "{{ id_field }}"
+    ID_FORMAT = "{{ id_field_format }}"
+    TABLE = {{ collection_name }}_table

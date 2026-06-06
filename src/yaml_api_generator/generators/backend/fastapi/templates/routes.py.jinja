@@ -6,13 +6,14 @@ from typing import Any
 
 from fastapi import Request
 
+{% set ds_module = "postgres" if datastore_type in ["postgres", "postgresql"] else "mongodb" %}
+{% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
 from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from ._crud_factory import make_crud_router
-{% if repo_op_routes %}
+from dependencies.{{ ds_module }} import get_database
+{% if repo_op_routes and is_mongo %}
 from fastapi.encoders import jsonable_encoder
-
-from dependencies.mongodb import get_database
 {% endif %}
 {% if auth.enabled %}
 from dependencies.authorization import AccessRule
@@ -48,8 +49,8 @@ from models.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
 {% endif %}
 
 
-def _service_factory(db):
-    return {{ collection_name | capitalize_collection }}Service({{ collection_name | capitalize_collection }}Repository(db))
+def _service_factory():
+    return {{ collection_name | capitalize_collection }}Service({{ collection_name | capitalize_collection }}Repository(get_database()))
 
 
 router = make_crud_router(
@@ -81,6 +82,7 @@ async def {{ handler_name }}(request: Request) -> Any:
     module = import_module(module_path)
     return await getattr(module, func_name)(request)
 {% endfor %}
+{% if is_mongo %}
 {% for route in repo_op_routes %}
 {% set handler_name = route.operation ~ "_" ~ collection_name %}
 {% set query = repo_queries[route.operation] %}
@@ -91,3 +93,4 @@ async def {{ handler_name }}(request: Request) -> Any:
     repo = {{ collection_name | capitalize_collection }}Repository(get_database())
     return jsonable_encoder(await repo.{{ route.operation }}({% for key, value in (query or {}).items() if key != "command" %}{{ key }}={{ value | py_literal }}{% if not loop.last %}, {% endif %}{% endfor %}))
 {% endfor %}
+{% endif %}

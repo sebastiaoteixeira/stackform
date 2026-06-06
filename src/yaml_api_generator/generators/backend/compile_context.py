@@ -133,3 +133,11 @@ class CompileContext:
     auth: AuthConfig
     collections: dict[str, Any]
     repository_operations: dict[str, list[dict]] = field(default_factory=dict)
+    datastores: dict[str, dict] = field(default_factory=dict)
+
+    @property
+    def datastore_types(self) -> set[str]:
+        return {ds["type"] for ds in self.datastores.values()}
+
+    def collection_datastore_type(self, collection: str) -> str:
+        return self.collections.get(collection, {}).get("datastore_type", "mongodb")

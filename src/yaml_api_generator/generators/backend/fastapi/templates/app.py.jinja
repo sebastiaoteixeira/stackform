@@ -7,7 +7,20 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 {% endif %}
 
-from dependencies.mongodb import connect_db, close_db
+{% set col_types = [] %}
+{% for c in ctx.collections.values() %}
+{% if c.datastore_type not in col_types %}
+{% set _ = col_types.append(c.datastore_type) %}
+{% endif %}
+{% endfor %}
+{% set uses_sql = (col_types | select("in", ["postgres", "postgresql"]) | list | length) > 0 %}
+{% set uses_mongo = ((col_types | select("in", ["mongodb", "mongo"]) | list | length) > 0) or not uses_sql %}
+{% if uses_mongo %}
+from dependencies.mongodb import connect_db as connect_mongo, close_db as close_mongo
+{% endif %}
+{% if uses_sql %}
+from dependencies.postgres import connect_db as connect_pg, close_db as close_pg
+{% endif %}
 {% set imported_collections = [] %}
 {% for route in ctx.routes %}
 {% if route.collection and route.collection not in imported_collections %}
@@ -28,9 +41,19 @@ from routes.saml_routes import router as saml_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    connect_db()
+{% if uses_mongo %}
+    connect_mongo()
+{% endif %}
+{% if uses_sql %}
+    await connect_pg()
+{% endif %}
     yield
-    await close_db()
+{% if uses_sql %}
+    await close_pg()
+{% endif %}
+{% if uses_mongo %}
+    await close_mongo()
+{% endif %}
 
 
 app = FastAPI(lifespan=lifespan)

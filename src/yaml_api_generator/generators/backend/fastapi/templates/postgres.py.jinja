@@ -1,0 +1,30 @@
+import os
+
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+
+metadata = sa.MetaData()
+
+_engine: AsyncEngine | None = None
+
+
+async def connect_db() -> None:
+    global _engine
+    dsn = os.environ.get("DATABASE_URL", "{{ dsn }}")
+    _engine = create_async_engine(dsn)
+    async with _engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+
+
+async def close_db() -> None:
+    global _engine
+    if _engine is not None:
+        await _engine.dispose()
+        _engine = None
+
+
+def get_database() -> AsyncEngine:
+    if _engine is None:
+        raise RuntimeError("Database not connected")
+    return _engine

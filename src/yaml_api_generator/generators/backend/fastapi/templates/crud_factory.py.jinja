@@ -4,9 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
-from pymongo.database import Database
 
-from dependencies.mongodb import get_database
 from services.exceptions import NotFoundError, ValidationError
 {% if auth.enabled %}
 from dependencies.auth import require_principal
@@ -18,7 +16,7 @@ def make_crud_router(
     *,
     tag: str,
     prefix: str,
-    service_factory: Callable[[Database], Any],
+    service_factory: Callable[[], Any],
     operations: list[dict[str, Any]],
     payloads: dict[str, type[BaseModel]],
     security_schemes: list[dict[str, list]] | None = None,
@@ -32,7 +30,7 @@ def make_crud_router(
 def _add_route(
     router: APIRouter,
     op: dict[str, Any],
-    service_factory: Callable[[Database], Any],
+    service_factory: Callable[[], Any],
     payloads: dict[str, type[BaseModel]],
     security_schemes: list[dict[str, list]],
 ) -> None:
@@ -59,7 +57,7 @@ def _add_route(
 
 def _build_public_handler(
     impl: Callable,
-    service_factory: Callable[[Database], Any],
+    service_factory: Callable[[], Any],
     payload_cls: type[BaseModel] | None,
     has_id_param: bool,
 ) -> Callable:
@@ -80,7 +78,7 @@ def _build_public_handler(
 {% if auth.enabled %}
 def _build_auth_handler(
     impl: Callable,
-    service_factory: Callable[[Database], Any],
+    service_factory: Callable[[], Any],
     payload_cls: type[BaseModel] | None,
     has_id_param: bool,
     rules: list,
@@ -104,7 +102,7 @@ def _build_auth_handler(
 
 def _build_handler(
     operation: str,
-    service_factory: Callable[[Database], Any],
+    service_factory: Callable[[], Any],
     needs_auth: bool,
     body_model: str | None,
     has_id_param: bool,
@@ -134,11 +132,11 @@ def _resolve_impl(operation: str) -> Callable:
 
 async def _run(
     impl: Callable,
-    service_factory: Callable[[Database], Any],
+    service_factory: Callable[[], Any],
     id: str | None,
     payload: BaseModel | None,
 ) -> Any:
-    service = service_factory(get_database())
+    service = service_factory()
     try:
         return await impl(service, id, payload)
     except NotFoundError:
@@ -150,7 +148,7 @@ async def _run(
 
 async def _run_authorized(
     impl: Callable,
-    service_factory: Callable[[Database], Any],
+    service_factory: Callable[[], Any],
     id: str | None,
     payload: BaseModel | None,
     rules: list,
@@ -161,7 +159,7 @@ async def _run_authorized(
     if not post_fetch:
         return await _run(impl, service_factory, id, payload)
 
-    service = service_factory(get_database())
+    service = service_factory()
     try:
         existing = jsonable_encoder(await service.get(id))
     except NotFoundError:
