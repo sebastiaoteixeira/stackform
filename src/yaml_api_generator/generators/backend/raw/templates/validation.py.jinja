@@ -125,7 +125,7 @@ def validate_{{ model.collection }}_{{ model.operation }}(body: dict) -> dict:
 
 {% endfor %}
 {% for identity in auth.identity_collections %}
-{% if "password" in identity.via and identity.identifier %}
+{% if identity.has_password and identity.identifier %}
 def validate_{{ identity.name }}_login(body: dict) -> dict:
     """Validate login payload for {{ identity.name }}."""
     if not isinstance(body, dict):

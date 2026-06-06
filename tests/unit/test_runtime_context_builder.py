@@ -12,10 +12,8 @@ from yaml_api_generator.ir import (
     IRRoute,
 )
 from yaml_api_generator.server.common.pipeline_builder import PipelineBuilder
-from yaml_api_generator.server.common.context_builder import (
-    _flatten_hierarchy,
-    build_runtime_context,
-)
+from yaml_api_generator.ir import flatten_role_hierarchy
+from yaml_api_generator.server.common.context_builder import build_runtime_context
 from yaml_api_generator.server.common.steps import ForbiddenError, UnauthorizedError
 from .test_repository_steps import InMemoryRepository
 
@@ -75,17 +73,17 @@ def _route(operation, collection="items", is_public=True, access_rules=None):
     )
 
 
-# --- _flatten_hierarchy ---
+# --- flatten_role_hierarchy ---
 
 
 def test_role_hierarchy_flattened_to_transitive_closure():
-    result = _flatten_hierarchy({"admin": ["moderator"], "moderator": ["user"]})
+    result = flatten_role_hierarchy({"admin": ["moderator"], "moderator": ["user"]})
     assert result["admin"] == {"moderator", "user"}
     assert result["moderator"] == {"user"}
 
 
 def test_role_hierarchy_non_included_role_not_upgraded():
-    result = _flatten_hierarchy({"admin": ["moderator"], "moderator": ["user"]})
+    result = flatten_role_hierarchy({"admin": ["moderator"], "moderator": ["user"]})
     assert "admin" not in result.get("moderator", set())
     assert "admin" not in result.get("user", set())
 

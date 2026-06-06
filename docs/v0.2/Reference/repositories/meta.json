@@ -2,6 +2,7 @@
   "title": "Repositories",
   "pages": [
     "overview",
+    "composable-crud",
     "operations"
   ]
 }

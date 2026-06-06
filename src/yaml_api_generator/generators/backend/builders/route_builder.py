@@ -38,6 +38,7 @@ class RouteBuilder:
                 access_rules = [
                     AccessRuleDescriptor(
                         principal=rule.principal,
+                        required_role=rule.required_role,
                         identity_symbols=list(rule.identity_symbols.keys()),
                         document_symbols=list(rule.document_symbols.keys()),
                         when=rule.when,

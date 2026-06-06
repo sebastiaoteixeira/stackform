@@ -15,10 +15,10 @@ def connect_db() -> None:
     _db = _client[database]
 
 
-def close_db() -> None:
+async def close_db() -> None:
     global _client, _db
     if _client is not None:
-        _client.close()
+        await _client.close()
         _client = None
         _db = None
 

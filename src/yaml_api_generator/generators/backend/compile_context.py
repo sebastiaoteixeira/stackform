@@ -106,6 +106,7 @@ class AuthConfig:
     has_oidc_auth: bool = False
     has_saml_auth: bool = False
     providers: dict[str, IRProvider] = field(default_factory=dict)
+    role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

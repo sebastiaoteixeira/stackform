@@ -2,7 +2,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
-{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
+{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete"] %}
+{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("operation", "in", crud_op_names) | list %}
 {% set ns = namespace(needs_models=false, model_imports=[]) %}
 {% for route in crud_routes %}
 {% if route.body_model %}
@@ -21,7 +22,7 @@ from api.services.exceptions import NotFoundError, ValidationError
 from api.authentication.mongodb import get_database
 {% set needs_auth = crud_routes | selectattr("needs_auth") | list %}
 {% if needs_auth %}
-from api.authentication.auth import resolve_principal
+from api.authentication.auth import resolve_principal, _principal_has_role
 {% endif %}
 
 {% set class_name = collection_name | capitalize_collection %}
@@ -61,7 +62,7 @@ from api.authentication.auth import resolve_principal
 {% set ns.first = true %}
 {% set ns.has_conditionals = false %}
 {% for rule in route.access_rules %}
-{% if rule.when is none %}
+{% if rule is unconditional %}
 {% if rule.effect == "allow" %}
         pass
 {% else %}
@@ -118,25 +119,16 @@ from api.authentication.auth import resolve_principal
 {% endfor %}
 {% set ns.first = true %}
 {% for rule in route.access_rules %}
-{% if rule.when is needs_document %}
-{% set doc_check_needed = ns.document_symbols | length > 0 %}
-{% if ns.first %}
-            if {% if doc_check_needed %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
+{% set rule_needs_doc = rule.when is not none and rule.when is needs_document %}
+{% set doc_guard = rule_needs_doc and ns.document_symbols | length > 0 %}
+{% set keyword = "if" if ns.first else "elif" %}
+            {{ keyword }} {% if doc_guard %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
                 return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
                 pass
-{% endif %}
-{% else %}
-            elif {% if doc_check_needed %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-{% else %}
-                pass
-{% endif %}
 {% endif %}
 {% set ns.first = false %}
-{% endif %}
 {% endfor %}
 {% if not ns.first %}
             else:

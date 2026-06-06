@@ -29,6 +29,8 @@ _TOKEN_PATTERNS = [
     ("NOT",        r"not"),
     ("LBRACKET",   r"\["),
     ("RBRACKET",   r"\]"),
+    ("LPAREN",     r"\("),
+    ("RPAREN",     r"\)"),
     ("COMMA",      r","),
     ("STRING",     r"'[^']*'"),
     ("FIELDREF",   r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.\w+)+"),
@@ -114,6 +116,21 @@ class _Parser:
             if operand is None:
                 return None
             return Not(operand=operand)
+        if self._peek() and self._peek()[0] == "LPAREN":
+            self._consume()
+            inner = self._parse_or()
+            if inner is None:
+                return None
+            closing = self._peek()
+            if closing is None or closing[0] != "RPAREN":
+                self.errors.append(ConfigError(
+                    code="WHEN_EXPR_INVALID",
+                    message="Unbalanced parentheses in when expression: expected ')'",
+                    path=self._path,
+                ))
+                return None
+            self._consume()
+            return inner
         return self._parse_comparison()
 
     def _parse_comparison(self) -> WhenExpr | None:

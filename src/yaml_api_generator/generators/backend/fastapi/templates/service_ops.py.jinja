@@ -1,0 +1,93 @@
+from typing import Any
+
+from services.exceptions import NotFoundError, ValidationError
+{% if auth.has_password_auth %}
+from dependencies.auth import hash_password
+{% endif %}
+
+
+class ServiceBase:
+    def __init__(self, repo: Any) -> None:
+        self._repo = repo
+
+    @property
+    def _name(self) -> str:
+        return self._repo.COLLECTION
+
+    def _before_create(self, data: dict) -> None:
+        """Hook invoked before create; overridden by identity mixins."""
+
+    def _before_write(self, data: dict) -> None:
+        """Hook invoked before create/update/replace; overridden by identity mixins."""
+
+
+class ListSvc:
+    async def list(self) -> list[dict]:
+        return await self._repo.list()
+
+
+class GetSvc:
+    async def get(self, resource_id: str) -> dict:
+        document = await self._repo.get(resource_id)
+        if document is None:
+            raise NotFoundError(self._name, resource_id)
+        return document
+
+
+class CreateSvc:
+    async def create(self, data: dict) -> dict:
+        self._before_create(data)
+        self._before_write(data)
+        return await self._repo.create(data)
+
+
+class UpdateSvc:
+    async def update(self, resource_id: str, data: dict) -> dict:
+        self._before_write(data)
+        document = await self._repo.update(resource_id, data)
+        if document is None:
+            raise NotFoundError(self._name, resource_id)
+        return document
+
+
+class ReplaceSvc:
+    async def replace(self, resource_id: str, data: dict) -> dict:
+        self._before_write(data)
+        document = await self._repo.replace(resource_id, data)
+        if document is None:
+            raise NotFoundError(self._name, resource_id)
+        return document
+
+
+class DeleteSvc:
+    async def delete(self, resource_id: str) -> dict:
+        document = await self._repo.delete(resource_id)
+        if document is None:
+            raise NotFoundError(self._name, resource_id)
+        return document
+
+
+class IdentityFieldsMixin:
+    IDENTITY_FIELDS: tuple[str, ...] = ()
+
+    def _before_create(self, data: dict) -> None:
+        for field_name in self.IDENTITY_FIELDS:
+            value = data.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValidationError(field_name, f"Missing required field: {field_name}")
+{% if auth.has_password_auth %}
+
+
+class PasswordMixin:
+    def _before_write(self, data: dict) -> None:
+        raw_password = data.pop("password", None)
+        if raw_password is None:
+            return
+        if not isinstance(raw_password, str) or not raw_password.strip():
+            raise ValidationError("password", "Password must be a non-empty string")
+        auth_data = data.get("_auth", {})
+        if not isinstance(auth_data, dict):
+            auth_data = {}
+        auth_data["passwordHash"] = hash_password(raw_password)
+        data["_auth"] = auth_data
+{% endif %}

@@ -1,186 +1,254 @@
 ---
 title: "Roles Overview"
-description: Declares per-entity roles with valid values, a default, and an optional hierarchy for role-based access control.
+description: Declare per-user roles with an enum field and wire them to authorization via auth.roles.
 ---
 
-Declares per-entity roles with valid values, a default, and an optional hierarchy for role-based access control.
+A role is an enum field on a `type: auth` entity, pointed at by `auth.roles`. The
+field's value is read on every request and used to match role-scoped access rules
+such as `access: user:admin`.
+
+> **Enforcement status**
+>
+> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> are enforced by the generated FastAPI backend, the generated DRF backend, and the
+> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
+> found, checked before ownership). Two current limitations: role hierarchy (for
+> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
+> during enforcement -- only exact role matches are checked; and conditional or
+> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
 
 ## Syntax
 
-Roles are declared at the entity level inside the `roles:` block on `type: auth` entities.
+Declare an `enum` field with the allowed role names, then name that field in
+`auth.roles`:
 
 ```yaml
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
 entities:
   user:
     type: auth
     auth:
       identifier: email
       via: password
-    roles:
-      values: [admin, moderator, user]
-      default: user
-      hierarchy:
-        admin: [moderator]
-        moderator: [user]
+      roles: role
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
 ```
 
-Roles are NOT a field. There is no `role` enum field on the entity. The `roles:` block is a standalone authorization concept.
+Roles ARE a field. The role lives in a normal enum field on the entity; `auth.roles`
+is the pointer that tells the authorizer which field holds the role. There is no
+separate entity-level `roles:` block (see [Hierarchy and current limits](#hierarchy-and-current-limits)).
 
 ## Behavior
 
-- **Parse time:** `roles.values` is validated. `roles.default` must be in `values`. All hierarchy keys and included roles must be in `values`.
-- **Compile time:** No role field appears in Pydantic models. The default role is injected into `_auth.roles` on user creation.
-- **Runtime:** The principal's role is read from `_auth.roles` in MongoDB. Role-based access rules match against this value, expanding hierarchy transitively.
+- **Parse time:** `auth.roles` must name a field that exists on the entity
+  (`AUTH_ROLES_FIELD_NOT_FOUND`) and that field must be `type: enum`
+  (`AUTH_ROLES_FIELD_NOT_ENUM`). The enum's `values`/`default` follow the normal
+  rules for an enum field.
+- **Compile time:** The role enum is an ordinary field in the generated model. It is
+  not given any special storage; it is just another column on the record.
+- **Runtime:** On each request the principal's role is read from the configured
+  `auth.roles` field on the identity record (falling back to a field named `roles`
+  then `role` if `auth.roles` is omitted). Role-scoped access rules match against
+  this value by exact comparison.
 
 ## Storage
 
-Roles are stored in the `_auth` namespace in MongoDB, alongside `passwordHash`:
+The role is stored as a plain field on the document, alongside the other fields. It
+is NOT placed in a special namespace:
 
 ```json
 {
   "id": "abc-123",
   "email": "admin@example.com",
   "displayName": "Admin",
-  "_auth": {
-    "passwordHash": "pbkdf2$sha256$390000$...",
-    "roles": "admin"
-  }
+  "role": "admin"
 }
 ```
 
-The `_auth` namespace is stripped from API responses. Roles are NOT exposed in CRUD responses and NOT writable via create/update payloads.
+Because the role is a regular field, it is returned in CRUD responses like any other
+field. If clients should not be able to set or change their own role, restrict the
+`create`/`update`/`replace` operations on the controller (see
+[Access control](../controllers/access-control.md)); there is no automatic stripping
+of the role field on write.
 
 ## Options
 
+The role mechanism is two pieces: the `auth.roles` pointer and the enum field it
+names.
+
 | Field | Required | Type | Default | Description |
 |-------|----------|------|---------|-------------|
-| `values` | yes | list of strings | -- | All valid role names for this entity. |
-| `default` | yes | string | -- | Role assigned automatically on user creation. Must be in `values`. |
-| `hierarchy` | no | map of string to list | none | Role inclusion relationships. See [hierarchy](./hierarchy.md). |
+| `auth.roles` | no | string | none | Name of the enum field that holds the role. Omit it and the authorizer falls back to a field named `roles` or `role`. |
+| field `values` | yes (on the enum field) | list of strings | -- | All valid role names. |
+| field `default` | no | string | none | Role assigned by the model default when none is supplied. See the note below on default-on-create. |
+
+## Using roles in access rules
+
+Reference a role from a controller's `access` block. The forms are:
+
+- `entity:role` -- principals of `entity` whose role equals `role`
+  (for example `user:admin`).
+- bare `role` -- shorthand for `entity:role` when there is exactly one auth entity.
+  With two or more auth entities this is ambiguous and raises
+  `ACCESS_AMBIGUOUS_ROLE` (use the scoped `entity:role` form). With no auth entity
+  it raises `ACCESS_NO_AUTH_ENTITY`.
+- `entity:*` -- any authenticated principal of `entity`, regardless of role.
+
+```yaml
+controllers:
+  myCollection:
+    service: myCollection
+    access:
+      list: public
+      create: user:admin       # only users whose role is exactly "admin"
+      delete: user:*           # any authenticated user
+```
+
+A role name in `entity:role` is matched by exact string comparison. There is no
+implicit "admin is also a moderator" inheritance today (see below).
 
 ## Examples
 
-### Flat roles (no hierarchy)
+### Flat roles
 
 ```yaml
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
 entities:
   user:
     type: auth
     auth:
       identifier: email
       via: password
-    roles:
-      values: [free, pro, enterprise]
-      default: free
+      roles: tier
     fields:
       email: { type: string, required: true, unique: true }
+      tier:
+        type: enum
+        values: [free, pro, enterprise]
+        default: free
 ```
 
-With no `hierarchy:` declared, each role matches only itself. `access: enterprise` matches only principals with role `enterprise`, not `pro` or `free`.
+`access: user:enterprise` matches only principals whose `tier` is exactly
+`enterprise`; it does not match `pro` or `free`.
 
-### Roles with hierarchy
+### Multiple auth entities with separate role fields
 
 ```yaml
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
 entities:
   user:
     type: auth
     auth:
       identifier: email
       via: password
-    roles:
-      values: [admin, moderator, user]
-      default: user
-      hierarchy:
-        admin: [moderator]    # admin users inherit moderator permissions
-        moderator: [user]     # moderator users inherit user permissions
+      roles: role
     fields:
       email: { type: string, required: true, unique: true }
-```
-
-The hierarchy flows from higher privilege to lower:
-
-```text
-admin  (highest privilege)
-  includes moderator
-    includes user  (lowest privilege)
-```
-
-- `admin` includes `moderator`, which includes `user`.
-- `access: moderator` matches both `moderator` and `admin`.
-- `access: user` matches `user`, `moderator`, and `admin`.
-
-### Multiple auth entities with separate roles
-
-```yaml
-entities:
-  user:
-    type: auth
-    auth:
-      identifier: email
-      via: password
-    roles:
-      values: [admin, moderator, user]
-      default: user
-      hierarchy:
-        admin: [moderator]
-        moderator: [user]
-    fields:
-      email: { type: string, required: true, unique: true }
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
 
   apiClient:
     type: auth
     auth:
       identifier: clientId
       via: apiKey
-    roles:
-      values: [free, premium, enterprise]
-      default: free
-      hierarchy:
-        enterprise: [premium]
-        premium: [free]
+      roles: tier
     fields:
       clientId: { type: string, required: true, unique: true }
+      apiKey: { type: string, required: true }
+      tier:
+        type: enum
+        values: [free, premium, enterprise]
+        default: free
 ```
 
-Role names are scoped to their entity. `user:admin` and `apiClient:enterprise` are independent.
+Role names are scoped to their entity. `user:admin` and `apiClient:enterprise` are
+independent. With more than one auth entity, always use the scoped `entity:role`
+form -- a bare role name raises `ACCESS_AMBIGUOUS_ROLE`.
+
+## Hierarchy and current limits
+
+Role hierarchy (declaring that one role transitively includes another) is configured
+in a top-level `roles:` map keyed by auth-entity name, not on the entity:
+
+```yaml
+roles:
+  user:
+    values: [admin, moderator, user]
+    default: user
+    hierarchy:
+      admin: [moderator]
+      moderator: [user]
+```
+
+This block is parsed and validated (an unknown entity name raises
+`ROLES_UNKNOWN_ENTITY`), but the hierarchy is NOT yet applied during enforcement in
+any target. Only exact role matches are checked: `access: user:moderator` matches
+principals whose role is exactly `moderator`, not `admin`. Treat hierarchy as a
+forward-looking declaration; for "admin OR something else" today, list multiple
+rules or use a `when` ownership rule. See
+[Role hierarchy](./hierarchy.md) for the full detail.
+
+The enum `default` populates the model default, but the create pipeline persists
+only fields the client sends (`exclude_unset`). If a client omits the role field on
+registration, the default is not written to the stored document, and the principal
+resolves with no role until the field is set. To guarantee a role, supply it
+server-side (for example via a custom handler) or require it on create.
 
 ## Edge Cases
 
-- **`default` must be in `values`.** If `default` is not one of the declared `values`, the parser raises `ROLES_DEFAULT_NOT_IN_VALUES`.
+- **Role field must exist and be an enum.** If `auth.roles` names a field that is not
+  declared, the parser raises `AUTH_ROLES_FIELD_NOT_FOUND`. If the named field is not
+  `type: enum`, it raises `AUTH_ROLES_FIELD_NOT_ENUM`.
 
-- **Hierarchy keys must be in `values`.** If a key in `hierarchy` is not in `values`, the parser raises `ROLES_HIERARCHY_KEY_INVALID`.
+- **Role read fallback.** When `auth.roles` is omitted, the authorizer reads a field
+  named `roles` (list) or `role` (string) if present. Naming the field explicitly via
+  `auth.roles` is clearer.
 
-- **Hierarchy included roles must be in `values`.** If a role listed in a hierarchy value is not in `values`, the parser raises `ROLES_HIERARCHY_VALUE_INVALID`.
+- **Single role per user.** Each user holds one role string. Access matching compares
+  it exactly; there is no transitive expansion (hierarchy is inert, see above).
 
-- **Circular hierarchy.** Circular references (e.g., `admin: [user], user: [admin]`) are NOT detected at parse time. They will cause infinite recursion at runtime during role expansion.
+- **Role is a normal field.** The role value is returned in CRUD responses and is
+  writable through `create`/`update`/`replace` unless those operations are restricted
+  on the controller. There is no built-in "promote user" endpoint; change a role via a
+  guarded update operation or a custom service handler.
 
-**Warning:** Circular role hierarchies are a known limitation. Always ensure hierarchy definitions form a directed acyclic graph (DAG).
-
-- **Roles stored in `_auth.roles`.** The role value is stored under `_auth.roles` in MongoDB. It is NOT a regular field and NOT writable via standard CRUD endpoints.
-
-- **Default role on creation.** The default role is set automatically when a user registers. There is no way to set a different initial role via the API.
-
-- **Role assignment.** There is currently no built-in endpoint for changing a user's role. Role changes must be done via direct MongoDB update or a custom service handler.
-
-**Note:** This is a known limitation. A future version may add role management endpoints.
-
-- **`roles:` on non-auth entity.** The `roles:` block is only valid on entities with `type: auth`. Declaring it on a regular entity raises `ROLES_ON_NON_AUTH_ENTITY`.
-
-- **Entity without `roles:` section.** Users have no roles. Role-based access rules (e.g., `access: user:admin`) will never match for that entity's principals.
-
-- **Single role per user.** Each user has exactly one role (stored as a string, not an array). Access rule matching treats it as a set of one, then expands via hierarchy.
+- **Entity without a role field.** If an auth entity declares no role field (and none
+  is named by `auth.roles`), its principals have no role. Role-scoped rules such as
+  `access: user:admin` never match those principals, though `identity:user` and
+  `user:*` still do.
 
 ## Errors
 
 | Condition | Error code | Message |
 |-----------|-----------|---------|
-| `default` not in `values` | `ROLES_DEFAULT_NOT_IN_VALUES` | Default role must be in values |
-| Hierarchy key not in `values` | `ROLES_HIERARCHY_KEY_INVALID` | Hierarchy key must be in values |
-| Hierarchy included role not in `values` | `ROLES_HIERARCHY_VALUE_INVALID` | Included role must be in values |
-| `roles:` on non-auth entity | `ROLES_ON_NON_AUTH_ENTITY` | Roles only valid on auth entities |
+| `auth.roles` names a missing field | `AUTH_ROLES_FIELD_NOT_FOUND` | Roles field '<name>' not found in entity '<entity>' |
+| `auth.roles` names a non-enum field | `AUTH_ROLES_FIELD_NOT_ENUM` | Roles field '<name>' must be of type 'enum' |
+| Top-level `roles:` references an unknown auth entity | `ROLES_UNKNOWN_ENTITY` | Role hierarchy references unknown auth entity '<entity>' |
 
 ## See Also
 

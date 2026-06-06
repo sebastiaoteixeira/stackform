@@ -20,6 +20,8 @@ from yaml_api_generator.ir.ui import (
 )
 from yaml_api_generator.ir.pack_manifest import PackManifest
 
+CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
+
 
 def build_generator_context(
     ir: IRDocument,
@@ -77,14 +79,23 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
         base_url = f"{base_url}/{ir.api.version}"
 
     repo_to_base_path: dict[str, str] = {}
+    repo_operations: dict[str, set[str]] = {}
+    repo_public_operations: dict[str, set[str]] = {}
     for route in ir.routes:
-        if route.service and route.operation == "list":
-            service = ir.services.get(route.service)
-            if service and service.repository:
-                path = route.path
-                if path.startswith(base_url):
-                    path = path[len(base_url):]
-                repo_to_base_path[service.repository] = path
+        if not route.service or route.operation not in CRUD_OPS:
+            continue
+        service = ir.services.get(route.service)
+        if not service or not service.repository:
+            continue
+        repo = service.repository
+        repo_operations.setdefault(repo, set()).add(route.operation)
+        if route.is_public:
+            repo_public_operations.setdefault(repo, set()).add(route.operation)
+        if route.operation == "list":
+            path = route.path
+            if path.startswith(base_url):
+                path = path[len(base_url):]
+            repo_to_base_path[repo] = path
 
     for col_name, ir_col in ir.collections.items():
         entity_name = ir_col.entity_name
@@ -129,6 +140,8 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
             auth_identifier=auth_identifier,
             api_base_path=api_base_path,
             auth_providers=auth_providers,
+            operations=frozenset(repo_operations.get(col_name, set())),
+            public_operations=frozenset(repo_public_operations.get(col_name, set())),
         )
 
     return entities

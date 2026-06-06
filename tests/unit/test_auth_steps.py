@@ -40,7 +40,7 @@ class InMemoryRepository(BaseRepository):
     def connect(self):
         pass
 
-    def close(self):
+    async def close(self):
         pass
 
     async def list(self, collection_name: str) -> list[dict[str, Any]]:

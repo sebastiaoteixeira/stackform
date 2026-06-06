@@ -26,7 +26,7 @@ def drf_field(field: FieldDescriptor) -> str:
         kwargs.append(f"default={field.default!r}")
 
     if field.type == "enum" and field.enum_values:
-        choices = [f'"{v}"' for v in field.enum_values]
+        choices = [repr(v) for v in field.enum_values]
         kwargs.append(f"choices=[{', '.join(choices)}]")
         return f"serializers.ChoiceField({', '.join(kwargs)})"
 

@@ -290,9 +290,16 @@ function AppLayout() {
             {% if view.path and view.path != '/login' %}
             <Route path="{{ view.path }}" element={<{{ view.name | pascal_case }} />} />
             {% if view.name in crud_views %}
+            {% set ops = (view_entities.get(view.name).operations if view_entities.get(view.name) else none) %}
+            {% if ops is none or 'create' in ops %}
             <Route path="{{ view.path }}/new" element={<{{ view.name | pascal_case }}Form />} />
+            {% endif %}
+            {% if ops is none or 'get' in ops %}
             <Route path="{{ view.path }}/:id" element={<{{ view.name | pascal_case }}Detail />} />
+            {% endif %}
+            {% if ops is none or 'update' in ops %}
             <Route path="{{ view.path }}/:id/edit" element={<{{ view.name | pascal_case }}Form />} />
+            {% endif %}
             {% endif %}
             {% endif %}
             {% endfor %}

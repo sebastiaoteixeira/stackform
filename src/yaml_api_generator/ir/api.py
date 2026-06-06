@@ -19,6 +19,7 @@ The IR serves as the single source of truth for code generation,
 eliminating repeated YAML parsing and validation.
 """
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -177,6 +178,47 @@ class IRRolesConfig:
     values: tuple[str, ...]
     default: str
     hierarchy: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+class RoleHierarchyCycleError(ValueError):
+    """Raised when a role hierarchy contains a cycle (or self-inclusion)."""
+
+    def __init__(self, role: str) -> None:
+        super().__init__(f"role hierarchy contains a cycle through '{role}'")
+        self.role = role
+
+
+def flatten_role_hierarchy(
+    hierarchy: dict[str, Iterable[str]],
+) -> dict[str, set[str]]:
+    """Transitively expand role inclusions.
+
+    Given {admin: [moderator], moderator: [user]},
+    produces {admin: {moderator, user}, moderator: {user}}.
+
+    Raises RoleHierarchyCycleError if the inclusions form a cycle.
+    """
+    flattened: dict[str, set[str]] = {}
+    in_progress: set[str] = set()
+
+    def _expand(role: str) -> set[str]:
+        if role in flattened:
+            return flattened[role]
+        if role in in_progress:
+            raise RoleHierarchyCycleError(role)
+        in_progress.add(role)
+        result: set[str] = set()
+        for included in hierarchy.get(role, ()):
+            result.add(included)
+            result |= _expand(included)
+        in_progress.discard(role)
+        flattened[role] = result
+        return result
+
+    for role in hierarchy:
+        _expand(role)
+
+    return flattened
 
 
 @dataclass(frozen=True)

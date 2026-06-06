@@ -242,7 +242,7 @@
     },
     "OIDCProviderConfig": {
       "type": "object",
-      "required": ["type", "client_id", "client_secret"],
+      "required": ["type", "client_id", "client_secret", "discovery_url"],
       "properties": {
         "type": { "type": "string", "const": "oidc" },
         "client_id": { "type": "string" },

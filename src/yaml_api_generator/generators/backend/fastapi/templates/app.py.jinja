@@ -30,7 +30,7 @@ from routes.saml_routes import router as saml_router
 async def lifespan(app: FastAPI):
     connect_db()
     yield
-    close_db()
+    await close_db()
 
 
 app = FastAPI(lifespan=lifespan)

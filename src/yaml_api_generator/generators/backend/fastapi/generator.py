@@ -3,15 +3,26 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from yaml_api_generator.utils.strings import to_pascal_case
+from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from . import type_mapper
+from . import access_filters, type_mapper
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "fastapi" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
+
+_CRUD_ORDER = ("list", "get", "create", "update", "replace", "delete")
+
+
+def _crud_operations(col_data: dict) -> list[str]:
+    present = {
+        route.operation
+        for route in col_data["routes"]
+        if route.handler is None and route.operation in _CRUD_ORDER
+    }
+    return [op for op in _CRUD_ORDER if op in present]
 
 
 class FastAPIGenerator(TemplateBasedGenerator):
@@ -28,6 +39,12 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["python_type"] = type_mapper.python_type
         env.filters["python_annotation"] = type_mapper.python_annotation
         env.filters["capitalize_collection"] = to_pascal_case
+        env.filters["py_identifier"] = to_py_identifier
+        env.filters["py_bool"] = access_filters.py_bool
+        env.filters["py_literal"] = access_filters.py_literal
+        env.filters["access_rule_py"] = access_filters.access_rule_py
+        env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
+        env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.globals["needs_datetime_import"] = type_mapper.needs_datetime_import
         env.globals["needs_literal_import"] = type_mapper.needs_literal_import
         env.globals["needs_any_import"] = type_mapper.needs_any_import
@@ -95,19 +112,20 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
         )
 
+        ops_template = env.get_template("service_ops.py.jinja")
+        ops_content = ops_template.render(auth=context.auth)
+        (output_dir / "services" / "_ops.py").write_text(ops_content)
+
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
         identity = find_identity(context, col_name)
         is_identity = identity is not None
 
         return {
             "collection_name": col_name,
-            "is_async": True,
+            "operations": _crud_operations(col_data),
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
             "identity_fields": extract_identity_fields(context, col_name),
-            "import_prefix": "repositories",
-            "auth_import_prefix": "dependencies.auth",
-            "service_import_prefix": "services",
         }
 
     def _render_routes(
@@ -128,6 +146,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
                     "collection_name": col_name,
                     "routes": col_data["routes"],
                     "model_index": {m.name: m for m in col_data["models"]},
+                    "repo_queries": {
+                        op["name"]: op["query"]
+                        for op in ctx.repository_operations.get(col_name, [])
+                    },
                     "auth": ctx.auth,
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
@@ -135,6 +157,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
         )
 
         routes_dir = output_dir / "routes"
+        factory_template = env.get_template("crud_factory.py.jinja")
+        factory_content = factory_template.render(auth=context.auth)
+        (routes_dir / "_crud_factory.py").write_text(factory_content)
         init_path = routes_dir / "__init__.py"
         existing_imports = init_path.read_text() if init_path.exists() else ""
         auth_imports = []
@@ -182,12 +207,17 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 import_class_suffix="Repository",
                 context_builder=lambda col_name, col_data, ctx: {
                     "collection_name": col_name,
+                    "operations": _crud_operations(col_data),
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
                 },
             )
         )
+
+        ops_template = env.get_template("repository_ops.py.jinja")
+        ops_content = ops_template.render()
+        (output_dir / "repositories" / "_ops.py").write_text(ops_content)
 
     def _render_dependencies(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -197,7 +227,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         if context.auth.enabled:
             files.append(("auth.py.jinja", "auth.py"))
-            init_imports.append("from .auth import resolve_principal")
+            files.append(("when_eval.py.jinja", "when_eval.py"))
+            files.append(("authorization.py.jinja", "authorization.py"))
+            init_imports.append("from .auth import resolve_principal, require_principal")
+            init_imports.append("from .authorization import AccessRule, authorize_pre, authorize_post")
 
         if context.auth.has_password_auth:
             files.append(("jwt_utils.py.jinja", "jwt_utils.py"))

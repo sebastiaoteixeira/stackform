@@ -105,7 +105,16 @@ class RouteTransformer:
 
                 svc_name = route_cfg["service"]
                 full_path = base_path + ctrl_base + route_cfg["path"]
-                service = services.get(svc_name)
+                service = self._resolve_service(svc_name, route_name, services)
+                if service is None:
+                    all_errors.append(
+                        ConfigError(
+                            code="DESUGAR_SERVICE_NOT_FOUND",
+                            message=f"Service '{svc_name}' referenced by route is not defined",
+                            path=f"controllers.{ctrl_name}.routes.{route_name}.service",
+                        )
+                    )
+                    continue
 
                 is_public, access_rules, access_errors = self._access_transformer.parse_access(
                     route_cfg.get("access"),
@@ -115,22 +124,15 @@ class RouteTransformer:
                 )
                 all_errors.extend(access_errors)
 
-                collection: str | None = None
-                handler: str | None = None
-                operation: str | None = None
-                if service is not None:
-                    handler = service.handler
-                    if service.repository is not None:
-                        collection = service.repository
-                        operation = service.operation or route_name
-                    else:
-                        operation = route_name
+                handler = service.handler
+                collection = service.repository
+                operation = service.operation or route_name
 
                 routes.append(
                     IRRoute(
                         method=route_cfg["method"],
                         path=full_path,
-                        operation=operation or route_name,
+                        operation=operation,
                         collection=collection,
                         service=svc_name,
                         is_public=is_public,
@@ -143,6 +145,44 @@ class RouteTransformer:
             raise ConfigErrors(all_errors)
 
         return routes
+
+    def _resolve_service(
+        self, svc_name: str, route_name: str, services: dict[str, IRService]
+    ) -> IRService | None:
+        """Resolve a route's service reference to its IRService.
+
+        Handles both the minified controller form (where the reference is an
+        already-expanded flat key like 'list-posts') and the explicit routes
+        form (where the reference is the service group 'posts' and the route
+        name is the operation). For the explicit form, CRUD operations resolve
+        to their flat key while custom operations inherit the group's
+        repository so the route is bound to a collection.
+        """
+        direct = services.get(svc_name)
+        if direct is not None:
+            return direct
+
+        flat_key = f"{route_name}-{svc_name}"
+        crud = services.get(flat_key)
+        if crud is not None:
+            return crud
+
+        repository = self._group_repository(svc_name, services)
+        if repository is None:
+            return None
+        return IRService(
+            name=flat_key, repository=repository, operation=route_name
+        )
+
+    def _group_repository(
+        self, svc_name: str, services: dict[str, IRService]
+    ) -> str | None:
+        """Find the repository backing an expanded service group."""
+        suffix = f"-{svc_name}"
+        for key, service in services.items():
+            if key.endswith(suffix) and service.repository is not None:
+                return service.repository
+        return None
 
     def build_api(self, api_data: dict[str, Any]) -> IRApi:
         """Build API configuration IR.

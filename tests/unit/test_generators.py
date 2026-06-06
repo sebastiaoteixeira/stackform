@@ -137,7 +137,7 @@ def test_fastapi_type_mapper_all_field_types():
     assert python_type(fields[1]) == "float"
     assert python_type(fields[2]) == "bool"
     assert python_type(fields[3]) == "datetime"
-    assert 'Literal["a", "b"]' in python_type(fields[4])
+    assert "Literal['a', 'b']" in python_type(fields[4])
     assert python_type(fields[5]) == "list[str]"
     assert python_type(fields[6]) == "dict[str, Any]"
     assert python_type(fields[7]) == "str"
@@ -182,6 +182,36 @@ def test_drf_when_expression_to_python():
     assert 'principal.get("sub")' in result
     assert 'document.get("authorId")' in result
     assert "==" in result
+
+
+def test_drf_in_expression_to_python():
+    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
+    from yaml_api_generator.ir.when import In, FieldRef
+
+    expr = In(
+        left=FieldRef(root="principal", path=("record", "role")),
+        values=("admin", "editor"),
+    )
+    result = _when_to_python(expr)
+    assert 'principal.get("record", {}).get("role")' in result
+    assert "in ('admin', 'editor')" in result
+    assert eval(result, {"principal": {"record": {"role": "admin"}}}) is True
+    assert eval(result, {"principal": {"record": {"role": "viewer"}}}) is False
+
+
+def test_drf_not_in_expression_to_python():
+    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
+    from yaml_api_generator.ir.when import NotIn, FieldRef
+
+    expr = NotIn(
+        left=FieldRef(root="document", path=("status",)),
+        values=("draft", "archived"),
+    )
+    result = _when_to_python(expr)
+    assert 'document.get("status")' in result
+    assert "not in ('draft', 'archived')" in result
+    assert eval(result, {"document": {"status": "published"}}) is True
+    assert eval(result, {"document": {"status": "draft"}}) is False
 
 
 def test_drf_access_rule_enforcement_in_views(tmp_path):

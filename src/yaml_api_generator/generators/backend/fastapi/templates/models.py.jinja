@@ -2,7 +2,7 @@
 {% for field in all_fields %}
 {% if field.type == "datetime" %}{% set ns.need_datetime = true %}{% endif %}
 {% if field.type == "enum" and field.enum_values %}{% set ns.need_literal = true %}{% endif %}
-{% if field.type == "object" %}{% set ns.need_any = true %}{% endif %}
+{% if field.type == "object" or (field.type == "array" and "Any" in (field | python_annotation)) %}{% set ns.need_any = true %}{% endif %}
 {% endfor %}
 {% if ns.need_datetime %}
 from datetime import datetime
@@ -17,6 +17,9 @@ from pydantic import BaseModel{% if all_fields | selectattr("constraints") | lis
 {% for model in models %}
 
 class {{ model.name }}(BaseModel):
+{% if not model.fields %}
+    pass
+{% endif %}
 {% for field in model.fields %}
 {% set annotation = field | python_annotation %}
 {% if field.constraints %}

@@ -81,6 +81,28 @@ def _extract_bearer_token(headers: dict[str, str]) -> str | None:
     return None
 
 
+ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | role_hierarchies_py }}
+
+
+def _extract_roles(doc: dict[str, Any], roles_field: str | None) -> list[str]:
+    roles = doc.get(roles_field) if roles_field else (doc.get("roles") or doc.get("role"))
+    if isinstance(roles, list):
+        return [str(role) for role in roles]
+    if isinstance(roles, str):
+        return [roles]
+    return []
+
+
+def _principal_has_role(principal: dict | None, required_role: str) -> bool:
+    if principal is None:
+        return False
+    principal_roles = principal.get("roles", [])
+    if required_role in principal_roles:
+        return True
+    entity_hierarchy = ROLE_HIERARCHIES.get(principal.get("identity_collection", ""), {})
+    return any(required_role in entity_hierarchy.get(role, set()) for role in principal_roles)
+
+
 def resolve_principal(request: Request, db) -> dict[str, Any] | None:
     headers = {k.lower(): v for k, v in request.META.items() if k.startswith("HTTP_")}
     raw_headers: dict[str, str] = {}
@@ -101,7 +123,7 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
 {% for identity in auth.identity_collections %}
 {% if identity.has_password %}
                     if collection_name == "{{ identity.name }}" and str(doc.get("{{ identity.id_field }}", "")) == sub:
-                        return {"sub": sub, "identity_collection": collection_name, "record": doc}
+                        return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }})}
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -117,7 +139,7 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
             if str(doc.get("apiKey", "")) == token:
                 subject = doc.get("{{ identity.id_field }}")
                 if subject is not None:
-                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc}
+                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }})}
 {% endif %}
 {% if identity.has_password and identity.identifier %}
     credentials = _extract_basic_credentials(raw_headers)
@@ -134,7 +156,7 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
                 continue
             subject = doc.get("{{ identity.id_field }}")
             if subject is not None:
-                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc}
+                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }})}
 {% endif %}
 {% endfor %}
 

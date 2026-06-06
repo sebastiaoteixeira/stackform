@@ -1,4 +1,10 @@
-from yaml_api_generator.ir import IRDocument, IRCollection, IRDocumentBinding, IRIdentityCollection
+from yaml_api_generator.ir import (
+    IRCollection,
+    IRDocument,
+    IRDocumentBinding,
+    IRIdentityCollection,
+    flatten_role_hierarchy,
+)
 from .server_context import (
     RuntimeAccessRule,
     RuntimeAppConfig,
@@ -76,33 +82,6 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
     return routes
 
 
-def _flatten_hierarchy(
-    hierarchy: dict[str, list[str]],
-) -> dict[str, set[str]]:
-    """Transitively expand role inclusions.
-
-    Given {admin: [moderator], moderator: [user]},
-    produces {admin: {moderator, user}, moderator: {user}}.
-    """
-    flattened: dict[str, set[str]] = {}
-
-    def _expand(role: str) -> set[str]:
-        if role in flattened:
-            return flattened[role]
-        includes = hierarchy.get(role, [])
-        result: set[str] = set()
-        for included in includes:
-            result.add(included)
-            result |= _expand(included)
-        flattened[role] = result
-        return result
-
-    for role in hierarchy:
-        _expand(role)
-
-    return flattened
-
-
 def _build_auth_config(
     identity_collections: dict[str, IRIdentityCollection],
     collections: dict[str, IRCollection],
@@ -144,7 +123,7 @@ def _build_auth_config(
                 role: list(includes)
                 for role, includes in identity.roles.hierarchy.items()
             }
-            flattened_hierarchies[name] = _flatten_hierarchy(raw)
+            flattened_hierarchies[name] = flatten_role_hierarchy(raw)
 
     return RuntimeAuthConfig(
         enabled=bool(identity_collections),

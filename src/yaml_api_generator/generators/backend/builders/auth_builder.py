@@ -5,7 +5,13 @@ Converts IR identity collections and providers into auth configuration descripto
 
 from typing import Any
 
-from yaml_api_generator.ir import IRCollection, IRIdentityCollection, IROIDCProvider, IRSAMLProvider
+from yaml_api_generator.ir import (
+    IRCollection,
+    IRIdentityCollection,
+    IROIDCProvider,
+    IRSAMLProvider,
+    flatten_role_hierarchy,
+)
 from ..compile_context import AuthConfig, IdentityCollectionDescriptor
 
 
@@ -42,6 +48,7 @@ class AuthBuilder:
         has_api_key = False
         has_oidc = any(isinstance(p, IROIDCProvider) for p in providers.values())
         has_saml = any(isinstance(p, IRSAMLProvider) for p in providers.values())
+        role_hierarchies: dict[str, dict[str, set[str]]] = {}
 
         for name, identity in identity_map.items():
             col = collections[name]
@@ -58,6 +65,8 @@ class AuthBuilder:
                 has_password = True
             if identity.has_api_key:
                 has_api_key = True
+            if identity.roles is not None and identity.roles.hierarchy:
+                role_hierarchies[name] = flatten_role_hierarchy(identity.roles.hierarchy)
 
         return AuthConfig(
             enabled=True,
@@ -67,4 +76,5 @@ class AuthBuilder:
             has_oidc_auth=has_oidc,
             has_saml_auth=has_saml,
             providers=providers,
+            role_hierarchies=role_hierarchies,
         )

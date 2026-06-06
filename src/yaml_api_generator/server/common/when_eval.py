@@ -16,8 +16,10 @@ from yaml_api_generator.ir.when import (
     And,
     Equals,
     FieldRef,
+    In,
     Not,
     NotEquals,
+    NotIn,
     Or,
     StringLiteral,
     WhenExpr,
@@ -51,6 +53,10 @@ def _evaluate(expr: WhenExpr, symbols: dict[str, dict | None]) -> bool:
         return _evaluate(expr.left, symbols) or _evaluate(expr.right, symbols)
     if isinstance(expr, Not):
         return not _evaluate(expr.operand, symbols)
+    if isinstance(expr, In):
+        return _resolve(expr.left, symbols) in expr.values
+    if isinstance(expr, NotIn):
+        return _resolve(expr.left, symbols) not in expr.values
     return False
 
 
