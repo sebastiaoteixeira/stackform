@@ -5,6 +5,8 @@ description: The `mongo:` section configures the MongoDB connection.
 
 The `mongo:` section configures the MongoDB connection.
 
+This is the single-datastore shortcut: a spec with `mongo:` behaves as one default MongoDB datastore. To use more than one database, or a relational database, use [`datastores:`](./datastores.md) instead.
+
 ## Schema
 
 ```yaml

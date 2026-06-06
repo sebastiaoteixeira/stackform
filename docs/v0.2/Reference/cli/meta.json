@@ -3,6 +3,7 @@
   "pages": [
     "compile",
     "dev",
-    "frontend"
+    "frontend",
+    "migrate"
   ]
 }

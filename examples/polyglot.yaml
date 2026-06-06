@@ -1,0 +1,86 @@
+# Polyglot persistence: documents in MongoDB, analytics in PostgreSQL.
+#
+# Posts and authors live in MongoDB; page-view events live in PostgreSQL and are
+# queried with a parameterized SQL custom operation. Run with:
+#   yaml-api dev examples/polyglot.yaml
+# The relational datastore creates its tables on connect; to graduate to
+# versioned migrations: yaml-api migrate new examples/polyglot.yaml
+#
+# Note: the SQL custom-operation route (events.forPost) is served by the run
+# server (`dev`). Generating it into a standalone backend (`build`) is a known
+# follow-up; the build target emits CRUD for relational collections today.
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+
+datastores:
+  primary:
+    type: mongodb
+    uri: ${MONGO_URI:-mongodb://localhost:27017}
+    database: ${MONGO_DB:-polyglot}
+    default: true
+  warehouse:
+    type: postgres
+    dsn: ${WAREHOUSE_DSN:-postgresql+asyncpg://postgres:postgres@localhost:5432/polyglot}
+
+entities:
+  author:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true, maxLength: 200 }
+      authorId: { type: ref, ref: author }
+      published: { type: boolean, default: false }
+
+  event:
+    fields:
+      id: { type: id }
+      postId: { type: string, required: true }
+      kind: { type: string, required: true }
+      at: { type: datetime }
+
+repositories:
+  authors:
+    entity: author
+  posts:
+    entity: post
+  events:
+    entity: event
+    datastore: warehouse
+    operations:
+      forPost:
+        query:
+          sql: "SELECT kind, count(*) AS n FROM events WHERE post_id = :post GROUP BY kind"
+          params: { post: "$params.id" }
+
+services:
+  authors: { repository: authors }
+  posts: { repository: posts }
+  events: { repository: events }
+  eventsForPost: { repository: events, operation: forPost }
+
+controllers:
+  authors:
+    base_path: /authors
+    routes:
+      list:   { service: authors, method: GET, path: "", access: public }
+      create: { service: authors, method: POST, path: "", access: public }
+
+  posts:
+    base_path: /posts
+    routes:
+      list:   { service: posts, method: GET, path: "", access: public }
+      get:    { service: posts, method: GET, path: "/{id}", access: public }
+      create: { service: posts, method: POST, path: "", access: public }
+
+  events:
+    base_path: /events
+    routes:
+      create:  { service: events, method: POST, path: "", access: public }
+      forPost: { service: eventsForPost, method: GET, path: "/for-post/{id}", access: public }

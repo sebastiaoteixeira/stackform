@@ -26,6 +26,12 @@ Type: string (entity name). Required.
 
 The entity this repository stores. Must match a non-abstract key in `entities:`.
 
+### `datastore`
+
+Type: string (datastore name). Optional.
+
+The datastore this repository is stored in, referencing a key in [`datastores:`](../configuration/datastores.md). Omit it to use the default datastore. This is how a single spec keeps different repositories in different databases.
+
 ### `operations`
 
 Type: map. Optional.
