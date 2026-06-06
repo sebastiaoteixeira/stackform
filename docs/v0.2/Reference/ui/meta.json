@@ -3,8 +3,9 @@
   "pages": [
     "overview",
     "frontend",
+    "views",
+    "operation-gating",
     "collections",
-    "components",
-    "views"
+    "components"
   ]
 }

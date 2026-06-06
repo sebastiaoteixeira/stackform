@@ -1,42 +1,46 @@
 ---
 title: "Tutorial 09: Custom Operations"
-description: Custom service operations with handler functions (e.g., publishing a note).
+description: Custom operations with handler functions (e.g. publishing a note), wiring imports, and the two handler contracts.
 ---
 
-**Concept introduced:** Custom service operations with handler functions (e.g., publishing a note).
+**Concept introduced:** Custom operations backed by handler functions (for example, publishing a note) that do not map to plain create/update/delete.
 
-## Adding a publish operation
+## When you need a custom operation
 
-Standard CRUD covers most cases. Custom operations handle domain-specific actions that don't map to a simple create/update/delete.
+Standard CRUD (`list`, `get`, `create`, `update`, `replace`, `delete`) covers most cases. A custom operation handles a domain action that is not a plain write, such as `POST /notes/{id}/publish`. You attach a handler in three places:
 
-**Project structure for custom handlers:**
+- `imports:` maps a short alias to a Python module path.
+- `services.<name>.operations.<op>: { handler: <alias>.<function> }` binds the handler to the service.
+- `controllers.<name>.operations.<op>: { method, path }` exposes it as a route. Custom operations have no default verb or path, so both `method` and `path` are required (omitting them fails generation with `DESUGAR_CUSTOM_OP_MISSING_ROUTE`).
 
-```text
-myproject/
-  myapp.yaml
-  myapp/
-    __init__.py         # empty file, makes myapp a Python package
-    handlers/
-      __init__.py       # empty file
-      notes.py          # your handler functions
-```
+## The imports block
 
-The `imports:` block in the YAML spec maps aliases to Python module paths:
+`imports:` maps aliases to dotted Python module paths. It lives at the top level of the spec:
 
 ```yaml
 imports:
   notes: myapp.handlers.notes
 ```
 
-Then `handler: notes.publish` means: call the `publish` function from `myapp.handlers.notes`.
+Resolution splits a handler reference on the first dot: `notes.publish` becomes the alias `notes` plus the rest, `publish`. The alias is looked up in `imports`, so `notes.publish` resolves to `myapp.handlers.notes.publish`. If the first segment is not a declared alias, the whole reference is used verbatim as a dotted path. The module must be importable on `PYTHONPATH` when the app runs; place your package next to the generated backend or install it.
 
 ## Full spec
+
+This spec sets `api: { basePath: /api, version: v1 }`, so every route below is prefixed with `/api/v1` (for example `POST /api/v1/notes/{id}/publish`).
 
 ```yaml
 version: "0.2"
 
 imports:
   notes: myapp.handlers.notes
+
+api:
+  basePath: /api
+  version: v1
+  operations:
+    auth:
+      register: true
+      login: true
 
 mongo:
   uri: mongodb://localhost:27017
@@ -55,15 +59,14 @@ entities:
     auth:
       identifier: email
       via: password
-    roles:
-      values: [admin, moderator, user]
-      default: user
-      hierarchy:
-        admin: [moderator]
-        moderator: [user]
+      roles: role
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
+      role:
+        type: enum
+        values: [admin, moderator, user]
+        default: user
 
   note:
     extends: base
@@ -81,8 +84,10 @@ repositories:
     entity: note
 
 services:
-  users: {}
+  users:
+    repository: users
   notes:
+    repository: notes
     operations:
       publish: { handler: notes.publish }
 
@@ -125,59 +130,130 @@ controllers:
             when: principal.sub equals document.authorId
 ```
 
-## The handler function
+Notes on this spec:
 
-The `handler: notes.publish` value points to a Python module path. The handler receives the request context and can run arbitrary logic.
+- Roles come from an enum field plus `auth.roles: role`. The standalone entity-level `roles: { values, default, hierarchy }` block is parsed but not wired in v0.2, so do not rely on it. A new user's role is set only by the enum field's `default:`; clients cannot set `role`/`roles` on write (those keys are stripped).
+- `register`/`login` routes are not generated unless you enable them with `api.operations.auth`, as shown above.
+- `access: "*"` (alias `authenticated`) means any logged-in user; `public` means no auth; `moderator` is an exact role match; the `given`/`when` rule is an ownership check.
 
-**Context object:** The handler receives a `context` object with:
+## Two handler contracts
 
-- `context.repository` -- the MongoDB repository for this service's entity
-- `context.params` -- route parameters (e.g., `context.params["id"]`)
-- `context.body` -- the parsed request body (dict)
-- `context.principal` -- the authenticated user (if any), with `sub`, `roles`, `record`
-- `context.now()` -- current UTC datetime
+The handler signature depends on the target you generate or run. Write the version that matches how you ship the app.
+
+### Generated FastAPI (and raw) backend: `request: Request`
+
+`yaml-api build myapp.yaml backend` (default target `fastapi`) emits a route that calls your handler with the FastAPI `Request` and awaits its return value. Read inputs off the request, do your own database access through the generated repository, and return a JSON-serializable value.
 
 ```python
 # myapp/handlers/notes.py
-async def publish(context):
-    doc = await context.repository.get(context.params["id"])
+from datetime import datetime, timezone
+
+from fastapi import HTTPException, Request
+
+from repositories.notes import NotesRepository
+from dependencies.mongodb import get_database
+
+
+async def publish(request: Request):
+    note_id = request.path_params["id"]
+    repo = NotesRepository(get_database())
+    doc = await repo.get(note_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Note not found")
     if doc["published"]:
-        raise ValueError("Already published")
-    return await context.repository.update(
-        context.params["id"],
-        {"published": True, "publishedAt": context.now()}
+        raise HTTPException(status_code=409, detail="Already published")
+    return await repo.update(
+        note_id,
+        {"published": True, "publishedAt": datetime.now(timezone.utc).isoformat()},
     )
 ```
 
-## Wiring the import
+Raise `HTTPException` for controlled error responses. Any other uncaught exception becomes a 500. The custom-op route on the FastAPI backend does not run the CRUD access pipeline, so if the action must be restricted, enforce it inside the handler (resolve the principal and check it yourself).
 
-Custom handler modules must be registered in the spec:
+### `yaml-api run` dev server: `context: RequestContext`
 
-```yaml
-imports:
-  notes: myapp.handlers.notes
+The in-process dev server invokes the handler as a pipeline step. It receives and returns a `RequestContext`: read inputs from the context, set `context.response`, and return the context.
+
+```python
+# myapp/handlers/notes.py (dev-server variant)
+from datetime import datetime, timezone
+
+from yaml_api_generator.server.common.steps import NotFoundError
+
+
+async def publish(context):
+    note_id = context.url_params["id"]
+    doc = await context.repository.get(note_id)
+    if doc is None:
+        raise NotFoundError("Note not found")
+    if doc["published"]:
+        raise ValueError("Already published")
+    context.response = await context.repository.update(
+        note_id,
+        {"published": True, "publishedAt": datetime.now(timezone.utc).isoformat()},
+    )
+    return context
 ```
 
-Add this at the top level of your YAML file (after `version:`).
+`RequestContext` fields available to a handler:
+
+- `context.repository` -- the repository bound to this service's collection.
+- `context.url_params` -- path parameters, for example `context.url_params["id"]`.
+- `context.body` -- the parsed JSON body, or `None`.
+- `context.headers` -- the request headers.
+- `context.principal` -- a dict for the authenticated user (or `None` on public routes): `principal["sub"]`, `principal["identity_collection"]`, `principal["record"]` (the user document with `_auth` and `password` stripped), and `principal["roles"]` when a roles field is configured. It is a plain dict, not an object with attributes.
+
+There is no `context.now()`; build timestamps yourself. Raise `NotFoundError` (imported from `yaml_api_generator.server.common.steps`) for a 404, or a plain `ValueError` for a 422. Under `run`, a non-public custom route resolves the principal and applies its access rules before your handler runs.
+
+> **Enforcement status**
+>
+> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> are enforced by the generated FastAPI backend, the generated DRF backend, and the
+> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
+> found, checked before ownership). Two current limitations: role hierarchy (for
+> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
+> during enforcement -- only exact role matches are checked; and conditional or
+> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+
+## Declarative alternative: repository query operations
+
+If your custom action is just a parameterized read, you can avoid a handler entirely with a repository-level query operation. These run against MongoDB without custom Python:
+
+```yaml
+repositories:
+  notes:
+    entity: note
+    operations:
+      published:
+        query:
+          command: find
+          filter: { published: true }
+```
+
+Supported `query.command` values are `find`, `findOne`, `aggregate`, `countDocuments`, and `estimatedDocumentCount`. `find`/`findOne`/`countDocuments` require a `filter`; `aggregate` requires a `pipeline`. A repository with no `entity` may set `query.collection` to target a collection explicitly (otherwise `QUERY_MISSING_COLLECTION`). A repository-level operation that has neither `query` nor `handler` fails with `OPERATION_MISSING_QUERY_OR_HANDLER`.
+
+A repository `operations.<op>.handler` is a second handler kind: it is invoked as `await <handler>(**kwargs)` with the call's arguments, rather than receiving a `Request` or `context`. Use the service/controller handler (above) for HTTP-shaped operations and the repository handler for data-access building blocks.
 
 ## What the custom operation generates
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /notes/{id}/publish | Custom publish handler |
+| POST | /api/v1/notes/{id}/publish | Custom publish handler |
 
-The `method:` and `path:` on the controller operation override the defaults. Without them, the engine infers from the operation name.
+The full path is `basePath + version + controller base_path + operation path`. With the `api:` block above, `/{id}/publish` under `base_path: /notes` becomes `/api/v1/notes/{id}/publish`.
 
-**Note:** Custom operations must specify both `method:` and `path:` in the controller. Unlike CRUD operations (`list`, `get`, `create`, `update`, `delete`), custom operations have no default HTTP method or path convention.
+Custom-operation routes are emitted only by the `fastapi` target. The `raw` target generates CRUD routes only and does not wire custom handlers, so build with the default `fastapi` target when you rely on a handler.
 
 ## Key points
 
-- `handler:` in a service operation points to `<import_key>.<function_name>`.
-- The `imports:` section maps keys to Python module paths.
-- Custom operations participate in the same access control system as CRUD operations.
-- Standard operations (`list`, `get`, `create`, `update`, `delete`) do not need handlers -- they are built-in.
+- `handler:` on a service operation points to `<alias>.<function>`, resolved through `imports:`.
+- Custom operations require `method` and `path` on the controller operation; there is no inference.
+- The handler contract differs by target: `request: Request` for the generated FastAPI/raw backend, `context: RequestContext` for `yaml-api run`.
+- For a plain parameterized read, prefer a repository `query` operation over a handler.
+- Custom operations participate in the same access vocabulary as CRUD; under `run` and `drf` the rules are enforced for custom routes, while the FastAPI custom route leaves enforcement to your handler.
 
 ## See Also
 
-- [Handler Context Reference](../Reference/services/handler-context.md) -- full documentation of the `context` object, `principal` attributes, and error handling.
-
+- [Handler Context Reference](../Reference/services/handler-context.md) -- the `RequestContext` object and the `run` dev-server handler contract.
+- [Custom operations reference](../Reference/services/custom-operations.md) -- the FastAPI/raw `Request` handler contract and import resolution.

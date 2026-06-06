@@ -2,8 +2,10 @@
   "title": "Auth",
   "pages": [
     "overview",
+    "auth-required-by-default",
     "password-provider",
     "apikey-provider",
-    "claim-mapping"
+    "claim-mapping",
+    "login-and-sso"
   ]
 }

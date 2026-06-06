@@ -2,7 +2,7 @@
 #
 # Posts and authors live in MongoDB; page-view events live in PostgreSQL and are
 # queried with a parameterized SQL custom operation. Run with:
-#   yaml-api dev examples/polyglot.yaml
+#   yaml-api run examples/polyglot.yaml
 # The relational datastore creates its tables on connect; to graduate to
 # versioned migrations: yaml-api migrate new examples/polyglot.yaml
 #

@@ -45,4 +45,4 @@ yaml-api migrate down my-spec.yaml --to -1
 ## See Also
 
 - [`datastores:`](../configuration/datastores.md) -- declaring relational datastores
-- [`dev`](./dev.md) -- the development server
+- [`run`](./run.md) -- the development server
