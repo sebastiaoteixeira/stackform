@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from ..common.context_builder import build_runtime_context
-from ..common.loader import create_repository, ensure_spec_dir_importable
+from ..common.loader import create_repositories, ensure_spec_dir_importable
 from .runner import ASGIApp
 
 
@@ -18,7 +18,7 @@ def build_raw_app(yaml_file: str, schema_file: str | Path | None = None) -> ASGI
         Configured ASGI application
     """
     ensure_spec_dir_importable(yaml_file)
-    ir, repository = create_repository(yaml_file, schema_file)
+    ir, registry = create_repositories(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
 
-    return ASGIApp(ctx, repository)
+    return ASGIApp(ctx, registry)

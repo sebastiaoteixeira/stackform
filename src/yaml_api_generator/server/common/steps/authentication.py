@@ -6,7 +6,7 @@ from ..auth.jwt import decode_jwt_token
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
 from ..request_context import RequestContext
 from ..server_context import RuntimeIdentityDescriptor
-from ..repositories import BaseRepository
+from ..repositories import BaseRepository, RepositoryRegistry
 from ..utils.field_access import get_nested_field
 from ..utils.document_matcher import find_document_with_password
 from . import Step
@@ -16,7 +16,7 @@ from .authorization import UnauthorizedError
 def ResolvePrincipalStep(
     identity_collections: dict[str, RuntimeIdentityDescriptor],
     identity_id_fields: dict[str, str],
-    repository: BaseRepository,
+    registry: RepositoryRegistry,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
         if ctx.principal is not None:
@@ -24,7 +24,7 @@ def ResolvePrincipalStep(
         ctx.principal = await _resolve_identity_principal(
             identity_collections=identity_collections,
             identity_id_fields=identity_id_fields,
-            repository=repository,
+            registry=registry,
             headers=ctx.headers,
         )
         return ctx
@@ -36,7 +36,7 @@ async def _resolve_jwt_principal(
     token: str,
     identity_collections: dict[str, RuntimeIdentityDescriptor],
     identity_id_fields: dict[str, str],
-    repository: BaseRepository,
+    registry: RepositoryRegistry,
 ) -> dict[str, Any] | None:
     claims = decode_jwt_token(token)
     if claims is None:
@@ -55,7 +55,7 @@ async def _resolve_jwt_principal(
     if id_field is None:
         return None
 
-    documents = await repository.list(collection_name)
+    documents = await registry.for_collection(collection_name).list(collection_name)
     for doc in documents:
         if str(doc.get(id_field, "")) == sub:
             return _build_principal(
@@ -71,7 +71,7 @@ async def _resolve_jwt_principal(
 async def _resolve_identity_principal(
     identity_collections: dict[str, RuntimeIdentityDescriptor],
     identity_id_fields: dict[str, str],
-    repository: BaseRepository,
+    registry: RepositoryRegistry,
     headers: dict[str, str],
 ) -> dict[str, Any] | None:
     bearer_token = extract_bearer_token(headers)
@@ -80,7 +80,7 @@ async def _resolve_identity_principal(
             bearer_token,
             identity_collections,
             identity_id_fields,
-            repository,
+            registry,
         )
         if jwt_principal is not None:
             return jwt_principal
@@ -92,7 +92,7 @@ async def _resolve_identity_principal(
         principal = await _resolve_identity_for_collection(
             identity,
             id_field,
-            repository,
+            registry.for_collection(identity.name),
             headers,
         )
         if principal is not None:

@@ -13,6 +13,14 @@ class RuntimeCollectionDescriptor:
     id_field: str
     id_format: str
     fields: dict[str, Any]
+    datastore: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeOperationDescriptor:
+    name: str
+    query: dict | None = None
+    handler: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,3 +87,4 @@ class RuntimeContext:
     collections: dict[str, RuntimeCollectionDescriptor]
     routes: list[RuntimeRouteDescriptor]
     auth: RuntimeAuthConfig
+    operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)

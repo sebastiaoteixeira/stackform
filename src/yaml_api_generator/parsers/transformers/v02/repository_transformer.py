@@ -7,6 +7,7 @@ from typing import Any
 
 from yaml_api_generator.ir import CRUD_OPERATIONS, IROperation, IRRepository
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+from .datastore_transformer import resolve_binding
 
 
 class RepositoryTransformer:
@@ -42,6 +43,9 @@ class RepositoryTransformer:
         self,
         repos_data: dict[str, Any],
         defaults: dict[str, Any],
+        datastore_names: set[str] | None = None,
+        default_datastore: str = "default",
+        datastore_types: dict[str, str] | None = None,
     ) -> tuple[dict[str, IRRepository], list[ConfigError]]:
         """Transform repository configurations to IR.
 
@@ -62,6 +66,15 @@ class RepositoryTransformer:
             entity = repo_cfg.get("entity")
             crud_raw: list[str] | None = repo_cfg.get("crud")
             operations_raw: dict[str, Any] = repo_cfg.get("operations", {})
+
+            if datastore_names is None:
+                datastore = repo_cfg.get("datastore") or default_datastore
+            else:
+                datastore, binding_error = resolve_binding(
+                    repo_name, repo_cfg, datastore_names, default_datastore
+                )
+                if binding_error is not None:
+                    errors.append(binding_error)
 
             if crud_raw is not None and entity is None:
                 errors.append(ConfigError(
@@ -99,27 +112,49 @@ class RepositoryTransformer:
                     continue
 
                 if query is not None:
-                    command = query.get("command")
-                    if command not in self._QUERY_COMMANDS:
+                    ds_type = (datastore_types or {}).get(datastore)
+                    op_path = f"repositories.{repo_name}.operations.{op_name}.query"
+                    if "sql" in query:
+                        if ds_type in ("mongodb", "mongo"):
+                            errors.append(ConfigError(
+                                code="QUERY_FORM_MISMATCH",
+                                message=f"Operation '{op_name}' uses a SQL query but datastore '{datastore}' is MongoDB",
+                                path=f"{op_path}.sql",
+                            ))
+                        elif not isinstance(query.get("sql"), str) or not query["sql"].strip():
+                            errors.append(ConfigError(
+                                code="QUERY_SQL_INVALID",
+                                message=f"Operation '{op_name}' has an empty or non-string 'sql'",
+                                path=f"{op_path}.sql",
+                            ))
+                    elif ds_type in ("postgres", "postgresql"):
                         errors.append(ConfigError(
-                            code="QUERY_COMMAND_UNKNOWN",
-                            message=f"Unknown query command '{command}' in operation '{op_name}'",
-                            path=f"repositories.{repo_name}.operations.{op_name}.query.command",
+                            code="QUERY_FORM_MISMATCH",
+                            message=f"Operation '{op_name}' uses a MongoDB command but datastore '{datastore}' is relational; use 'sql'",
+                            path=f"{op_path}.command",
                         ))
                     else:
-                        required_field = self._QUERY_REQUIRED_FIELDS.get(command)
-                        if required_field and required_field not in query:
+                        command = query.get("command")
+                        if command not in self._QUERY_COMMANDS:
                             errors.append(ConfigError(
-                                code="QUERY_MISSING_FIELD",
-                                message=f"Query command '{command}' requires field '{required_field}'",
-                                path=f"repositories.{repo_name}.operations.{op_name}.query",
+                                code="QUERY_COMMAND_UNKNOWN",
+                                message=f"Unknown query command '{command}' in operation '{op_name}'",
+                                path=f"{op_path}.command",
                             ))
-                        if entity is None and query.get("collection") is None:
-                            errors.append(ConfigError(
-                                code="QUERY_MISSING_COLLECTION",
-                                message=f"Operation '{op_name}' has no entity on repository and no 'collection' in query",
-                                path=f"repositories.{repo_name}.operations.{op_name}.query",
-                            ))
+                        else:
+                            required_field = self._QUERY_REQUIRED_FIELDS.get(command)
+                            if required_field and required_field not in query:
+                                errors.append(ConfigError(
+                                    code="QUERY_MISSING_FIELD",
+                                    message=f"Query command '{command}' requires field '{required_field}'",
+                                    path=op_path,
+                                ))
+                            if entity is None and query.get("collection") is None:
+                                errors.append(ConfigError(
+                                    code="QUERY_MISSING_COLLECTION",
+                                    message=f"Operation '{op_name}' has no entity on repository and no 'collection' in query",
+                                    path=op_path,
+                                ))
 
                 ops_dict[op_name] = IROperation(name=op_name, query=query, handler=handler)
 
@@ -136,6 +171,7 @@ class RepositoryTransformer:
                 entity=entity,
                 crud=crud_ops,
                 operations=ops_dict,
+                datastore=datastore,
             )
 
         return repositories, errors

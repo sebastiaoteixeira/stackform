@@ -18,6 +18,8 @@ class CollectionTransformer:
         entities_data: dict[str, Any],
         repos_data: dict[str, Any],
         defaults: dict[str, Any],
+        datastore_names: set[str] | None = None,
+        default_datastore: str = "default",
     ) -> tuple[dict[str, IRCollection], list[ConfigError]]:
         """Transform entity definitions to IR collections.
 
@@ -89,6 +91,7 @@ class CollectionTransformer:
                 idField=id_field,
                 idFormat=id_format,
                 fields=fields,
+                datastore=repo_cfg.get("datastore") or default_datastore,
             )
 
         return collections, errors

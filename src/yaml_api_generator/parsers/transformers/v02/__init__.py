@@ -11,6 +11,7 @@ from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 
 from .access_transformer import AccessTransformer
 from .collection_transformer import CollectionTransformer
+from .datastore_transformer import parse_datastores
 from .identity_transformer import IdentityTransformer
 from .repository_transformer import RepositoryTransformer
 from .route_transformer import RouteTransformer
@@ -48,6 +49,12 @@ class V02Transformer:
         roles_data: dict[str, Any] = resolved.get("roles", {})
         providers_data: dict[str, Any] = resolved.get("providers", {})
 
+        datastores, default_datastore, datastore_errors = parse_datastores(resolved)
+        if datastore_errors:
+            raise ConfigErrors(datastore_errors)
+        datastore_names = set(datastores)
+        datastore_types = {name: ds.type for name, ds in datastores.items()}
+
         repo_entity_map: dict[str, str] = {
             repo_name: repo_cfg["entity"]
             for repo_name, repo_cfg in repos_data.items()
@@ -62,12 +69,14 @@ class V02Transformer:
         }
 
         collections, id_errors = self._collection.transform(
-            entities_data, repos_data, defaults
+            entities_data, repos_data, defaults, datastore_names, default_datastore
         )
         if id_errors:
             raise ConfigErrors(id_errors)
 
-        repositories, repo_errors = self._repository.transform(repos_data, defaults)
+        repositories, repo_errors = self._repository.transform(
+            repos_data, defaults, datastore_names, default_datastore, datastore_types
+        )
         if repo_errors:
             raise ConfigErrors(repo_errors)
 
@@ -109,6 +118,8 @@ class V02Transformer:
             services=services,
             role_hierarchies=role_hierarchies,
             mongo=self._route.build_mongo(mongo_config),
+            datastores=datastores,
+            default_datastore=default_datastore,
             deploy=self._route.build_deploy(resolved.get("deploy"), resolved, mongo_config),
             repositories=repositories,
             providers=providers,

@@ -5,7 +5,7 @@ from typing import Any
 from ..common.server_context import RuntimeContext, RuntimeRouteDescriptor
 from ..common.pipeline import Pipeline
 from ..common.pipeline_builder import PipelineBuilder
-from ..common.repositories import BaseRepository
+from ..common.repositories import RepositoryRegistry
 from ..common.steps import ForbiddenError, NotFoundError, UnauthorizedError
 
 
@@ -18,10 +18,10 @@ def _compile_path(path: str) -> re.Pattern[str]:
 
 
 class ASGIApp:
-    def __init__(self, ctx: RuntimeContext, repository: BaseRepository) -> None:
-        self._repository = repository
+    def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
+        self._registry = registry
         self._routes: dict[str, list[_RouteEntry]] = {}
-        builder = PipelineBuilder(ctx=ctx, repository=repository)
+        builder = PipelineBuilder(ctx=ctx, registry=registry)
 
         for route in ctx.routes:
             pipeline = builder.build_for_route(route)
@@ -51,7 +51,8 @@ class ASGIApp:
             if message["type"] == "lifespan.startup":
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
-                await self._repository.close()
+                for repository in self._registry.all():
+                    await repository.close()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
 

@@ -11,6 +11,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeIdentityDescriptor,
 )
 from yaml_api_generator.server.common.steps.authentication import ResolvePrincipalStep
+from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.auth.utils import (
     extract_api_key,
     extract_basic_credentials,
@@ -204,7 +205,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -230,7 +231,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "wrong")})
         result = await step(ctx)
@@ -254,7 +255,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(
             headers={"Authorization": _basic_header("other@b.com", "secret")}
@@ -284,7 +285,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"clients": identity},
             identity_id_fields={"clients": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"X-API-Key": "ak123"})
         result = await step(ctx)
@@ -309,7 +310,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"clients": identity},
             identity_id_fields={"clients": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"X-API-Key": "wrong"})
         result = await step(ctx)
@@ -322,7 +323,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={})
         result = await step(ctx)
@@ -347,7 +348,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -374,7 +375,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -409,7 +410,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": user_identity, "admins": admin_identity},
             identity_id_fields={"users": "id", "admins": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -438,7 +439,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": f"Bearer {token}"})
         result = await step(ctx)
@@ -452,7 +453,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": "Bearer invalid.token.here"})
         result = await step(ctx)
@@ -465,7 +466,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -487,7 +488,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"clients": identity},
             identity_id_fields={"clients": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": "Bearer ak123"})
         result = await step(ctx)
@@ -512,7 +513,7 @@ class TestResolvePrincipalStep:
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
-            repository=repo,
+            registry=RepositoryRegistry.single(repo),
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)

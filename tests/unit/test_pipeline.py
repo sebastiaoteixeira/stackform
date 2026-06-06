@@ -4,6 +4,7 @@ from yaml_api_generator.ir import IRDocumentBinding, IRProviderBinding
 from yaml_api_generator.server.common.request_context import RequestContext
 from yaml_api_generator.server.common.pipeline import Pipeline
 from yaml_api_generator.server.common.pipeline_builder import PipelineBuilder
+from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.server_context import (
     RuntimeAccessRule,
     RuntimeAppConfig,
@@ -60,6 +61,7 @@ def _make_runtime_context(
             "collections": cols,
             "routes": rts,
             "auth": auth,
+            "operations": {},
         },
     )()
 
@@ -158,7 +160,7 @@ async def test_builder_custom_handler_route_calls_handler():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run()
     assert result.response == {"handled": True}
 
@@ -199,7 +201,7 @@ async def test_builder_login_route_validates_and_returns_token():
         "u1": {"id": "u1", "email": "a@b.com", "_auth": {"passwordHash": hash_password("secret")}}
     }
 
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(body={"email": "a@b.com", "password": "secret"})
     assert "token" in result.response
 
@@ -231,7 +233,7 @@ async def test_builder_login_route_missing_body_raises():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(ValueError):
         await pipeline.run(body={"email": "a@b.com"})  # missing password
 
@@ -247,7 +249,7 @@ async def test_builder_standard_crud_invalid_body_raises_validation_error():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(ValueError):
         await pipeline.run(body={})  # missing required "title"
 
@@ -263,7 +265,7 @@ async def test_builder_standard_crud_valid_body_creates_item():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(body={"title": "My Item"})
     assert result.response is not None
     assert result.response.get("title") == "My Item"
@@ -288,7 +290,7 @@ async def test_builder_non_public_route_rejects_unauthenticated():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(UnauthorizedError):
         await pipeline.run(body={"title": "x"}, headers={})  # no auth header
 
@@ -304,7 +306,7 @@ async def test_builder_public_route_succeeds_without_auth():
     )
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(headers={})
     assert result.response == []  # empty list, no auth error
 
@@ -341,7 +343,7 @@ async def test_builder_update_with_document_rule_allows_matching_principal():
     repo = InMemoryRepository()
     repo.register_id_field("items", "id")
     repo._data["items"] = {"item-1": {"id": "item-1", "title": "Old", "authorId": "user-1"}}
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(
         url_params={"id": "item-1"},
         body={"title": "New"},
@@ -382,7 +384,7 @@ async def test_builder_update_with_document_rule_denies_non_matching_principal()
     repo = InMemoryRepository()
     repo.register_id_field("items", "id")
     repo._data["items"] = {"item-1": {"id": "item-1", "title": "Old", "authorId": "user-1"}}
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(ForbiddenError):
         await pipeline.run(
             url_params={"id": "item-1"},
@@ -418,7 +420,7 @@ async def test_builder_identity_create_without_password_raises():
         has_password_auth=True,
     )
     repo = InMemoryRepository()
-    pipeline = PipelineBuilder(rc, repo).build_for_route(route)
+    pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(ValueError):
         await pipeline.run(body={"email": "a@b.com"})  # missing password
 
@@ -434,4 +436,4 @@ def test_builder_unsupported_operation_raises():
     rc = _make_runtime_context(routes=[route])
     repo = InMemoryRepository()
     with pytest.raises(ValueError, match="Unsupported operation"):
-        PipelineBuilder(rc, repo).build_for_route(route)
+        PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)

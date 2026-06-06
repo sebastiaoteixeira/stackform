@@ -21,6 +21,7 @@ class Pipeline:
         principal: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
         response: Any | None = None,
+        repositories: Any | None = None,
     ) -> None:
         self.steps = list(steps)
         self._base_ctx = RequestContext(
@@ -35,6 +36,7 @@ class Pipeline:
             principal=deepcopy(principal) if principal is not None else None,
             body=deepcopy(body) if body is not None else None,
             response=deepcopy(response) if response is not None else None,
+            repositories=repositories,
         )
 
     def _clone_context(self, ctx: RequestContext) -> RequestContext:
@@ -50,6 +52,7 @@ class Pipeline:
             principal=deepcopy(ctx.principal) if ctx.principal is not None else None,
             body=deepcopy(ctx.body) if ctx.body is not None else None,
             response=deepcopy(ctx.response) if ctx.response is not None else None,
+            repositories=ctx.repositories,
         )
 
     async def run(

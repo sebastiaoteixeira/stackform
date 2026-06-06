@@ -2,7 +2,7 @@ import importlib
 
 from .server_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
-from .repositories import BaseRepository
+from .repositories import RepositoryRegistry
 from .steps import (
     AuthorizeRouteStep,
     LoginStep,
@@ -11,6 +11,7 @@ from .steps import (
     RepositoryDeleteStep,
     RepositoryGetStep,
     RepositoryListStep,
+    RepositoryOperationStep,
     RepositoryReplaceStep,
     ResolvePrincipalStep,
     RepositoryUpdateStep,
@@ -18,6 +19,8 @@ from .steps import (
     ValidateBodyStep,
     ValidateIdentityCreateStep,
 )
+
+_CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
 
 
 def _import_handler(dotted_path: str) -> Step:
@@ -30,15 +33,17 @@ def _import_handler(dotted_path: str) -> Step:
 
 
 class PipelineBuilder:
-    def __init__(self, ctx: RuntimeContext, repository: BaseRepository) -> None:
+    def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
         self._ctx = ctx
-        self._repository = repository
+        self._registry = registry
         for name, col in ctx.collections.items():
-            repository.register_id_field(name, col.id_field)
+            registry.for_collection(name).register_id_field(name, col.id_field)
 
     def build_for_route(self, route: RuntimeRouteDescriptor) -> Pipeline:
         if route.handler is not None:
             return self._build_handler_pipeline(route)
+
+        repository = self._registry.for_collection(route.collection)
 
         if route.operation == "login":
             identity = self._ctx.auth.identity_collections.get(route.collection)
@@ -46,21 +51,23 @@ class PipelineBuilder:
             return Pipeline(
                 steps=[
                     ValidateBodyStep(collection, "login", identity),
-                    LoginStep(identity, collection.id_field, self._repository),
+                    LoginStep(identity, collection.id_field, repository),
                 ],
                 method=route.method,
                 path=route.path,
                 api_version=self._ctx.app.api_version,
                 collection=route.collection,
                 operation=route.operation,
-                repository=self._repository,
+                repository=repository,
+                repositories=self._registry,
             )
 
         steps = self._base_steps(route)
         identity_step = self._identity_step(route)
         if identity_step is not None:
             steps.append(identity_step)
-        steps.append(self._validate_body_step(route))
+        if route.operation in _CRUD_OPS:
+            steps.append(self._validate_body_step(route))
 
         post_fetch_step = self._post_fetch_authorize_step(route)
         if post_fetch_step is not None and route.operation in (
@@ -87,7 +94,8 @@ class PipelineBuilder:
             api_version=self._ctx.app.api_version,
             collection=route.collection,
             operation=route.operation,
-            repository=self._repository,
+            repository=repository,
+            repositories=self._registry,
         )
 
     def _build_handler_pipeline(self, route: RuntimeRouteDescriptor) -> Pipeline:
@@ -101,7 +109,8 @@ class PipelineBuilder:
             api_version=self._ctx.app.api_version,
             collection=route.collection,
             operation=route.operation,
-            repository=self._repository,
+            repository=self._registry.for_collection(route.collection),
+            repositories=self._registry,
         )
 
     def _base_steps(self, route: RuntimeRouteDescriptor) -> list[Step]:
@@ -112,7 +121,7 @@ class PipelineBuilder:
                 ResolvePrincipalStep(
                     self._ctx.auth.identity_collections,
                     self._ctx.auth.identity_id_fields,
-                    self._repository,
+                    self._registry,
                 )
             )
 
@@ -169,4 +178,11 @@ class PipelineBuilder:
             return RepositoryReplaceStep(collection_name, id_field, uses_password)
         if operation == "delete":
             return RepositoryDeleteStep(collection_name, id_field)
+
+        descriptor = self._ctx.operations.get(collection_name, {}).get(operation)
+        if descriptor is not None:
+            if descriptor.query is not None:
+                return RepositoryOperationStep(collection_name, descriptor.query, id_field)
+            if descriptor.handler is not None:
+                return _import_handler(descriptor.handler)
         raise ValueError(f"Unsupported operation: {operation}")
