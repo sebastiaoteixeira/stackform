@@ -159,9 +159,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         )
 
         routes_dir = output_dir / "routes"
-        factory_template = env.get_template("crud_factory.py.jinja")
-        factory_content = factory_template.render(auth=context.auth)
-        (routes_dir / "_crud_factory.py").write_text(factory_content)
         init_path = routes_dir / "__init__.py"
         existing_imports = init_path.read_text() if init_path.exists() else ""
         auth_imports = []
