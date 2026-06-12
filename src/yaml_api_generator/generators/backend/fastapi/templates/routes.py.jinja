@@ -4,19 +4,19 @@
 {% set repo_op_routes = routes | rejectattr("handler") | rejectattr("operation", "in", crud_op_names) | list %}
 from typing import Any
 
-from fastapi import Request
+from fastapi import APIRouter{% if auth.enabled %}, Depends{% endif %}{% if custom_routes or repo_op_routes %}, Request{% endif %}
 
 {% set ds_module = "postgres" if datastore_type in ["postgres", "postgresql"] else "mongodb" %}
 {% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
 from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
-from ._crud_factory import make_crud_router
 from dependencies.{{ ds_module }} import get_database
 {% if repo_op_routes and is_mongo %}
 from fastapi.encoders import jsonable_encoder
 {% endif %}
 {% if auth.enabled %}
-from dependencies.authorization import AccessRule
+from dependencies.auth import require_principal
+from dependencies.authorization import AccessRule, authorize_pre, authorize_post
 from dependencies.when_eval import (
     FieldRef,
     StringLiteral,
@@ -49,28 +49,93 @@ from models.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
 {% endif %}
 
 
-def _service_factory():
+def _service() -> {{ collection_name | capitalize_collection }}Service:
     return {{ collection_name | capitalize_collection }}Service({{ collection_name | capitalize_collection }}Repository(get_database()))
 
 
-router = make_crud_router(
-    tag="{{ collection_name | capitalize_collection }}",
-    prefix="",
-    service_factory=_service_factory,
-    operations=[
+router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
+
+{% macro openapi_extra(route) %}{% if route.needs_auth and security_schemes %}, openapi_extra={"security": {{ security_schemes }}}{% endif %}{% endmacro %}
+{% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% endmacro %}
+{% macro access_rules_list(route) %}[{% for rule in route.access_rules or [] %}{{ rule | access_rule_py }}{% if not loop.last %}, {% endif %}{% endfor %}]{% endmacro %}
+
 {% for route in crud_routes %}
-        {"operation": "{{ route.operation }}", "method": "{{ route.method }}", "path": "{{ route.path }}", "needs_auth": {{ route.needs_auth | py_bool }}, "has_id_param": {{ route.has_id_param | py_bool }}{% if route.body_model %}, "body_model": "{{ route.body_model }}"{% endif %}{% if auth.enabled %}, "access_rules": [{% for rule in route.access_rules or [] %}{{ rule | access_rule_py }}{% if not loop.last %}, {% endif %}{% endfor %}], "post_fetch": {{ (route is needs_post_fetch) | py_bool }}{% endif %}},
-{% endfor %}
-    ],
-    payloads={
-{% for model in ns.model_imports %}
-        "{{ model }}": {{ model }},
-{% endfor %}
-    },
-{% if security_schemes %}
-    security_schemes={{ security_schemes }},
+{% if route.operation == "list" %}
+@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+async def list_{{ collection_name }}({{ auth_param(route) | trim(chars=", ") }}) -> Any:
+{% if auth.enabled and route.needs_auth %}
+    authorize_pre({{ access_rules_list(route) }}, principal)
 {% endif %}
-)
+    return await _service().list()
+
+
+{% elif route.operation == "get" %}
+@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
+{% if auth.enabled and route.needs_auth %}
+    authorize_pre({{ access_rules_list(route) }}, principal)
+{% if route is needs_post_fetch %}
+    existing = await _service().get(id)
+    authorize_post({{ access_rules_list(route) }}, principal, existing)
+    return existing
+{% else %}
+    return await _service().get(id)
+{% endif %}
+{% else %}
+    return await _service().get(id)
+{% endif %}
+
+
+{% elif route.operation == "create" %}
+@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+async def create_{{ collection_name }}(payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
+{% if auth.enabled and route.needs_auth %}
+    authorize_pre({{ access_rules_list(route) }}, principal)
+{% endif %}
+    return await _service().create(payload.model_dump(exclude_unset=True))
+
+
+{% elif route.operation == "update" %}
+@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
+{% if auth.enabled and route.needs_auth %}
+    authorize_pre({{ access_rules_list(route) }}, principal)
+{% if route is needs_post_fetch %}
+    existing = await _service().get(id)
+    authorize_post({{ access_rules_list(route) }}, principal, existing)
+{% endif %}
+{% endif %}
+    return await _service().update(id, payload.model_dump(exclude_unset=True))
+
+
+{% elif route.operation == "replace" %}
+@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
+{% if auth.enabled and route.needs_auth %}
+    authorize_pre({{ access_rules_list(route) }}, principal)
+{% if route is needs_post_fetch %}
+    existing = await _service().get(id)
+    authorize_post({{ access_rules_list(route) }}, principal, existing)
+{% endif %}
+{% endif %}
+    return await _service().replace(id, payload.model_dump(exclude_unset=True))
+
+
+{% elif route.operation == "delete" %}
+@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+async def delete_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
+{% if auth.enabled and route.needs_auth %}
+    authorize_pre({{ access_rules_list(route) }}, principal)
+{% if route is needs_post_fetch %}
+    existing = await _service().get(id)
+    authorize_post({{ access_rules_list(route) }}, principal, existing)
+{% endif %}
+{% endif %}
+    return await _service().delete(id)
+
+
+{% endif %}
+{% endfor %}
 {% for route in custom_routes %}
 {% set handler_name = route.operation ~ "_" ~ collection_name %}
 
