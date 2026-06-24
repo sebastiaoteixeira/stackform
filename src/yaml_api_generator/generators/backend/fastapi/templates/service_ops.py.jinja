@@ -7,23 +7,53 @@ from dependencies.auth import hash_password
 
 
 class ServiceBase:
-    def __init__(self, repo: Any) -> None:
+    def __init__(self, repo: Any, principal: dict[str, Any] | None = None) -> None:
         self._repo = repo
+        self._principal = principal
 
     @property
     def _name(self) -> str:
         return self._repo.COLLECTION
 
-    def _before_create(self, data: dict) -> None:
-        """Hook invoked before create; overridden by identity mixins."""
+    async def _before_create(self, data: dict) -> None:
+        """Hook invoked before create; override to validate or enrich data."""
 
-    def _before_write(self, data: dict) -> None:
-        """Hook invoked before create/update/replace; overridden by identity mixins."""
+    async def _after_create(self, document: dict) -> None:
+        """Hook invoked after create; override to react to the new document."""
+
+    async def _before_write(self, data: dict) -> None:
+        """Hook invoked before create/update/replace; override for cross-cutting write logic."""
+
+    async def _before_update(self, resource_id: str, data: dict) -> None:
+        """Hook invoked before update; override to validate or enrich partial data."""
+
+    async def _after_update(self, document: dict) -> None:
+        """Hook invoked after update; override to react to the updated document."""
+
+    async def _before_replace(self, resource_id: str, data: dict) -> None:
+        """Hook invoked before replace; override to validate the replacement payload."""
+
+    async def _after_replace(self, document: dict) -> None:
+        """Hook invoked after replace; override to react to the replaced document."""
+
+    async def _before_delete(self, resource_id: str) -> None:
+        """Hook invoked before delete; override to enforce preconditions."""
+
+    async def _after_delete(self, document: dict) -> None:
+        """Hook invoked after delete; override to perform cleanup."""
+
+    async def _after_get(self, document: dict) -> None:
+        """Hook invoked after get; override to transform or audit the fetched document."""
+
+    async def _after_list(self, documents: list[dict]) -> None:
+        """Hook invoked after list; override to filter or annotate the result set."""
 
 
 class ListSvc:
     async def list(self) -> list[dict]:
-        return await self._repo.list()
+        documents = await self._repo.list()
+        await self._after_list(documents)
+        return documents
 
 
 class GetSvc:
@@ -31,46 +61,55 @@ class GetSvc:
         document = await self._repo.get(resource_id)
         if document is None:
             raise NotFoundError(self._name, resource_id)
+        await self._after_get(document)
         return document
 
 
 class CreateSvc:
     async def create(self, data: dict) -> dict:
-        self._before_create(data)
-        self._before_write(data)
-        return await self._repo.create(data)
+        await self._before_create(data)
+        await self._before_write(data)
+        document = await self._repo.create(data)
+        await self._after_create(document)
+        return document
 
 
 class UpdateSvc:
     async def update(self, resource_id: str, data: dict) -> dict:
-        self._before_write(data)
+        await self._before_update(resource_id, data)
+        await self._before_write(data)
         document = await self._repo.update(resource_id, data)
         if document is None:
             raise NotFoundError(self._name, resource_id)
+        await self._after_update(document)
         return document
 
 
 class ReplaceSvc:
     async def replace(self, resource_id: str, data: dict) -> dict:
-        self._before_write(data)
+        await self._before_replace(resource_id, data)
+        await self._before_write(data)
         document = await self._repo.replace(resource_id, data)
         if document is None:
             raise NotFoundError(self._name, resource_id)
+        await self._after_replace(document)
         return document
 
 
 class DeleteSvc:
     async def delete(self, resource_id: str) -> dict:
+        await self._before_delete(resource_id)
         document = await self._repo.delete(resource_id)
         if document is None:
             raise NotFoundError(self._name, resource_id)
+        await self._after_delete(document)
         return document
 
 
 class IdentityFieldsMixin:
     IDENTITY_FIELDS: tuple[str, ...] = ()
 
-    def _before_create(self, data: dict) -> None:
+    async def _before_create(self, data: dict) -> None:
         for field_name in self.IDENTITY_FIELDS:
             value = data.get(field_name)
             if not isinstance(value, str) or not value.strip():
@@ -79,7 +118,7 @@ class IdentityFieldsMixin:
 
 
 class PasswordMixin:
-    def _before_write(self, data: dict) -> None:
+    async def _before_write(self, data: dict) -> None:
         raw_password = data.pop("password", None)
         if raw_password is None:
             return
