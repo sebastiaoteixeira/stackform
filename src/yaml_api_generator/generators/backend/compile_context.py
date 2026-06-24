@@ -20,6 +20,21 @@ from ...ir.when import WhenExpr
 
 
 @dataclass(frozen=True)
+class SettingField:
+    """One field in the generated Settings class.
+
+    env_name doubles as both the attribute name and the env var key
+    (pydantic-settings maps them 1:1 when case_sensitive=False).
+    A None default means the field is required (fail-fast at startup).
+    """
+
+    env_name: str
+    python_type: str  # "str" | "int"
+    default: str | None  # None -> required field
+    secret: bool = False
+
+
+@dataclass(frozen=True)
 class FieldDescriptor:
     name: str
     type: str
@@ -60,6 +75,7 @@ class AccessRuleDescriptor:
 class RouteDescriptor:
     method: str
     path: str
+    relative_path: str
     operation: str
     collection: str | None
     is_public: bool
@@ -79,6 +95,7 @@ class IdentityCollectionDescriptor:
     id_field: str
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
+    issues_jwt: bool = False
 
     @property
     def has_password(self) -> bool:
@@ -107,6 +124,15 @@ class AuthConfig:
     has_saml_auth: bool = False
     providers: dict[str, IRProvider] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
+
+    @property
+    def uses_jwt(self) -> bool:
+        """JWT helpers and JWT_SECRET are needed whenever tokens are minted.
+
+        Password login, OIDC, and SAML callbacks all issue bearer JWTs that
+        later requests present back for principal resolution.
+        """
+        return self.has_password_auth or self.has_oidc_auth or self.has_saml_auth
 
 
 @dataclass(frozen=True)

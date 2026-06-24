@@ -10,6 +10,13 @@ from ..compile_context import AccessRuleDescriptor, ModelDescriptor, RouteDescri
 WRITE_OPERATIONS = ("create", "update", "replace")
 
 
+def _base_prefix(document: IRDocument) -> str:
+    prefix = document.api.basePath
+    if document.api.version:
+        prefix = f"{prefix}/{document.api.version}"
+    return prefix
+
+
 class RouteBuilder:
     """Builds route descriptors from IR routes."""
 
@@ -29,9 +36,11 @@ class RouteBuilder:
         """
         routes: list[RouteDescriptor] = []
         has_identity = bool(document.identityCollections)
+        prefix = _base_prefix(document)
 
         for ir_route in document.routes:
             needs_auth = not ir_route.is_public and has_identity
+            relative_path = ir_route.path.removeprefix(prefix) or "/"
 
             access_rules = None
             if ir_route.access_rules:
@@ -52,6 +61,7 @@ class RouteBuilder:
                     RouteDescriptor(
                         method=ir_route.method,
                         path=ir_route.path,
+                        relative_path=relative_path,
                         operation=ir_route.operation,
                         collection=ir_route.collection,
                         is_public=ir_route.is_public,
@@ -66,7 +76,6 @@ class RouteBuilder:
                 )
                 continue
 
-            col = document.collections[ir_route.collection]
             identity = document.identityCollections.get(ir_route.collection)
             is_identity_create = identity is not None and ir_route.operation == "create"
             uses_password = identity is not None and identity.has_password
@@ -81,6 +90,7 @@ class RouteBuilder:
                 RouteDescriptor(
                     method=ir_route.method,
                     path=ir_route.path,
+                    relative_path=relative_path,
                     operation=ir_route.operation,
                     collection=ir_route.collection,
                     is_public=ir_route.is_public,
