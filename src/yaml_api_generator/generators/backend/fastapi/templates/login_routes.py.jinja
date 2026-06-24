@@ -19,7 +19,7 @@ class {{ class_name }}LoginPayload(BaseModel):
     password: str = Field(..., min_length=1)
 
 
-@router.post("{{ base_prefix }}/{{ identity.name }}/login", tags=["{{ identity.name | capitalize_collection }}"])
+@router.post("/{{ identity.name }}/login", tags=["{{ identity.name | capitalize_collection }}"])
 async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> Any:
     db = get_database()
     col = db["{{ identity.name }}"]

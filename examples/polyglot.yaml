@@ -7,7 +7,7 @@
 # versioned migrations: yaml-api migrate new examples/polyglot.yaml
 #
 # Note: the SQL custom-operation route (events.forPost) is served by the run
-# server (`dev`). Generating it into a standalone backend (`build`) is a known
+# server (`run`). Generating it into a standalone backend (`build`) is a known
 # follow-up; the build target emits CRUD for relational collections today.
 version: "0.2"
 
@@ -84,3 +84,10 @@ controllers:
     routes:
       create:  { service: events, method: POST, path: "", access: public }
       forPost: { service: eventsForPost, method: GET, path: "/for-post/{id}", access: public }
+
+# `yaml-api build examples/polyglot.yaml deploy` generates a docker-compose.yml
+# with the app plus a MongoDB and a PostgreSQL service, one per datastore.
+deploy:
+  runtime: docker
+  name: polyglot-api
+  port: 8000

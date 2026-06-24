@@ -8,6 +8,7 @@ from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
 from . import type_mapper
 from ..fastapi import access_filters
+from .settings_builder import build_drf_settings_fields
 from yaml_api_generator.ir.when import (
     And,
     Equals,
@@ -47,7 +48,9 @@ class DRFGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["rule_to_python"] = _rule_to_python
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["env_ref"] = access_filters.env_ref
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
+        env.filters["int"] = int
         env.tests["needs_document"] = _needs_document_test
         env.tests["unconditional"] = _is_unconditional
 
@@ -55,6 +58,7 @@ class DRFGenerator(TemplateBasedGenerator):
 
         collections_by_name = group_by_collection(context)
 
+        self._render_settings(env, context, output_dir)
         self._render_project_scaffold(env, context, output_dir)
         self._render_serializers(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
@@ -69,6 +73,15 @@ class DRFGenerator(TemplateBasedGenerator):
                 output_path="requirements.txt",
             )
         )
+
+    def _render_settings(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        api_dir = output_dir / self.dir_prefix
+        api_dir.mkdir(parents=True, exist_ok=True)
+        template = env.get_template("api_settings.py.jinja")
+        content = template.render(settings_fields=build_drf_settings_fields(context))
+        (api_dir / "settings.py").write_text(content)
 
     def _render_project_scaffold(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -204,7 +217,7 @@ class DRFGenerator(TemplateBasedGenerator):
             files.append(("auth.py.jinja", "auth.py"))
             init_imports.append("from .auth import resolve_principal")
 
-        if context.auth.has_password_auth:
+        if context.auth.uses_jwt:
             files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 

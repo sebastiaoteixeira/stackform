@@ -1,6 +1,6 @@
-import os
-
 from pymongo import AsyncMongoClient
+
+from settings import settings
 
 
 _client: AsyncMongoClient | None = None
@@ -9,10 +9,8 @@ _db = None
 
 def connect_db() -> None:
     global _client, _db
-    uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
-    database = os.environ.get("MONGO_DB", "yaml_api")
-    _client = AsyncMongoClient(uri)
-    _db = _client[database]
+    _client = AsyncMongoClient(settings.MONGO_URI)
+    _db = _client[settings.MONGO_DB]
 
 
 async def close_db() -> None:
