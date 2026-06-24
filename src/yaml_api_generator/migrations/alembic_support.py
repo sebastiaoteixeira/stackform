@@ -6,6 +6,7 @@ A spec graduates to managed migrations by running `migrate new`, which scaffolds
 the Alembic environment on first use.
 """
 
+from importlib.resources import files
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -78,12 +79,14 @@ def make_config(spec_path: str, datastore: str | None = None) -> Config:
 def ensure_scaffold(directory: Path) -> None:
     versions = directory / "versions"
     versions.mkdir(parents=True, exist_ok=True)
-    env_py = directory / "env.py"
-    if not env_py.exists():
-        env_py.write_text(_ENV_PY)
-    mako = directory / "script.py.mako"
-    if not mako.exists():
-        mako.write_text(_SCRIPT_MAKO)
+    for name in ("env.py", "script.py.mako"):
+        target = directory / name
+        if not target.exists():
+            target.write_text(_template(name))
+
+
+def _template(name: str) -> str:
+    return files(__package__).joinpath("templates", name).read_text()
 
 
 def new_revision(config: Config, message: str) -> None:
@@ -118,71 +121,3 @@ def _schema_already_present(config: Config) -> bool:
     finally:
         engine.dispose()
     return bool(metadata.tables) and set(metadata.tables) <= existing
-
-
-_ENV_PY = '''"""Alembic environment, wired to the spec's metadata."""
-
-from sqlalchemy import create_engine, pool
-
-from alembic import context
-from yaml_api_generator.migrations.alembic_support import metadata_from_config
-
-config = context.config
-target_metadata = metadata_from_config(config)
-
-
-def run_migrations_offline() -> None:
-    context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
-        target_metadata=target_metadata,
-        literal_binds=True,
-        render_as_batch=True,
-    )
-    with context.begin_transaction():
-        context.run_migrations()
-
-
-def run_migrations_online() -> None:
-    connectable = create_engine(
-        config.get_main_option("sqlalchemy.url"), poolclass=pool.NullPool
-    )
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            render_as_batch=True,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
-
-
-if context.is_offline_mode():
-    run_migrations_offline()
-else:
-    run_migrations_online()
-'''
-
-
-_SCRIPT_MAKO = '''"""${message}
-
-Revision ID: ${up_revision}
-Revises: ${down_revision | comma,n}
-Create Date: ${create_date}
-"""
-from alembic import op
-import sqlalchemy as sa
-${imports if imports else ""}
-
-revision = ${repr(up_revision)}
-down_revision = ${repr(down_revision)}
-branch_labels = ${repr(branch_labels)}
-depends_on = ${repr(depends_on)}
-
-
-def upgrade() -> None:
-    ${upgrades if upgrades else "pass"}
-
-
-def downgrade() -> None:
-    ${downgrades if downgrades else "pass"}
-'''

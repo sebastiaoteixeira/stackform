@@ -1,13 +1,14 @@
-import os
 from pathlib import Path
+
+from api.settings import settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = settings.DJANGO_SECRET_KEY.get_secret_value()
 
-DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() in ("true", "1", "yes")
+DEBUG = settings.DJANGO_DEBUG.lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+ALLOWED_HOSTS = settings.DJANGO_ALLOWED_HOSTS.split(",")
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",

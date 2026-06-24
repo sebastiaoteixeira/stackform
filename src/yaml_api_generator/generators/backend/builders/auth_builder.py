@@ -50,8 +50,15 @@ class AuthBuilder:
         has_saml = any(isinstance(p, IRSAMLProvider) for p in providers.values())
         role_hierarchies: dict[str, dict[str, set[str]]] = {}
 
+        external = {
+            n for n, p in providers.items()
+            if isinstance(p, (IROIDCProvider, IRSAMLProvider))
+        }
         for name, identity in identity_map.items():
             col = collections[name]
+            issues_jwt = identity.has_password or any(
+                b.provider in external for b in identity.bindings
+            )
             descriptors.append(
                 IdentityCollectionDescriptor(
                     name=name,
@@ -59,6 +66,7 @@ class AuthBuilder:
                     id_field=col.idField,
                     roles=identity.roles,
                     roles_field=identity.roles_field,
+                    issues_jwt=issues_jwt,
                 )
             )
             if identity.has_password:

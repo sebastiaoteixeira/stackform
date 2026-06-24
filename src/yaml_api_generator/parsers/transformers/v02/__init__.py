@@ -120,7 +120,7 @@ class V02Transformer:
             mongo=self._route.build_mongo(mongo_config),
             datastores=datastores,
             default_datastore=default_datastore,
-            deploy=self._route.build_deploy(resolved.get("deploy"), resolved, mongo_config),
+            deploy=self._route.build_deploy(resolved.get("deploy"), mongo_config, providers, datastores),
             repositories=repositories,
             providers=providers,
             ui_config=resolved.get("ui"),
