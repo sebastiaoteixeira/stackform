@@ -131,14 +131,14 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 
 {% for route in crud_routes %}
 {% if route.operation == "list" %}
-@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def list_{{ collection_name }}({{ auth_param(route) | trim(chars=", ") }}) -> Any:
 {{ pre_fetch_guard(route) }}
     return await _service().list()
 
 
 {% elif route.operation == "get" %}
-@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
@@ -151,14 +151,14 @@ async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 
 
 {% elif route.operation == "create" %}
-@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def create_{{ collection_name }}(payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
     return await _service().create(payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "update" %}
-@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
@@ -169,7 +169,7 @@ async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{
 
 
 {% elif route.operation == "replace" %}
-@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
@@ -180,7 +180,7 @@ async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}
 
 
 {% elif route.operation == "delete" %}
-@router.{{ route.method | lower }}("{{ route.path }}"{{ openapi_extra(route) }})
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def delete_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
@@ -196,7 +196,7 @@ async def delete_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 {% set handler_name = route.operation ~ "_" ~ collection_name %}
 
 
-@router.{{ route.method | lower }}("{{ route.path }}", tags=["{{ collection_name | capitalize_collection }}"])
+@router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"])
 async def {{ handler_name }}(request: Request) -> Any:
     from importlib import import_module
     module_path, func_name = "{{ route.handler }}".rsplit(".", 1)
@@ -209,7 +209,7 @@ async def {{ handler_name }}(request: Request) -> Any:
 {% set query = repo_queries[route.operation] %}
 
 
-@router.{{ route.method | lower }}("{{ route.path }}", tags=["{{ collection_name | capitalize_collection }}"])
+@router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"])
 async def {{ handler_name }}(request: Request) -> Any:
     repo = {{ collection_name | capitalize_collection }}Repository(get_database())
     return jsonable_encoder(await repo.{{ route.operation }}({% for key, value in (query or {}).items() if key != "command" %}{{ key }}={{ value | py_literal }}{% if not loop.last %}, {% endif %}{% endfor %}))

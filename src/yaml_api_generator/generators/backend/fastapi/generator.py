@@ -3,6 +3,7 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
@@ -42,6 +43,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["env_ref"] = access_filters.env_ref
         env.filters["sql_column"] = sql_filters.sql_column
         env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
@@ -56,6 +58,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         collections_by_name = group_by_collection(context)
 
+        self._render_settings(env, context, output_dir)
         self._render_app(env, context, output_dir)
         self._render_models(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
@@ -69,6 +72,13 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 output_path="requirements.txt",
             )
         )
+
+    def _render_settings(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        template = env.get_template("settings.py.jinja")
+        content = template.render(settings_fields=build_settings_fields(context))
+        (output_dir / "settings.py").write_text(content)
 
     def _render_app(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -162,36 +172,52 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         routes_dir = output_dir / "routes"
         init_path = routes_dir / "__init__.py"
-        existing_imports = init_path.read_text() if init_path.exists() else ""
-        auth_imports = []
+        resource_imports = init_path.read_text() if init_path.exists() else ""
+
+        base_prefix = context.app.base_path
+        if context.app.api_version:
+            base_prefix = f"{base_prefix}/{context.app.api_version}"
+
+        auth_imports: list[str] = []
 
         if context.auth.has_password_auth:
-            login_template = env.get_template("login_routes.py.jinja")
-            base_prefix = context.app.base_path
-            if context.app.api_version:
-                base_prefix = f"{base_prefix}/{context.app.api_version}"
-            login_content = login_template.render(auth=context.auth, base_prefix=base_prefix)
-            (routes_dir / "login.py").write_text(login_content)
+            (routes_dir / "login.py").write_text(
+                env.get_template("login_routes.py.jinja").render(auth=context.auth)
+            )
             auth_imports.append("from .login import router as login_router")
 
         if context.auth.has_oidc_auth:
-            oidc_template = env.get_template("oidc_routes.py.jinja")
-            base_prefix = context.app.base_path
-            if context.app.api_version:
-                base_prefix = f"{base_prefix}/{context.app.api_version}"
-            oidc_content = oidc_template.render(auth=context.auth, base_prefix=base_prefix)
-            (routes_dir / "oidc_routes.py").write_text(oidc_content)
+            (routes_dir / "oidc_routes.py").write_text(
+                env.get_template("oidc_routes.py.jinja").render(
+                    auth=context.auth, base_prefix=base_prefix
+                )
+            )
             auth_imports.append("from .oidc_routes import router as oidc_router")
 
         if context.auth.has_saml_auth:
-            saml_template = env.get_template("saml_routes.py.jinja")
-            saml_content = saml_template.render(auth=context.auth)
-            (routes_dir / "saml_routes.py").write_text(saml_content)
+            (routes_dir / "saml_routes.py").write_text(
+                env.get_template("saml_routes.py.jinja").render(auth=context.auth)
+            )
             auth_imports.append("from .saml_routes import router as saml_router")
 
-        if auth_imports:
-            init_content = existing_imports + "\n".join(auth_imports) + "\n"
-            init_path.write_text(init_content)
+        all_router_names = [
+            line.split(" as ")[1].rstrip()
+            for line in (resource_imports + "\n".join(auth_imports)).splitlines()
+            if " as " in line
+        ]
+        aggregator = self._render_api_router(all_router_names)
+
+        init_path.write_text(
+            resource_imports
+            + ("\n".join(auth_imports) + "\n" if auth_imports else "")
+            + aggregator
+        )
+
+    @staticmethod
+    def _render_api_router(router_names: list[str]) -> str:
+        lines = ["\nfrom fastapi import APIRouter\n\napi_router = APIRouter()\n"]
+        lines.extend(f"api_router.include_router({name})\n" for name in router_names)
+        return "".join(lines)
 
     def _render_repositories(
         self,
@@ -250,13 +276,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 env.get_template("mongodb.py.jinja").render(ctx=context, auth=context.auth)
             )
         if uses_sql:
-            pg_dsn = next(
-                (ds["dsn"] for ds in context.datastores.values()
-                 if ds["type"] in ("postgres", "postgresql")),
-                "postgresql+asyncpg://localhost/db",
-            )
             (deps_dir / "postgres.py").write_text(
-                env.get_template("postgres.py.jinja").render(dsn=pg_dsn)
+                env.get_template("postgres.py.jinja").render()
             )
 
         init_imports: list[str] = []
@@ -268,7 +289,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             ]
             init_imports.append("from .auth import resolve_principal, require_principal")
             init_imports.append("from .authorization import _principal_has_role")
-        if context.auth.has_password_auth:
+        if context.auth.uses_jwt:
             auth_files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 

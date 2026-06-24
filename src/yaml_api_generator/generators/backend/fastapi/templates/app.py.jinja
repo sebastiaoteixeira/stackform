@@ -1,10 +1,10 @@
-import os
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from services.exceptions import NotFoundError, ValidationError
+from settings import settings
 {% if ctx.auth.enabled %}
 from fastapi.openapi.utils import get_openapi
 {% endif %}
@@ -23,22 +23,7 @@ from dependencies.mongodb import connect_db as connect_mongo, close_db as close_
 {% if uses_sql %}
 from dependencies.postgres import connect_db as connect_pg, close_db as close_pg
 {% endif %}
-{% set imported_collections = [] %}
-{% for route in ctx.routes %}
-{% if route.collection and route.collection not in imported_collections %}
-{% set _ = imported_collections.append(route.collection) %}
-from routes.{{ route.collection }} import router as {{ route.collection }}_router
-{% endif %}
-{% endfor %}
-{% if ctx.auth.has_password_auth %}
-from routes.login import router as login_router
-{% endif %}
-{% if ctx.auth.has_oidc_auth %}
-from routes.oidc_routes import router as oidc_router
-{% endif %}
-{% if ctx.auth.has_saml_auth %}
-from routes.saml_routes import router as saml_router
-{% endif %}
+from routes import api_router
 
 
 @asynccontextmanager
@@ -83,18 +68,7 @@ app.add_middleware(
 )
 {% endif %}
 
-{% for col_name in imported_collections %}
-app.include_router({{ col_name }}_router)
-{% endfor %}
-{% if ctx.auth.has_password_auth %}
-app.include_router(login_router)
-{% endif %}
-{% if ctx.auth.has_oidc_auth %}
-app.include_router(oidc_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
-{% endif %}
-{% if ctx.auth.has_saml_auth %}
-app.include_router(saml_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
-{% endif %}
+app.include_router(api_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
 
 {% if ctx.auth.enabled %}
 
@@ -129,7 +103,7 @@ app.openapi = custom_openapi
 if __name__ == "__main__":
     uvicorn.run(
         "app:app",
-        host=os.environ.get("HOST", "127.0.0.1"),
-        port=int(os.environ.get("PORT", "{{ ctx.app.port }}")),
+        host=settings.HOST,
+        port=settings.PORT,
         reload=True,
     )

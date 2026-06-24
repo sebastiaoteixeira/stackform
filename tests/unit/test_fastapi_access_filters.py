@@ -149,7 +149,8 @@ def _route(operation, document_symbols=None):
         rules = [AccessRuleDescriptor(principal="identity:users", document_symbols=document_symbols)]
     return RouteDescriptor(
         method="DELETE",
-        path="/x/{id}",
+        path="/api/v1/x/{id}",
+        relative_path="/x/{id}",
         operation=operation,
         collection="x",
         is_public=False,

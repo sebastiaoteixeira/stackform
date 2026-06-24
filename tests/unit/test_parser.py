@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from yaml_api_generator.ir.api import EnvRef
 from yaml_api_generator.parsers.yaml_parser import (
     ConfigErrors,
     ParseResult,
@@ -362,6 +363,36 @@ def test_interpolation_errors_halt_before_schema_validation() -> None:
     codes = {e.code for e in exc_info.value.errors}
     assert "INTERPOLATION_MISSING_VAR" in codes
     assert "SCHEMA_VALIDATION_ERROR" not in codes
+
+
+# --- Runtime-classified secret stays an EnvRef when the env var is unset ---
+
+
+def test_runtime_secret_unset_yields_envref_without_missing_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PROVIDER_SECRET", raising=False)
+    errors: list = []
+    node = {"providers": {"keycloak": {"client_secret": "${PROVIDER_SECRET}"}}}
+    result = _resolve_interpolation(node, tuple(), errors)
+    ref = result["providers"]["keycloak"]["client_secret"]
+    assert isinstance(ref, EnvRef)
+    assert ref.name == "PROVIDER_SECRET"
+    assert ref.secret is True
+    assert errors == []
+
+
+# --- Structural (non-runtime) unset ${VAR} with no default still raises ---
+
+
+def test_structural_unset_var_still_raises_missing_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STRUCTURAL_VAR", raising=False)
+    errors: list = []
+    node = {"api": {"basePath": "${STRUCTURAL_VAR}"}}
+    _resolve_interpolation(node, tuple(), errors)
+    assert [e.code for e in errors] == ["INTERPOLATION_MISSING_VAR"]
 
 
 # --- Test 19: No version key → defaults to "0.1" ---

@@ -7,6 +7,7 @@ from onelogin.saml2.idp_metadata_parser import OneLogin_Saml2_IdPMetadataParser
 
 from dependencies.mongodb import get_database
 from dependencies.jwt_utils import create_jwt_token
+from settings import settings
 
 router = APIRouter()
 
@@ -56,14 +57,14 @@ async def saml_{{ sym }}_login(request: Request) -> RedirectResponse:
     base = str(request.base_url).rstrip("/")
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"
-    settings = _build_saml_settings(
-        "{{ provider.idp_metadata_url }}",
-        "{{ provider.sp_entity_id }}",
+    saml_config = _build_saml_settings(
+        {{ provider.idp_metadata_url | env_ref }},
+        {{ provider.sp_entity_id | env_ref }},
         acs_url,
         sls_url,
     )
     req = await _prepare_saml_request(request)
-    saml_auth = OneLogin_Saml2_Auth(req, settings)
+    saml_auth = OneLogin_Saml2_Auth(req, saml_config)
     return RedirectResponse(url=saml_auth.login())
 
 
@@ -74,14 +75,14 @@ async def saml_{{ sym }}_callback(
     base = str(request.base_url).rstrip("/")
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"
-    settings = _build_saml_settings(
-        "{{ provider.idp_metadata_url }}",
-        "{{ provider.sp_entity_id }}",
+    saml_config = _build_saml_settings(
+        {{ provider.idp_metadata_url | env_ref }},
+        {{ provider.sp_entity_id | env_ref }},
         acs_url,
         sls_url,
     )
     req = await _prepare_saml_request(request)
-    saml_auth = OneLogin_Saml2_Auth(req, settings)
+    saml_auth = OneLogin_Saml2_Auth(req, saml_config)
     saml_auth.process_response()
     errors = saml_auth.get_errors()
     if errors:
@@ -131,14 +132,14 @@ async def saml_{{ sym }}_metadata(request: Request) -> Response:
     base = str(request.base_url).rstrip("/")
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"
-    settings = _build_saml_settings(
-        "{{ provider.idp_metadata_url }}",
-        "{{ provider.sp_entity_id }}",
+    saml_config = _build_saml_settings(
+        {{ provider.idp_metadata_url | env_ref }},
+        {{ provider.sp_entity_id | env_ref }},
         acs_url,
         sls_url,
     )
     req = await _prepare_saml_request(request)
-    saml_auth = OneLogin_Saml2_Auth(req, settings)
+    saml_auth = OneLogin_Saml2_Auth(req, saml_config)
     metadata = saml_auth.get_settings().get_sp_metadata()
     return Response(content=metadata, media_type="application/xml")
 

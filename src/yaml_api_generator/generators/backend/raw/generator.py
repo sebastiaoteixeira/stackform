@@ -4,6 +4,7 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
@@ -36,11 +37,14 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["path_to_regex"] = _path_to_regex
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["env_ref"] = access_filters.env_ref
+        env.filters["int"] = int
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
         collections_by_name = group_by_collection(context)
 
+        self._render_settings(env, context, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
         if context.auth.has_password_auth:
             self._render_login_routes(env, context, output_dir)
@@ -56,6 +60,13 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 output_path="requirements.txt",
             )
         )
+
+    def _render_settings(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        template = env.get_template("settings.py.jinja")
+        content = template.render(settings_fields=build_settings_fields(context))
+        (output_dir / "settings.py").write_text(content)
 
     def _render_app(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -200,7 +211,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             files.append(("auth.py.jinja", "auth.py"))
             init_imports.append("from .auth import resolve_principal")
 
-        if context.auth.has_password_auth:
+        if context.auth.uses_jwt:
             files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
 

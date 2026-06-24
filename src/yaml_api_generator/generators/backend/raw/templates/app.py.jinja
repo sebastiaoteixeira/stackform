@@ -1,7 +1,8 @@
 import json
-import os
 import re
 from typing import Any
+
+from settings import settings
 
 from dependencies.mongodb import connect_db, close_db, get_database
 {% set collections = routes | map(attribute='collection') | unique | select | list %}
@@ -132,7 +133,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app:app",
-        host=os.environ.get("HOST", "127.0.0.1"),
-        port=int(os.environ.get("PORT", "8000")),
+        host=settings.HOST,
+        port=settings.PORT,
         reload=True,
     )

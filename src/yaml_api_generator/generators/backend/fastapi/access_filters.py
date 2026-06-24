@@ -6,6 +6,7 @@ the fetched ``document`` dict. No AST interpreter is needed in the generated app
 """
 
 from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor, RouteDescriptor
+from yaml_api_generator.ir.api import EnvRef
 from yaml_api_generator.ir.when import (
     And,
     Equals,
@@ -29,6 +30,18 @@ def py_bool(value: object) -> str:
 
 
 def py_literal(value: object) -> str:
+    return repr(value)
+
+
+def env_ref(value: str | EnvRef) -> str:
+    """Render a str | EnvRef field as a Python expression in generated source.
+
+    Plain strings become quoted literals; EnvRefs become settings attribute
+    accesses, with .get_secret_value() for secret fields.
+    """
+    if isinstance(value, EnvRef):
+        access = f"settings.{value.name}"
+        return f"{access}.get_secret_value()" if value.secret else access
     return repr(value)
 
 

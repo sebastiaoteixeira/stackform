@@ -1,5 +1,6 @@
 from .api import (
     CRUD_OPERATIONS,
+    EnvRef,
     IRAccessRule,
     IRApi,
     IRCollection,

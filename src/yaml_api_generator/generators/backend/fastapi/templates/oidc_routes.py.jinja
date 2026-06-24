@@ -1,4 +1,3 @@
-import os
 import time
 from typing import Any
 from urllib.parse import urlencode, quote
@@ -9,10 +8,9 @@ from fastapi.responses import RedirectResponse
 
 from dependencies.mongodb import get_database
 from dependencies.jwt_utils import create_jwt_token
+from settings import settings
 
 router = APIRouter()
-
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "")
 
 {% for col in auth.identity_collections %}
 {% set ext_providers = [] %}
@@ -44,7 +42,7 @@ async def _get_{{ sym }}_discovery() -> dict[str, Any]:
     global _{{ sym }}_discovery
     if _{{ sym }}_discovery is None:
         async with httpx.AsyncClient() as client:
-            resp = await client.get("{{ provider.discovery_url }}")
+            resp = await client.get({{ provider.discovery_url | env_ref }})
             resp.raise_for_status()
             _{{ sym }}_discovery = resp.json()
     return _{{ sym }}_discovery
@@ -76,7 +74,7 @@ async def oidc_{{ sym }}_callback(request: Request, code: str) -> Any:
             "code": code,
             "redirect_uri": callback_url,
             "client_id": "{{ provider.client_id }}",
-            "client_secret": "{{ provider.client_secret }}",
+            "client_secret": {{ provider.client_secret | env_ref }},
         })
         if token_resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Token exchange failed")
@@ -117,7 +115,7 @@ async def oidc_{{ sym }}_callback(request: Request, code: str) -> Any:
 
     existing = await collection.find_one({"{{ binding.identifier }}": user_fields.get("{{ binding.identifier }}")})
 
-    frontend_url = FRONTEND_URL or str(request.base_url).rstrip("/")
+    frontend_url = settings.FRONTEND_URL or str(request.base_url).rstrip("/")
 
     if existing is not None:
         subject = existing.get("{{ col.id_field }}")

@@ -1,11 +1,8 @@
-import os
 import time
 
 import jwt
 
-
-JWT_SECRET = os.environ.get("JWT_SECRET", "yaml-api-dev-secret-change-me")
-JWT_EXPIRATION_HOURS = int(os.environ.get("JWT_EXPIRATION_HOURS", "24"))
+from settings import settings
 
 
 def create_jwt_token(sub: str, identity_collection: str) -> str:
@@ -14,13 +11,13 @@ def create_jwt_token(sub: str, identity_collection: str) -> str:
         "sub": sub,
         "identity_collection": identity_collection,
         "iat": int(now),
-        "exp": int(now + JWT_EXPIRATION_HOURS * 3600),
+        "exp": int(now + settings.JWT_EXPIRATION_HOURS * 3600),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jwt.encode(payload, settings.JWT_SECRET.get_secret_value(), algorithm="HS256")
 
 
 def decode_jwt_token(token: str) -> dict | None:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
     except (jwt.InvalidTokenError, Exception):
         return None
