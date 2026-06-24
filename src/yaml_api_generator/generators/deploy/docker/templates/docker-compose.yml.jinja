@@ -13,27 +13,37 @@ services:
     build: ./backend
     {% endif %}
     environment:
-      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017}
-      - MONGO_DB=${MONGO_DB:-{{ ctx.mongo_db }}}
-      - PORT=${PORT:-{{ ctx.port }}}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+      {% for line in ctx.app_environment %}
+      - {{ line }}
+      {% endfor %}
     ports:
       - "${APP_PORT:-{{ ctx.port }}}:{{ ctx.port }}"
     env_file:
       - .env
     restart: unless-stopped
-    {% if ctx.mongo_local %}
+    {% set local_datastores = ctx.datastores | selectattr("local") | list %}
+    {% if local_datastores %}
     depends_on:
-      - mongodb
+      {% for ds in local_datastores %}
+      - {{ ds.service }}
+      {% endfor %}
     {% endif %}
 
-  {% if ctx.mongo_local %}
-  mongodb:
-    image: mongo:8
+  {% for ds in local_datastores %}
+  {{ ds.service }}:
+    image: {{ ds.image }}
+    {% if ds.service_env %}
+    environment:
+      {% for key, value in ds.service_env.items() %}
+      - {{ key }}={{ value }}
+      {% endfor %}
+    {% endif %}
+    {% if ds.volume %}
     volumes:
-      - mongo_data:/data/db
+      - {{ ds.volume }}:{{ ds.volume_path }}
+    {% endif %}
     restart: unless-stopped
-  {% endif %}
+  {% endfor %}
 
   {% if ctx.has_frontend %}
   frontend:
@@ -61,11 +71,12 @@ services:
 {% endif %}
 {% endfor %}
 {% endfor %}
-{% if ctx.mongo_local or extra_volumes %}
+{% set datastore_volumes = local_datastores | selectattr("volume") | map(attribute="volume") | list %}
+{% if datastore_volumes or extra_volumes %}
 volumes:
-  {% if ctx.mongo_local %}
-  mongo_data:
-  {% endif %}
+  {% for vol in datastore_volumes %}
+  {{ vol }}:
+  {% endfor %}
   {% for vol in extra_volumes %}
   {{ vol }}:
   {% endfor %}

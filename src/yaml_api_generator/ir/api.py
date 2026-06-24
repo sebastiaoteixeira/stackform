@@ -28,19 +28,33 @@ from ..constants import CRUD_OPERATIONS
 
 
 @dataclass(frozen=True)
+class EnvRef:
+    """A deferred environment-variable reference captured at parse time.
+
+    Secrets are never baked even when the env var is exported; non-secrets
+    resolve at runtime via the generated settings singleton.
+    """
+
+    name: str
+    default: str | None = None
+    secret: bool = False
+    value_type: str = "str"  # "str" | "int"
+
+
+@dataclass(frozen=True)
 class IROIDCProvider:
     name: str
     client_id: str
-    client_secret: str
-    discovery_url: str
+    client_secret: str | EnvRef
+    discovery_url: str | EnvRef
     type: str = "oidc"
 
 
 @dataclass(frozen=True)
 class IRSAMLProvider:
     name: str
-    idp_metadata_url: str
-    sp_entity_id: str
+    idp_metadata_url: str | EnvRef
+    sp_entity_id: str | EnvRef
     type: str = "saml"
 
 

@@ -1,0 +1,23 @@
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
+
+{% for f in settings_fields %}
+{% if f.secret and f.default is none %}
+    {{ f.env_name }}: SecretStr
+{% elif f.secret %}
+    {{ f.env_name }}: SecretStr = SecretStr({{ f.default | py_literal }})
+{% elif f.default is none %}
+    {{ f.env_name }}: {{ f.python_type }}
+{% elif f.python_type == "int" %}
+    {{ f.env_name }}: int = {{ f.default | int }}
+{% else %}
+    {{ f.env_name }}: {{ f.python_type }} = {{ f.default | py_literal }}
+{% endif %}
+{% endfor %}
+
+
+settings = Settings()

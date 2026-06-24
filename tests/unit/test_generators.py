@@ -271,3 +271,36 @@ def test_raw_reuses_fastapi_templates(tmp_path):
     assert (tmp_path / "services" / "exceptions.py").exists()
     assert (tmp_path / "repositories" / "posts.py").exists()
     assert (tmp_path / "dependencies" / "mongodb.py").exists()
+
+
+def test_fastapi_jwt_utils_generated_for_oidc_without_password(tmp_path):
+    ctx = _ctx_from_fixture("auth-oidc.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    assert not ctx.auth.has_password_auth
+    assert ctx.auth.has_oidc_auth
+    assert (tmp_path / "dependencies" / "jwt_utils.py").exists()
+    auth_src = (tmp_path / "dependencies" / "auth.py").read_text()
+    assert "from dependencies.jwt_utils import decode_jwt_token" in auth_src
+
+
+def test_generated_settings_uses_secretstr_for_secrets(tmp_path):
+    ctx = _ctx_from_fixture("auth-oidc.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    settings_src = (tmp_path / "settings.py").read_text()
+    assert "from pydantic import SecretStr" in settings_src
+    assert "from pydantic_settings import BaseSettings, SettingsConfigDict" in settings_src
+    assert "KEYCLOAK_CLIENT_SECRET: SecretStr" in settings_src
+    assert "JWT_SECRET: SecretStr" in settings_src
+    assert "MONGO_URI: str" in settings_src
+    assert "os.environ" not in settings_src
+
+
+def test_oidc_routes_read_client_secret_via_settings(tmp_path):
+    ctx = _ctx_from_fixture("auth-oidc.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    assert "settings.KEYCLOAK_CLIENT_SECRET.get_secret_value()" in oidc_src
+    assert "os.environ" not in oidc_src

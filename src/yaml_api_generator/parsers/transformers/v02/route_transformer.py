@@ -3,15 +3,19 @@
 Builds routes from controllers, services, API, MongoDB, and deploy configurations.
 """
 
+from dataclasses import fields as dataclass_fields
 from typing import Any
 
 from yaml_api_generator.ir import (
+    EnvRef,
     IRApi,
     IRCors,
+    IRDatastore,
     IRDeploy,
     IRDeployDocker,
     IRDeploySystemd,
     IRMongo,
+    IRProvider,
     IRRoute,
     IRService,
 )
@@ -223,16 +227,23 @@ class RouteTransformer:
             database=mongo_data.get("database", "yaml_api"),
         )
 
-    def build_deploy(self, deploy_data: Any, full_config: dict[str, Any], mongo_config: dict[str, Any]) -> IRDeploy | None:
+    def build_deploy(
+        self,
+        deploy_data: Any,
+        mongo_config: dict[str, Any],
+        providers: dict[str, IRProvider],
+        datastores: dict[str, IRDatastore],
+    ) -> IRDeploy | None:
         """Build deployment configuration IR.
 
         Args:
-            deploy_data: Raw deployment configuration from YAML
-            full_config: Full YAML configuration for extracting env vars
-            mongo_config: MongoDB configuration to determine if local
+            deploy_data: Raw deployment configuration from YAML.
+            mongo_config: MongoDB configuration to determine if local.
+            providers: Already-built provider IR objects (primary EnvRef source).
+            datastores: Already-built datastore IR objects (primary EnvRef source).
 
         Returns:
-            Deploy IR object or None if no deployment configured
+            Deploy IR object or None if no deployment configured.
         """
         if not isinstance(deploy_data, dict):
             return None
@@ -255,7 +266,7 @@ class RouteTransformer:
         mongo_uri = mongo_config.get("uri", "mongodb://localhost:27017")
         mongo_local = not mongo_config or "localhost" in mongo_uri or "127.0.0.1" in mongo_uri
 
-        env_vars = self._extract_env_vars(full_config)
+        env_vars = self._collect_env_vars(deploy_data, providers, datastores)
 
         extra_services = tuple(
             (name, config) for name, config in deploy_data.get("services", {}).items()
@@ -274,27 +285,53 @@ class RouteTransformer:
             include=include,
         )
 
-    def _extract_env_vars(self, config: dict[str, Any]) -> list[str]:
-        """Extract environment variable names from config values.
+    def _collect_env_vars(
+        self,
+        deploy_data: dict[str, Any],
+        providers: dict[str, IRProvider],
+        datastores: dict[str, IRDatastore],
+    ) -> list[str]:
+        """Collect env var names for the .env.example from structured IR and deploy config.
 
-        Looks for ${VAR_NAME} or ${VAR_NAME:-default} patterns.
+        Structured EnvRefs from providers and datastores are the authoritative source.
+        A secondary regex scan on the deploy subtree captures ad-hoc ${VAR} references
+        that appear only in deploy.* config strings (e.g. custom image tags).
         """
-        import re
-        env_var_pattern = re.compile(r'\$\{([A-Z_][A-Z0-9_]*)(?::-[^}]*)?\}')
+        seen: set[str] = set()
 
-        def find_env_vars(obj: Any, vars_set: set[str]) -> None:
+        for provider in providers.values():
+            for f in dataclass_fields(provider):
+                value = getattr(provider, f.name)
+                if isinstance(value, EnvRef):
+                    seen.add(value.name)
+
+        for ds in datastores.values():
+            for f in dataclass_fields(ds):
+                value = getattr(ds, f.name)
+                if isinstance(value, EnvRef):
+                    seen.add(value.name)
+
+        seen.update(self._scan_deploy_token_refs(deploy_data))
+        return sorted(seen)
+
+    def _scan_deploy_token_refs(self, deploy_data: dict[str, Any]) -> set[str]:
+        """Scan raw deploy config strings for leftover ${VAR} tokens."""
+        import re
+        pattern = re.compile(r'\$\{([A-Z_][A-Z0-9_]*)(?::-[^}]*)?\}')
+
+        def _walk(obj: Any, result: set[str]) -> None:
             if isinstance(obj, str):
-                vars_set.update(env_var_pattern.findall(obj))
+                result.update(pattern.findall(obj))
             elif isinstance(obj, dict):
-                for value in obj.values():
-                    find_env_vars(value, vars_set)
+                for v in obj.values():
+                    _walk(v, result)
             elif isinstance(obj, list):
                 for item in obj:
-                    find_env_vars(item, vars_set)
+                    _walk(item, result)
 
-        vars_set: set[str] = set()
-        find_env_vars(config, vars_set)
-        return sorted(vars_set)
+        refs: set[str] = set()
+        _walk(deploy_data, refs)
+        return refs
 
     def _resolve_imports(self, imports: dict[str, str]) -> dict[str, str]:
         return dict(imports)
