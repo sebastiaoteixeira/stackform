@@ -1,9 +1,8 @@
-"""Jinja filters that serialize access rules into generated Python source.
+"""Jinja filters that compile access rules into inline Python boolean expressions.
 
-The emitted source reconstructs the same dataclasses defined in the generated
-``dependencies/when_eval.py`` and ``dependencies/authorization.py`` modules, so
-the generated backend evaluates ``when`` expressions with no second
-implementation and no runtime dependency on this package.
+At generation time, ``when`` predicates are fully known, so they are compiled
+directly into source strings that reference the runtime ``principal`` dict and
+the fetched ``document`` dict. No AST interpreter is needed in the generated app.
 """
 
 from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor, RouteDescriptor
@@ -33,36 +32,47 @@ def py_literal(value: object) -> str:
     return repr(value)
 
 
-def when_py(expr: WhenExpr) -> str:
-    if isinstance(expr, FieldRef):
-        return f"FieldRef({expr.root!r}, {tuple(expr.path)!r})"
+def _operand_to_python(expr: WhenExpr) -> str:
     if isinstance(expr, StringLiteral):
-        return f"StringLiteral({expr.value!r})"
+        return f'"{expr.value}"'
+    if isinstance(expr, FieldRef):
+        if not expr.path:
+            return f'{expr.root}.get("sub")'
+        if len(expr.path) == 1:
+            return f'{expr.root}.get("{expr.path[0]}")'
+        if len(expr.path) >= 2 and expr.path[0] == "record":
+            return f'{expr.root}.get("record", {{}}).get("{expr.path[1]}")'
+        nested = ".".join(f'get("{p}")' for p in expr.path)
+        return f"{expr.root}.{nested}"
+    return "None"
+
+
+def _when_to_python(expr: WhenExpr) -> str:
     if isinstance(expr, Equals):
-        return f"Equals({when_py(expr.left)}, {when_py(expr.right)})"
+        return f"{_operand_to_python(expr.left)} == {_operand_to_python(expr.right)}"
     if isinstance(expr, NotEquals):
-        return f"NotEquals({when_py(expr.left)}, {when_py(expr.right)})"
+        return f"{_operand_to_python(expr.left)} != {_operand_to_python(expr.right)}"
     if isinstance(expr, And):
-        return f"And({when_py(expr.left)}, {when_py(expr.right)})"
+        return f"({_when_to_python(expr.left)} and {_when_to_python(expr.right)})"
     if isinstance(expr, Or):
-        return f"Or({when_py(expr.left)}, {when_py(expr.right)})"
+        return f"({_when_to_python(expr.left)} or {_when_to_python(expr.right)})"
     if isinstance(expr, Not):
-        return f"Not({when_py(expr.operand)})"
+        return f"(not {_when_to_python(expr.operand)})"
     if isinstance(expr, In):
-        return f"In({when_py(expr.left)}, {tuple(expr.values)!r})"
+        return f"{_operand_to_python(expr.left)} in {tuple(expr.values)!r}"
     if isinstance(expr, NotIn):
-        return f"NotIn({when_py(expr.left)}, {tuple(expr.values)!r})"
-    raise TypeError(f"Unsupported when expression: {type(expr).__name__}")
+        return f"{_operand_to_python(expr.left)} not in {tuple(expr.values)!r}"
+    return "False"
 
 
-def access_rule_py(rule: AccessRuleDescriptor) -> str:
-    when = when_py(rule.when) if rule.when is not None else "None"
-    return (
-        f"AccessRule(principal={rule.principal!r}, required_role={rule.required_role!r}, "
-        f"identity_symbols={list(rule.identity_symbols)!r}, "
-        f"document_symbols={list(rule.document_symbols)!r}, "
-        f"when={when}, effect={rule.effect!r})"
-    )
+def rule_to_python(rule: AccessRuleDescriptor) -> str:
+    """Compile a single access rule to an inline Python boolean expression."""
+    conditions: list[str] = []
+    if rule.required_role is not None:
+        conditions.append(f'_principal_has_role(principal, "{rule.required_role}")')
+    if rule.when is not None:
+        conditions.append(_when_to_python(rule.when))
+    return " and ".join(conditions) if conditions else "True"
 
 
 def role_hierarchies_py(hierarchies: dict[str, dict[str, set[str]]]) -> str:
@@ -81,4 +91,14 @@ def needs_post_fetch(route: RouteDescriptor) -> bool:
     return route.operation in _POST_FETCH_OPERATIONS and any(
         rule.document_symbols or (rule.when is not None and needs_document(rule.when))
         for rule in route.access_rules or ()
+    )
+
+
+def is_unconditional(rule: AccessRuleDescriptor) -> bool:
+    return rule.when is None and rule.required_role is None
+
+
+def needs_document_rule(rule: AccessRuleDescriptor) -> bool:
+    return bool(rule.document_symbols) or (
+        rule.when is not None and needs_document(rule.when)
     )

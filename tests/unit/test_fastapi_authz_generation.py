@@ -1,11 +1,9 @@
 """Generation tests for FastAPI access-rule enforcement.
 
-Asserts the generator emits the authorization/when_eval dependency modules and
-the per-route AccessRule literals when auth is enabled, emits nothing when auth
-is disabled, and byte-compiles the generated backend.
+Asserts the generator emits compiled inline guards in routes (no AST interpreter),
+emits nothing when auth is disabled, and byte-compiles the generated backend.
 """
 
-import ast
 import compileall
 import dataclasses
 
@@ -23,21 +21,29 @@ def _generate(fixture_name: str, tmp_path, context_mutator=None):
     return ctx
 
 
-def test_authz_modules_emitted_when_auth_enabled(tmp_path):
+def test_when_eval_not_emitted(tmp_path):
     _generate("roles-access.yaml", tmp_path)
-    assert (tmp_path / "dependencies" / "authorization.py").exists()
-    assert (tmp_path / "dependencies" / "when_eval.py").exists()
+    assert not (tmp_path / "dependencies" / "when_eval.py").exists()
 
 
-def test_role_gated_rules_emitted_as_access_rule_literals(tmp_path):
+def test_authorization_module_emitted_with_role_helper(tmp_path):
+    _generate("roles-access.yaml", tmp_path)
+    authz = (tmp_path / "dependencies" / "authorization.py").read_text()
+    assert "def _principal_has_role(" in authz
+    assert "AccessRule" not in authz
+    assert "authorize_pre" not in authz
+    assert "authorize_post" not in authz
+
+
+def test_role_gated_rules_compiled_inline(tmp_path):
     _generate("roles-access.yaml", tmp_path)
     posts = (tmp_path / "routes" / "posts.py").read_text()
-    assert "from dependencies.authorization import AccessRule" in posts
-    assert "required_role='moderator'" in posts
-    assert "required_role='admin'" in posts
+    assert "AccessRule" not in posts
+    assert "FieldRef" not in posts
+    assert "_principal_has_role(principal," in posts
 
 
-def test_document_rule_emits_when_ast_and_post_fetch(tmp_path):
+def test_document_rule_compiles_post_fetch_guard(tmp_path):
     def add_hierarchy(ctx):
         return dataclasses.replace(
             ctx,
@@ -58,6 +64,7 @@ def test_principal_includes_roles_extraction(tmp_path):
 
 
 def test_roles_field_default_emits_python_none(tmp_path):
+    import ast
     _generate("auth-password.yaml", tmp_path)
     auth_module = (tmp_path / "dependencies" / "auth.py").read_text()
     assert "_extract_roles(doc, None)" in auth_module
@@ -72,7 +79,7 @@ def test_no_authz_emitted_without_auth(tmp_path):
     assert not (tmp_path / "dependencies" / "when_eval.py").exists()
     posts = (tmp_path / "routes" / "posts.py").read_text()
     assert "AccessRule" not in posts
-    assert "access_rules" not in posts
+    assert "_principal_has_role" not in posts
 
 
 def test_generated_backend_byte_compiles(tmp_path):
