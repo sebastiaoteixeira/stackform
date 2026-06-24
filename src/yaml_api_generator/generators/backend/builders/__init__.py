@@ -76,6 +76,18 @@ class ContextBuilder:
             else:
                 datastores[name] = {"type": ds.type, "uri": ds.uri, "database": ds.database}
 
+        repository_base_classes = {
+            repo.name: repo.base_classes
+            for repo in document.repositories.values()
+            if repo.base_classes
+        }
+
+        # Flat service keys share repository names; deduplicate by collection name.
+        service_base_classes: dict[str, tuple[str, ...]] = {}
+        for svc in document.services.values():
+            if svc.base_classes and svc.repository:
+                service_base_classes.setdefault(svc.repository, svc.base_classes)
+
         return CompileContext(
             app=app,
             models=models,
@@ -84,6 +96,8 @@ class ContextBuilder:
             collections=raw_collections,
             repository_operations=repository_operations,
             datastores=datastores,
+            repository_base_classes=repository_base_classes,
+            service_base_classes=service_base_classes,
         )
 
 

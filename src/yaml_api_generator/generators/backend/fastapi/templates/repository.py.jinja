@@ -6,11 +6,14 @@ from typing import Any
 from pymongo import ReturnDocument
 
 {% endif %}
+{% for base in user_bases | default([]) %}
+from {{ base.module }} import {{ base.class_name }}
+{% endfor %}
 from ._ops import RepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
 
 
 
-class {{ class_name }}Repository({% for op in operations %}{{ op | capitalize }}Op, {% endfor %}RepositoryBase):
+class {{ class_name }}Repository({% for op in operations %}{{ op | capitalize }}Op, {% endfor %}{% for base in user_bases | default([]) %}{{ base.class_name }}, {% endfor %}RepositoryBase):
     COLLECTION = "{{ collection_name }}"
     ID_FIELD = "{{ id_field }}"
     ID_FORMAT = "{{ id_field_format }}"

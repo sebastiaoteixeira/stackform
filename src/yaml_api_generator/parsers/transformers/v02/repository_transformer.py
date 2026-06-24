@@ -172,6 +172,7 @@ class RepositoryTransformer:
                 crud=crud_ops,
                 operations=ops_dict,
                 datastore=datastore,
+                base_classes=tuple(repo_cfg.get("_base_classes", [])),
             )
 
         return repositories, errors

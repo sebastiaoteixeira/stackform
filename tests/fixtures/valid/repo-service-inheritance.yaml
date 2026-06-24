@@ -1,0 +1,39 @@
+version: "0.2"
+api:
+  basePath: /api
+  version: v1
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+mongo:
+  uri: mongodb://localhost:27017
+  database: testdb
+entities:
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+repositories:
+  auditedRepo:
+    abstract: true
+    base: app.bases.AuditedRepository
+  posts:
+    entity: post
+    extends: auditedRepo
+services:
+  auditedSvc:
+    abstract: true
+    base: app.bases.AuditedService
+  posts:
+    repository: posts
+    extends: auditedSvc
+controllers:
+  posts:
+    service: posts
+    base_path: /posts
+    access: public

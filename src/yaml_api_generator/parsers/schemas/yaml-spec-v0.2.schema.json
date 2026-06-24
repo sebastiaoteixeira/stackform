@@ -344,6 +344,9 @@
     "RepositoryConfig": {
       "type": "object",
       "properties": {
+        "abstract": { "type": "boolean" },
+        "extends": { "type": "string" },
+        "base": { "type": "string" },
         "entity": {
           "type": "string"
         },
@@ -368,6 +371,9 @@
     "ServiceConfig": {
       "type": "object",
       "properties": {
+        "abstract": { "type": "boolean" },
+        "extends": { "type": "string" },
+        "base": { "type": "string" },
         "repository": { "type": "string" },
         "operations": {
           "type": "object",
