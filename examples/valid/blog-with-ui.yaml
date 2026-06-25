@@ -69,8 +69,8 @@ controllers:
     operations:
       register: { access: public }
       login: { access: public }
-      list: { access: authenticated }
-      get: { access: authenticated }
+      list: { access: "*" }
+      get: { access: "*" }
 
   posts:
     base_path: /posts
@@ -79,7 +79,7 @@ controllers:
     operations:
       list: { access: public }
       get: { access: public }
-      create: { access: authenticated }
+      create: { access: "*" }
       update:
         access:
           - given:
@@ -96,10 +96,10 @@ controllers:
   comments:
     base_path: /comments
     service: comments
-    access: authenticated
+    access: "*"
     operations:
       list: { access: public }
-      create: { access: authenticated }
+      create: { access: "*" }
       delete:
         access:
           - given:

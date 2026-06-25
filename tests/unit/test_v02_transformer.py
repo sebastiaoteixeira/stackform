@@ -391,7 +391,7 @@ def test_95_star_produces_non_public_route_with_no_rules(tmp_path):
     assert list_route.access_rules is None
 
 
-def test_96_authenticated_legacy_produces_non_public_route(tmp_path):
+def test_96_wildcard_produces_non_public_route(tmp_path):
     ir = _parse(
         _AUTH_PREAMBLE + """
     controllers:
@@ -405,14 +405,14 @@ def test_96_authenticated_legacy_produces_non_public_route(tmp_path):
       posts:
         service: posts
         base_path: /posts
-        access: authenticated
+        access: "*"
     """, tmp_path
     )
     list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
     assert list_route.is_public is False
 
 
-def test_97_identity_entity_resolves_to_collection_in_access_rule(tmp_path):
+def test_97_entity_wildcard_resolves_to_collection_in_access_rule(tmp_path):
     ir = _parse(
         _AUTH_PREAMBLE + """
     controllers:
@@ -426,7 +426,7 @@ def test_97_identity_entity_resolves_to_collection_in_access_rule(tmp_path):
       posts:
         service: posts
         base_path: /posts
-        access: "identity:user"
+        access: "user:*"
     """, tmp_path
     )
     list_route = next(r for r in ir.routes if r.operation == "list" and "posts" in r.path)
