@@ -19,7 +19,7 @@ inline defaults used when those variables are unset.
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -170,7 +170,7 @@ controllers:
 a bare role string is rejected as ambiguous (ACCESS_AMBIGUOUS_ROLE). Scope every rule
 to an entity: `user:*` and `apiClient:*` allow any authenticated user / any
 authenticated client respectively, and `apiClient:enterprise` requires the
-`enterprise` tier. Using just `*` (or `authenticated`) means any principal of any
+`enterprise` tier. Using just `"*"` means any principal of any
 auth entity.
 
 **Multiple entity types use a YAML list -- not an inline bracket string.** When a
@@ -225,7 +225,7 @@ operator -- `caller`, `document`, and `record` are safe.
 /api/v1/users` are open. Registration and login are the intended entry points
 (`POST /api/v1/users/register`, `POST /api/v1/users/login`), and login returns
 `{"token": "...", "user": {...}}` with the password and internal fields stripped. If
-you want users locked down, add `access: authenticated` (or a stricter rule) to the
+you want users locked down, add `access: "*"` (or a stricter rule) to the
 `users` controller and keep `register`/`login` `public`.
 
 **API-key clients.** The `apiClient` entity declares a top-level `apiKey` string field;

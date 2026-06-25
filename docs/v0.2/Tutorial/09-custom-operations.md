@@ -134,7 +134,7 @@ Notes on this spec:
 
 - Roles come from an enum field plus `auth.roles: role`. The standalone entity-level `roles: { values, default, hierarchy }` block is parsed but not wired in v0.2, so do not rely on it. A new user's role is set only by the enum field's `default:`; clients cannot set `role`/`roles` on write (those keys are stripped).
 - `register`/`login` routes are not generated unless you enable them with `api.operations.auth`, as shown above.
-- `access: "*"` (alias `authenticated`) means any logged-in user; `public` means no auth; `moderator` is an exact role match; the `given`/`when` rule is an ownership check.
+- `access: "*"` means any logged-in user; `public` means no auth; `moderator` is an exact role match; the `given`/`when` rule is an ownership check.
 
 ## Two handler contracts
 
@@ -207,7 +207,7 @@ There is no `context.now()`; build timestamps yourself. Raise `NotFoundError` (i
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not

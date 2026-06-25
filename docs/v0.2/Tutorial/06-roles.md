@@ -62,7 +62,7 @@ controllers:
   users:
     service: users
     base_path: /users
-    access: authenticated
+    access: "*"
     operations:
       register: { access: public }
       login: { access: public }
@@ -92,7 +92,7 @@ at a non-enum field fails with `AUTH_ROLES_FIELD_NOT_ENUM`.
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -142,8 +142,8 @@ operations:
 Other access values you can combine with roles:
 
 - `public` -- no authentication.
-- `*` (or `authenticated`) -- any authenticated principal, role ignored.
-- `user:*` (or `identity:user`) -- any `user`, role ignored.
+- `"*"` -- any authenticated principal, role ignored.
+- `user:*` -- any `user`, role ignored.
 - `user:admin` -- a `user` whose role is exactly `admin`.
 
 ### Single auth entity: prefix is optional

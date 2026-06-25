@@ -54,11 +54,11 @@ and the default assigned on create come from that field's `values:` and `default
   password-based auth, a `password` input is injected into the create model.
 - **Runtime:** principals authenticated via this entity receive a JWT whose `sub` is the
   identity record's primary-key value. The entity participates in access rules as
-  `identity:<entityName>` and `<entityName>:<role>`.
+  `<entityName>:*` and `<entityName>:<role>`.
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -78,7 +78,7 @@ Effects:
 - Generates `register` and `login` endpoints when `api.operations.auth` enables them.
 - Principals authenticated via this entity receive a JWT with `sub` set to the record's
   primary-key value.
-- The entity participates in access rules as `identity:<entityName>` and
+- The entity participates in access rules as `<entityName>:*` and
   `<entityName>:<role>`.
 
 ### `auth:` block
@@ -292,7 +292,7 @@ access: apiClient:enterprise
   PBKDF2-SHA256 with 390000 iterations by default.
 
 - **Entity without `auth.roles`.** The entity still authenticates principals but has no
-  roles. `access: public`, `access: "*"`/`authenticated`, and `access: user:*` still work;
+  roles. `access: public`, `access: "*"`, and `access: user:*` still work;
   `access: user:admin` will never match because no role values exist.
 
 ## Errors

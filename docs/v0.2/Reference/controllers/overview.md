@@ -54,7 +54,7 @@ Default access rule applied to every operation. Individual operations override i
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -125,8 +125,8 @@ controllers:
 The `access` value selects who may call an operation:
 
 - `public` - no authentication required.
-- `*` or `authenticated` - any authenticated principal.
-- `identity:<entity>` (or `<entity>:*`) - any principal from that auth entity.
+- `"*"` - any authenticated principal.
+- `<entity>:*` - any principal from that auth entity.
 - `<entity>:<role>` - a principal from that entity holding the role (exact match).
 - `<role>` - shorthand for the single auth entity in the spec; ambiguous (ACCESS_AMBIGUOUS_ROLE) when more than one auth entity exists, and an error (ACCESS_NO_AUTH_ENTITY) when there is none.
 - a list of rules, including ABAC `given`/`when` rules.

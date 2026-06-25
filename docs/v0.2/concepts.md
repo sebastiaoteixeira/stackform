@@ -109,15 +109,15 @@ Roles come from the field named by `auth.roles` (an enum field on the identity e
 Controllers declare access with the `access:` keyword, either on the whole controller or per operation. The vocabulary:
 
 - `public`: open, no credentials required (the default for a minified controller, so lock writes down explicitly).
-- `authenticated` (alias `*`): any valid principal.
-- `identity:<entity>` (or `<entity>:*`): any member of that identity collection.
+- `"*"`: any valid principal.
+- `<entity>:*`: any member of that identity collection.
 - `<entity>:<role>`: a principal of that collection holding that exact role.
 
 Ownership and conditional access use `when` rules with a `given` document binding, evaluated after the target record is fetched (a missing record returns 404 before any ownership check). `when` operators are the words `equals`, `not equals`, `and`, `or`, `not`, `in`, and `not in`; operands are field references and single-quoted strings. Stored fields are read through `principal.record.<field>`.
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
