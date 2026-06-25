@@ -180,7 +180,7 @@ sequenceDiagram
     Backend->>Google: Exchange code at token_endpoint
     Backend->>Google: GET userinfo_endpoint with access token
     Backend->>Mongo: Find user by identifier, or provision if missing
-    Backend-->>Browser: 302 to FRONTEND_URL/auth/callback?token=<jwt>
+    Backend-->>Browser: 302 to FRONTEND_URL/auth/callback?token={jwt}
 ```
 
 The callback issues the same app-signed JWT that password login produces, then

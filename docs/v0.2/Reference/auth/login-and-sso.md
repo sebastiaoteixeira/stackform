@@ -156,7 +156,7 @@ sequenceDiagram
   A->>I: GET userinfo_endpoint (Bearer access_token)
   I-->>A: claims
   A->>A: map claims, find-or-provision record, mint app JWT
-  A-->>B: 302 to FRONTEND_URL/auth/callback?token=<jwt>
+  A-->>B: 302 to FRONTEND_URL/auth/callback?token={jwt}
 ```
 
 Notes on the callback:
