@@ -1,11 +1,11 @@
 """Shared resolution of access-rule principal strings.
 
-Resolves principal expressions (public, authenticated, identity:<entity>, role)
-into a normalized principal and optional required role, with symbol resolution
-against the known auth entities. Used by both the v0.1 and v0.2 transformers.
+Resolves principal expressions (public, *, entity:role, entity:*, role) into a
+normalized principal and optional required role, with symbol resolution against
+the known auth entities. Used by both the v0.1 and v0.2 transformers.
 """
 
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
@@ -14,7 +14,7 @@ class ResolvedPrincipal(NamedTuple):
     """Outcome of resolving a principal string.
 
     is_public is True for the 'public' keyword. principal/required_role describe
-    an identity principal; both are None for 'authenticated' (any logged-in user).
+    an identity principal; both are None for '*' (any logged-in user).
     """
 
     is_public: bool
@@ -30,15 +30,8 @@ def resolve_principal(
 ) -> tuple[ResolvedPrincipal | None, list[ConfigError]]:
     if value == "public":
         return ResolvedPrincipal(is_public=True, principal=None, required_role=None), []
-    if value in ("*", "authenticated"):
+    if value == "*":
         return ResolvedPrincipal(is_public=False, principal=None, required_role=None), []
-
-    if value.startswith("identity:"):
-        entity_name = value[len("identity:"):]
-        collection = entity_to_collection.get(entity_name)
-        if collection is None:
-            return None, [_unknown_entity(entity_name, path)]
-        return ResolvedPrincipal(False, f"identity:{collection}", None), []
 
     if ":" in value:
         entity_part, role_part = value.split(":", 1)

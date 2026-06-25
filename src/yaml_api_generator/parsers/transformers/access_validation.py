@@ -81,7 +81,7 @@ def _check_role_string(
     auth_entities: set[str],
     errors: list[ConfigError],
 ) -> None:
-    if value in ("public", "*", "authenticated") or value.startswith("identity:"):
+    if value in ("public", "*"):
         return
 
     if ":" in value:
@@ -157,7 +157,7 @@ def _check_rule_list(
     if access == []:
         errors.append(_invalid(
             "access is an empty list", path,
-            "List at least one rule, or use 'public'/'authenticated'",
+            "List at least one rule, or use 'public'/'*'",
         ))
         return
 

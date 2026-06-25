@@ -39,7 +39,7 @@ class AccessTransformer:
             return False, None, []
         if access == "public":
             return True, None, []
-        if access in ("*", "authenticated"):
+        if access == "*":
             return False, None, []
         if isinstance(access, str):
             rule, errors = self._parse_access_string(

@@ -12,12 +12,12 @@ collections:
       via: password
     access:
       create: public
-      list: authenticated
-      get: authenticated
-      update: authenticated
-      replace: authenticated
+      list: "*"
+      get: "*"
+      update: "*"
+      replace: "*"
       delete:
-        - principal: identity:users
+        - principal: "users:*"
           when: "principal.sub equals document.id"
     fields:
       id:
@@ -40,8 +40,8 @@ collections:
       create: public
       list: public
       get: public
-      update: authenticated
-      delete: authenticated
+      update: "*"
+      delete: "*"
     fields:
       id:
         type: id
