@@ -101,6 +101,7 @@ class ContextBuilder:
             datastores=datastores,
             repository_abstract=repository_abstract,
             repository_inherits=repository_inherits,
+            services=dict(document.services),
         )
 
 

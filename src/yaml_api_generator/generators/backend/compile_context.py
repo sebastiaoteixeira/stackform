@@ -15,7 +15,7 @@ Key types:
 from dataclasses import dataclass, field
 from typing import Any
 
-from ...ir.api import IRProvider, IRProviderBinding, IRRolesConfig
+from ...ir.api import IRProvider, IRProviderBinding, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
 
 
@@ -86,6 +86,8 @@ class RouteDescriptor:
     password_via: bool
     handler: str | None = None
     access_rules: list[AccessRuleDescriptor] | None = None
+    # IR service name (expanded flat key, e.g. "list-posts") backing this route.
+    service: str | None = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +168,8 @@ class CompileContext:
     repository_abstract: dict[str, str] = field(default_factory=dict)
     # Concrete repo (collection) name -> abstract base repo name it inherits.
     repository_inherits: dict[str, str] = field(default_factory=dict)
+    # IR services keyed by their expanded flat name (e.g. "list-posts").
+    services: dict[str, IRService] = field(default_factory=dict)
 
     @property
     def datastore_types(self) -> set[str]:

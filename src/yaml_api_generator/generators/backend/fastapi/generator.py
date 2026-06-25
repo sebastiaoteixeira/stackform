@@ -143,6 +143,46 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "identity_fields": extract_identity_fields(context, col_name),
         }
 
+    @staticmethod
+    def _service_group(route_service: str | None, services: dict) -> str | None:
+        """Resolve the repository/service-group name backing a route's service.
+
+        For expanded flat keys like 'list-posts', the IRService carries the
+        repository name directly. Falling back to the part after the first dash
+        handles edge cases where the service isn't in the index.
+        """
+        if route_service is None:
+            return None
+        ir_svc = services.get(route_service)
+        if ir_svc is not None and ir_svc.repository:
+            return ir_svc.repository
+        # Fallback: strip the operation prefix (e.g. "list-posts" → "posts")
+        if "-" in route_service:
+            return route_service.split("-", 1)[1]
+        return route_service
+
+    def _build_routes_context(
+        self, col_name: str, col_data: dict, ctx: CompileContext
+    ) -> dict:
+        service_groups = list(dict.fromkeys(
+            g
+            for route in col_data["routes"]
+            if (g := self._service_group(route.service, ctx.services)) is not None
+        ))
+        return {
+            "ctx": ctx,
+            "collection_name": col_name,
+            "service_groups": service_groups,
+            "routes": col_data["routes"],
+            "model_index": {m.name: m for m in col_data["models"]},
+            "repo_queries": {
+                op["name"]: op["query"]
+                for op in ctx.repository_operations.get(col_name, [])
+            },
+            "datastore_type": ctx.collection_datastore_type(col_name),
+            "auth": ctx.auth,
+        }
+
     def _render_routes(
         self,
         env: Environment,
@@ -156,18 +196,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 template_name="routes.py.jinja",
                 output_subdir="routes",
                 import_pattern="from .{col_name} import router as {col_name}_router",
-                context_builder=lambda col_name, col_data, ctx: {
-                    "ctx": ctx,
-                    "collection_name": col_name,
-                    "routes": col_data["routes"],
-                    "model_index": {m.name: m for m in col_data["models"]},
-                    "repo_queries": {
-                        op["name"]: op["query"]
-                        for op in ctx.repository_operations.get(col_name, [])
-                    },
-                    "datastore_type": ctx.collection_datastore_type(col_name),
-                    "auth": ctx.auth,
-                },
+                context_builder=self._build_routes_context,
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
             )
         )
@@ -311,7 +340,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 ("auth.py.jinja", "auth.py"),
                 ("authorization.py.jinja", "authorization.py"),
             ]
-            init_imports.append("from .auth import resolve_principal, require_principal")
+            init_imports.append(
+                "from .auth import resolve_principal, get_optional_principal, require_principal"
+            )
             init_imports.append("from .authorization import _principal_has_role")
         if context.auth.uses_jwt:
             auth_files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
@@ -321,6 +352,44 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / filename).write_text(
                 env.get_template(template_name).render(ctx=context, auth=context.auth)
             )
+
+        collections = [
+            {
+                "name": col_name,
+                "class_name": to_pascal_case(col_name),
+                "is_sql": context.collection_datastore_type(col_name) in ("postgres", "postgresql"),
+            }
+            for col_name in context.collections
+        ]
+
+        # Deduplicate services by their backing repository: two services that
+        # resolve to the same repository share one provider callable.
+        seen_repos: set[str] = set()
+        service_bindings: list[dict] = []
+        for ir_svc in context.services.values():
+            repo = ir_svc.repository
+            if repo is None or repo in seen_repos:
+                continue
+            seen_repos.add(repo)
+            service_bindings.append({
+                "name": repo,
+                "class_name": to_pascal_case(repo),
+                "is_sql": context.collection_datastore_type(repo) in ("postgres", "postgresql"),
+            })
+
+        (deps_dir / "repositories.py").write_text(
+            env.get_template("dependencies_repositories.py.jinja").render(
+                collections=collections,
+                uses_sql=uses_sql,
+                uses_mongo=uses_mongo,
+            )
+        )
+        (deps_dir / "services.py").write_text(
+            env.get_template("dependencies_services.py.jinja").render(
+                collections=service_bindings,
+                auth_enabled=context.auth.enabled,
+            )
+        )
 
         (deps_dir / "__init__.py").write_text(
             "\n".join(init_imports) + "\n" if init_imports else ""

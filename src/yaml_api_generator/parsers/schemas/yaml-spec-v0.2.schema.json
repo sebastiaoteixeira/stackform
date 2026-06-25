@@ -192,20 +192,6 @@
 
       ]
     },
-    "ProviderBinding": {
-      "type": "object",
-      "required": ["provider", "identifier"],
-      "properties": {
-        "provider": { "type": "string" },
-        "identifier": { "type": "string" },
-        "claim_mapping": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "auto_provision": { "type": "boolean" }
-      },
-      "additionalProperties": false
-    },
     "RolesConfig": {
       "type": "object",
       "required": ["values", "default"],

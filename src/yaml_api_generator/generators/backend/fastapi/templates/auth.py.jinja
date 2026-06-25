@@ -152,11 +152,16 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
     return None
 
 
-async def require_principal(
+async def get_optional_principal(
     request: Request,
     db: Database = Depends(get_database),
+) -> dict[str, Any] | None:
+    return await resolve_principal(request, db)
+
+
+async def require_principal(
+    principal: dict[str, Any] | None = Depends(get_optional_principal),
 ) -> dict[str, Any]:
-    principal = await resolve_principal(request, db)
     if principal is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return principal
