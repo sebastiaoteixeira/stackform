@@ -160,7 +160,8 @@
             "via": {
               "oneOf": [
                 { "type": "string" },
-                { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+                { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                { "type": "array", "items": { "$ref": "#/$defs/ProviderBinding" }, "minItems": 1 }
               ]
             },
             "roles": { "type": "string" },

@@ -68,9 +68,16 @@ class IdentityTransformer:
                 raise ConfigErrors(roles_errors)
 
             via_bindings = [
-                IRProviderBinding(provider=p, identifier=identifier or "")
-                for p in via
-                if identifier
+                IRProviderBinding(provider=entry, identifier=identifier or "")
+                if isinstance(entry, str)
+                else IRProviderBinding(
+                    provider=entry["provider"],
+                    identifier=entry.get("identifier", identifier or ""),
+                    claim_mapping=entry.get("claim_mapping", {}),
+                    auto_provision=entry.get("auto_provision", True),
+                )
+                for entry in via
+                if isinstance(entry, dict) or identifier
             ]
             explicit_bindings = [
                 IRProviderBinding(
