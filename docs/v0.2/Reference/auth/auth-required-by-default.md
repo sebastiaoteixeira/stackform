@@ -56,8 +56,8 @@ flowchart TD
   B -- "no (op: false)" --> Z[No route exists - 404]
   B -- yes --> C{Controller access}
   C -- "public" --> OK[Allow - open route]
-  C -- "authenticated or *" --> P1{Principal resolved?}
-  C -- "identity:entity or entity:*" --> P2{Principal resolved?}
+  C -- "*" --> P1{Principal resolved?}
+  C -- "entity:*" --> P2{Principal resolved?}
   C -- "entity:role or bare role" --> P3{Principal resolved?}
   P1 -- no --> U[401 Unauthorized]
   P1 -- yes --> OK
@@ -72,7 +72,7 @@ flowchart TD
 The default FastAPI build, the DRF build, and `yaml-api run` all follow this same
 resolution. A request with no credentials on a protected route stops at the "401
 if no principal" node; an authenticated request that does not satisfy the role or
-`identity:<entity>` scope gets 403.
+`<entity>:*` scope gets 403.
 
 ## Access vocabulary
 
@@ -82,10 +82,8 @@ vocabulary:
 | Value | Meaning |
 |-------|---------|
 | `public` | No authentication. The only way to opt a route out of protection. |
-| `authenticated` | Any valid principal from any auth entity. Alias of `"*"`. |
-| `"*"` | Same as `authenticated`. |
-| `identity:<entity>` | Any principal whose identity collection is `<entity>`. |
-| `<entity>:*` | Same as `identity:<entity>` -- any member of that auth entity. |
+| `"*"` | Any valid principal from any auth entity. |
+| `<entity>:*` | Any principal whose identity collection is `<entity>` -- any member of that auth entity. |
 | `<entity>:<role>` | A principal of `<entity>` whose role (exact match) is `<role>`. |
 | `<role>` | Bare role; allowed only when a single auth entity exists (otherwise `ACCESS_AMBIGUOUS_ROLE`). |
 
@@ -110,7 +108,7 @@ If you want `myCollection` protected, declare the access explicitly:
 controllers:
   myCollection:
     repository: myCollection
-    access: authenticated
+    access: "*"
 ```
 
 You can also tighten or loosen individual operations:
@@ -119,7 +117,7 @@ You can also tighten or loosen individual operations:
 controllers:
   myCollection:
     repository: myCollection
-    access: authenticated
+    access: "*"
     operations:
       list: { access: public }      # reads open, writes protected
       delete: { access: user:admin }
@@ -127,7 +125,7 @@ controllers:
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
