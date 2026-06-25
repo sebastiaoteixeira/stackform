@@ -1,0 +1,29 @@
+from typing import Callable
+
+from fastapi import Depends
+
+{% if uses_mongo %}
+from dependencies.mongodb import get_database as get_mongo_db
+{% endif %}
+{% if uses_sql %}
+from dependencies.postgres import get_database as get_pg_db
+{% endif %}
+{% for col in collections %}
+from repositories.{{ col.name }} import {{ col.class_name }}Repository
+{% endfor %}
+
+
+def repository_provider(repo_cls: type, db_dep: Callable) -> Callable:
+    def provide(db=Depends(db_dep)):
+        return repo_cls(db)
+    provide.__name__ = f"get_{repo_cls.__name__.lower()}"
+    return provide
+
+
+{% for col in collections %}
+{% if col.is_sql %}
+get_{{ col.name }}_repository = repository_provider({{ col.class_name }}Repository, get_pg_db)
+{% else %}
+get_{{ col.name }}_repository = repository_provider({{ col.class_name }}Repository, get_mongo_db)
+{% endif %}
+{% endfor %}

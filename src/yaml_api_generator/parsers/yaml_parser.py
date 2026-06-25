@@ -26,6 +26,7 @@ from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError, best_match
 
 from ..ir import IRDocument
 from ..ir.api import EnvRef
@@ -366,11 +367,22 @@ def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
     return [
         ConfigError(
             code="SCHEMA_VALIDATION_ERROR",
-            message=error.message,
+            message=_describe_error(error),
             path=_join_path(tuple(str(part) for part in error.path)),
         )
         for error in errors
     ]
+
+
+def _describe_error(error: ValidationError) -> str:
+    """Surface the most specific reason for combinator failures.
+
+    ``oneOf``/``anyOf`` produce an opaque "is not valid under any of the given
+    schemas"; the actual cause lives in the deepest sub-error.
+    """
+    if error.context:
+        return best_match(error.context).message
+    return error.message
 
 
 _VERSION_SCHEMA_MAP: dict[str, str] = {

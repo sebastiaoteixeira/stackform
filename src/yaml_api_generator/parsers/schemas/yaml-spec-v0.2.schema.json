@@ -160,7 +160,8 @@
             "via": {
               "oneOf": [
                 { "type": "string" },
-                { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+                { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                { "type": "array", "items": { "$ref": "#/$defs/ProviderBinding" }, "minItems": 1 }
               ]
             },
             "roles": { "type": "string" },
@@ -191,20 +192,6 @@
         }
 
       ]
-    },
-    "ProviderBinding": {
-      "type": "object",
-      "required": ["provider", "identifier"],
-      "properties": {
-        "provider": { "type": "string" },
-        "identifier": { "type": "string" },
-        "claim_mapping": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "auto_provision": { "type": "boolean" }
-      },
-      "additionalProperties": false
     },
     "RolesConfig": {
       "type": "object",

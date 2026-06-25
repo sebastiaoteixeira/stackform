@@ -72,6 +72,7 @@ class RouteBuilder:
                         password_via=False,
                         handler=ir_route.handler,
                         access_rules=access_rules,
+                        service=ir_route.service,
                     )
                 )
                 continue
@@ -100,6 +101,7 @@ class RouteBuilder:
                     has_id_param="{id}" in ir_route.path,
                     password_via=uses_password,
                     access_rules=access_rules,
+                    service=ir_route.service,
                 )
             )
 

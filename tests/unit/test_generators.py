@@ -24,6 +24,8 @@ def test_fastapi_output_directory_structure_created(tmp_path):
     assert (tmp_path / "services").is_dir()
     assert (tmp_path / "repositories").is_dir()
     assert (tmp_path / "dependencies").is_dir()
+    assert (tmp_path / "dependencies" / "repositories.py").exists()
+    assert (tmp_path / "dependencies" / "services.py").exists()
     assert (tmp_path / "requirements.txt").exists()
 
 
@@ -304,3 +306,42 @@ def test_oidc_routes_read_client_secret_via_settings(tmp_path):
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
     assert "settings.KEYCLOAK_CLIENT_SECRET.get_secret_value()" in oidc_src
     assert "os.environ" not in oidc_src
+
+
+def test_shared_service_provider_defined_exactly_once(tmp_path):
+    """Two controllers sharing the same service yield a single provider callable."""
+    ctx = _ctx_from_fixture("shared-service.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    services_src = (tmp_path / "dependencies" / "services.py").read_text()
+    assert services_src.count("get_posts_service") == 1
+
+
+def test_shared_service_route_module_imports_provider(tmp_path):
+    """The route module for the shared collection imports the shared service provider."""
+    ctx = _ctx_from_fixture("shared-service.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    route_src = (tmp_path / "routes" / "posts.py").read_text()
+    assert "from dependencies.services import get_posts_service" in route_src
+
+
+def test_public_only_routes_omit_dead_auth_imports(tmp_path):
+    """A route file with no authenticated routes must not import require_principal
+    or _principal_has_role even when auth is globally enabled."""
+    ctx = _ctx_from_fixture("roles-access.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    # posts controller has public access for list/get; role-gated for write ops
+    # users controller has auth required routes
+    users_src = (tmp_path / "routes" / "users.py").read_text()
+    assert "require_principal" in users_src
+
+    # basic-crud has no auth at all; check that auth imports are absent
+    ctx_no_auth = _ctx_from_fixture("basic-crud.yaml")
+    gen2 = FastAPIGenerator()
+    out2 = tmp_path / "no-auth"
+    gen2.generate(ctx_no_auth, out2)
+    posts_src = (out2 / "routes" / "posts.py").read_text()
+    assert "require_principal" not in posts_src
+    assert "_principal_has_role" not in posts_src

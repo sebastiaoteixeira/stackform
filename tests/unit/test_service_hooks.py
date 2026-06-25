@@ -3,7 +3,7 @@
 Verifies that the generated ``services/_ops.py`` (rendered from
 ``service_ops.py.jinja``) exposes the full async hook set on ``ServiceBase``,
 that the principal-aware constructor is emitted, and that ``routes.py.jinja``
-threads principal through ``_service()`` on authenticated routes.
+wires handlers to per-entity service providers via FastAPI Depends.
 """
 
 import textwrap
@@ -141,27 +141,24 @@ def test_password_mixin_is_async(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# _service() factory threading principal
+# Provider-based DI wiring
 # ---------------------------------------------------------------------------
 
 
-def test_service_factory_accepts_principal_parameter(tmp_path):
+def test_route_files_import_service_provider(tmp_path):
     out = _gen("auth-password.yaml", tmp_path)
-    # Find any route file that has auth
     routes_dir = out / "routes"
-    route_files = list(routes_dir.glob("*.py"))
-    assert route_files
-
-    for route_file in route_files:
+    for route_file in routes_dir.glob("*.py"):
         if route_file.name in ("login.py", "__init__.py"):
             continue
         src = route_file.read_text()
-        if "_service" in src:
-            assert "def _service(principal: dict[str, Any] | None = None)" in src, \
-                f"_service factory missing principal param in {route_file.name}"
+        assert "from dependencies.services import" in src, \
+            f"{route_file.name} must import a service provider from dependencies.services"
+        assert "Depends(" in src, \
+            f"{route_file.name} must use FastAPI Depends for service injection"
 
 
-def test_authed_route_passes_principal_to_service(tmp_path):
+def test_authed_handler_injects_principal_via_depends(tmp_path):
     out = _gen("auth-password.yaml", tmp_path)
     routes_dir = out / "routes"
     for route_file in routes_dir.glob("*.py"):
@@ -169,13 +166,12 @@ def test_authed_route_passes_principal_to_service(tmp_path):
             continue
         src = route_file.read_text()
         if "require_principal" in src:
-            # At least one call must pass principal
-            assert "_service(principal)" in src, \
-                f"Authed route file {route_file.name} does not call _service(principal)"
+            assert "Depends(require_principal)" in src, \
+                f"{route_file.name}: authed handler must declare principal via Depends(require_principal)"
 
 
-def test_public_route_calls_service_without_principal(tmp_path):
-    """A collection with all-public routes must call _service() (no principal arg)."""
+def test_public_route_has_no_require_principal(tmp_path):
+    """A collection with all-public routes must not inject require_principal."""
     out = _gen_inline("""
         version: "0.2"
         api:
@@ -200,20 +196,16 @@ def test_public_route_calls_service_without_principal(tmp_path):
             access: public
     """, tmp_path)
     src = (out / "routes" / "posts.py").read_text()
-    # All service calls should be _service() with no principal arg
-    assert "_service()" in src
-    assert "_service(principal)" not in src
+    assert "require_principal" not in src
+    assert "Depends(get_posts_service)" in src
 
 
-def test_mixed_auth_routes_thread_principal_selectively(tmp_path):
-    """On a collection with both public and authed routes, each call site is correct."""
+def test_mixed_auth_routes_inject_principal_selectively(tmp_path):
+    """On a collection with both public and authed routes, principal Depends only on authed handlers."""
     out = _gen("auth-password.yaml", tmp_path)
-    # users collection: create=public (register), list/get/update/delete=authed
     users_routes = (out / "routes" / "users.py").read_text()
-    # Authed routes must pass principal
-    assert "_service(principal)" in users_routes
-    # There should be no bare _service() call in authed route body after an auth guard
-    # (public routes call _service() without principal — that is fine)
+    assert "Depends(require_principal)" in users_routes
+    assert "Depends(get_users_service)" in users_routes
 
 
 # ---------------------------------------------------------------------------

@@ -4,18 +4,28 @@
 {% set repo_op_routes = routes | rejectattr("handler") | rejectattr("operation", "in", crud_op_names) | list %}
 from typing import Any
 
-from fastapi import APIRouter{% if auth.enabled %}, Depends, HTTPException{% endif %}{% if custom_routes or repo_op_routes %}, Request{% endif %}
-
-{% set ds_module = "postgres" if datastore_type in ["postgres", "postgresql"] else "mongodb" %}
 {% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
-from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
-from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
-from dependencies.{{ ds_module }} import get_database
+{% set needs_request = custom_routes or repo_op_routes %}
+from fastapi import APIRouter, Depends{% if auth.enabled %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
+
 {% if repo_op_routes and is_mongo %}
 from fastapi.encoders import jsonable_encoder
 {% endif %}
-{% if auth.enabled %}
+{% for group in service_groups %}
+from dependencies.services import get_{{ group }}_service
+{% endfor %}
+{% if repo_op_routes %}
+from dependencies.repositories import get_{{ collection_name }}_repository
+{% endif %}
+{% set ns_auth = namespace(needs_require=false, needs_role=false) %}
+{% for route in routes %}
+{% if route.needs_auth %}{% set ns_auth.needs_require = true %}{% endif %}
+{% if route.access_rules %}{% set ns_auth.needs_role = true %}{% endif %}
+{% endfor %}
+{% if auth.enabled and ns_auth.needs_require %}
 from dependencies.auth import require_principal
+{% endif %}
+{% if auth.enabled and ns_auth.needs_role %}
 from dependencies.authorization import _principal_has_role
 {% endif %}
 {% set ns = namespace(model_imports=[]) %}
@@ -38,15 +48,11 @@ from models.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
 {% endif %}
 
 
-def _service(principal: dict[str, Any] | None = None) -> {{ collection_name | capitalize_collection }}Service:
-    return {{ collection_name | capitalize_collection }}Service({{ collection_name | capitalize_collection }}Repository(get_database()), principal=principal)
-
-
 router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 
 {% macro openapi_extra(route) %}{% if route.needs_auth and security_schemes %}, openapi_extra={"security": {{ security_schemes }}}{% endif %}{% endmacro %}
 {% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% endmacro %}
-{% macro svc(route) %}{% if auth.enabled and route.needs_auth %}_service(principal){% else %}_service(){% endif %}{% endmacro %}
+{% macro svc_dep() %}svc=Depends(get_{{ service_groups | first }}_service){% endmacro %}
 
 {# Emit pre-fetch authorization guards as inline compiled conditions. #}
 {# Rules whose `when` references `document` are deferred to post-fetch. #}
@@ -133,62 +139,62 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 {% for route in crud_routes %}
 {% if route.operation == "list" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def list_{{ collection_name }}({{ auth_param(route) | trim(chars=", ") }}) -> Any:
+async def list_{{ collection_name }}({{ auth_param(route) | trim(chars=", ") }}{% if auth.enabled and route.needs_auth %}, {{ svc_dep() }}{% else %}{{ svc_dep() }}{% endif %}) -> Any:
 {{ pre_fetch_guard(route) }}
-    return await {{ svc(route) }}.list()
+    return await svc.list()
 
 
 {% elif route.operation == "get" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
+async def get_{{ collection_name }}(id: str{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await {{ svc(route) }}.get(id)
+    existing = await svc.get(id)
 {{ post_fetch_guard(route, "existing") }}
     return existing
 {% else %}
-    return await {{ svc(route) }}.get(id)
+    return await svc.get(id)
 {% endif %}
 
 
 {% elif route.operation == "create" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def create_{{ collection_name }}(payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
+async def create_{{ collection_name }}(payload: {{ route.body_model }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ pre_fetch_guard(route) }}
-    return await {{ svc(route) }}.create(payload.model_dump(exclude_unset=True))
+    return await svc.create(payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "update" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
+async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await {{ svc(route) }}.get(id)
+    existing = await svc.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await {{ svc(route) }}.update(id, payload.model_dump(exclude_unset=True))
+    return await svc.update(id, payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "replace" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
+async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await {{ svc(route) }}.get(id)
+    existing = await svc.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await {{ svc(route) }}.replace(id, payload.model_dump(exclude_unset=True))
+    return await svc.replace(id, payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "delete" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def delete_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
+async def delete_{{ collection_name }}(id: str{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await {{ svc(route) }}.get(id)
+    existing = await svc.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await {{ svc(route) }}.delete(id)
+    return await svc.delete(id)
 
 
 {% endif %}
@@ -211,8 +217,7 @@ async def {{ handler_name }}(request: Request) -> Any:
 
 
 @router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"])
-async def {{ handler_name }}(request: Request) -> Any:
-    repo = {{ collection_name | capitalize_collection }}Repository(get_database())
+async def {{ handler_name }}(request: Request, repo=Depends(get_{{ collection_name }}_repository)) -> Any:
     return jsonable_encoder(await repo.{{ route.operation }}({% for key, value in (query or {}).items() if key != "command" %}{{ key }}={{ value | py_literal }}{% if not loop.last %}, {% endif %}{% endfor %}))
 {% endfor %}
 {% endif %}

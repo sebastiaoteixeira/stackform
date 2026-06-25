@@ -1,0 +1,36 @@
+from typing import Callable
+
+from fastapi import Depends
+
+{% if auth_enabled %}
+from dependencies.auth import get_optional_principal
+{% endif %}
+{% for col in collections %}
+from dependencies.repositories import get_{{ col.name }}_repository
+from services.{{ col.name }} import {{ col.class_name }}Service
+{% endfor %}
+
+{% if auth_enabled %}
+
+def service_provider(service_cls: type, repo_dep: Callable, principal_dep: Callable) -> Callable:
+    async def provide(repo=Depends(repo_dep), principal=Depends(principal_dep)):
+        return service_cls(repo, principal=principal)
+    provide.__name__ = f"get_{service_cls.__name__.lower()}"
+    return provide
+
+{% else %}
+
+def service_provider(service_cls: type, repo_dep: Callable) -> Callable:
+    async def provide(repo=Depends(repo_dep)):
+        return service_cls(repo)
+    provide.__name__ = f"get_{service_cls.__name__.lower()}"
+    return provide
+
+{% endif %}
+{% for col in collections %}
+{% if auth_enabled %}
+get_{{ col.name }}_service = service_provider({{ col.class_name }}Service, get_{{ col.name }}_repository, get_optional_principal)
+{% else %}
+get_{{ col.name }}_service = service_provider({{ col.class_name }}Service, get_{{ col.name }}_repository)
+{% endif %}
+{% endfor %}
