@@ -7,7 +7,7 @@ description: Determines who is allowed to call each route, declared on controlle
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -40,7 +40,6 @@ exists, every route that is not `access: public` requires a valid principal.
 ```yaml
 access: public              # no auth required
 access: "*"                 # any authenticated principal
-access: authenticated       # alias of "*"
 access: myEntity:*          # any principal from the myEntity identity collection
 access: admin               # principal with admin role (single auth entity)
 access: myEntity:admin      # principal with admin role (explicit entity)
@@ -84,9 +83,7 @@ access:
 |-------|-------------|
 | `public` | No authentication required. Any request is allowed. |
 | `"*"` | Any authenticated principal from any auth entity. Returns 401 if no valid credentials. |
-| `authenticated` | Alias of `"*"`. |
 | `entityName:*` | Any authenticated principal from a specific auth entity. |
-| `identity:entityName` | Same scoping as `entityName:*`; used inside `given` bindings. |
 | `roleName` | Principal with this role (single auth entity only; entity prefix optional). |
 | `entityName:roleName` | Principal with this role from a specific entity (required with multiple auth entities). |
 | list | Multiple rules evaluated top-to-bottom. |
@@ -141,7 +138,7 @@ references `document.*`) is handled in two phases:
 - After the fetch, document rules are re-evaluated against the loaded record.
 
 `create` has no existing record, so document rules never run for create. Use
-principal-only rules (roles, `identity:<entity>`) for create access.
+principal-only rules (roles, `<entity>:*`) for create access.
 
 ```mermaid
 flowchart TD

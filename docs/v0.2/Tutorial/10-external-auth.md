@@ -88,7 +88,7 @@ controllers:
   users:
     service: users
     base_path: /users
-    access: authenticated
+    access: "*"
     operations:
       register: { access: public }
       login: { access: public }
@@ -96,7 +96,7 @@ controllers:
   notes:
     service: notes
     base_path: /notes
-    access: authenticated
+    access: "*"
     operations:
       list: { access: public }
       get: { access: public }
@@ -140,7 +140,7 @@ What to notice in this spec:
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not

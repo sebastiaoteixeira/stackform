@@ -9,7 +9,7 @@ such as `access: user:admin`.
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -239,7 +239,7 @@ server-side (for example via a custom handler) or require it on create.
 
 - **Entity without a role field.** If an auth entity declares no role field (and none
   is named by `auth.roles`), its principals have no role. Role-scoped rules such as
-  `access: user:admin` never match those principals, though `identity:user` and
+  `access: user:admin` never match those principals, though `"*"` and
   `user:*` still do.
 
 ## Errors

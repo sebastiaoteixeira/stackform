@@ -8,7 +8,7 @@ rule by rule, and shows the exact URLs each one guards.
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -73,7 +73,7 @@ roles via the enum field plus `auth.roles` as shown above.
 create: { access: "*" }
 ```
 
-Any authenticated user. `"*"` (alias `authenticated`) means "any valid principal,
+Any authenticated user. `"*"` means "any valid principal,
 regardless of role." Anonymous requests get 401.
 
 ### PATCH /api/v1/posts/{id} (update)

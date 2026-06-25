@@ -227,8 +227,8 @@ Access rules are declarative and compile into ordered evaluation steps.
 Shorthand values are also valid for each operation key:
 
 - `public`: operation is publicly accessible.
-- `authenticated`: operation requires a resolved identity.
-- `identity:<collection>`: operation requires identity from a specific auth collection.
+- `"*"`: operation requires a resolved identity.
+- `<collection>:*`: operation requires identity from a specific auth collection.
 - Rule array (`array<AccessRule>`): advanced allow rules.
 
 ### 8.2 AccessRule
@@ -244,8 +244,8 @@ Shorthand values are also valid for each operation key:
 `principal` supports:
 
 - `public`
-- `authenticated`
-- `identity:users`
+- `"*"`
+- `users:*`
 
 Compilation semantics:
 

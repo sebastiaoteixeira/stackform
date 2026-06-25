@@ -16,13 +16,13 @@ controllers:
   myCollection:
     base_path: /my-collection
     service: myCollection
-    access: authenticated
+    access: "*"
     operations:
-      create: { access: authenticated }
+      create: { access: "*" }
       publish:
         method: POST          # HTTP method
         path: "/{id}/publish" # path relative to base_path
-        access: authenticated # access rule for this operation
+        access: "*" # access rule for this operation
 ```
 
 For built-in CRUD and auth operations (`list`, `get`, `create`, `update`,
@@ -126,7 +126,7 @@ Single-value access can use the inline object form:
 
 ```yaml
 operations:
-  create: { access: authenticated }
+  create: { access: "*" }
   list: { access: public }
   update: { access: editor }
 ```
@@ -134,8 +134,8 @@ operations:
 The access vocabulary is:
 
 - `public` -- no authentication required.
-- `authenticated` or `*` -- any authenticated principal.
-- `identity:<entity>` or `<entity>:*` -- any principal from that auth entity.
+- `"*"` -- any authenticated principal.
+- `<entity>:*` -- any principal from that auth entity.
 - `<entity>:<role>` -- a principal of that entity holding that role.
 - bare `<role>` -- shorthand for `<entity>:<role>` when exactly one auth
   entity exists; ambiguous with more than one (ACCESS_AMBIGUOUS_ROLE), and an
@@ -168,7 +168,7 @@ controllers:
   myAuthCollection:
     base_path: /my-auth-collection
     service: myAuthCollection
-    access: authenticated
+    access: "*"
     operations:
       register: { access: public }   # POST /api/v1/my-auth-collection/register
       login: { access: public }      # POST /api/v1/my-auth-collection/login
@@ -185,7 +185,7 @@ operations:
   publish:
     method: POST
     path: "/{id}/publish"     # -> POST /api/v1/my-collection/{id}/publish
-    access: authenticated
+    access: "*"
 ```
 
 A custom route is only emitted when the service group actually has a backing
@@ -230,7 +230,7 @@ Notes on the rule object:
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not

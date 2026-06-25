@@ -104,7 +104,7 @@ A JWT (JSON Web Token) is a signed string that encodes the user's identity. The 
 
 As soon as any `type: auth` entity exists in the spec, every route that is not explicitly `access: public` requires a valid principal (a resolved, authenticated user). A request without valid credentials to a protected route gets `401 Unauthorized`. This is why the controllers above set `access: public` on the routes that should stay open (including `register` and `login`).
 
-A minified controller (one declared with a bare `service:` and no `access:`) defaults to `access: public`. To protect a resource you must opt in with `access: authenticated` (or a more specific rule). Locking down routes is the subject of [Tutorial 05: Access Control](./05-access-control.md).
+A minified controller (one declared with a bare `service:` and no `access:`) defaults to `access: public`. To protect a resource you must opt in with `access: "*"` (or a more specific rule). Locking down routes is the subject of [Tutorial 05: Access Control](./05-access-control.md).
 
 Note: if a spec has no `type: auth` entity at all, there is no identity collection to authenticate against, so non-public routes are left open. Protection is wired only when an auth entity exists.
 

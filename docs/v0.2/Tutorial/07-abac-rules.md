@@ -11,7 +11,7 @@ A key concept used throughout ABAC rules is `principal.sub`. The `sub` (short fo
 
 > **Enforcement status**
 >
-> Roles (exact match), `identity:<entity>` scoping, and ownership/ABAC `when` rules
+> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
 > `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
@@ -184,7 +184,7 @@ when:
   - document.status not in ['archived']
 ```
 
-**Note:** On `create` operations there is no existing document yet, so rules with `document:` bindings cannot run a post-fetch check. Use principal-only rules (role checks, `authenticated`/`*`) to control create access. The example above guards `create` with `access: "*"` (any authenticated user).
+**Note:** On `create` operations there is no existing document yet, so rules with `document:` bindings cannot run a post-fetch check. Use principal-only rules (role checks, `"*"`) to control create access. The example above guards `create` with `access: "*"` (any authenticated user).
 
 ## Accepted but not yet enforced
 
