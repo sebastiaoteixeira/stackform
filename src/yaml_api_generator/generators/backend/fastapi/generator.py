@@ -47,9 +47,11 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["env_ref"] = access_filters.env_ref
         env.filters["sql_column"] = sql_filters.sql_column
-        env.filters["access_rule_py"] = access_filters.access_rule_py
+        env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
+        env.tests["needs_document_rule"] = access_filters.needs_document_rule
+        env.tests["unconditional"] = access_filters.is_unconditional
         env.globals["needs_datetime_import"] = type_mapper.needs_datetime_import
         env.globals["needs_literal_import"] = type_mapper.needs_literal_import
         env.globals["needs_any_import"] = type_mapper.needs_any_import
@@ -307,11 +309,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.auth.enabled:
             auth_files += [
                 ("auth.py.jinja", "auth.py"),
-                ("when_eval.py.jinja", "when_eval.py"),
                 ("authorization.py.jinja", "authorization.py"),
             ]
             init_imports.append("from .auth import resolve_principal, require_principal")
-            init_imports.append("from .authorization import AccessRule, authorize_pre, authorize_post")
+            init_imports.append("from .authorization import _principal_has_role")
         if context.auth.uses_jwt:
             auth_files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")

@@ -1,56 +1,22 @@
-"""Unit tests for the FastAPI access-rule serialization filters.
+"""Unit tests for the FastAPI access-rule compilation filters.
 
-Verifies that ``access_rule_py`` / ``when_py`` emit source that, evaluated
-against the generated ``when_eval`` classes, reconstructs the original IR
-expression, and that the emitted evaluator matches the run-server evaluator.
+Verifies that ``rule_to_python`` compiles IR access rules to correct inline
+Python boolean expressions, and that ``needs_post_fetch`` correctly identifies
+routes requiring a post-fetch authorization check.
 """
 
 import pytest
 
 from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor, RouteDescriptor
 from yaml_api_generator.generators.backend.fastapi.access_filters import (
-    access_rule_py,
+    is_unconditional,
+    needs_document_rule,
     needs_post_fetch,
     py_bool,
     role_hierarchies_py,
-    when_py,
+    rule_to_python,
 )
-from yaml_api_generator.ir.when import And, Equals, FieldRef, In, Not, NotEquals, NotIn, Or, StringLiteral
-
-
-_WHEN_NAMESPACE = {
-    "FieldRef": FieldRef,
-    "StringLiteral": StringLiteral,
-    "Equals": Equals,
-    "NotEquals": NotEquals,
-    "And": And,
-    "Or": Or,
-    "Not": Not,
-    "In": In,
-    "NotIn": NotIn,
-}
-
-
-_EXPRESSIONS = [
-    FieldRef("principal", ()),
-    FieldRef("document", ("id",)),
-    StringLiteral("admin"),
-    Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("id",))),
-    NotEquals(FieldRef("principal", ("record", "role")), StringLiteral("guest")),
-    And(
-        Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("owner",))),
-        NotEquals(FieldRef("principal", ("role",)), StringLiteral("banned")),
-    ),
-    Or(Equals(FieldRef("principal", ("role",)), StringLiteral("admin")), Not(FieldRef("principal", ()))),
-    In(FieldRef("principal", ("role",)), ("admin", "moderator")),
-    NotIn(FieldRef("principal", ("role",)), ("guest",)),
-]
-
-
-@pytest.mark.parametrize("expr", _EXPRESSIONS)
-def test_when_py_round_trips_to_equal_ast(expr):
-    reconstructed = eval(when_py(expr), dict(_WHEN_NAMESPACE))
-    assert reconstructed == expr
+from yaml_api_generator.ir.when import And, Equals, FieldRef, In, Not, NotIn, Or, StringLiteral
 
 
 def test_py_bool():
@@ -60,27 +26,111 @@ def test_py_bool():
     assert py_bool(["x"]) == "True"
 
 
-def test_access_rule_py_emits_constructor_with_all_fields():
+def test_rule_to_python_unconditional():
+    rule = AccessRuleDescriptor(principal="identity:admins")
+    assert rule_to_python(rule) == "True"
+
+
+def test_rule_to_python_role_only():
+    rule = AccessRuleDescriptor(principal="identity:admins", required_role="admin")
+    assert rule_to_python(rule) == '_principal_has_role(principal, "admin")'
+
+
+def test_rule_to_python_when_equals():
     rule = AccessRuleDescriptor(
         principal="identity:users",
-        required_role="moderator",
-        identity_symbols=["principal"],
-        document_symbols=["document"],
-        when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("id",))),
-        effect="deny",
+        when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("created_by",))),
     )
-    source = access_rule_py(rule)
-    assert "principal='identity:users'" in source
-    assert "required_role='moderator'" in source
-    assert "identity_symbols=['principal']" in source
-    assert "document_symbols=['document']" in source
-    assert "effect='deny'" in source
-    assert "when=Equals(FieldRef('principal', ('sub',)), FieldRef('document', ('id',)))" in source
+    result = rule_to_python(rule)
+    assert 'principal.get("sub") == document.get("created_by")' in result
 
 
-def test_access_rule_py_without_when_emits_none():
-    rule = AccessRuleDescriptor(principal="authenticated")
-    assert "when=None" in access_rule_py(rule)
+def test_rule_to_python_role_and_when():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        required_role="admin",
+        when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("id",))),
+    )
+    result = rule_to_python(rule)
+    assert result.startswith('_principal_has_role(principal, "admin") and ')
+    assert 'principal.get("sub") == document.get("id")' in result
+
+
+def test_rule_to_python_in():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=In(FieldRef("principal", ("role",)), ("admin", "moderator")),
+    )
+    assert "in ('admin', 'moderator')" in rule_to_python(rule)
+
+
+def test_rule_to_python_not_in():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=NotIn(FieldRef("principal", ("role",)), ("guest",)),
+    )
+    assert "not in ('guest',)" in rule_to_python(rule)
+
+
+def test_rule_to_python_nested_record_path():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=Equals(FieldRef("principal", ("record", "role")), StringLiteral("admin")),
+    )
+    assert 'principal.get("record", {}).get("role")' in rule_to_python(rule)
+
+
+def test_rule_to_python_and_or():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=And(
+            Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("owner",))),
+            Or(
+                Equals(FieldRef("principal", ("role",)), StringLiteral("admin")),
+                Not(Equals(FieldRef("principal", ("role",)), StringLiteral("banned"))),
+            ),
+        ),
+    )
+    result = rule_to_python(rule)
+    assert "and" in result
+    assert "or" in result
+    assert "not" in result
+
+
+def test_is_unconditional_true():
+    rule = AccessRuleDescriptor(principal="identity:admins")
+    assert is_unconditional(rule) is True
+
+
+def test_is_unconditional_false_when_role():
+    rule = AccessRuleDescriptor(principal="identity:admins", required_role="admin")
+    assert is_unconditional(rule) is False
+
+
+def test_is_unconditional_false_when_expr():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=Equals(FieldRef("principal", ("sub",)), StringLiteral("x")),
+    )
+    assert is_unconditional(rule) is False
+
+
+def test_needs_document_rule_with_document_symbols():
+    rule = AccessRuleDescriptor(principal="identity:users", document_symbols=["document"])
+    assert needs_document_rule(rule) is True
+
+
+def test_needs_document_rule_with_document_ref():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=Equals(FieldRef("document", ("owner",)), FieldRef("principal", ("sub",))),
+    )
+    assert needs_document_rule(rule) is True
+
+
+def test_needs_document_rule_false():
+    rule = AccessRuleDescriptor(principal="identity:users", required_role="admin")
+    assert needs_document_rule(rule) is False
 
 
 def test_role_hierarchies_py_round_trips():

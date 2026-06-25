@@ -1,47 +1,7 @@
-# Mirrors yaml_api_generator.server.common.steps.authorization
-# (AuthorizeRouteStep / PostFetchAuthorizeStep), raising HTTPException
-# instead of UnauthorizedError/ForbiddenError. Keep in sync with that module.
-from dataclasses import dataclass, field
-from typing import Any
-
 from fastapi import HTTPException
-
-from dependencies.when_eval import (
-    WhenExpr,
-    FieldRef,
-    StringLiteral,
-    Equals,
-    NotEquals,
-    And,
-    Or,
-    Not,
-    In,
-    NotIn,
-    collect_roots,
-    evaluate_when_with_symbols,
-    needs_document,
-)
-
-
-@dataclass(frozen=True)
-class AccessRule:
-    principal: str
-    required_role: str | None = None
-    identity_symbols: list[str] = field(default_factory=list)
-    document_symbols: list[str] = field(default_factory=list)
-    when: WhenExpr | None = None
-    effect: str = "allow"
 
 
 ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | role_hierarchies_py }}
-
-
-def _rule_needs_document(rule: AccessRule) -> bool:
-    if rule.document_symbols:
-        return True
-    if rule.when is not None and needs_document(rule.when):
-        return True
-    return False
 
 
 def _principal_has_role(principal: dict, required_role: str) -> bool:
@@ -54,59 +14,3 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
         if required_role in entity_hierarchy.get(role, set()):
             return True
     return False
-
-
-def _rule_matches_principal(rule: AccessRule, principal: dict | None) -> bool:
-    if principal is None:
-        return False
-    if rule.principal and rule.principal.startswith("identity:"):
-        expected = rule.principal[len("identity:"):]
-        if principal.get("identity_collection") != expected:
-            return False
-    if rule.required_role is not None and not _principal_has_role(principal, rule.required_role):
-        return False
-    return True
-
-
-def _evaluate_rule(rule: AccessRule, principal: dict | None, document: dict | None) -> bool:
-    if rule.when is None:
-        return True
-    symbols: dict[str, Any] = {symbol: principal for symbol in rule.identity_symbols}
-    symbols.update({symbol: document for symbol in rule.document_symbols})
-    roots = collect_roots(rule.when)
-    if "principal" in roots and "principal" not in symbols:
-        symbols["principal"] = principal
-    if "document" in roots and "document" not in symbols:
-        symbols["document"] = document
-    return evaluate_when_with_symbols(rule.when, symbols)
-
-
-def authorize_pre(rules: list[AccessRule], principal: dict | None) -> None:
-    if principal is None:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if not rules:
-        return
-    for rule in rules:
-        if _rule_needs_document(rule):
-            return
-        if not _rule_matches_principal(rule, principal):
-            continue
-        if _evaluate_rule(rule, principal, None):
-            if rule.effect == "deny":
-                raise HTTPException(status_code=403, detail="Forbidden")
-            return
-    raise HTTPException(status_code=403, detail="Forbidden")
-
-
-def authorize_post(rules: list[AccessRule], principal: dict | None, document: dict | None) -> None:
-    if document is None:
-        return
-    for rule in rules:
-        if not _rule_matches_principal(rule, principal):
-            continue
-        doc = document if _rule_needs_document(rule) else None
-        if _evaluate_rule(rule, principal, doc):
-            if rule.effect == "deny":
-                raise HTTPException(status_code=403, detail="Forbidden")
-            return
-    raise HTTPException(status_code=403, detail="Forbidden")
