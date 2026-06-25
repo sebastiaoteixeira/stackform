@@ -99,7 +99,8 @@ class IRRepository:
     crud: tuple[str, ...] = CRUD_OPERATIONS
     operations: dict[str, IROperation] = field(default_factory=dict)
     datastore: str | None = None
-    base_classes: tuple[str, ...] = field(default_factory=tuple)
+    abstract: bool = False
+    inherits: str | None = None
 
 
 @dataclass(frozen=True)
@@ -188,7 +189,8 @@ class IRService:
     repository: str | None = None
     operation: str | None = None
     handler: str | None = None
-    base_classes: tuple[str, ...] = field(default_factory=tuple)
+    abstract: bool = False
+    inherits: str | None = None
 
 
 @dataclass(frozen=True)

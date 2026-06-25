@@ -7,14 +7,11 @@
 {% if password_via %}
 {% set _ = identity_mixins.append("PasswordMixin") %}
 {% endif %}
-{% for base in user_bases | default([]) %}
-from {{ base.module }} import {{ base.class_name }}
-{% endfor %}
 from services._ops import ServiceBase{% for op in svc_mixins %}, {{ op }}Svc{% endfor %}{% for mixin in identity_mixins %}, {{ mixin }}{% endfor %}
 
 
 
-class {{ class_name }}Service({% for op in svc_mixins %}{{ op }}Svc, {% endfor %}{% for mixin in identity_mixins %}{{ mixin }}, {% endfor %}{% for base in user_bases | default([]) %}{{ base.class_name }}, {% endfor %}ServiceBase):
+class {{ class_name }}Service({% for op in svc_mixins %}{{ op }}Svc, {% endfor %}{% for mixin in identity_mixins %}{{ mixin }}, {% endfor %}ServiceBase):
 {% if is_identity_collection %}
     IDENTITY_FIELDS = ({% for field_name in identity_fields %}"{{ field_name }}", {% endfor %})
 {% else %}

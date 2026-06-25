@@ -76,17 +76,20 @@ class ContextBuilder:
             else:
                 datastores[name] = {"type": ds.type, "uri": ds.uri, "database": ds.database}
 
-        repository_base_classes = {
-            repo.name: repo.base_classes
-            for repo in document.repositories.values()
-            if repo.base_classes
-        }
+        def _repo_datastore_type(repo) -> str:
+            ds = document.datastores.get(repo.datastore) if repo.datastore else None
+            return ds.type if ds is not None else "mongodb"
 
-        # Flat service keys share repository names; deduplicate by collection name.
-        service_base_classes: dict[str, tuple[str, ...]] = {}
-        for svc in document.services.values():
-            if svc.base_classes and svc.repository:
-                service_base_classes.setdefault(svc.repository, svc.base_classes)
+        repository_abstract = {
+            repo.name: _repo_datastore_type(repo)
+            for repo in document.repositories.values()
+            if repo.abstract and repo.operations
+        }
+        repository_inherits = {
+            repo.name: repo.inherits
+            for repo in document.repositories.values()
+            if repo.inherits
+        }
 
         return CompileContext(
             app=app,
@@ -96,8 +99,8 @@ class ContextBuilder:
             collections=raw_collections,
             repository_operations=repository_operations,
             datastores=datastores,
-            repository_base_classes=repository_base_classes,
-            service_base_classes=service_base_classes,
+            repository_abstract=repository_abstract,
+            repository_inherits=repository_inherits,
         )
 
 

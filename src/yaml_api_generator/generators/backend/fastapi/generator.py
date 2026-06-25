@@ -13,18 +13,6 @@ from . import access_filters, sql_filters, type_mapper
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 
 
-def _split_base_classes(dotted_paths: tuple[str, ...]) -> list[dict[str, str]]:
-    """Split dotted import paths into ``{module, class_name}`` dicts for templates.
-
-    ``"app.bases.AuditedRepository"`` -> ``{"module": "app.bases", "class_name": "AuditedRepository"}``
-    """
-    result = []
-    for path in dotted_paths:
-        module, _, class_name = path.rpartition(".")
-        result.append({"module": module, "class_name": class_name})
-    return result
-
-
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "fastapi" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
 
@@ -151,7 +139,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
             "identity_fields": extract_identity_fields(context, col_name),
-            "user_bases": _split_base_classes(context.service_base_classes.get(col_name, ())),
         }
 
     def _render_routes(
@@ -247,6 +234,27 @@ class FastAPIGenerator(TemplateBasedGenerator):
         init_imports: list[str] = []
         uses_mongo = uses_sql = False
 
+        def generated_base(name: str) -> dict[str, str] | None:
+            base = context.repository_inherits.get(name)
+            if base is None:
+                return None
+            return {"module": f".{base}", "class_name": f"{to_pascal_case(base)}Repository"}
+
+        # Abstract base repositories render as inheritable classes (no collection).
+        for base_name, ds_type in context.repository_abstract.items():
+            is_sql = ds_type in ("postgres", "postgresql")
+            template = sql_template if is_sql else mongo_template
+            (repos_dir / f"{base_name}.py").write_text(template.render(
+                abstract=True,
+                collection_name=base_name,
+                operations=[],
+                custom_operations=context.repository_operations.get(base_name, []),
+                generated_base=generated_base(base_name),
+            ))
+            init_imports.append(f"from .{base_name} import {to_pascal_case(base_name)}Repository")
+            uses_sql = uses_sql or is_sql
+            uses_mongo = uses_mongo or not is_sql
+
         for col_name, col_data in collections_by_name.items():
             meta = context.collections[col_name]
             is_sql = meta.get("datastore_type") in ("postgres", "postgresql")
@@ -257,7 +265,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "id_field_format": meta["id_format"],
                 "fields": meta["fields"],
                 "custom_operations": ctx_ops if (ctx_ops := context.repository_operations.get(col_name, [])) else [],
-                "user_bases": _split_base_classes(context.repository_base_classes.get(col_name, ())),
+                "generated_base": generated_base(col_name),
             }
             template = sql_template if is_sql else mongo_template
             (repos_dir / f"{col_name}.py").write_text(template.render(**template_context))

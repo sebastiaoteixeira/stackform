@@ -160,9 +160,12 @@ class CompileContext:
     collections: dict[str, Any]
     repository_operations: dict[str, list[dict]] = field(default_factory=dict)
     datastores: dict[str, dict] = field(default_factory=dict)
-    # Dotted import paths for user-authored base classes, keyed by collection name.
-    repository_base_classes: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    service_base_classes: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Abstract base repositories (which declare operations) rendered as
+    # inheritable classes: name -> datastore type. Their operations live in
+    # repository_operations.
+    repository_abstract: dict[str, str] = field(default_factory=dict)
+    # Concrete repo (collection) name -> abstract base repo name it inherits.
+    repository_inherits: dict[str, str] = field(default_factory=dict)
 
     @property
     def datastore_types(self) -> set[str]:

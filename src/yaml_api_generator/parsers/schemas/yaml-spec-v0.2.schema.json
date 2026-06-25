@@ -346,7 +346,6 @@
       "properties": {
         "abstract": { "type": "boolean" },
         "extends": { "type": "string" },
-        "base": { "type": "string" },
         "entity": {
           "type": "string"
         },
@@ -373,7 +372,6 @@
       "properties": {
         "abstract": { "type": "boolean" },
         "extends": { "type": "string" },
-        "base": { "type": "string" },
         "repository": { "type": "string" },
         "operations": {
           "type": "object",

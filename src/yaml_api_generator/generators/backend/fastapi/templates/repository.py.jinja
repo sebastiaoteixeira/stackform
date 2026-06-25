@@ -1,4 +1,5 @@
 {% set class_name = collection_name | capitalize_collection %}
+{% set is_abstract = abstract | default(false) %}
 {% set has_custom = custom_operations | default([]) | length > 0 %}
 {% if has_custom %}
 from typing import Any
@@ -6,17 +7,24 @@ from typing import Any
 from pymongo import ReturnDocument
 
 {% endif %}
-{% for base in user_bases | default([]) %}
-from {{ base.module }} import {{ base.class_name }}
-{% endfor %}
+{% if generated_base %}
+from {{ generated_base.module }} import {{ generated_base.class_name }}
+{% endif %}
+{% if not is_abstract %}
 from ._ops import RepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
+{% endif %}
+{% set ns = namespace(bases=[]) %}
+{% if not is_abstract %}{% for op in operations %}{% set _ = ns.bases.append((op | capitalize) ~ "Op") %}{% endfor %}{% endif %}
+{% if generated_base %}{% set _ = ns.bases.append(generated_base.class_name) %}{% endif %}
+{% if not is_abstract %}{% set _ = ns.bases.append("RepositoryBase") %}{% endif %}
 
 
-
-class {{ class_name }}Repository({% for op in operations %}{{ op | capitalize }}Op, {% endfor %}{% for base in user_bases | default([]) %}{{ base.class_name }}, {% endfor %}RepositoryBase):
+class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){% endif %}:
+{% if not is_abstract %}
     COLLECTION = "{{ collection_name }}"
     ID_FIELD = "{{ id_field }}"
     ID_FORMAT = "{{ id_field_format }}"
+{% endif %}
 {% for op in custom_operations | default([]) %}
 {% set q = op.query %}
 {% set col_expr = "self._db[\"" + q.collection + "\"]" if q and q.collection else "self._col" %}

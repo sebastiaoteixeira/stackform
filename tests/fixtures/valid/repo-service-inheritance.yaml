@@ -19,19 +19,17 @@ entities:
       id: { type: id }
       title: { type: string, required: true }
 repositories:
-  auditedRepo:
+  countable:
     abstract: true
-    base: app.bases.AuditedRepository
+    operations:
+      countAll:
+        query: { command: estimatedDocumentCount }
   posts:
     entity: post
-    extends: auditedRepo
+    extends: countable
 services:
-  auditedSvc:
-    abstract: true
-    base: app.bases.AuditedService
   posts:
     repository: posts
-    extends: auditedSvc
 controllers:
   posts:
     service: posts

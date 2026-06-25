@@ -51,19 +51,19 @@ class RouteTransformer:
             if not isinstance(svc_cfg, dict):
                 continue
             handler_ref = svc_cfg.get("handler")
-            base_classes = tuple(svc_cfg.get("_base_classes", []))
+            inherits = svc_cfg.get("_inherits")
             if handler_ref is not None:
                 services[svc_name] = IRService(
                     name=svc_name,
                     handler=self._resolve_handler_path(handler_ref, import_map),
-                    base_classes=base_classes,
+                    inherits=inherits,
                 )
             else:
                 services[svc_name] = IRService(
                     name=svc_name,
                     repository=svc_cfg.get("repository"),
                     operation=svc_cfg.get("operation"),
-                    base_classes=base_classes,
+                    inherits=inherits,
                 )
         return services
 

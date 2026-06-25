@@ -21,19 +21,21 @@ class InheritanceDesugarer:
     def __init__(self, layer: str) -> None:
         self._layer = layer
 
-    def resolve_base_classes(self, entries: dict[str, Any]) -> dict[str, tuple[str, ...]]:
-        """Validate inheritance and return resolved base-class chains.
+    def resolve(self, entries: dict[str, Any]) -> dict[str, str | None]:
+        """Validate inheritance and resolve each entry's inherited base.
 
-        Validates that every ``extends`` target exists and is abstract, detects
-        cycles, then resolves the ``base`` dotted-path chain (most-derived
-        ancestor first) for each concrete entry.
+        Validates that every ``extends`` target exists and is abstract and
+        detects cycles, then walks each entry's ``extends`` chain to the
+        nearest ancestor that declares ``operations``. That ancestor is the
+        *inherited base*: it is rendered as a generated class which the entry
+        subclasses.
 
         Args:
             entries: Raw config dict for the layer (repositories or services).
 
         Returns:
-            Mapping from concrete entry name to an ordered tuple of dotted
-            import paths (e.g. ``("app.bases.AuditedRepository",)``).
+            Mapping from entry name to the name of the nearest
+            operation-bearing ancestor it inherits (or ``None``).
 
         Raises:
             ConfigErrors: On missing/non-abstract extends target or cycle.
@@ -43,13 +45,20 @@ class InheritanceDesugarer:
         return {
             name: self._resolve_chain(name, entries)
             for name, cfg in entries.items()
-            if isinstance(cfg, dict) and not cfg.get("abstract")
-            and cfg.get("extends") is not None
+            if isinstance(cfg, dict) and cfg.get("extends")
         }
 
     def remove_abstract(self, entries: dict[str, Any]) -> None:
-        """Remove abstract entries in-place (called after resolution)."""
-        for name in [k for k, v in entries.items() if isinstance(v, dict) and v.get("abstract")]:
+        """Remove abstract entries that carry no operations.
+
+        Abstract entries with operations survive: they are rendered as
+        generated base classes that concrete entries inherit.
+        """
+        removable = [
+            k for k, v in entries.items()
+            if isinstance(v, dict) and v.get("abstract") and not v.get("operations")
+        ]
+        for name in removable:
             del entries[name]
 
     def validate_not_bound(
@@ -128,16 +137,14 @@ class InheritanceDesugarer:
         if errors:
             raise ConfigErrors(errors)
 
-    def _resolve_chain(self, name: str, entries: dict[str, Any]) -> tuple[str, ...]:
-        """Walk the extends chain and collect ``base`` paths (most-derived first)."""
-        bases: list[str] = []
-        current: str | None = entries[name].get("extends") if isinstance(entries.get(name), dict) else None
+    def _resolve_chain(self, name: str, entries: dict[str, Any]) -> str | None:
+        """Find the nearest ancestor declaring ``operations`` up the chain."""
+        current = entries[name].get("extends") if isinstance(entries.get(name), dict) else None
         while current is not None:
             cfg = entries.get(current)
             if not isinstance(cfg, dict):
                 break
-            base_path = cfg.get("base")
-            if base_path:
-                bases.append(base_path)
+            if cfg.get("operations"):
+                return current
             current = cfg.get("extends")
-        return tuple(bases)
+        return None
