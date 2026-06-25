@@ -38,14 +38,15 @@ from models.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
 {% endif %}
 
 
-def _service() -> {{ collection_name | capitalize_collection }}Service:
-    return {{ collection_name | capitalize_collection }}Service({{ collection_name | capitalize_collection }}Repository(get_database()))
+def _service(principal: dict[str, Any] | None = None) -> {{ collection_name | capitalize_collection }}Service:
+    return {{ collection_name | capitalize_collection }}Service({{ collection_name | capitalize_collection }}Repository(get_database()), principal=principal)
 
 
 router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 
 {% macro openapi_extra(route) %}{% if route.needs_auth and security_schemes %}, openapi_extra={"security": {{ security_schemes }}}{% endif %}{% endmacro %}
 {% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% endmacro %}
+{% macro svc(route) %}{% if auth.enabled and route.needs_auth %}_service(principal){% else %}_service(){% endif %}{% endmacro %}
 
 {# Emit pre-fetch authorization guards as inline compiled conditions. #}
 {# Rules whose `when` references `document` are deferred to post-fetch. #}
@@ -134,7 +135,7 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def list_{{ collection_name }}({{ auth_param(route) | trim(chars=", ") }}) -> Any:
 {{ pre_fetch_guard(route) }}
-    return await _service().list()
+    return await {{ svc(route) }}.list()
 
 
 {% elif route.operation == "get" %}
@@ -142,11 +143,11 @@ async def list_{{ collection_name }}({{ auth_param(route) | trim(chars=", ") }})
 async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await _service().get(id)
+    existing = await {{ svc(route) }}.get(id)
 {{ post_fetch_guard(route, "existing") }}
     return existing
 {% else %}
-    return await _service().get(id)
+    return await {{ svc(route) }}.get(id)
 {% endif %}
 
 
@@ -154,7 +155,7 @@ async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def create_{{ collection_name }}(payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
-    return await _service().create(payload.model_dump(exclude_unset=True))
+    return await {{ svc(route) }}.create(payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "update" %}
@@ -162,10 +163,10 @@ async def create_{{ collection_name }}(payload: {{ route.body_model }}{{ auth_pa
 async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await _service().get(id)
+    existing = await {{ svc(route) }}.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await _service().update(id, payload.model_dump(exclude_unset=True))
+    return await {{ svc(route) }}.update(id, payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "replace" %}
@@ -173,10 +174,10 @@ async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{
 async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await _service().get(id)
+    existing = await {{ svc(route) }}.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await _service().replace(id, payload.model_dump(exclude_unset=True))
+    return await {{ svc(route) }}.replace(id, payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "delete" %}
@@ -184,10 +185,10 @@ async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}
 async def delete_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await _service().get(id)
+    existing = await {{ svc(route) }}.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await _service().delete(id)
+    return await {{ svc(route) }}.delete(id)
 
 
 {% endif %}

@@ -64,6 +64,7 @@ class RepositoryTransformer:
                 continue
 
             entity = repo_cfg.get("entity")
+            abstract = bool(repo_cfg.get("abstract"))
             crud_raw: list[str] | None = repo_cfg.get("crud")
             operations_raw: dict[str, Any] = repo_cfg.get("operations", {})
 
@@ -149,7 +150,7 @@ class RepositoryTransformer:
                                     message=f"Query command '{command}' requires field '{required_field}'",
                                     path=op_path,
                                 ))
-                            if entity is None and query.get("collection") is None:
+                            if entity is None and query.get("collection") is None and not abstract:
                                 errors.append(ConfigError(
                                     code="QUERY_MISSING_COLLECTION",
                                     message=f"Operation '{op_name}' has no entity on repository and no 'collection' in query",
@@ -158,7 +159,7 @@ class RepositoryTransformer:
 
                 ops_dict[op_name] = IROperation(name=op_name, query=query, handler=handler)
 
-            if entity is None and not ops_dict:
+            if entity is None and not ops_dict and not abstract:
                 errors.append(ConfigError(
                     code="REPOSITORY_EMPTY",
                     message=f"Repository '{repo_name}' must have at least 'entity' or 'operations'",
@@ -172,6 +173,8 @@ class RepositoryTransformer:
                 crud=crud_ops,
                 operations=ops_dict,
                 datastore=datastore,
+                abstract=abstract,
+                inherits=repo_cfg.get("_inherits"),
             )
 
         return repositories, errors

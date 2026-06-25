@@ -76,6 +76,21 @@ class ContextBuilder:
             else:
                 datastores[name] = {"type": ds.type, "uri": ds.uri, "database": ds.database}
 
+        def _repo_datastore_type(repo) -> str:
+            ds = document.datastores.get(repo.datastore) if repo.datastore else None
+            return ds.type if ds is not None else "mongodb"
+
+        repository_abstract = {
+            repo.name: _repo_datastore_type(repo)
+            for repo in document.repositories.values()
+            if repo.abstract and repo.operations
+        }
+        repository_inherits = {
+            repo.name: repo.inherits
+            for repo in document.repositories.values()
+            if repo.inherits
+        }
+
         return CompileContext(
             app=app,
             models=models,
@@ -84,6 +99,8 @@ class ContextBuilder:
             collections=raw_collections,
             repository_operations=repository_operations,
             datastores=datastores,
+            repository_abstract=repository_abstract,
+            repository_inherits=repository_inherits,
         )
 
 
