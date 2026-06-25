@@ -454,9 +454,20 @@
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "required": ["image"],
+            "anyOf": [
+              { "required": ["image"] },
+              { "required": ["build"] }
+            ],
             "properties": {
               "image": { "type": "string" },
+              "build": { "oneOf": [
+                { "type": "string" },
+                { "type": "object", "properties": {
+                  "context": { "type": "string" },
+                  "dockerfile": { "type": "string" },
+                  "args": { "type": "object", "additionalProperties": { "type": "string" } }
+                } }
+              ]},
               "ports": { "type": "array", "items": { "oneOf": [{"type": "integer"}, {"type": "string"}] } },
               "environment": { "oneOf": [
                 { "type": "object", "additionalProperties": { "type": "string" } },
