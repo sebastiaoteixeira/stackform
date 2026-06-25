@@ -4,7 +4,7 @@
 {% set repo_op_routes = routes | rejectattr("handler") | rejectattr("operation", "in", crud_op_names) | list %}
 from typing import Any
 
-from fastapi import APIRouter{% if auth.enabled %}, Depends{% endif %}{% if custom_routes or repo_op_routes %}, Request{% endif %}
+from fastapi import APIRouter{% if auth.enabled %}, Depends, HTTPException{% endif %}{% if custom_routes or repo_op_routes %}, Request{% endif %}
 
 {% set ds_module = "postgres" if datastore_type in ["postgres", "postgresql"] else "mongodb" %}
 {% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
@@ -16,18 +16,7 @@ from fastapi.encoders import jsonable_encoder
 {% endif %}
 {% if auth.enabled %}
 from dependencies.auth import require_principal
-from dependencies.authorization import AccessRule, authorize_pre, authorize_post
-from dependencies.when_eval import (
-    FieldRef,
-    StringLiteral,
-    Equals,
-    NotEquals,
-    And,
-    Or,
-    Not,
-    In,
-    NotIn,
-)
+from dependencies.authorization import _principal_has_role
 {% endif %}
 {% set ns = namespace(model_imports=[]) %}
 {% for route in crud_routes %}
@@ -57,30 +46,105 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 
 {% macro openapi_extra(route) %}{% if route.needs_auth and security_schemes %}, openapi_extra={"security": {{ security_schemes }}}{% endif %}{% endmacro %}
 {% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% endmacro %}
-{% macro access_rules_list(route) %}[{% for rule in route.access_rules or [] %}{{ rule | access_rule_py }}{% if not loop.last %}, {% endif %}{% endfor %}]{% endmacro %}
+
+{# Emit pre-fetch authorization guards as inline compiled conditions. #}
+{# Rules whose `when` references `document` are deferred to post-fetch. #}
+{% macro pre_fetch_guard(route) %}
+{% if auth.enabled and route.needs_auth and route.access_rules %}
+{% set ns = namespace(has_doc_rule=false, identity_symbols=[]) %}
+{% for rule in route.access_rules %}
+{% if rule is needs_document_rule %}
+{% set ns.has_doc_rule = true %}
+{% endif %}
+{% for symbol in rule.identity_symbols %}
+{% if symbol not in ns.identity_symbols %}
+{% set _ = ns.identity_symbols.append(symbol) %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if not ns.has_doc_rule %}
+{% set ns.first = true %}
+{% set ns.has_conditionals = false %}
+{% for rule in route.access_rules %}
+{% if rule is unconditional %}
+{% if rule.effect == "deny" %}
+    raise HTTPException(status_code=403, detail="Forbidden")
+{% endif %}
+{% set ns.first = false %}
+{% else %}
+{% set ns.has_conditionals = true %}
+{% set keyword = "if" if ns.first else "elif" %}
+    {{ keyword }} {{ rule | rule_to_python }}:
+{% if rule.effect == "deny" %}
+        raise HTTPException(status_code=403, detail="Forbidden")
+{% else %}
+        pass
+{% endif %}
+{% set ns.first = false %}
+{% endif %}
+{% endfor %}
+{% if ns.has_conditionals %}
+    else:
+        raise HTTPException(status_code=403, detail="Forbidden")
+{% endif %}
+{% endif %}
+{% endif %}
+{% endmacro %}
+
+{# Emit post-fetch authorization guards for rules that reference the document. #}
+{% macro post_fetch_guard(route, doc_var) %}
+{% if auth.enabled and route.needs_auth and route.access_rules %}
+{% set ns = namespace(has_doc_rule=false, document_symbols=[]) %}
+{% for rule in route.access_rules %}
+{% if rule is needs_document_rule %}
+{% set ns.has_doc_rule = true %}
+{% endif %}
+{% for symbol in rule.document_symbols %}
+{% if symbol not in ns.document_symbols %}
+{% set _ = ns.document_symbols.append(symbol) %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if ns.has_doc_rule %}
+{% for symbol in ns.document_symbols %}
+    {{ symbol }} = {{ doc_var }}
+{% endfor %}
+{% set ns.first = true %}
+{% for rule in route.access_rules %}
+{% set rule_needs_doc = rule is needs_document_rule %}
+{% set keyword = "if" if ns.first else "elif" %}
+    {{ keyword }} {% if rule_needs_doc %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
+{% if rule.effect == "deny" %}
+        raise HTTPException(status_code=403, detail="Forbidden")
+{% else %}
+        pass
+{% endif %}
+{% set ns.first = false %}
+{% endfor %}
+{% if not ns.first %}
+    else:
+        raise HTTPException(status_code=403, detail="Forbidden")
+{% endif %}
+{% endif %}
+{% endif %}
+{% endmacro %}
 
 {% for route in crud_routes %}
 {% if route.operation == "list" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def list_{{ collection_name }}({{ auth_param(route) | trim(chars=", ") }}) -> Any:
-{% if auth.enabled and route.needs_auth %}
-    authorize_pre({{ access_rules_list(route) }}, principal)
-{% endif %}
+{{ pre_fetch_guard(route) }}
     return await _service().list()
 
 
 {% elif route.operation == "get" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
-{% if auth.enabled and route.needs_auth %}
-    authorize_pre({{ access_rules_list(route) }}, principal)
+{{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
     existing = await _service().get(id)
-    authorize_post({{ access_rules_list(route) }}, principal, existing)
+{{ post_fetch_guard(route, "existing") }}
     return existing
-{% else %}
-    return await _service().get(id)
-{% endif %}
 {% else %}
     return await _service().get(id)
 {% endif %}
@@ -89,21 +153,17 @@ async def get_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
 {% elif route.operation == "create" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def create_{{ collection_name }}(payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
-{% if auth.enabled and route.needs_auth %}
-    authorize_pre({{ access_rules_list(route) }}, principal)
-{% endif %}
+{{ pre_fetch_guard(route) }}
     return await _service().create(payload.model_dump(exclude_unset=True))
 
 
 {% elif route.operation == "update" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
-{% if auth.enabled and route.needs_auth %}
-    authorize_pre({{ access_rules_list(route) }}, principal)
+{{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
     existing = await _service().get(id)
-    authorize_post({{ access_rules_list(route) }}, principal, existing)
-{% endif %}
+{{ post_fetch_guard(route, "existing") }}
 {% endif %}
     return await _service().update(id, payload.model_dump(exclude_unset=True))
 
@@ -111,12 +171,10 @@ async def update_{{ collection_name }}(id: str, payload: {{ route.body_model }}{
 {% elif route.operation == "replace" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}{{ auth_param(route) }}) -> Any:
-{% if auth.enabled and route.needs_auth %}
-    authorize_pre({{ access_rules_list(route) }}, principal)
+{{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
     existing = await _service().get(id)
-    authorize_post({{ access_rules_list(route) }}, principal, existing)
-{% endif %}
+{{ post_fetch_guard(route, "existing") }}
 {% endif %}
     return await _service().replace(id, payload.model_dump(exclude_unset=True))
 
@@ -124,12 +182,10 @@ async def replace_{{ collection_name }}(id: str, payload: {{ route.body_model }}
 {% elif route.operation == "delete" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def delete_{{ collection_name }}(id: str{{ auth_param(route) }}) -> Any:
-{% if auth.enabled and route.needs_auth %}
-    authorize_pre({{ access_rules_list(route) }}, principal)
+{{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
     existing = await _service().get(id)
-    authorize_post({{ access_rules_list(route) }}, principal, existing)
-{% endif %}
+{{ post_fetch_guard(route, "existing") }}
 {% endif %}
     return await _service().delete(id)
 
