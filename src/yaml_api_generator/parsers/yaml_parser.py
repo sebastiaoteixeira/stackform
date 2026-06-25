@@ -36,6 +36,9 @@ INTERPOLATION_TOKEN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$", re.DO
 INTERPOLATION_MAX_DEPTH = 10
 _BRACE_ESCAPES = ((r"\{", "\x00"), (r"\}", "\x01"))
 
+MANIFEST_FILENAME = "api.yaml"
+_MISSING = object()
+
 
 @dataclass(frozen=True)
 class ConfigError(Exception):
@@ -207,6 +210,114 @@ def _load_yaml(path: Path) -> Any:
         ) from error
 
 
+def _ensure_dict(content: Any, source: Path) -> dict[str, Any]:
+    if content is None:
+        return {}
+    if not isinstance(content, dict):
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="YAML_ROOT_INVALID",
+                    message="Top-level YAML document must be an object",
+                    path="$",
+                    hint=f"In {source}",
+                )
+            ]
+        )
+    return content
+
+
+def _deep_merge(
+    base: dict[str, Any],
+    incoming: dict[str, Any],
+    source: Path,
+    provenance: dict[tuple[str, ...], Path],
+    path: tuple[str, ...],
+    errors: list[ConfigError],
+) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in incoming.items():
+        here = (*path, key)
+        existing = merged.get(key, _MISSING)
+        if existing is _MISSING:
+            merged[key] = value
+            provenance[here] = source
+        elif isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(existing, value, source, provenance, here, errors)
+        else:
+            origin = provenance.get(here)
+            errors.append(
+                ConfigError(
+                    code="DUPLICATE_KEY",
+                    message=f"'{_join_path(here)}' is defined in more than one file",
+                    path=_join_path(here),
+                    hint=(
+                        f"Already set in {origin}; redefined in {source}"
+                        if origin
+                        else f"Redefined in {source}"
+                    ),
+                )
+            )
+    return merged
+
+
+def _load_spec(path: Path) -> dict[str, Any]:
+    manifest_path = path / MANIFEST_FILENAME if path.is_dir() else path
+    if path.is_dir() and not manifest_path.is_file():
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="MANIFEST_NOT_FOUND",
+                    message=f"No {MANIFEST_FILENAME} found in spec directory",
+                    path="$",
+                    hint=f"Create {manifest_path}",
+                )
+            ]
+        )
+
+    root = _ensure_dict(_load_yaml(manifest_path), manifest_path)
+    includes = root.get("include")
+    if includes is None:
+        return root
+    if not isinstance(includes, list) or not all(isinstance(p, str) for p in includes):
+        raise ConfigErrors(
+            [
+                ConfigError(
+                    code="INCLUDE_INVALID",
+                    message="'include' must be a list of glob patterns",
+                    path="include",
+                )
+            ]
+        )
+
+    base_dir = manifest_path.parent
+    errors: list[ConfigError] = []
+    provenance: dict[tuple[str, ...], Path] = {}
+    merged: dict[str, Any] = {}
+    for pattern in includes:
+        matches = sorted(base_dir.glob(pattern))
+        if not matches:
+            errors.append(
+                ConfigError(
+                    code="INCLUDE_NO_MATCH",
+                    message=f"Include pattern '{pattern}' matched no files",
+                    path=pattern,
+                    hint="Patterns are resolved relative to the manifest",
+                )
+            )
+            continue
+        for match in matches:
+            fragment = _ensure_dict(_load_yaml(match), match)
+            merged = _deep_merge(merged, fragment, match, provenance, (), errors)
+
+    overlay = {key: value for key, value in root.items() if key != "include"}
+    merged = _deep_merge(merged, overlay, manifest_path, provenance, (), errors)
+
+    if errors:
+        raise ConfigErrors(errors)
+    return merged
+
+
 def _load_schema(schema_file: Path) -> dict[str, Any]:
     try:
         with schema_file.open("r", encoding="utf-8") as file:
@@ -293,19 +404,7 @@ def load_and_generate_ir(
 ) -> ParseResult:
     yaml_path = Path(yaml_file)
 
-    raw_config = _load_yaml(yaml_path)
-    if raw_config is None:
-        raw_config = {}
-    if not isinstance(raw_config, dict):
-        raise ConfigErrors(
-            [
-                ConfigError(
-                    code="YAML_ROOT_INVALID",
-                    message="Top-level YAML document must be an object",
-                    path="$",
-                )
-            ]
-        )
+    raw_config = _load_spec(yaml_path)
 
     interpolation_errors: list[ConfigError] = []
     resolved = _resolve_interpolation(raw_config, tuple(), interpolation_errors)
