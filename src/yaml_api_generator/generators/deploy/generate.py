@@ -19,9 +19,10 @@ def generate_deploy(
     ssh_user: str,
     ssh_key: str,
     output_dir: str,
+    spec_dir: str | Path,
 ) -> None:
     ctx = build_deploy_context(ir, host, ssh_user, ssh_key)
     backend_cls = _BACKENDS.get(ctx.runtime)
     if backend_cls is None:
         raise ValueError(f"no backend for runtime: {ctx.runtime}")
-    backend_cls().generate(ctx, Path(output_dir))
+    backend_cls().generate(ctx, Path(output_dir), Path(spec_dir))
