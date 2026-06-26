@@ -320,6 +320,20 @@ def test_oidc_callback_redirects_with_code_not_token(tmp_path):
     assert 'issue_login_code(str(subject), "users", "mongo")' in oidc_src
 
 
+def test_oidc_callback_uses_repository_not_raw_datastore(tmp_path):
+    """User lookup/provisioning goes through the injected repository, so the
+    callback is datastore-agnostic instead of hardcoding the Mongo client."""
+    ctx = _ctx_from_fixture("auth-oidc.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    assert "get_database" not in oidc_src
+    assert "insert_one" not in oidc_src and "find_one" not in oidc_src
+    assert "Depends(get_users_repository)" in oidc_src
+    assert 'repo.find_by("email"' in oidc_src
+    assert "repo.insert(user_fields)" in oidc_src
+
+
 def test_oidc_login_codes_stored_in_collection_datastore(tmp_path):
     ctx = _ctx_from_fixture("auth-oidc.yaml")
     gen = FastAPIGenerator()

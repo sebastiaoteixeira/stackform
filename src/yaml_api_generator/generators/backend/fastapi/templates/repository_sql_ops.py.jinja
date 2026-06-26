@@ -42,6 +42,21 @@ class SQLRepositoryBase:
         row = result.first()
         return dict(row._mapping) if row is not None else None
 
+    async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
+        async with self._engine.connect() as conn:
+            result = await conn.execute(
+                sa.select(self.TABLE).where(self.TABLE.c[field] == value)
+            )
+            return self._one(result)
+
+    async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
+        if self._generate_id is not None:
+            data[self.ID_FIELD] = self._generate_id()
+        values = self._known(data)
+        async with self._engine.begin() as conn:
+            await conn.execute(sa.insert(self.TABLE).values(**values))
+        return values
+
 
 class ListOp:
     async def list(self) -> list[dict[str, Any]]:
@@ -61,12 +76,7 @@ class GetOp:
 
 class CreateOp:
     async def create(self, data: dict[str, Any]) -> dict[str, Any]:
-        if self._generate_id is not None:
-            data[self.ID_FIELD] = self._generate_id()
-        values = self._known(data)
-        async with self._engine.begin() as conn:
-            await conn.execute(sa.insert(self.TABLE).values(**values))
-        return values
+        return await self.insert(data)
 
 
 class UpdateOp:
