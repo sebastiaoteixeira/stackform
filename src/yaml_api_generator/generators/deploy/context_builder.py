@@ -1,4 +1,5 @@
 from collections import Counter
+from secrets import token_urlsafe
 
 from sqlalchemy.engine import make_url
 
@@ -20,7 +21,8 @@ def build_deploy_context(
     deploy = ir.deploy
     name = deploy.name or "app"
     mongo_db = ir.mongo.database
-    secret_vars = [f.env_name for f in build_settings_fields(build_context(ir)) if f.secret]
+    secret_fields = [f for f in build_settings_fields(build_context(ir)) if f.secret]
+    secret_vars = [f.env_name for f in secret_fields]
     env_vars = list(dict.fromkeys([*deploy.env_vars, *secret_vars]))
     datastores = _build_datastores(ir)
 
@@ -49,8 +51,10 @@ def build_deploy_context(
             f"PORT=${{PORT:-{deploy.port}}}",
             "FRONTEND_URL=${FRONTEND_URL:-http://localhost}",
         ) + tuple(
-            f"{var}=${{{var}:?{var} is required}}"
-            for var in secret_vars
+            f"{f.env_name}=${{{f.env_name}:-{token_urlsafe(32)}}}"
+            if f.generated
+            else f"{f.env_name}=${{{f.env_name}:?{f.env_name} is required}}"
+            for f in secret_fields
         )
         return DockerDeployContext(
             **common,

@@ -101,5 +101,6 @@ deploy:
 """)
     ir = load_and_generate_ir(str(spec)).ir
     ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
-    assert "JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}" in ctx.app_environment
+    jwt = next(v for v in ctx.app_environment if v.startswith("JWT_SECRET="))
+    assert jwt.startswith("JWT_SECRET=${JWT_SECRET:-") and jwt.endswith("}")
     assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET is required}" in ctx.app_environment

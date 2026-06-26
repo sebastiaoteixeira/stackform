@@ -45,7 +45,7 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
         add(SettingField("PASSWORD_HASH_ROUNDS", "int", "390000"))
 
         if ctx.auth.uses_jwt:
-            add(SettingField("JWT_SECRET", "str", None, secret=True))
+            add(SettingField("JWT_SECRET", "str", None, secret=True, generated=True))
             add(SettingField("JWT_EXPIRATION_HOURS", "int", "24"))
 
         if ctx.auth.has_oidc_auth:
