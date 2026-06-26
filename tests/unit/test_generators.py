@@ -308,6 +308,17 @@ def test_oidc_routes_read_client_secret_via_settings(tmp_path):
     assert "os.environ" not in oidc_src
 
 
+def test_oidc_callback_redirects_with_code_not_token(tmp_path):
+    ctx = _ctx_from_fixture("auth-oidc.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    assert "?code={code}" in oidc_src
+    assert "?token=" not in oidc_src
+    assert '@router.post("/auth/exchange")' in oidc_src
+    assert "find_one_and_delete" in oidc_src
+
+
 def test_shared_service_provider_defined_exactly_once(tmp_path):
     """Two controllers sharing the same service yield a single provider callable."""
     ctx = _ctx_from_fixture("shared-service.yaml")
