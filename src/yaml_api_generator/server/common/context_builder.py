@@ -134,7 +134,6 @@ def _build_auth_config(
         for name in identity_collections
         if name in collections and collections[name].entity_name
     }
-    # Derive flattened hierarchies from per-entity roles config
     flattened_hierarchies: dict[str, dict[str, set[str]]] = {}
     for name, identity in identity_collections.items():
         if identity.roles is not None and identity.roles.hierarchy:

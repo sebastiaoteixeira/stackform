@@ -1,12 +1,4 @@
-"""
-Project compilation: orchestrates parsing, context building, and code generation.
-
-This module coordinates the full compilation pipeline:
-1. Parse YAML specification
-2. Build intermediate representation (IR)
-3. Generate backend code (FastAPI/DRF/Raw)
-4. Generate frontend code (if UI block present)
-"""
+"""Orchestrates parsing, IR building, and code generation for a YAML spec."""
 
 from pathlib import Path
 

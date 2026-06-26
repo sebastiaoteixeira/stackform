@@ -1,11 +1,4 @@
-"""CLI commands for YAML API Generator.
-
-Provides four main commands:
-- compile: Generate backend code from YAML spec
-- dev: Run development server with hot-reload
-- frontend: Generate frontend code with UI packs
-- deploy: Generate deployment artifacts (Docker, systemd)
-"""
+"""CLI commands for YAML API Generator."""
 
 import click
 
@@ -37,7 +30,6 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
     try:
         result = load_and_generate_ir(yaml_file, schema_file)
 
-        # Backend
         if what in ("all", "backend"):
             compile_project(
                 yaml_file=yaml_file,
@@ -47,7 +39,6 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
             )
             click.echo(f"Backend generated in {output_dir}")
 
-        # Frontend
         if what in ("all", "frontend"):
             if result.ui_block is None:
                 if what == "frontend":
@@ -76,7 +67,6 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
                     click.echo("Error: ui.frontend.pack is required.", err=True)
                     raise SystemExit(1)
 
-        # Deploy
         if what in ("all", "deploy"):
             if result.ir.deploy is None:
                 if what == "deploy":

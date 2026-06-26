@@ -1,14 +1,4 @@
-"""Authorization expression evaluation at runtime.
-
-Evaluates 'when' condition ASTs against runtime symbol bindings.
-Supports field references, comparisons, and boolean logic.
-
-Core functions:
-- evaluate_when_with_symbols(): Evaluate expression with symbol bindings
-
-Symbol bindings map root names (principal, document, user-defined) to runtime values.
-Field references like 'principal.role' are resolved against these bindings.
-"""
+"""Evaluates 'when' condition ASTs against runtime symbol bindings."""
 
 from __future__ import annotations
 

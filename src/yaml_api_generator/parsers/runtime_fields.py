@@ -11,13 +11,10 @@ from typing import Callable
 # Each entry is (secret, predicate(path_tuple) -> bool).
 # The predicate returns True when the path matches a runtime field.
 _REGISTRY: list[tuple[bool, Callable[[tuple[str, ...]], bool]]] = [
-    # OIDC provider fields
     (True,  lambda p: len(p) >= 3 and p[0] == "providers" and p[2] == "client_secret"),
     (False, lambda p: len(p) >= 3 and p[0] == "providers" and p[2] == "discovery_url"),
-    # SAML provider fields
     (False, lambda p: len(p) >= 3 and p[0] == "providers" and p[2] == "idp_metadata_url"),
     (False, lambda p: len(p) >= 3 and p[0] == "providers" and p[2] == "sp_entity_id"),
-    # Datastore connection passwords (any datastore depth)
     (True,  lambda p: len(p) >= 2 and p[0] in ("datastores", "mongo") and p[-1] == "password"),
 ]
 

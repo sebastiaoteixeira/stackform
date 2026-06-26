@@ -12,7 +12,6 @@ from typing import Any
 
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
-# Top-level blocks desugar treats as mappings of named definitions.
 _MAPPING_BLOCKS = ("entities", "repositories", "services", "controllers", "api")
 
 
