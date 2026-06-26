@@ -1,4 +1,3 @@
-import secrets
 import time
 from typing import Any
 from urllib.parse import urlencode
@@ -9,26 +8,10 @@ from fastapi.responses import RedirectResponse
 
 from dependencies.mongodb import get_database
 from dependencies.jwt_utils import create_jwt_token
+from dependencies.login_codes import issue_login_code, redeem_login_code
 from settings import settings
 
 router = APIRouter()
-
-# One-time login codes bridge the IdP callback to the SPA without putting the
-# durable session token in a URL. The code is single-use (consumed atomically)
-# and short-lived; the token is only ever returned in the exchange response body.
-_LOGIN_CODE_COLLECTION = "_oidc_login_codes"
-_LOGIN_CODE_TTL_SECONDS = 60
-
-
-async def _issue_login_code(subject: str, identity_collection: str) -> str:
-    code = secrets.token_urlsafe(32)
-    await get_database()[_LOGIN_CODE_COLLECTION].insert_one({
-        "code": code,
-        "subject": subject,
-        "identity_collection": identity_collection,
-        "expires_at": time.time() + _LOGIN_CODE_TTL_SECONDS,
-    })
-    return code
 
 
 @router.post("/auth/exchange")
@@ -36,11 +19,11 @@ async def exchange_login_code(payload: dict[str, str]) -> dict[str, str]:
     code = payload.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="Missing code")
-    record = await get_database()[_LOGIN_CODE_COLLECTION].find_one_and_delete({"code": code})
-    if record is None or record["expires_at"] < time.time():
+    redeemed = await redeem_login_code(code)
+    if redeemed is None:
         raise HTTPException(status_code=401, detail="Invalid or expired code")
-    token = create_jwt_token(str(record["subject"]), record["identity_collection"])
-    return {"token": token}
+    subject, identity_collection = redeemed
+    return {"token": create_jwt_token(subject, identity_collection)}
 
 {% for col in auth.identity_collections %}
 {% set ext_providers = [] %}
@@ -149,7 +132,7 @@ async def oidc_{{ sym }}_callback(request: Request, code: str) -> Any:
 
     if existing is not None:
         subject = existing.get("{{ col.id_field }}")
-        code = await _issue_login_code(str(subject), "{{ col.name }}")
+        code = await issue_login_code(str(subject), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
         return RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
 
     {% if binding.auto_provision %}
@@ -157,7 +140,7 @@ async def oidc_{{ sym }}_callback(request: Request, code: str) -> Any:
     new_id = str(_uuid.uuid4())
     user_fields["{{ col.id_field }}"] = new_id
     await collection.insert_one(user_fields)
-    code = await _issue_login_code(new_id, "{{ col.name }}")
+    code = await issue_login_code(new_id, "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
     return RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
     {% else %}
     raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")

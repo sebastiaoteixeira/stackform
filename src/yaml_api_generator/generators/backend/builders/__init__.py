@@ -66,7 +66,10 @@ class ContextBuilder:
                 "datastore_type": ds.type if ds is not None else "mongodb",
             }
 
-        auth = self._auth.build_auth_config(identity_map, document.collections, document.providers)
+        datastore_types = {n: c["datastore_type"] for n, c in raw_collections.items()}
+        auth = self._auth.build_auth_config(
+            identity_map, document.collections, document.providers, datastore_types
+        )
         repository_operations = self._repository.build_repository_operations(document.repositories)
 
         datastores: dict[str, dict] = {}

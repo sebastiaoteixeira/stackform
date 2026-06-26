@@ -23,6 +23,7 @@ class AuthBuilder:
         identity_map: dict[str, IRIdentityCollection],
         collections: dict[str, IRCollection],
         providers: dict[str, Any],
+        datastore_types: dict[str, str],
     ) -> AuthConfig:
         """Build auth configuration descriptor.
 
@@ -30,6 +31,7 @@ class AuthBuilder:
             identity_map: Identity collection IR objects
             collections: Collection IR objects
             providers: Provider configurations
+            datastore_types: Collection name -> resolved datastore type
 
         Returns:
             Auth configuration descriptor
@@ -67,6 +69,7 @@ class AuthBuilder:
                     roles=identity.roles,
                     roles_field=identity.roles_field,
                     issues_jwt=issues_jwt,
+                    datastore_type=datastore_types.get(name, "mongodb"),
                 )
             )
             if identity.has_password:

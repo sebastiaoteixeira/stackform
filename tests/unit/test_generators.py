@@ -316,7 +316,31 @@ def test_oidc_callback_redirects_with_code_not_token(tmp_path):
     assert "?code={code}" in oidc_src
     assert "?token=" not in oidc_src
     assert '@router.post("/auth/exchange")' in oidc_src
-    assert "find_one_and_delete" in oidc_src
+    assert "redeem_login_code(code)" in oidc_src
+    assert 'issue_login_code(str(subject), "users", "mongo")' in oidc_src
+
+
+def test_oidc_login_codes_stored_in_collection_datastore(tmp_path):
+    ctx = _ctx_from_fixture("auth-oidc.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    store_src = (tmp_path / "dependencies" / "login_codes.py").read_text()
+    # auth-oidc.yaml is a Mongo app: only the Mongo backend is emitted, atomically consumed.
+    assert "find_one_and_delete" in store_src
+    assert '"mongo": _MongoLoginCodes()' in store_src
+    assert "_SqlLoginCodes" not in store_src
+
+
+def test_oidc_login_codes_use_sql_backend_for_sql_identity(tmp_path):
+    ctx = _ctx_from_fixture("auth-oidc-sql.yaml")
+    gen = FastAPIGenerator()
+    gen.generate(ctx, tmp_path)
+    store_src = (tmp_path / "dependencies" / "login_codes.py").read_text()
+    assert '"sql": _SqlLoginCodes()' in store_src
+    assert "_MongoLoginCodes" not in store_src
+    assert "metadata" in store_src and "returning(" in store_src
+    oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    assert 'issue_login_code(str(subject), "users", "sql")' in oidc_src
 
 
 def test_shared_service_provider_defined_exactly_once(tmp_path):
