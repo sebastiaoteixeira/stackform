@@ -92,7 +92,8 @@ def _extract_roles(doc: dict[str, Any], roles_field: str | None) -> list[str]:
 async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | None:
     headers = {k.lower(): v for k, v in request.headers.items()}
 
-{% if auth.uses_jwt %}
+{% set jwt_identities = auth.identity_collections | selectattr("issues_jwt") | list %}
+{% if auth.uses_jwt and jwt_identities %}
     bearer_token = _extract_bearer_token(headers)
     if bearer_token is not None:
         claims = decode_jwt_token(bearer_token)
@@ -104,11 +105,9 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
                 cursor = col.find({})
                 docs = await cursor.to_list(length=None)
                 for doc in docs:
-{% for identity in auth.identity_collections %}
-{% if identity.issues_jwt %}
+{% for identity in jwt_identities %}
                     if collection_name == "{{ identity.name }}" and str(doc.get("{{ identity.id_field }}", "")) == sub:
                         return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }})}
-{% endif %}
 {% endfor %}
 {% endif %}
 
