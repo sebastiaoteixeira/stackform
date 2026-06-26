@@ -3,6 +3,8 @@ from collections import Counter
 from sqlalchemy.engine import make_url
 
 from ...ir import IRDocument, IRPostgres
+from ..backend.builders import build_context
+from ..backend.builders.settings_builder import build_settings_fields
 from .context import DeployContext, DeployDatastore, DockerDeployContext, SystemdDeployContext
 
 
@@ -18,7 +20,8 @@ def build_deploy_context(
     deploy = ir.deploy
     name = deploy.name or "app"
     mongo_db = ir.mongo.database
-    env_vars = list(deploy.env_vars)
+    secret_vars = [f.env_name for f in build_settings_fields(build_context(ir)) if f.secret]
+    env_vars = list(dict.fromkeys([*deploy.env_vars, *secret_vars]))
     datastores = _build_datastores(ir)
 
     common = dict(

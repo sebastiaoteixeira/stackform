@@ -65,3 +65,22 @@ def test_image_service_untouched(tmp_path):
     out = tmp_path / "out"
     compose = _generate(_ctx((("cache", {"image": "redis:7"}),)), tmp_path, out)
     assert "image: redis:7" in compose
+
+
+def test_required_secrets_are_added_to_env_vars(tmp_path):
+    """JWT_SECRET and other backend secrets must surface in deploy env vars."""
+    from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
+    from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
+    from tests.conftest import VALID_DIR
+
+    spec = tmp_path / "spec.yaml"
+    spec.write_text((VALID_DIR / "auth-oidc.yaml").read_text() + """
+deploy:
+  runtime: docker
+  name: app
+  port: 8000
+""")
+    ir = load_and_generate_ir(str(spec)).ir
+    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    assert "JWT_SECRET" in ctx.env_vars
+    assert "KEYCLOAK_CLIENT_SECRET" in ctx.env_vars
