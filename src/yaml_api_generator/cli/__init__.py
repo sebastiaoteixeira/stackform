@@ -89,6 +89,7 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
                     ssh_user="ubuntu",
                     ssh_key="~/.ssh/id_rsa",
                     output_dir=output_dir,
+                    spec_dir=Path(yaml_file).parent,
                 )
                 click.echo(f"Deploy artifacts generated in {output_dir}")
 

@@ -9,7 +9,7 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
 class SystemdDeployGenerator(DeployGenerator):
-    def generate(self, ctx: DeployContext, output_dir: Path) -> None:
+    def generate(self, ctx: DeployContext, output_dir: Path, spec_dir: Path) -> None:
         assert isinstance(ctx, SystemdDeployContext)
         env = Environment(
             loader=FileSystemLoader(str(_TEMPLATES_DIR)),
