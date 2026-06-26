@@ -84,3 +84,22 @@ deploy:
     ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
     assert "JWT_SECRET" in ctx.env_vars
     assert "KEYCLOAK_CLIENT_SECRET" in ctx.env_vars
+
+
+def test_required_secrets_passthrough_in_app_environment(tmp_path):
+    """Required secrets are passed through to the app container, failing fast if unset."""
+    from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
+    from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
+    from tests.conftest import VALID_DIR
+
+    spec = tmp_path / "spec.yaml"
+    spec.write_text((VALID_DIR / "auth-oidc.yaml").read_text() + """
+deploy:
+  runtime: docker
+  name: app
+  port: 8000
+""")
+    ir = load_and_generate_ir(str(spec)).ir
+    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    assert "JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}" in ctx.app_environment
+    assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET is required}" in ctx.app_environment

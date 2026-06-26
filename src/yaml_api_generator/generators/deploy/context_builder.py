@@ -48,6 +48,9 @@ def build_deploy_context(
         ) + (
             f"PORT=${{PORT:-{deploy.port}}}",
             "FRONTEND_URL=${FRONTEND_URL:-http://localhost}",
+        ) + tuple(
+            f"{var}=${{{var}:?{var} is required}}"
+            for var in secret_vars
         )
         return DockerDeployContext(
             **common,
