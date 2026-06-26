@@ -98,6 +98,11 @@ class IdentityCollectionDescriptor:
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
     issues_jwt: bool = False
+    datastore_type: str = "mongodb"
+
+    @property
+    def is_sql(self) -> bool:
+        return self.datastore_type in ("postgres", "postgresql")
 
     @property
     def has_password(self) -> bool:

@@ -1,16 +1,40 @@
 import time
 from typing import Any
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from dependencies.mongodb import get_database
 from dependencies.jwt_utils import create_jwt_token
+from dependencies.login_codes import issue_login_code, redeem_login_code
+{% set _oidc_cols = [] %}
+{% for col in auth.identity_collections %}
+{% for binding in col.bindings %}
+{% set _p = auth.providers.get(binding.provider) %}
+{% if _p and _p.type == "oidc" and col.name not in _oidc_cols %}
+{% set _ = _oidc_cols.append(col.name) %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% for name in _oidc_cols %}
+from dependencies.repositories import get_{{ name }}_repository
+{% endfor %}
 from settings import settings
 
 router = APIRouter()
+
+
+@router.post("/auth/exchange")
+async def exchange_login_code(payload: dict[str, str]) -> dict[str, str]:
+    code = payload.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+    redeemed = await redeem_login_code(code)
+    if redeemed is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired code")
+    subject, identity_collection = redeemed
+    return {"token": create_jwt_token(subject, identity_collection)}
 
 {% for col in auth.identity_collections %}
 {% set ext_providers = [] %}
@@ -63,7 +87,7 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def oidc_{{ sym }}_callback(request: Request, code: str) -> Any:
+async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_{{ col.name }}_repository)) -> Any:
     discovery = await _get_{{ sym }}_discovery()
     token_endpoint = discovery["token_endpoint"]
     callback_url = str(request.base_url).rstrip("/") + "{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback"
@@ -110,28 +134,23 @@ async def oidc_{{ sym }}_callback(request: Request, code: str) -> Any:
     if "{{ binding.identifier }}" not in user_fields:
         user_fields["{{ binding.identifier }}"] = claims.get("email") or claims.get("login") or claims.get("sub")
 
-    db = get_database()
-    collection = db["{{ col.name }}"]
-
-    existing = await collection.find_one({"{{ binding.identifier }}": user_fields.get("{{ binding.identifier }}")})
+    existing = await repo.find_by("{{ binding.identifier }}", user_fields.get("{{ binding.identifier }}"))
 
     frontend_url = settings.FRONTEND_URL or str(request.base_url).rstrip("/")
 
     if existing is not None:
         subject = existing.get("{{ col.id_field }}")
-        token = create_jwt_token(str(subject), "{{ col.name }}")
-        return RedirectResponse(url=f"{frontend_url}/auth/callback?token={quote(token)}")
-
     {% if binding.auto_provision %}
-    import uuid as _uuid
-    new_id = str(_uuid.uuid4())
-    user_fields["{{ col.id_field }}"] = new_id
-    await collection.insert_one(user_fields)
-    token = create_jwt_token(new_id, "{{ col.name }}")
-    return RedirectResponse(url=f"{frontend_url}/auth/callback?token={quote(token)}")
+    else:
+        created = await repo.insert(user_fields)
+        subject = created.get("{{ col.id_field }}")
     {% else %}
-    raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+    else:
+        raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
     {% endif %}
+
+    code = await issue_login_code(str(subject), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
+    return RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
 
 {% endif %}
 {% endfor %}

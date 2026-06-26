@@ -36,6 +36,15 @@ class RepositoryBase:
             return None
         return {k: v for k, v in doc.items() if not k.startswith("_")}
 
+    async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
+        return self._normalize(await self._col.find_one({field: value}))
+
+    async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
+        if self._generate_id is not None:
+            data[self.ID_FIELD] = self._generate_id()
+        await self._col.insert_one(data)
+        return self._normalize(data)
+
 
 class ListOp:
     async def list(self) -> list[dict[str, Any]]:
@@ -52,10 +61,7 @@ class GetOp:
 
 class CreateOp:
     async def create(self, data: dict[str, Any]) -> dict[str, Any]:
-        if self._generate_id is not None:
-            data[self.ID_FIELD] = self._generate_id()
-        await self._col.insert_one(data)
-        return self._normalize(data)
+        return await self.insert(data)
 
 
 class UpdateOp:

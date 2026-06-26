@@ -1,0 +1,107 @@
+{% set uses_sql = auth.identity_collections | selectattr("is_sql") | list | length > 0 %}
+{% set uses_mongo = auth.identity_collections | rejectattr("is_sql") | list | length > 0 %}
+"""One-time login codes.
+
+After an external IdP login the durable session token must never ride in a
+redirect URL. The callback issues a single-use, short-lived code stored in the
+same datastore as the identity collection; the SPA redeems it for the token
+through the exchange endpoint. Redemption is atomic (delete-on-read), so a code
+works exactly once even across workers.
+"""
+
+import secrets
+import time
+
+_TTL_SECONDS = 60
+_TABLE = "_oidc_login_codes"
+
+
+def _new_code() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def _fresh(expires_at: float) -> bool:
+    return expires_at >= time.time()
+
+{% if uses_mongo %}
+
+from dependencies.mongodb import get_database as _get_mongo
+
+
+class _MongoLoginCodes:
+    async def issue(self, subject: str, identity_collection: str) -> str:
+        code = _new_code()
+        await _get_mongo()[_TABLE].insert_one({
+            "code": code,
+            "subject": subject,
+            "identity_collection": identity_collection,
+            "expires_at": time.time() + _TTL_SECONDS,
+        })
+        return code
+
+    async def redeem(self, code: str) -> tuple[str, str] | None:
+        record = await _get_mongo()[_TABLE].find_one_and_delete({"code": code})
+        if record is None or not _fresh(record["expires_at"]):
+            return None
+        return str(record["subject"]), record["identity_collection"]
+{% endif %}
+{% if uses_sql %}
+
+import sqlalchemy as sa
+
+from dependencies.postgres import metadata, get_database as _get_pg
+
+_codes_table = sa.Table(
+    _TABLE,
+    metadata,
+    sa.Column("code", sa.String, primary_key=True),
+    sa.Column("subject", sa.String, nullable=False),
+    sa.Column("identity_collection", sa.String, nullable=False),
+    sa.Column("expires_at", sa.Float, nullable=False),
+)
+
+
+class _SqlLoginCodes:
+    async def issue(self, subject: str, identity_collection: str) -> str:
+        code = _new_code()
+        async with _get_pg().begin() as conn:
+            await conn.execute(sa.insert(_codes_table).values(
+                code=code,
+                subject=subject,
+                identity_collection=identity_collection,
+                expires_at=time.time() + _TTL_SECONDS,
+            ))
+        return code
+
+    async def redeem(self, code: str) -> tuple[str, str] | None:
+        async with _get_pg().begin() as conn:
+            row = (await conn.execute(
+                sa.delete(_codes_table)
+                .where(_codes_table.c.code == code)
+                .returning(
+                    _codes_table.c.subject,
+                    _codes_table.c.identity_collection,
+                    _codes_table.c.expires_at,
+                )
+            )).first()
+        if row is None or not _fresh(row.expires_at):
+            return None
+        return str(row.subject), row.identity_collection
+{% endif %}
+
+_stores: dict[str, object] = {
+{% if uses_mongo %}    "mongo": _MongoLoginCodes(),
+{% endif %}{% if uses_sql %}    "sql": _SqlLoginCodes(),
+{% endif %}}
+
+
+async def issue_login_code(subject: str, identity_collection: str, datastore: str) -> str:
+    return await _stores[datastore].issue(subject, identity_collection)
+
+
+async def redeem_login_code(code: str) -> tuple[str, str] | None:
+    for store in _stores.values():
+        result = await store.redeem(code)
+        if result is not None:
+            return result
+    return None

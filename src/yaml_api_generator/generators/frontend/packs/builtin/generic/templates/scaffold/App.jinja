@@ -119,14 +119,22 @@ function LoginPage() {
 function AuthCallback({ onToken }: { onToken: (t: string) => void }) {
   const navigate = useNavigate();
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      onToken(token);
-      navigate('/', { replace: true });
-    } else {
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (!code) {
       navigate('/login', { replace: true });
+      return;
     }
+    fetch(`${API_BASE_URL}/auth/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        onToken(data.token);
+        navigate('/', { replace: true });
+      })
+      .catch(() => navigate('/login', { replace: true }));
   }, []);
   return null;
 }
