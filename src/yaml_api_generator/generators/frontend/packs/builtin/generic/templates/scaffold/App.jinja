@@ -52,7 +52,10 @@ export function ExternalProviders({ collection }: { collection: string }) {
           <button
             key={p.name}
             type="button"
-            onClick={() => { window.location.href = `${API_BASE_URL}/${collection}/auth/${p.name}`; }}
+            onClick={() => {
+              localStorage.setItem('sso_logout_path', `${collection}/auth/${p.name}/logout`);
+              window.location.href = `${API_BASE_URL}/${collection}/auth/${p.name}`;
+            }}
             style={{ "{{" }} width: '100%', height: 36, borderRadius: 5, background: 'var(--wf-surface)', border: '1.5px solid var(--wf-line-strong)', color: 'var(--wf-ink)', fontSize: 14, cursor: 'pointer' {{ "}}" }}
           >
             Continue with {p.name.charAt(0).toUpperCase() + p.name.slice(1)}
@@ -145,9 +148,14 @@ function App() {
   const [user, setUser] = useState<any | null>(null);
 
   const logout = () => {
+    const ssoLogoutPath = localStorage.getItem('sso_logout_path');
     localStorage.removeItem('token');
+    localStorage.removeItem('sso_logout_path');
     setToken(null);
     setUser(null);
+    if (ssoLogoutPath) {
+      window.location.href = `${API_BASE_URL}/${ssoLogoutPath}`;
+    }
   };
 
   const login = async (email: string, password: string) => {
@@ -161,6 +169,7 @@ function App() {
       throw new Error(data.detail || 'Invalid credentials');
     }
     const data = await res.json();
+    localStorage.removeItem('sso_logout_path');
     localStorage.setItem('token', data.token);
     setToken(data.token);
     setUser(data.user);

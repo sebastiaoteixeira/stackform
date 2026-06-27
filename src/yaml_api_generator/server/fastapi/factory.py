@@ -206,6 +206,9 @@ def register_provider_routes(
                 _oidc_callback_endpoint(provider, binding, collection, registry, callback_path),
                 methods=["GET"],
             )
+            app.add_api_route(
+                f"{login_path}/logout", _oidc_logout_endpoint(provider), methods=["GET"]
+            )
 
     if has_oidc:
         app.add_api_route(f"{base_prefix}/auth/exchange", _exchange_endpoint, methods=["POST"])
@@ -222,6 +225,14 @@ def _oidc_login_endpoint(provider: IROIDCProvider, callback_path: str):
     async def endpoint(request: Request) -> RedirectResponse:
         callback_url = str(request.base_url).rstrip("/") + callback_path
         return RedirectResponse(url=await oidc.build_login_redirect(provider, callback_url))
+
+    return endpoint
+
+
+def _oidc_logout_endpoint(provider: IROIDCProvider):
+    async def endpoint(request: Request) -> RedirectResponse:
+        post_logout = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
+        return RedirectResponse(url=await oidc.build_logout_redirect(provider, post_logout))
 
     return endpoint
 

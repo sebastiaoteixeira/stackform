@@ -160,6 +160,7 @@ routes under the entity's collection (the full path is
 | `GET /api/v1/users/auth/myoidc` | Starts the login: 302 redirect to the IdP. |
 | `GET /api/v1/users/auth/myoidc/callback` | Completes the IdP exchange: maps claims, finds or provisions the user, mints a one-time login code, and redirects to `{FRONTEND_URL}/auth/callback?code=<code>`. |
 | `POST /api/v1/auth/exchange` | Redeems the one-time login code (`{"code": "..."}`) for the app JWT (`{"token": "<jwt>"}`). Emitted once whenever any collection binds an OIDC provider. |
+| `GET /api/v1/users/auth/myoidc/logout` | RP-initiated logout: 302s to the provider's `end_session_endpoint` (with `client_id` and `post_logout_redirect_uri`) to end the IdP's SSO session. |
 
 These routes exist only when an entity actually binds the provider; a declared but
 unbound provider emits nothing.
@@ -167,6 +168,16 @@ unbound provider emits nothing.
 Both `yaml-api build` and the `yaml-api run` dev server mount these OIDC routes.
 SAML routes are currently only mounted by `yaml-api build`; SAML SSO under the dev
 server is not yet implemented.
+
+### Logout
+
+Clearing the app JWT only ends the *app* session; the IdP keeps its own SSO cookie,
+so the next login is silent. The logout route ends the IdP session: the generated
+frontend's logout clears the token and, for an SSO session, navigates to
+`/{collection}/auth/{provider}/logout`, which redirects to the IdP's
+`end_session_endpoint`. Because the app mints its own token from `userinfo` and does
+not retain the IdP `id_token`, logout is requested with `client_id` +
+`post_logout_redirect_uri` (supported by Keycloak 18+) rather than `id_token_hint`.
 
 ## See also
 

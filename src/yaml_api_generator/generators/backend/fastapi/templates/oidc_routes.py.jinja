@@ -152,6 +152,17 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
     code = await issue_login_code(str(subject), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
     return RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
 
+
+@router.get("/{{ col.name }}/auth/{{ provider_name }}/logout")
+async def oidc_{{ sym }}_logout(request: Request) -> RedirectResponse:
+    discovery = await _get_{{ sym }}_discovery()
+    end_session = discovery.get("end_session_endpoint")
+    if not end_session:
+        raise HTTPException(status_code=501, detail="Provider does not support end-session logout")
+    post_logout = settings.FRONTEND_URL or str(request.base_url).rstrip("/")
+    params = {"client_id": "{{ provider.client_id }}", "post_logout_redirect_uri": post_logout}
+    return RedirectResponse(url=f"{end_session}?{urlencode(params)}")
+
 {% endif %}
 {% endfor %}
 {% endfor %}

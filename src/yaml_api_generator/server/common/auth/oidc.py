@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from yaml_api_generator.ir.api import EnvRef, IROIDCProvider, IRProviderBinding
 from ..repositories import BaseRepository
 from ..server_context import RuntimeCollectionDescriptor
-from ..steps.repositories import _generate_id
+from ..utils.ids import generate_id
 from .login_codes import login_codes
 
 _discovery_cache: dict[str, dict[str, Any]] = {}
@@ -53,6 +53,18 @@ async def build_login_redirect(provider: IROIDCProvider, callback_url: str) -> s
     return f"{discovery['authorization_endpoint']}?{urlencode(params)}"
 
 
+async def build_logout_redirect(provider: IROIDCProvider, post_logout_redirect_uri: str) -> str:
+    discovery = await _discovery(_resolve(provider.discovery_url))
+    end_session = discovery.get("end_session_endpoint")
+    if not end_session:
+        raise HTTPException(status_code=501, detail="Provider does not support end-session logout")
+    params = {
+        "client_id": _resolve(provider.client_id),
+        "post_logout_redirect_uri": post_logout_redirect_uri,
+    }
+    return f"{end_session}?{urlencode(params)}"
+
+
 async def handle_callback(
     provider: IROIDCProvider,
     binding: IRProviderBinding,
@@ -87,6 +99,24 @@ async def handle_callback(
     if exp is not None and int(exp) < int(time.time()):
         raise HTTPException(status_code=401, detail="Token expired")
 
+    record = await resolve_record(claims, binding, collection, repo)
+    if record is None:
+        raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+
+    return login_codes.issue(str(record.get(collection.id_field)), collection.name)
+
+
+async def resolve_record(
+    claims: dict[str, Any],
+    binding: IRProviderBinding,
+    collection: RuntimeCollectionDescriptor,
+    repo: BaseRepository,
+) -> dict[str, Any] | None:
+    """Map IdP claims to a local record, provisioning it when allowed.
+
+    Returns the stored document, or None when no record matches and
+    auto-provisioning is disabled for the binding.
+    """
     user_fields = {
         local_field: claims[oidc_claim]
         for local_field, oidc_claim in binding.claim_mapping.items()
@@ -103,15 +133,10 @@ async def handle_callback(
         (d for d in documents if str(d.get(binding.identifier)) == str(identifier_value)),
         None,
     )
-
     if existing is not None:
-        subject = existing.get(collection.id_field)
-    elif binding.auto_provision:
+        return existing
+    if binding.auto_provision:
         payload = dict(user_fields)
-        payload[collection.id_field] = _generate_id(collection.id_format)
-        created = await repo.create(collection.name, payload)
-        subject = created.get(collection.id_field)
-    else:
-        raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
-
-    return login_codes.issue(str(subject), collection.name)
+        payload[collection.id_field] = generate_id(collection.id_format)
+        return await repo.create(collection.name, payload)
+    return None
