@@ -28,29 +28,15 @@ from ..constants import CRUD_OPERATIONS
 
 
 @dataclass(frozen=True)
-class EnvRef:
-    """A deferred environment-variable reference captured at parse time.
-
-    Secrets are never baked even when the env var is exported; non-secrets
-    resolve at runtime via the generated settings singleton.
-    """
-
-    name: str
-    default: str | None = None
-    secret: bool = False
-    value_type: str = "str"  # "str" | "int"
-
-
-@dataclass(frozen=True)
 class IROIDCProvider:
     name: str
     client_id: str
     type: str = "oidc"
     trust: str = "app"
-    client_secret: str | EnvRef | None = None
-    discovery_url: str | EnvRef | None = None
+    client_secret: str | None = None
+    discovery_url: str | None = None
     issuer: str | None = None
-    audience: str | None = None
+    audiences: tuple[str, ...] = ()
 
     @property
     def is_idp(self) -> bool:
@@ -62,8 +48,8 @@ class IRSAMLProvider:
     name: str
     type: str = "saml"
     trust: str = "app"
-    idp_metadata_url: str | EnvRef | None = None
-    sp_entity_id: str | EnvRef | None = None
+    idp_metadata_url: str | None = None
+    sp_entity_id: str | None = None
     issuer: str | None = None
     audience: str | None = None
 
@@ -268,11 +254,18 @@ def flatten_role_hierarchy(
 
 
 @dataclass(frozen=True)
+class IRProviderRelation:
+    collection: str
+    match: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class IRProviderBinding:
     provider: str
     identifier: str
     claim_mapping: dict[str, str] = field(default_factory=dict)
     auto_provision: bool = True
+    relations: dict[str, IRProviderRelation] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

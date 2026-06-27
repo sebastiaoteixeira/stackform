@@ -1,3 +1,6 @@
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -17,14 +20,21 @@ from yaml_api_generator.server.fastapi.factory import register_provider_routes
 
 
 _DISCOVERY_URL = "https://idp.test/.well-known/openid-configuration"
+_DISCOVERY = {
+    "authorization_endpoint": "https://idp.test/authorize",
+    "token_endpoint": "https://idp.test/token",
+    "userinfo_endpoint": "https://idp.test/userinfo",
+    "end_session_endpoint": "https://idp.test/logout",
+}
 
 
-def _ctx() -> RuntimeContext:
+def _make_ctx(trust: str = "app") -> RuntimeContext:
     provider = IROIDCProvider(
         name="keycloak",
         client_id="cid",
         client_secret="csecret",
         discovery_url=_DISCOVERY_URL,
+        trust=trust,
     )
     identity = RuntimeIdentityDescriptor(
         name="users",
@@ -51,9 +61,11 @@ def _ctx() -> RuntimeContext:
     )
 
 
-def _client() -> TestClient:
+def _client(trust: str = "app") -> TestClient:
     app = FastAPI()
-    register_provider_routes(app, _ctx(), RepositoryRegistry(repositories={}, bindings={}, default=""))
+    register_provider_routes(
+        app, _make_ctx(trust), RepositoryRegistry(repositories={}, bindings={}, default="")
+    )
     return TestClient(app)
 
 
@@ -64,11 +76,7 @@ def test_providers_listing_route_is_mounted():
 
 
 def test_login_route_redirects_to_idp():
-    oidc._discovery_cache[_DISCOVERY_URL] = {
-        "authorization_endpoint": "https://idp.test/authorize",
-        "token_endpoint": "https://idp.test/token",
-        "userinfo_endpoint": "https://idp.test/userinfo",
-    }
+    oidc._discovery_cache[_DISCOVERY_URL] = _DISCOVERY
     resp = _client().get("/api/v1/users/auth/keycloak", follow_redirects=False)
     assert resp.status_code in (302, 307)
     location = resp.headers["location"]
@@ -78,12 +86,7 @@ def test_login_route_redirects_to_idp():
 
 
 def test_logout_route_redirects_to_end_session():
-    oidc._discovery_cache[_DISCOVERY_URL] = {
-        "authorization_endpoint": "https://idp.test/authorize",
-        "token_endpoint": "https://idp.test/token",
-        "userinfo_endpoint": "https://idp.test/userinfo",
-        "end_session_endpoint": "https://idp.test/logout",
-    }
+    oidc._discovery_cache[_DISCOVERY_URL] = _DISCOVERY
     resp = _client().get("/api/v1/users/auth/keycloak/logout", follow_redirects=False)
     assert resp.status_code in (302, 307)
     location = resp.headers["location"]
@@ -105,5 +108,41 @@ def test_exchange_route_requires_code():
 def test_login_codes_single_use_and_resolve():
     store = LoginCodeStore()
     code = store.issue("user-1", "users")
-    assert store.redeem(code) == ("user-1", "users")
+    assert store.redeem(code) == ("user-1", "users", None)
     assert store.redeem(code) is None
+
+
+@pytest.mark.asyncio
+async def test_app_callback_does_not_expose_idp_token(monkeypatch):
+    """trust:app callback must issue an app-mode code (idp_token=None)."""
+    provider = IROIDCProvider(
+        name="keycloak", client_id="cid", discovery_url=_DISCOVERY_URL, trust="app"
+    )
+    binding = IRProviderBinding(
+        provider="keycloak", identifier="email",
+        claim_mapping={"email": "email"}, auto_provision=True,
+    )
+    collection = RuntimeCollectionDescriptor(
+        name="users", type="auth", id_field="id", id_format="uuidv7", fields={}
+    )
+
+    monkeypatch.setitem(oidc._discovery_cache, _DISCOVERY_URL, _DISCOVERY)
+    monkeypatch.setattr(oidc, "_exchange_code", AsyncMock(return_value={"access_token": "any"}))
+    monkeypatch.setattr(oidc, "_fetch_userinfo", AsyncMock(return_value={"email": "alice@example.com", "sub": "u1"}))
+
+    fake_repo = MagicMock()
+    fake_repo.list = AsyncMock(return_value=[{"id": "local-uid", "email": "alice@example.com"}])
+
+    from yaml_api_generator.server.common.auth import login_codes as lc_module
+
+    result = await oidc.handle_callback(
+        provider, binding, collection, repo=fake_repo,
+        code="auth-code", callback_url="http://localhost/cb",
+    )
+
+    redeemed = lc_module.login_codes.redeem(result)
+    assert redeemed is not None
+    subject, collection_name, idp_token = redeemed
+    assert subject == "local-uid"
+    assert collection_name == "users"
+    assert idp_token is None

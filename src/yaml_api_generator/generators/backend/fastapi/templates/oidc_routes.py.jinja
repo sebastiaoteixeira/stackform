@@ -6,18 +6,27 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+from dependencies.claims import resolve_claim_path, resolve_relations
 from dependencies.jwt_utils import create_jwt_token
-from dependencies.login_codes import issue_login_code, redeem_login_code
-{% set _oidc_cols = [] %}
+from dependencies.login_codes import (
+    issue_login_code,
+    redeem_login_code,
+)
+{% set _app_oidc_cols = [] %}
+{% set _relation_target_cols = [] %}
 {% for col in auth.identity_collections %}
 {% for binding in col.bindings %}
 {% set _p = auth.providers.get(binding.provider) %}
-{% if _p and _p.type == "oidc" and col.name not in _oidc_cols %}
-{% set _ = _oidc_cols.append(col.name) %}
+{% if _p and _p.type == "oidc" and not _p.is_idp %}
+{% if col.name not in _app_oidc_cols %}{% set _ = _app_oidc_cols.append(col.name) %}{% endif %}
+{% for rel in binding.relations %}
+{% if rel.collection not in _relation_target_cols %}{% set _ = _relation_target_cols.append(rel.collection) %}{% endif %}
+{% endfor %}
 {% endif %}
 {% endfor %}
 {% endfor %}
-{% for name in _oidc_cols %}
+{% set _all_repo_cols = (_app_oidc_cols + _relation_target_cols) | unique | list %}
+{% for name in _all_repo_cols %}
 from dependencies.repositories import get_{{ name }}_repository
 {% endfor %}
 from settings import settings
@@ -33,14 +42,14 @@ async def exchange_login_code(payload: dict[str, str]) -> dict[str, str]:
     redeemed = await redeem_login_code(code)
     if redeemed is None:
         raise HTTPException(status_code=401, detail="Invalid or expired code")
-    subject, identity_collection = redeemed
+    subject, identity_collection, _ = redeemed
     return {"token": create_jwt_token(subject, identity_collection)}
 
 {% for col in auth.identity_collections %}
 {% set ext_providers = [] %}
 {% for binding in col.bindings %}
 {% set _p = auth.providers.get(binding.provider) %}
-{% if _p %}
+{% if _p and not _p.is_idp %}
 {% set _ = ext_providers.append({"name": binding.provider, "type": _p.type}) %}
 {% endif %}
 {% endfor %}
@@ -55,7 +64,7 @@ async def list_{{ col.name }}_auth_providers() -> list[dict[str, str]]:
 {% for col in auth.identity_collections %}
 {% for binding in col.bindings %}
 {% set provider = auth.providers.get(binding.provider) %}
-{% if provider and provider.type == "oidc" %}
+{% if provider and provider.type == "oidc" and not provider.is_idp %}
 {% set provider_name = binding.provider %}
 {% set sym = (col.name ~ "_" ~ provider_name) | py_identifier %}
 
@@ -66,7 +75,7 @@ async def _get_{{ sym }}_discovery() -> dict[str, Any]:
     global _{{ sym }}_discovery
     if _{{ sym }}_discovery is None:
         async with httpx.AsyncClient() as client:
-            resp = await client.get({{ provider.discovery_url | env_ref }})
+            resp = await client.get({{ provider.discovery_url | py_literal }})
             resp.raise_for_status()
             _{{ sym }}_discovery = resp.json()
     return _{{ sym }}_discovery
@@ -86,26 +95,32 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
     return RedirectResponse(url=f"{auth_endpoint}?{urlencode(params)}")
 
 
+{% set _binding_target_cols = [] %}
+{% for rel in binding.relations %}
+{% if rel.collection not in _binding_target_cols and rel.collection != col.name %}{% set _ = _binding_target_cols.append(rel.collection) %}{% endif %}
+{% endfor %}
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_{{ col.name }}_repository)) -> Any:
+async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_{{ col.name }}_repository){% for target_col in _binding_target_cols %}, {{ target_col }}_repo=Depends(get_{{ target_col }}_repository){% endfor %}) -> Any:
     discovery = await _get_{{ sym }}_discovery()
     token_endpoint = discovery["token_endpoint"]
     callback_url = str(request.base_url).rstrip("/") + "{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback"
 
     async with httpx.AsyncClient() as client:
-        token_resp = await client.post(token_endpoint, data={
+        _token_data = {
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": callback_url,
             "client_id": "{{ provider.client_id }}",
-            "client_secret": {{ provider.client_secret | env_ref }},
-        })
+        }
+        {% if provider.client_secret %}
+        _token_data["client_secret"] = {{ provider.client_secret | py_literal }}
+        {% endif %}
+        token_resp = await client.post(token_endpoint, data=_token_data)
         if token_resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Token exchange failed")
         token_data = token_resp.json()
 
         {% if provider_name == "github" %}
-        # GitHub does not implement OIDC — fetch user info from its own endpoint
         userinfo_resp = await client.get(
             "https://api.github.com/user",
             headers={"Authorization": f"Bearer {token_data['access_token']}"},
@@ -126,23 +141,45 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
         raise HTTPException(status_code=401, detail="Token expired")
 
     claim_mapping: dict[str, str] = {{ binding.claim_mapping | tojson }}
-    user_fields: dict[str, Any] = {}
-    for local_field, oidc_claim in claim_mapping.items():
-        if oidc_claim in claims:
-            user_fields[local_field] = claims[oidc_claim]
+    user_fields: dict[str, Any] = {
+        local_field: resolved
+        for local_field, oidc_claim in claim_mapping.items()
+        if (resolved := resolve_claim_path(claims, oidc_claim)) is not None
+    }
 
     if "{{ binding.identifier }}" not in user_fields:
         user_fields["{{ binding.identifier }}"] = claims.get("email") or claims.get("login") or claims.get("sub")
+
+{% set _relations_json = binding.relations_data | tojson %}
+{% if binding.relations %}
+    _repo_by_collection: dict[str, Any] = {"{{ col.name }}": repo{% for target_col in _binding_target_cols %}, "{{ target_col }}": {{ target_col }}_repo{% endfor %}}
+
+    async def _lookup_{{ sym }}(coll: str, query: dict) -> dict | None:
+        target_repo = _repo_by_collection[coll]
+        if len(query) == 1:
+            field, value = next(iter(query.items()))
+            return await target_repo.find_by(field, value)
+        records = await target_repo.list()
+        return next((r for r in records if all(r.get(f) == v for f, v in query.items())), None)
+
+    _fk_fields = await resolve_relations(claims, {{ _relations_json }}, _lookup_{{ sym }})
+{% else %}
+    _fk_fields: dict[str, Any] = {}
+{% endif %}
 
     existing = await repo.find_by("{{ binding.identifier }}", user_fields.get("{{ binding.identifier }}"))
 
     frontend_url = settings.FRONTEND_URL or str(request.base_url).rstrip("/")
 
     if existing is not None:
+{% if binding.relations %}
+        if _fk_fields:
+            await repo.update(existing.get("{{ col.id_field }}"), _fk_fields)
+{% endif %}
         subject = existing.get("{{ col.id_field }}")
     {% if binding.auto_provision %}
     else:
-        created = await repo.insert(user_fields)
+        created = await repo.insert({% if binding.relations %}{**user_fields, **_fk_fields}{% else %}user_fields{% endif %})
         subject = created.get("{{ col.id_field }}")
     {% else %}
     else:

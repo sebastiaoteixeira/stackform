@@ -3,16 +3,24 @@
 Converts IR identity collections and providers into auth configuration descriptors.
 """
 
+from collections.abc import Iterable
 from typing import Any
 
 from yaml_api_generator.ir import (
     IRCollection,
     IRIdentityCollection,
     IROIDCProvider,
+    IRProviderBinding,
     IRSAMLProvider,
     flatten_role_hierarchy,
 )
-from ..compile_context import AuthConfig, IdentityCollectionDescriptor
+from ..compile_context import (
+    AuthConfig,
+    IdpProviderDescriptor,
+    IdentityCollectionDescriptor,
+    ProviderBindingDescriptor,
+    ProviderRelationDescriptor,
+)
 
 
 class AuthBuilder:
@@ -50,22 +58,30 @@ class AuthBuilder:
         has_api_key = False
         has_oidc = any(isinstance(p, IROIDCProvider) for p in providers.values())
         has_saml = any(isinstance(p, IRSAMLProvider) for p in providers.values())
+        has_idp = any(
+            isinstance(p, IROIDCProvider) and p.is_idp for p in providers.values()
+        )
+        has_app_oidc = any(
+            isinstance(p, IROIDCProvider) and not p.is_idp for p in providers.values()
+        )
         role_hierarchies: dict[str, dict[str, set[str]]] = {}
+        idp_providers = self._build_idp_providers(providers)
 
-        external = {
+        external_app = {
             n for n, p in providers.items()
-            if isinstance(p, (IROIDCProvider, IRSAMLProvider))
+            if isinstance(p, (IROIDCProvider, IRSAMLProvider)) and not p.is_idp
         }
         for name, identity in identity_map.items():
             col = collections[name]
             issues_jwt = identity.has_password or any(
-                b.provider in external for b in identity.bindings
+                b.provider in external_app for b in identity.bindings
             )
             descriptors.append(
                 IdentityCollectionDescriptor(
                     name=name,
-                    bindings=list(identity.bindings),
+                    bindings=self._build_bindings(identity.bindings, collections),
                     id_field=col.idField,
+                    id_format=col.idFormat,
                     roles=identity.roles,
                     roles_field=identity.roles_field,
                     issues_jwt=issues_jwt,
@@ -86,6 +102,51 @@ class AuthBuilder:
             has_api_key_auth=has_api_key,
             has_oidc_auth=has_oidc,
             has_saml_auth=has_saml,
+            has_idp_auth=has_idp,
+            has_app_oidc_auth=has_app_oidc,
+            idp_providers=idp_providers,
             providers=providers,
             role_hierarchies=role_hierarchies,
         )
+
+    @staticmethod
+    def _build_bindings(
+        bindings: Iterable[IRProviderBinding],
+        collections: dict[str, IRCollection],
+    ) -> list[ProviderBindingDescriptor]:
+        result = []
+        for b in bindings:
+            relations = [
+                ProviderRelationDescriptor(
+                    fk_field=fk_field,
+                    collection=rel.collection,
+                    id_field=collections[rel.collection].idField if rel.collection in collections else "id",
+                    match=dict(rel.match),
+                )
+                for fk_field, rel in b.relations.items()
+            ]
+            result.append(ProviderBindingDescriptor(
+                provider=b.provider,
+                identifier=b.identifier,
+                claim_mapping=dict(b.claim_mapping),
+                auto_provision=b.auto_provision,
+                relations=relations,
+            ))
+        return result
+
+    @staticmethod
+    def _build_idp_providers(providers: dict[str, Any]) -> list[IdpProviderDescriptor]:
+        result = []
+        for p in providers.values():
+            if not (isinstance(p, IROIDCProvider) and p.is_idp):
+                continue
+            if not p.discovery_url:
+                continue
+            result.append(IdpProviderDescriptor(
+                name=p.name,
+                discovery_url=p.discovery_url,
+                client_id=p.client_id,
+                issuer=p.issuer,
+                audiences=p.audiences,
+            ))
+        return result

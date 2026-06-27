@@ -18,18 +18,29 @@ providers:
     discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/.well-known/openid-configuration}
 ```
 
-The provider object is closed (`additionalProperties: false`): only the four
-fields below are accepted. Any value supports `${VAR}` interpolation, including
-the `${VAR:-default}` form, so secrets and URLs stay out of the spec.
+The provider object is closed (`additionalProperties: false`): only the fields
+below are accepted. Any value supports `${VAR}` interpolation, including the
+`${VAR:-default}` form. Interpolation is resolved at build time and baked into the
+output, so a `${VAR}` value never reaches the artifact as a placeholder -- see
+[Environment variables](../configuration/environment-variables.md) for what that
+means for secrets.
 
 ## Fields
+
+The required set depends on `trust`. A `trust: app` provider (the default) drives a
+login flow, so it needs `discovery_url`. A `trust: idp` provider only verifies
+incoming IdP tokens and requires just `type`, `client_id`, and `discovery_url`; see
+[Token trust](./overview.md#token-trust).
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | yes | Must be `oidc`. |
+| `trust` | no | `app` (default) or `idp`. See [Token trust](./overview.md#token-trust). |
 | `client_id` | yes | OAuth2 client ID from the provider's developer console. |
-| `client_secret` | yes | OAuth2 client secret. Always use `${VAR}` interpolation. |
-| `discovery_url` | yes (effectively) | OIDC discovery endpoint (`.../.well-known/openid-configuration`). The JSON schema marks it optional, but the generated routes read `authorization_endpoint`, `token_endpoint`, and `userinfo_endpoint` from it, so login fails without it. There is no automatic inference for "well-known" provider names -- always supply it. |
+| `client_secret` | no | OAuth2 client secret. Omit it entirely for a public client -- the token exchange then runs without a `client_secret`, which is correct for clients the IdP marks as public. Supply it for confidential clients, always via `${VAR}` interpolation. |
+| `discovery_url` | yes (effectively) | OIDC discovery endpoint (`.../.well-known/openid-configuration`). The generated routes read `authorization_endpoint`, `token_endpoint`, and `userinfo_endpoint` from it, so login fails without it. There is no automatic inference for "well-known" provider names -- always supply it. |
+| `issuer` | no | Override for the expected token `iss` (only meaningful under `trust: idp`, where it is otherwise derived from the discovery document). |
+| `audience` | no | Override for the expected token `aud` (only meaningful under `trust: idp`, where it defaults to `client_id`). See [Token trust](./overview.md#token-trust). |
 
 ## Custom OIDC provider
 

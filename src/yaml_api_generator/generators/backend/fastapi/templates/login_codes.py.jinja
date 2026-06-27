@@ -39,11 +39,15 @@ class _MongoLoginCodes:
         })
         return code
 
-    async def redeem(self, code: str) -> tuple[str, str] | None:
+    async def redeem(self, code: str) -> tuple[str | None, str | None, None] | None:
         record = await _get_mongo()[_TABLE].find_one_and_delete({"code": code})
         if record is None or not _fresh(record["expires_at"]):
             return None
-        return str(record["subject"]), record["identity_collection"]
+        return (
+            str(record["subject"]) if "subject" in record else None,
+            record.get("identity_collection"),
+            None,
+        )
 {% endif %}
 {% if uses_sql %}
 
@@ -73,7 +77,7 @@ class _SqlLoginCodes:
             ))
         return code
 
-    async def redeem(self, code: str) -> tuple[str, str] | None:
+    async def redeem(self, code: str) -> tuple[str | None, str | None, None] | None:
         async with _get_pg().begin() as conn:
             row = (await conn.execute(
                 sa.delete(_codes_table)
@@ -86,7 +90,7 @@ class _SqlLoginCodes:
             )).first()
         if row is None or not _fresh(row.expires_at):
             return None
-        return str(row.subject), row.identity_collection
+        return row.subject, row.identity_collection, None
 {% endif %}
 
 _stores: dict[str, object] = {
@@ -99,7 +103,7 @@ async def issue_login_code(subject: str, identity_collection: str, datastore: st
     return await _stores[datastore].issue(subject, identity_collection)
 
 
-async def redeem_login_code(code: str) -> tuple[str, str] | None:
+async def redeem_login_code(code: str) -> tuple[str | None, str | None, None] | None:
     for store in _stores.values():
         result = await store.redeem(code)
         if result is not None:

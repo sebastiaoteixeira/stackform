@@ -37,7 +37,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["path_to_regex"] = _path_to_regex
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
-        env.filters["env_ref"] = access_filters.env_ref
         env.filters["int"] = int
 
         output_dir.mkdir(parents=True, exist_ok=True)

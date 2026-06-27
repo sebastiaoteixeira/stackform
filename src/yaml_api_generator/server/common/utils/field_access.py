@@ -17,3 +17,24 @@ def get_nested_field(obj: dict[str, Any], path: str, default: Any = None) -> Any
             return default
 
     return current
+
+
+def resolve_claim_path(claims: dict[str, Any], path: str) -> Any | None:
+    """Navigate claims with dotted paths; a bare ``*`` segment selects the sole entry of a dict."""
+    if not path or not path.strip():
+        return None
+
+    current: Any = claims
+    for segment in path.split("."):
+        if segment == "*":
+            if not isinstance(current, dict) or len(current) != 1:
+                return None
+            current = next(iter(current.values()))
+        else:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(segment)
+            if current is None:
+                return None
+
+    return current

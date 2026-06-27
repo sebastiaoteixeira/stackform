@@ -3,8 +3,20 @@ from yaml_api_generator.parsers.transformers.trust_validation import (
 )
 
 
+def _results(providers: dict):
+    return validate_spec_trust({"providers": providers})
+
+
 def _codes(providers: dict) -> set[str]:
-    return {error.code for error in validate_spec_trust({"providers": providers})}
+    return {e.code for e in _results(providers)}
+
+
+def _error_codes(providers: dict) -> set[str]:
+    return {e.code for e in _results(providers) if e.severity == "error"}
+
+
+def _warning_codes(providers: dict) -> set[str]:
+    return {e.code for e in _results(providers) if e.severity == "warning"}
 
 
 def _oidc(**overrides) -> dict:
@@ -22,8 +34,7 @@ def _idp(**overrides) -> dict:
         "type": "oidc",
         "client_id": "id",
         "trust": "idp",
-        "issuer": "https://idp/",
-        "audience": "my-app",
+        "discovery_url": "https://idp/.well-known/openid-configuration",
         **overrides,
     }
 
@@ -31,11 +42,40 @@ def _idp(**overrides) -> dict:
 # ---- defaults ----
 
 def test_app_trust_is_the_default_and_accepted():
-    assert _codes({"keycloak": _oidc()}) == set()
+    assert _error_codes({"keycloak": _oidc()}) == set()
 
 
 def test_explicit_idp_trust_accepted():
-    assert _codes({"keycloak": _idp()}) == set()
+    assert _error_codes({"keycloak": _idp()}) == set()
+
+
+def test_idp_trust_without_audiences_produces_warning():
+    config = {
+        "type": "oidc",
+        "client_id": "id",
+        "trust": "idp",
+        "discovery_url": "https://idp/.well-known/openid-configuration",
+    }
+    assert "TRUST_IDP_AUDIENCE_DEFAULTED" in _warning_codes({"keycloak": config})
+    assert _error_codes({"keycloak": config}) == set()
+
+
+def test_idp_trust_with_explicit_audiences_no_warning():
+    assert "TRUST_IDP_AUDIENCE_DEFAULTED" not in _warning_codes(
+        {"keycloak": _idp(audiences=["api://my-api"])}
+    )
+    assert _error_codes({"keycloak": _idp(audiences=["api://my-api"])}) == set()
+
+
+def test_idp_trust_with_explicit_issuer_accepted():
+    assert _error_codes({"keycloak": _idp(issuer="https://idp/")}) == set()
+
+
+def test_idp_trust_audiences_tuple_reaches_ir_correctly():
+    """Explicit audiences list suppresses TRUST_IDP_AUDIENCE_DEFAULTED warning."""
+    assert "TRUST_IDP_AUDIENCE_DEFAULTED" not in _warning_codes(
+        {"keycloak": _idp(audiences=["a", "b"])}
+    )
 
 
 # ---- TRUST_INVALID_VALUE ----
@@ -44,18 +84,11 @@ def test_unknown_trust_value_rejected():
     assert "TRUST_INVALID_VALUE" in _codes({"keycloak": _oidc(trust="external")})
 
 
-# ---- TRUST_IDP_ISSUER_REQUIRED / TRUST_IDP_AUDIENCE_REQUIRED ----
+# ---- TRUST_IDP_DISCOVERY_URL_REQUIRED (OIDC only) ----
 
-def test_idp_without_issuer_rejected():
-    config = _idp()
-    del config["issuer"]
-    assert "TRUST_IDP_ISSUER_REQUIRED" in _codes({"keycloak": config})
-
-
-def test_idp_without_audience_rejected():
-    config = _idp()
-    del config["audience"]
-    assert "TRUST_IDP_AUDIENCE_REQUIRED" in _codes({"keycloak": config})
+def test_oidc_idp_without_discovery_url_rejected():
+    config = {"type": "oidc", "client_id": "id", "trust": "idp"}
+    assert "TRUST_IDP_DISCOVERY_URL_REQUIRED" in _codes({"keycloak": config})
 
 
 # ---- TRUST_IDP_PROVIDER_UNSUPPORTED ----

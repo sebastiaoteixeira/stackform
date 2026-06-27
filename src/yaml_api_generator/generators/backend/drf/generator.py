@@ -48,7 +48,6 @@ class DRFGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["rule_to_python"] = _rule_to_python
         env.filters["py_literal"] = access_filters.py_literal
-        env.filters["env_ref"] = access_filters.env_ref
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["int"] = int
         env.tests["needs_document"] = _needs_document_test

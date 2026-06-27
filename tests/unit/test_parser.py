@@ -2,7 +2,6 @@ import os
 
 import pytest
 
-from yaml_api_generator.ir.api import EnvRef
 from yaml_api_generator.parsers.yaml_parser import (
     ConfigErrors,
     ParseResult,
@@ -337,6 +336,40 @@ def test_malformed_token_empty_var_flagged() -> None:
     assert [e.code for e in errors] == ["INTERPOLATION_MALFORMED_TOKEN"]
 
 
+# --- Trust: idp warning channel ---
+
+
+def test_idp_minimal_produces_audience_defaulted_warning() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "auth-oidc-idp-minimal.yaml"))
+    warning_codes = {w.code for w in result.warnings}
+    assert "TRUST_IDP_AUDIENCE_DEFAULTED" in warning_codes
+    assert all(w.severity == "warning" for w in result.warnings)
+
+
+def test_idp_with_explicit_audiences_produces_no_warning() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "auth-oidc-idp.yaml"))
+    warning_codes = {w.code for w in result.warnings}
+    assert "TRUST_IDP_AUDIENCE_DEFAULTED" not in warning_codes
+
+
+def test_idp_audiences_stored_in_ir() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "auth-oidc-idp.yaml"))
+    provider = result.ir.providers["keycloak"]
+    assert provider.audiences == ("my-app",)  # type: ignore[union-attr]
+
+
+def test_idp_minimal_audiences_empty_in_ir() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "auth-oidc-idp-minimal.yaml"))
+    provider = result.ir.providers["keycloak"]
+    assert provider.audiences == ()  # type: ignore[union-attr]
+
+
+def test_warning_does_not_raise_and_build_succeeds() -> None:
+    result = load_and_generate_ir(str(VALID_DIR / "auth-oidc-idp-minimal.yaml"))
+    assert result.ir is not None
+    assert any(w.code == "TRUST_IDP_AUDIENCE_DEFAULTED" for w in result.warnings)
+
+
 def test_malformed_token_with_space_flagged() -> None:
     errors: list = []
     _resolve_interpolation({"key": "${MY VAR}"}, tuple(), errors)
@@ -365,32 +398,26 @@ def test_interpolation_errors_halt_before_schema_validation() -> None:
     assert "SCHEMA_VALIDATION_ERROR" not in codes
 
 
-# --- Runtime-classified secret stays an EnvRef when the env var is unset ---
+# --- providers.*.client_secret is now plain build-time interpolation ---
 
 
-def test_runtime_secret_unset_yields_envref_without_missing_var(
+def test_provider_secret_is_build_time_interpolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PROVIDER_SECRET", "s3cr3t")
+    errors: list = []
+    node = {"providers": {"keycloak": {"client_secret": "${PROVIDER_SECRET}"}}}
+    result = _resolve_interpolation(node, tuple(), errors)
+    assert result["providers"]["keycloak"]["client_secret"] == "s3cr3t"
+    assert errors == []
+
+
+def test_provider_secret_unset_raises_missing_var(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("PROVIDER_SECRET", raising=False)
     errors: list = []
     node = {"providers": {"keycloak": {"client_secret": "${PROVIDER_SECRET}"}}}
-    result = _resolve_interpolation(node, tuple(), errors)
-    ref = result["providers"]["keycloak"]["client_secret"]
-    assert isinstance(ref, EnvRef)
-    assert ref.name == "PROVIDER_SECRET"
-    assert ref.secret is True
-    assert errors == []
-
-
-# --- Structural (non-runtime) unset ${VAR} with no default still raises ---
-
-
-def test_structural_unset_var_still_raises_missing_var(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("STRUCTURAL_VAR", raising=False)
-    errors: list = []
-    node = {"api": {"basePath": "${STRUCTURAL_VAR}"}}
     _resolve_interpolation(node, tuple(), errors)
     assert [e.code for e in errors] == ["INTERPOLATION_MISSING_VAR"]
 
@@ -504,3 +531,84 @@ def test_ui_block_extracted_and_preserved() -> None:
 def test_no_ui_block_returns_none() -> None:
     result = load_and_generate_ir(str(VALID_DIR / "basic-crud.yaml"))
     assert result.ui_block is None
+
+
+# --- Binding relations validation ---
+
+
+def test_binding_relation_unknown_collection_raises() -> None:
+    from yaml_api_generator.parsers.transformers.binding_validation import (
+        validate_spec_bindings,
+    )
+
+    spec = {
+        "entities": {
+            "user": {
+                "type": "auth",
+                "auth": {
+                    "bindings": [
+                        {
+                            "provider": "keycloak",
+                            "relations": {
+                                "organizationId": {
+                                    "collection": "totally_unknown_collection",
+                                    "match": {"keycloakOrgId": "organization.*.id"},
+                                }
+                            },
+                        }
+                    ]
+                },
+            },
+            "organization": {
+                "fields": {"id": {"type": "id"}},
+            },
+        },
+        "repositories": {
+            "organizations": {"entity": "organization"},
+        },
+    }
+    errors = validate_spec_bindings(spec)
+    assert any(e.code == "BINDING_RELATION_COLLECTION_NOT_FOUND" for e in errors)
+
+
+def test_binding_relation_known_collection_parses_cleanly() -> None:
+    from yaml_api_generator.parsers.transformers.binding_validation import (
+        validate_spec_bindings,
+    )
+    from yaml_api_generator.ir import IRProviderRelation
+
+    spec = {
+        "entities": {
+            "user": {
+                "type": "auth",
+                "auth": {
+                    "bindings": [
+                        {
+                            "provider": "keycloak",
+                            "relations": {
+                                "organizationId": {
+                                    "collection": "organizations",
+                                    "match": {"keycloakOrgId": "organization.*.id"},
+                                }
+                            },
+                        }
+                    ]
+                },
+            },
+            "organization": {
+                "fields": {"id": {"type": "id"}},
+            },
+        },
+        "repositories": {
+            "organizations": {"entity": "organization"},
+        },
+    }
+    errors = validate_spec_bindings(spec)
+    assert errors == []
+
+    relation = IRProviderRelation(
+        collection="organizations",
+        match={"keycloakOrgId": "organization.*.id"},
+    )
+    assert relation.collection == "organizations"
+    assert relation.match == {"keycloakOrgId": "organization.*.id"}

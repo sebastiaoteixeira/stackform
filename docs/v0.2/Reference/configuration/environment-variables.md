@@ -3,14 +3,28 @@ title: "Environment Variables and Interpolation"
 description: Substitutes environment variable values into YAML string scalars after the YAML is parsed and before schema validation, plus the runtime variables the generated backend, the dev server, and a Docker deploy read directly.
 ---
 
-There are two ways environment variables reach a generated app:
+There are two distinct ways environment variables reach a generated app, and they do
+not overlap:
 
-1. **Spec interpolation.** `${VAR}` or `${VAR:-default}` inside any string value in
-   the YAML spec is replaced when the spec is loaded. This happens for both
-   `yaml-api build` and `yaml-api run`.
+1. **Spec interpolation (build time).** `${VAR}` or `${VAR:-default}` inside any
+   string value in the YAML spec is a build-time macro. It is resolved by the parser
+   from the environment when the spec is loaded -- for both `yaml-api build` and
+   `yaml-api run` -- and the resolved value is baked into the output. There is no
+   runtime deferral: no spec field is special-cased as a "runtime secret", so a
+   `${VAR}` reference never survives into the artifact as a placeholder.
 2. **Runtime variables.** The generated backend, the `yaml-api run` dev server, and
-   a generated Docker deploy read certain variables directly from the process
-   environment at run time. These are never written in the spec.
+   a generated Docker deploy read a fixed set of variables (listed under
+   [Runtime variables](#runtime-variables)) directly from the process environment at
+   run time. These are read by the generated *code*, not by spec interpolation, and
+   are never written in the spec.
+
+> **Secrets.** Because spec interpolation is build-time only, a secret written as
+> `${SECRET}` in the spec is resolved at build time and baked into the built
+> artifact. If a secret must stay out of the build, do not place it in the spec at
+> all -- the deployed backend reads its own runtime environment directly (see the
+> [Runtime variables](#runtime-variables) the generated code reads). This is a change
+> from earlier versions, which deferred certain fields (such as `client_secret` or a
+> datastore password) to runtime via a settings layer; no such deferral exists now.
 
 ## Spec Interpolation
 
@@ -152,24 +166,29 @@ The generated `docker-compose.yml` exposes these for `docker compose`:
 #### Secrets in the generated deploy
 
 The deploy emits each backend secret as `${NAME:-<default>}` in `docker-compose.yml`
-and lists it in the generated `.env`. How the default is filled depends on whether
-the generator owns the secret:
+and lists it in the generated `.env`. These secrets are the framework runtime
+variables the generated code reads (currently only `JWT_SECRET`), not values pulled
+from spec interpolation -- a `${VAR}` in the spec has already been resolved and baked
+in by the time the deploy is generated.
 
-- **Generated secrets** (e.g. `JWT_SECRET`) get a unique dev-ready value produced at
-  generation time with `secrets.token_urlsafe(32)`, so the deploy runs out of the box.
-  Override it for production by setting the variable in the environment or `.env`.
-- **Externally-required secrets** (e.g. a Keycloak `CLIENT_SECRET` referenced via
-  `${...}` in the spec) are surfaced with an empty default. They are listed for you to
-  fill, but the generator cannot supply them -- you must provide the value before the
-  deploy works.
+`JWT_SECRET` is generated: it gets a unique dev-ready value produced at generation
+time with `secrets.token_urlsafe(32)`, so the deploy runs out of the box. Override it
+for production by setting the variable in the environment or `.env`.
 
-## Auto-collected `.env.example`
+Any additional runtime variables your backend needs (for example a secret the backend
+reads directly rather than one interpolated into the spec) are declared explicitly in
+the spec's `deploy.env_vars` list; those are emitted with an empty default for you to
+fill.
 
-When a `deploy:` block is present, `yaml-api build ... deploy` scans the spec for
-interpolation variables and writes an `.env.example` listing each one. Only
-UPPERCASE-style names are collected (the name must start with an uppercase letter or
-underscore, e.g. `MONGO_URI`, `GOOGLE_CLIENT_ID`). Lowercase variable names still
-interpolate at parse time, but they are excluded from `.env.example`.
+## Generated `.env` / `.env.example`
+
+When a `deploy:` block is present, `yaml-api build ... deploy` writes a `.env`
+listing the runtime variables the generated backend reads: the framework secret
+variables (currently `JWT_SECRET`, pre-filled with a generated dev value) plus
+whatever is declared in the spec's `deploy.env_vars`. It does **not** scan the spec
+for `${VAR}` interpolation references -- those are build-time macros, already resolved
+and baked into the artifact before the deploy is generated, so there is nothing left
+to surface.
 
 ## Examples
 
@@ -195,8 +214,10 @@ providers:
     discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/.well-known/openid-configuration}
 ```
 
-`client_id` and `client_secret` are required (no fallback). Loading the spec aborts
-if either is missing.
+Each `${VAR}` here without a `:-default` aborts the build if the variable is unset.
+The resolved values are baked into the output: `client_secret` is a build-time value,
+not a runtime secret. For a public client, drop the `client_secret` line entirely
+(it is optional). See [OIDC provider](../providers/oidc.md#fields).
 
 ## Edge Cases
 

@@ -1108,8 +1108,7 @@ def test_136_idp_trust_provider_reaches_ir(tmp_path):
             type: oidc
             trust: idp
             client_id: my-client
-            issuer: https://idp.example/realms/main
-            audience: my-app
+            discovery_url: https://idp.example/realms/main/.well-known/openid-configuration
         entities:
           post:
             fields:
@@ -1130,6 +1129,48 @@ def test_136_idp_trust_provider_reaches_ir(tmp_path):
     provider = ir.providers["keycloak"]
     assert provider.trust == "idp"
     assert provider.is_idp
-    assert provider.issuer == "https://idp.example/realms/main"
-    assert provider.audience == "my-app"
+    assert provider.issuer is None
+    assert provider.audiences == ()
     assert provider.client_secret is None
+    assert provider.discovery_url is not None
+
+
+def test_137_idp_trust_with_issuer_audiences_overrides_reaches_ir(tmp_path):
+    ir = _parse("""
+        version: "0.2"
+        api:
+          basePath: /api
+          version: v1
+        mongo:
+          uri: mongodb://localhost:27017
+          database: testdb
+        providers:
+          keycloak:
+            type: oidc
+            trust: idp
+            client_id: my-client
+            discovery_url: https://idp.example/realms/main/.well-known/openid-configuration
+            issuer: https://idp.example/realms/main
+            audiences:
+              - my-app
+        entities:
+          post:
+            fields:
+              id: { type: id }
+              title: { type: string }
+        repositories:
+          posts:
+            entity: post
+        services:
+          posts:
+            repository: posts
+        controllers:
+          posts:
+            service: posts
+            base_path: /posts
+            access: public
+    """, tmp_path)
+    provider = ir.providers["keycloak"]
+    assert provider.trust == "idp"
+    assert provider.issuer == "https://idp.example/realms/main"
+    assert provider.audiences == ("my-app",)

@@ -223,7 +223,19 @@
           "type": "object",
           "additionalProperties": { "type": "string" }
         },
-        "auto_provision": { "type": "boolean" }
+        "auto_provision": { "type": "boolean" },
+        "relations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["collection", "match"],
+            "additionalProperties": false,
+            "properties": {
+              "collection": { "type": "string" },
+              "match": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -241,16 +253,16 @@
         "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
         "client_id": { "type": "string" },
         "client_secret": { "type": "string" },
-        "discovery_url": { "type": "string" },
+        "discovery_url": { "type": "string", "description": "OIDC discovery document URL; issuer is derived from it automatically" },
         "issuer": { "type": "string" },
-        "audience": { "type": "string" }
+        "audiences": { "type": "array", "items": { "type": "string" }, "description": "Accepted token audiences; defaults to [client_id] when omitted" }
       },
       "if": {
         "properties": { "trust": { "const": "idp" } },
         "required": ["trust"]
       },
-      "then": { "required": ["issuer", "audience"] },
-      "else": { "required": ["client_secret", "discovery_url"] },
+      "then": { "required": ["discovery_url"] },
+      "else": { "required": ["discovery_url"] },
       "additionalProperties": false
     },
     "SAMLProviderConfig": {

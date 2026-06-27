@@ -137,5 +137,8 @@ class V02Transformer:
             if ctor is None:
                 continue
             accepted = {f.name for f in dataclass_fields(ctor)} - {"name"}
-            providers[name] = ctor(name=name, **{k: v for k, v in cfg.items() if k in accepted})
+            kwargs = {k: v for k, v in cfg.items() if k in accepted}
+            if ctor is IROIDCProvider and "audiences" in kwargs:
+                kwargs["audiences"] = tuple(kwargs["audiences"])
+            providers[name] = ctor(name=name, **kwargs)
         return providers

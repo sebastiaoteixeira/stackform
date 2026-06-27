@@ -12,9 +12,9 @@ from . import access_filters, sql_filters, type_mapper
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 
-
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "fastapi" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
+_STATIC_DIR = _BACKEND_GENERATORS / "fastapi" / "static"
 
 _CRUD_ORDER = ("list", "get", "create", "update", "replace", "delete")
 
@@ -45,7 +45,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
         env.filters["py_literal"] = access_filters.py_literal
-        env.filters["env_ref"] = access_filters.env_ref
         env.filters["sql_column"] = sql_filters.sql_column
         env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
@@ -217,7 +216,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
             auth_imports.append("from .login import router as login_router")
 
-        if context.auth.has_oidc_auth:
+        if context.auth.has_app_oidc_auth:
             (routes_dir / "oidc_routes.py").write_text(
                 env.get_template("oidc_routes.py.jinja").render(
                     auth=context.auth, base_prefix=base_prefix
@@ -332,9 +331,17 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "postgres.py").write_text(
                 env.get_template("postgres.py.jinja").render()
             )
-        if context.auth.has_oidc_auth:
+        if context.auth.has_app_oidc_auth:
             (deps_dir / "login_codes.py").write_text(
                 env.get_template("login_codes.py.jinja").render(auth=context.auth)
+            )
+        if context.auth.has_idp_auth:
+            (deps_dir / "idp_auth.py").write_text(
+                (_STATIC_DIR / "idp_auth.py").read_text()
+            )
+        if context.auth.has_oidc_auth:
+            (deps_dir / "claims.py").write_text(
+                (_STATIC_DIR / "claims.py").read_text()
             )
 
         init_imports: list[str] = []

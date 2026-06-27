@@ -58,8 +58,8 @@ async def saml_{{ sym }}_login(request: Request) -> RedirectResponse:
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"
     saml_config = _build_saml_settings(
-        {{ provider.idp_metadata_url | env_ref }},
-        {{ provider.sp_entity_id | env_ref }},
+        {{ provider.idp_metadata_url | py_literal }},
+        {{ provider.sp_entity_id | py_literal }},
         acs_url,
         sls_url,
     )
@@ -76,8 +76,8 @@ async def saml_{{ sym }}_callback(
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"
     saml_config = _build_saml_settings(
-        {{ provider.idp_metadata_url | env_ref }},
-        {{ provider.sp_entity_id | env_ref }},
+        {{ provider.idp_metadata_url | py_literal }},
+        {{ provider.sp_entity_id | py_literal }},
         acs_url,
         sls_url,
     )
@@ -133,8 +133,8 @@ async def saml_{{ sym }}_metadata(request: Request) -> Response:
     acs_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/callback"
     sls_url = f"{base}/{{ col.name }}/auth/{{ provider_name }}/logout"
     saml_config = _build_saml_settings(
-        {{ provider.idp_metadata_url | env_ref }},
-        {{ provider.sp_entity_id | env_ref }},
+        {{ provider.idp_metadata_url | py_literal }},
+        {{ provider.sp_entity_id | py_literal }},
         acs_url,
         sls_url,
     )

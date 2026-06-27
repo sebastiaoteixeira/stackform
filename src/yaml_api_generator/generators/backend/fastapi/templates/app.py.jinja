@@ -68,6 +68,35 @@ app.add_middleware(
 )
 {% endif %}
 
+{% if ctx.auth.has_idp_auth %}
+from starlette.middleware.base import BaseHTTPMiddleware as _BaseHTTPMiddleware
+from dependencies.mongodb import get_database as _get_database
+from dependencies.auth import _resolve_idp_principal as _resolve_idp, _find_idp_provider_for_issuer as _find_idp_provider
+from dependencies import idp_auth as _idp_auth
+
+class _IdpProvisioningMiddleware(_BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        authorization = request.headers.get("authorization", "")
+        if authorization.startswith("Bearer "):
+            bearer_token = authorization.removeprefix("Bearer ").strip()
+            if bearer_token:
+                token_issuer = _idp_auth.unverified_issuer(bearer_token)
+                if token_issuer is not None and await _find_idp_provider(token_issuer) is not None:
+                    try:
+                        db = _get_database()
+                        principal = await _resolve_idp(bearer_token, db)
+                        if principal is not None:
+                            request.state.principal = principal
+                    except Exception as _exc:
+                        from fastapi import HTTPException as _HTTPException
+                        status = _exc.status_code if isinstance(_exc, _HTTPException) else 401
+                        detail = _exc.detail if isinstance(_exc, _HTTPException) else str(_exc)
+                        return JSONResponse(status_code=status, content={"detail": detail})
+        return await call_next(request)
+
+app.add_middleware(_IdpProvisioningMiddleware)
+{% endif %}
+
 app.include_router(api_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
 
 {% if ctx.auth.enabled %}

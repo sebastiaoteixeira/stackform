@@ -30,6 +30,9 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
     try:
         result = load_and_generate_ir(yaml_file, schema_file)
 
+        for w in result.warnings:
+            click.echo(f"WARN {w.code} {w.path}: {w.message}", err=True)
+
         if what in ("all", "backend"):
             compile_project(
                 yaml_file=yaml_file,

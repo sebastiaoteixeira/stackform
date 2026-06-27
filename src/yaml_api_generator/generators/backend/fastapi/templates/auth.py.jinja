@@ -13,6 +13,10 @@ from settings import settings
 {% if auth.uses_jwt %}
 from dependencies.jwt_utils import decode_jwt_token
 {% endif %}
+{% if auth.has_idp_auth %}
+from dependencies import idp_auth
+from dependencies.claims import resolve_claim_path, resolve_relations
+{% endif %}
 
 
 def hash_password(password: str, rounds: int = settings.PASSWORD_HASH_ROUNDS) -> str:
@@ -89,11 +93,128 @@ def _extract_roles(doc: dict[str, Any], roles_field: str | None) -> list[str]:
     return []
 
 
+{% if auth.has_idp_auth %}
+_IDP_ISSUERS: dict[str, dict] = {
+{% for p in auth.idp_providers %}
+    {{ p.discovery_url | py_literal }}: {
+        "discovery_url": {{ p.discovery_url | py_literal }},
+        "client_id": {{ p.client_id | py_literal }},
+        "issuer": {{ p.issuer | py_literal }},
+        "audiences": {{ p.audiences | list | py_literal }},
+        "name": {{ p.name | py_literal }},
+    },
+{% endfor %}
+}
+
+
+async def _find_idp_provider_for_issuer(token_issuer: str) -> dict | None:
+    for provider_meta in _IDP_ISSUERS.values():
+        derived = await idp_auth.fetch_issuer(provider_meta["discovery_url"])
+        if derived == token_issuer:
+            return provider_meta
+    return None
+
+
+async def _resolve_idp_principal(
+    bearer_token: str,
+    db: Database,
+) -> dict[str, Any] | None:
+    token_issuer = idp_auth.unverified_issuer(bearer_token)
+    if not token_issuer:
+        return None
+
+    provider_meta = await _find_idp_provider_for_issuer(token_issuer)
+    if provider_meta is None:
+        return None
+
+    audiences = provider_meta["audiences"] or [provider_meta["client_id"]]
+    claims = await idp_auth.verify_idp_token(
+        bearer_token,
+        discovery_url=provider_meta["discovery_url"],
+        client_id=provider_meta["client_id"],
+        issuer=provider_meta["issuer"],
+        audiences=audiences,
+    )
+    if claims is None:
+        raise HTTPException(status_code=401, detail="Invalid IdP token")
+
+    provider_name = provider_meta["name"]
+{% for identity in auth.identity_collections %}
+{% for binding in identity.bindings %}
+{% set provider = auth.providers.get(binding.provider) %}
+{% if provider and provider.is_idp %}
+    if provider_name == {{ binding.provider | py_literal }}:
+        claim_mapping: dict[str, str] = {{ binding.claim_mapping | tojson }}
+        user_fields: dict[str, Any] = {
+            local_field: resolved
+            for local_field, oidc_claim in claim_mapping.items()
+            if (resolved := resolve_claim_path(claims, oidc_claim)) is not None
+        }
+        idp_sub = str(claims["sub"])
+        _identifier_oidc_claim = {{ binding.claim_mapping | tojson }}.get("{{ binding.identifier }}", "{{ binding.identifier }}")
+        if _identifier_oidc_claim not in claims:
+            return {
+                "sub": idp_sub,
+                "client_id": claims.get("azp") or claims.get("client_id") or idp_sub,
+                "is_service": True,
+                "roles": _extract_roles(claims, {{ identity.roles_field | py_literal }}),
+                "record": None,
+                "identity_collection": None,
+            }
+        if "{{ binding.identifier }}" not in user_fields:
+            user_fields["{{ binding.identifier }}"] = (
+                claims.get("email") or claims.get("login") or idp_sub
+            )
+        col = db["{{ identity.name }}"]
+        cursor = col.find({})
+        docs = await cursor.to_list(length=None)
+        existing = next(
+            (d for d in docs if str(d.get("{{ identity.id_field }}", "")) == idp_sub),
+            None,
+        )
+{% set _relations_json = binding.relations_data | tojson %}
+        async def _lookup_{{ binding.provider | py_identifier }}(coll: str, query: dict) -> dict | None:
+            return await db[coll].find_one(query)
+        _fk_fields = await resolve_relations(claims, {{ _relations_json }}, _lookup_{{ binding.provider | py_identifier }})
+        if existing is not None:
+{% if binding.relations %}
+            if _fk_fields:
+                await col.update_one({"{{ identity.id_field }}": idp_sub}, {"$set": _fk_fields})
+                existing = {**existing, **_fk_fields}
+{% endif %}
+            return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": existing, "roles": _extract_roles(existing, {{ identity.roles_field | py_literal }})}
+{% if binding.auto_provision %}
+        payload = {**user_fields, **_fk_fields}
+        payload["{{ identity.id_field }}"] = idp_sub
+        created = await col.insert_one(payload)
+        payload["_id"] = created.inserted_id
+        return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": payload, "roles": _extract_roles(payload, {{ identity.roles_field | py_literal }})}
+{% else %}
+        raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+    return None
+
+{% endif %}
+
 async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | None:
+    pre_resolved = getattr(request.state, "principal", None)
+    if pre_resolved is not None:
+        return pre_resolved
+
     headers = {k.lower(): v for k, v in request.headers.items()}
+    bearer_token = _extract_bearer_token(headers)
+
+{% if auth.has_idp_auth %}
+    if bearer_token is not None:
+        token_issuer = idp_auth.unverified_issuer(bearer_token)
+        if token_issuer is not None and await _find_idp_provider_for_issuer(token_issuer) is not None:
+            return await _resolve_idp_principal(bearer_token, db)
+{% endif %}
 
 {% if auth.uses_jwt %}
-    bearer_token = _extract_bearer_token(headers)
     if bearer_token is not None:
         claims = decode_jwt_token(bearer_token)
         if claims is not None:
@@ -113,8 +234,6 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 {% endif %}
 
 {% for identity in auth.identity_collections %}
-
-    # {{ identity.name }} identity resolution
 {% if identity.has_api_key %}
     token = _extract_api_key(headers)
     if token is not None:

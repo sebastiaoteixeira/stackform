@@ -20,17 +20,15 @@ Environment variable interpolation:
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError, best_match
 
 from ..ir import IRDocument
-from ..ir.api import EnvRef
-from .runtime_fields import classify
 
 INTERPOLATION_PATTERN = re.compile(r"\$\{([^{}]*?)\}")
 INTERPOLATION_TOKEN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$", re.DOTALL)
@@ -47,6 +45,7 @@ class ConfigError(Exception):
     message: str
     path: str
     hint: str | None = None
+    severity: Literal["error", "warning"] = "error"
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -69,6 +68,7 @@ class ConfigErrors(Exception):
 class ParseResult:
     ir: IRDocument
     ui_block: dict | None = None
+    warnings: tuple[ConfigError, ...] = field(default_factory=tuple)
 
 
 def _join_path(parts: tuple[str, ...]) -> str:
@@ -123,50 +123,6 @@ def _interpolate_string(
     return value
 
 
-def _interpolate_deferred(value: str, secret: bool) -> str | EnvRef:
-    """Resolve a runtime-classified field.
-
-    - secret=True: always return EnvRef regardless of env state.
-    - secret=False: return resolved string if env var is set/has default,
-      otherwise return EnvRef so the generated settings handles it.
-    """
-    for literal, sentinel in _BRACE_ESCAPES:
-        value = value.replace(literal, sentinel)
-
-    def resolve_non_secret(match: re.Match[str]) -> str:
-        token = INTERPOLATION_TOKEN.match(match.group(1))
-        if token is None:
-            return match.group(0)
-        env_value = os.environ.get(token.group(1))
-        if env_value is not None:
-            return env_value
-        return match.group(0) if token.group(2) is None else token.group(2)
-
-    if not secret:
-        resolved = value
-        for _ in range(INTERPOLATION_MAX_DEPTH):
-            substituted = INTERPOLATION_PATTERN.sub(resolve_non_secret, resolved)
-            if substituted == resolved:
-                break
-            resolved = substituted
-        if not INTERPOLATION_PATTERN.search(resolved):
-            for literal, sentinel in _BRACE_ESCAPES:
-                resolved = resolved.replace(sentinel, literal[1])
-            return resolved
-
-    match = INTERPOLATION_PATTERN.search(value)
-    if match:
-        token = INTERPOLATION_TOKEN.match(match.group(1))
-        if token:
-            for literal, sentinel in _BRACE_ESCAPES:
-                value = value.replace(sentinel, literal[1])
-            return EnvRef(name=token.group(1), default=token.group(2), secret=secret)
-
-    for literal, sentinel in _BRACE_ESCAPES:
-        value = value.replace(sentinel, literal[1])
-    return value
-
-
 def _resolve_interpolation(
     node: Any, path: tuple[str, ...], errors: list[ConfigError]
 ) -> Any:
@@ -181,9 +137,6 @@ def _resolve_interpolation(
             for index, item in enumerate(node)
         ]
     if isinstance(node, str):
-        is_runtime, is_secret = classify(path)
-        if is_runtime:
-            return _interpolate_deferred(node, is_secret)
         return _interpolate_string(node, path, errors)
     return node
 
@@ -344,21 +297,10 @@ def _load_schema(schema_file: Path) -> dict[str, Any]:
     return schema
 
 
-def _coerce_for_validation(node: Any) -> Any:
-    """Replace EnvRef objects with placeholder strings for schema validation."""
-    if isinstance(node, EnvRef):
-        return node.default if node.default is not None else ""
-    if isinstance(node, dict):
-        return {k: _coerce_for_validation(v) for k, v in node.items()}
-    if isinstance(node, list):
-        return [_coerce_for_validation(item) for item in node]
-    return node
-
-
 def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
     validator = Draft202012Validator(schema)
     errors = sorted(
-        validator.iter_errors(_coerce_for_validation(config)),
+        validator.iter_errors(config),
         key=lambda item: (item.json_path, item.message),
     )
     return [
@@ -421,6 +363,7 @@ def load_and_generate_ir(
         raise ConfigErrors(interpolation_errors)
 
     version = str(resolved.get("version", "0.1"))
+    trust_warnings: tuple[ConfigError, ...] = ()
 
     if version == "0.2":
         from .transformers.shape_validation import validate_spec_shape
@@ -448,8 +391,15 @@ def load_and_generate_ir(
         if auth_errors:
             raise ConfigErrors(auth_errors)
 
+        from .transformers.binding_validation import validate_spec_bindings
+        binding_errors = validate_spec_bindings(resolved)
+        if binding_errors:
+            raise ConfigErrors(binding_errors)
+
         from .transformers.trust_validation import validate_spec_trust
-        trust_errors = validate_spec_trust(resolved)
+        trust_results = validate_spec_trust(resolved)
+        trust_errors = [e for e in trust_results if e.severity == "error"]
+        trust_warnings = tuple(e for e in trust_results if e.severity == "warning")
         if trust_errors:
             raise ConfigErrors(trust_errors)
 
@@ -474,4 +424,4 @@ def load_and_generate_ir(
 
     from .transformers.registry import transform_config
 
-    return ParseResult(ir=transform_config(resolved), ui_block=ui_block)
+    return ParseResult(ir=transform_config(resolved), ui_block=ui_block, warnings=trust_warnings)

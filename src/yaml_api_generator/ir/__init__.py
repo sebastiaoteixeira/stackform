@@ -1,6 +1,5 @@
 from .api import (
     CRUD_OPERATIONS,
-    EnvRef,
     IRAccessRule,
     IRApi,
     IRCollection,
@@ -25,6 +24,7 @@ from .api import (
     IRService,
     IROIDCProvider,
     IRProviderBinding,
+    IRProviderRelation,
     IRProvider,
     IRSAMLProvider,
     RoleHierarchyCycleError,
@@ -89,6 +89,7 @@ __all__ = [
     "IRService",
     "IROIDCProvider",
     "IRProviderBinding",
+    "IRProviderRelation",
     "IRProvider",
     "IRSAMLProvider",
     "flatten_role_hierarchy",

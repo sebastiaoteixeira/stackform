@@ -43,6 +43,7 @@ yaml_api_generator = [
   "parsers/schemas/*.json",
   "generators/backend/*/templates/*.jinja",
   "generators/backend/shared/templates/*.jinja",
+  "generators/backend/*/static/*.py",
 ]
 
 [tool.pytest.ini_options]

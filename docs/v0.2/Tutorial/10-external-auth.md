@@ -213,10 +213,14 @@ providers:
     discovery_url: https://accounts.google.com/.well-known/openid-configuration
 ```
 
-- `type`, `client_id`, `client_secret` are required for an OIDC provider.
+- `type` and `client_id` are required for an OIDC provider.
+- `client_secret` is optional. Omit it for a public client (the token exchange then
+  runs without one); supply it for a confidential client.
 - `discovery_url` is required for the generated routes to function: it is the
   provider's OpenID Connect discovery document.
-- No other keys are accepted (the provider schema is strict).
+- No other keys are accepted (the provider schema is strict). For verifying IdP
+  tokens directly without an app session, see
+  [Token trust](../Reference/providers/overview.md#token-trust).
 
 Each provider's discovery URL is provider-specific. A few examples:
 

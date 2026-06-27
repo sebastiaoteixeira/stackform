@@ -14,7 +14,7 @@ providers:
   keycloak:
     type: oidc
     client_id: my-app
-    client_secret: "${KEYCLOAK_CLIENT_SECRET}"
+    client_secret: "${KEYCLOAK_CLIENT_SECRET:-test-secret}"
     discovery_url: "${OIDC_DISCOVERY_URL:-http://localhost:8080/.well-known/openid-configuration}"
 mongo:
   uri: mongodb://localhost:27017

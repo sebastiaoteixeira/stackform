@@ -8,7 +8,7 @@ from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_cr
 from ..request_context import RequestContext
 from ..server_context import RuntimeCollectionDescriptor, RuntimeIdentityDescriptor
 from ..repositories import BaseRepository, RepositoryRegistry
-from ..utils.field_access import get_nested_field
+from ..utils.field_access import get_nested_field, resolve_claim_path
 from ..utils.document_matcher import find_document_with_password
 from . import Step
 from .authorization import UnauthorizedError
@@ -53,14 +53,22 @@ async def _resolve_idp_principal(
             provider = providers.get(binding.provider)
             if not (isinstance(provider, IROIDCProvider) and provider.is_idp):
                 continue
-            if idp.issuer_of(provider) != issuer:
+            if await idp.issuer_of(provider) != issuer:
                 continue
             claims = await idp.verify_idp_token(bearer_token, provider)
             if claims is None:
                 raise UnauthorizedError("Invalid IdP token")
+
+            identifier_claim_path = binding.claim_mapping.get(binding.identifier, binding.identifier)
+            if resolve_claim_path(claims, identifier_claim_path) is None:
+                return _build_service_principal(claims, identity)
+
             collection = collections[collection_name]
             record = await oidc.resolve_record(
-                claims, binding, collection, registry.for_collection(collection_name)
+                claims, binding, collection, registry.for_collection(collection_name),
+                is_idp=True,
+                collections=collections,
+                registry=registry,
             )
             if record is None:
                 raise UnauthorizedError("User not found and auto-provisioning is disabled")
@@ -71,6 +79,28 @@ async def _resolve_idp_principal(
                 identity=identity,
             )
     return None
+
+
+def _build_service_principal(
+    claims: dict[str, Any],
+    identity: RuntimeIdentityDescriptor,
+) -> dict[str, Any]:
+    sub = str(claims["sub"])
+    roles_field = identity.roles_field if identity is not None else None
+    roles = claims.get(roles_field) if roles_field else (claims.get("roles") or claims.get("role"))
+    roles_list: list[str] = []
+    if isinstance(roles, list):
+        roles_list = [str(r) for r in roles]
+    elif isinstance(roles, str):
+        roles_list = [roles]
+    return {
+        "sub": sub,
+        "client_id": claims.get("azp") or claims.get("client_id") or sub,
+        "is_service": True,
+        "roles": roles_list,
+        "record": None,
+        "identity_collection": None,
+    }
 
 
 async def _resolve_jwt_principal(

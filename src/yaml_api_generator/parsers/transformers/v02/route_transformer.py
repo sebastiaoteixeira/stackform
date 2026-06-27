@@ -3,11 +3,9 @@
 Builds routes from controllers, services, API, MongoDB, and deploy configurations.
 """
 
-from dataclasses import fields as dataclass_fields
 from typing import Any
 
 from yaml_api_generator.ir import (
-    EnvRef,
     IRApi,
     IRCors,
     IRDatastore,
@@ -242,8 +240,8 @@ class RouteTransformer:
         Args:
             deploy_data: Raw deployment configuration from YAML.
             mongo_config: MongoDB configuration to determine if local.
-            providers: Already-built provider IR objects (primary EnvRef source).
-            datastores: Already-built datastore IR objects (primary EnvRef source).
+            providers: Already-built provider IR objects (env vars resolved at build time).
+            datastores: Already-built datastore IR objects (env vars resolved at build time).
 
         Returns:
             Deploy IR object or None if no deployment configured.
@@ -294,28 +292,8 @@ class RouteTransformer:
         providers: dict[str, IRProvider],
         datastores: dict[str, IRDatastore],
     ) -> list[str]:
-        """Collect env var names for the .env.example from structured IR and deploy config.
-
-        Structured EnvRefs from providers and datastores are the authoritative source.
-        A secondary regex scan on the deploy subtree captures ad-hoc ${VAR} references
-        that appear only in deploy.* config strings (e.g. custom image tags).
-        """
-        seen: set[str] = set()
-
-        for provider in providers.values():
-            for f in dataclass_fields(provider):
-                value = getattr(provider, f.name)
-                if isinstance(value, EnvRef):
-                    seen.add(value.name)
-
-        for ds in datastores.values():
-            for f in dataclass_fields(ds):
-                value = getattr(ds, f.name)
-                if isinstance(value, EnvRef):
-                    seen.add(value.name)
-
-        seen.update(self._scan_deploy_token_refs(deploy_data))
-        return sorted(seen)
+        """Collect env var names for the .env.example from the deploy subtree."""
+        return sorted(self._scan_deploy_token_refs(deploy_data))
 
     def _scan_deploy_token_refs(self, deploy_data: dict[str, Any]) -> set[str]:
         """Scan raw deploy config strings for leftover ${VAR} tokens."""

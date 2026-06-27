@@ -15,8 +15,37 @@ Key types:
 from dataclasses import dataclass, field
 from typing import Any
 
-from ...ir.api import IRProvider, IRProviderBinding, IRRolesConfig, IRService
+from ...ir.api import IRProvider, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
+
+
+@dataclass(frozen=True)
+class ProviderRelationDescriptor:
+    fk_field: str
+    collection: str
+    id_field: str
+    match: dict[str, str]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "fk_field": self.fk_field,
+            "collection": self.collection,
+            "id_field": self.id_field,
+            "match": self.match,
+        }
+
+
+@dataclass(frozen=True)
+class ProviderBindingDescriptor:
+    provider: str
+    identifier: str
+    claim_mapping: dict[str, str]
+    auto_provision: bool
+    relations: list[ProviderRelationDescriptor]
+
+    @property
+    def relations_data(self) -> list[dict[str, Any]]:
+        return [r.as_dict() for r in self.relations]
 
 
 @dataclass(frozen=True)
@@ -94,12 +123,13 @@ class RouteDescriptor:
 @dataclass(frozen=True)
 class IdentityCollectionDescriptor:
     name: str
-    bindings: list[IRProviderBinding]
+    bindings: list[ProviderBindingDescriptor]
     id_field: str
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
     issues_jwt: bool = False
     datastore_type: str = "mongodb"
+    id_format: str = "uuidv7"
 
     @property
     def is_sql(self) -> bool:
@@ -118,8 +148,19 @@ class IdentityCollectionDescriptor:
         password_binding = self.get_binding("password")
         return password_binding.identifier if password_binding else None
 
-    def get_binding(self, provider: str) -> "IRProviderBinding | None":
+    def get_binding(self, provider: str) -> "ProviderBindingDescriptor | None":
         return next((b for b in self.bindings if b.provider == provider), None)
+
+
+@dataclass(frozen=True)
+class IdpProviderDescriptor:
+    """Metadata for a trust: idp OIDC provider baked into the generated backend."""
+
+    name: str
+    discovery_url: str
+    client_id: str
+    issuer: str | None = None
+    audiences: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -130,17 +171,20 @@ class AuthConfig:
     has_api_key_auth: bool
     has_oidc_auth: bool = False
     has_saml_auth: bool = False
+    has_idp_auth: bool = False
+    has_app_oidc_auth: bool = False
+    idp_providers: list[IdpProviderDescriptor] = field(default_factory=list)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
     @property
     def uses_jwt(self) -> bool:
-        """JWT helpers and JWT_SECRET are needed whenever tokens are minted.
+        """JWT helpers and JWT_SECRET are needed whenever the app mints its own tokens.
 
-        Password login, OIDC, and SAML callbacks all issue bearer JWTs that
-        later requests present back for principal resolution.
+        Password login and app-trust OIDC/SAML callbacks issue bearer JWTs.
+        Pure idp-trust providers never mint a session token.
         """
-        return self.has_password_auth or self.has_oidc_auth or self.has_saml_auth
+        return self.has_password_auth or self.has_app_oidc_auth or self.has_saml_auth
 
 
 @dataclass(frozen=True)

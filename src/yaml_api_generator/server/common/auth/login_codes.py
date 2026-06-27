@@ -20,14 +20,14 @@ class LoginCodeStore:
         self._codes[code] = (subject, identity_collection, time.time() + _TTL_SECONDS)
         return code
 
-    def redeem(self, code: str) -> tuple[str, str] | None:
+    def redeem(self, code: str) -> tuple[str | None, str | None, None] | None:
         entry = self._codes.pop(code, None)
         if entry is None:
             return None
         subject, identity_collection, expires_at = entry
         if expires_at < time.time():
             return None
-        return subject, identity_collection
+        return subject, identity_collection, None
 
 
 login_codes = LoginCodeStore()

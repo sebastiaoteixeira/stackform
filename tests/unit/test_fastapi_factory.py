@@ -1,3 +1,4 @@
+import types
 from datetime import datetime
 from typing import Any, Literal
 
@@ -318,6 +319,7 @@ async def test_error_mapping_unauthorized_401():
     class _FakeRequest:
         path_params = {}
         headers = {}
+        state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
         await _run_pipeline(pipeline, _FakeRequest(), None, {})
@@ -339,6 +341,7 @@ async def test_error_mapping_forbidden_403():
     class _FakeRequest:
         path_params = {}
         headers = {}
+        state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
         await _run_pipeline(pipeline, _FakeRequest(), None, {})
@@ -360,6 +363,7 @@ async def test_error_mapping_not_found_404():
     class _FakeRequest:
         path_params = {}
         headers = {}
+        state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
         await _run_pipeline(pipeline, _FakeRequest(), None, {})
@@ -380,6 +384,7 @@ async def test_error_mapping_value_error_422():
     class _FakeRequest:
         path_params = {}
         headers = {}
+        state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
         await _run_pipeline(pipeline, _FakeRequest(), None, {})

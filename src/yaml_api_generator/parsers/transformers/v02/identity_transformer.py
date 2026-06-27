@@ -9,6 +9,7 @@ from yaml_api_generator.ir import (
     IRCollection,
     IRIdentityCollection,
     IRProviderBinding,
+    IRProviderRelation,
     IRRolesConfig,
     RoleHierarchyCycleError,
     flatten_role_hierarchy,
@@ -75,6 +76,13 @@ class IdentityTransformer:
                     identifier=entry.get("identifier", identifier or ""),
                     claim_mapping=entry.get("claim_mapping", {}),
                     auto_provision=entry.get("auto_provision", True),
+                    relations={
+                        fk: IRProviderRelation(
+                            collection=spec["collection"],
+                            match=spec.get("match", {}),
+                        )
+                        for fk, spec in (entry.get("relations") or {}).items()
+                    },
                 )
                 for entry in via
                 if isinstance(entry, dict) or identifier
@@ -85,6 +93,13 @@ class IdentityTransformer:
                     identifier=b.get("identifier", identifier or ""),
                     claim_mapping=b.get("claim_mapping", {}),
                     auto_provision=b.get("auto_provision", True),
+                    relations={
+                        fk: IRProviderRelation(
+                            collection=spec["collection"],
+                            match=spec.get("match", {}),
+                        )
+                        for fk, spec in (b.get("relations") or {}).items()
+                    },
                 )
                 for b in (auth_data.get("bindings") or [] if isinstance(auth_data, dict) else [])
                 if isinstance(b, dict) and "provider" in b

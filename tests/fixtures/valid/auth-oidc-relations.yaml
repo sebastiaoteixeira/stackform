@@ -1,0 +1,95 @@
+version: "0.2"
+api:
+  basePath: /api
+  version: v1
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+
+providers:
+  keycloak:
+    type: oidc
+    trust: idp
+    client_id: my-app
+    discovery_url: "${OIDC_DISCOVERY_URL:-http://localhost:8080/.well-known/openid-configuration}"
+    issuer: "https://kc.example.com/realms/main"
+    audiences:
+      - "my-app"
+  github:
+    type: oidc
+    trust: app
+    client_id: gh-client-id
+    discovery_url: "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: testdb
+
+entities:
+  organization:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      keycloakOrgId: { type: string, required: true, unique: true }
+
+  user:
+    type: auth
+    auth:
+      identifier: email
+      bindings:
+        - provider: keycloak
+          identifier: email
+          claim_mapping:
+            email: email
+            name: name
+            orgRole: realm_access.roles
+          auto_provision: true
+          relations:
+            organizationId:
+              collection: organizations
+              match:
+                keycloakOrgId: "organization.*.id"
+        - provider: github
+          identifier: email
+          claim_mapping:
+            email: email
+            name: name
+          auto_provision: true
+          relations:
+            organizationId:
+              collection: organizations
+              match:
+                keycloakOrgId: "organization.*.id"
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      name: { type: string, required: true }
+      organizationId: { type: ref, ref: organizations }
+      orgRole: { type: string }
+
+repositories:
+  organizations:
+    entity: organization
+  users:
+    entity: user
+
+services:
+  organizations:
+    repository: organizations
+  users:
+    repository: users
+
+controllers:
+  organizations:
+    service: organizations
+    base_path: /organizations
+    access: "*"
+  users:
+    service: users
+    base_path: /users
+    access: "*"

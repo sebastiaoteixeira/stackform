@@ -267,7 +267,13 @@ endpoint to render one SSO button per provider, alongside the password login for
 | `FRONTEND_URL` | OIDC callback | Base for the `.../auth/callback?code=` redirect. |
 
 Provider `${VAR}` placeholders (such as `client_secret` and `discovery_url`) are
-interpolated from the environment at generation time.
+interpolated from the environment at build time and baked into the output -- they are
+not deferred to runtime. A secret that must stay out of the artifact should not be
+placed in the spec at all; the deployed backend reads it from its own runtime
+environment instead. See [Environment variables](../configuration/environment-variables.md).
+
+`client_secret` is optional: omit it for a public client and the token exchange runs
+without one. See [OIDC provider](../providers/oidc.md#fields).
 
 ## See Also
 

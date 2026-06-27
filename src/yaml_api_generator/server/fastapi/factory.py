@@ -194,20 +194,22 @@ def register_provider_routes(
         for binding, provider in bound:
             if not isinstance(provider, IROIDCProvider):
                 continue
+            login_path = f"{base_prefix}/{name}/auth/{binding.provider}"
+            app.add_api_route(
+                f"{login_path}/logout", _oidc_logout_endpoint(provider), methods=["GET"]
+            )
+            if provider.is_idp:
+                continue
             has_oidc = True
             collection = ctx.collections[name]
-            login_path = f"{base_prefix}/{name}/auth/{binding.provider}"
             callback_path = f"{login_path}/callback"
             app.add_api_route(
                 login_path, _oidc_login_endpoint(provider, callback_path), methods=["GET"]
             )
             app.add_api_route(
                 callback_path,
-                _oidc_callback_endpoint(provider, binding, collection, registry, callback_path),
+                _oidc_callback_endpoint(provider, binding, collection, registry, callback_path, collections=ctx.collections),
                 methods=["GET"],
-            )
-            app.add_api_route(
-                f"{login_path}/logout", _oidc_logout_endpoint(provider), methods=["GET"]
             )
 
     if has_oidc:
@@ -243,12 +245,14 @@ def _oidc_callback_endpoint(
     collection: RuntimeCollectionDescriptor,
     registry: RepositoryRegistry,
     callback_path: str,
+    collections: dict[str, RuntimeCollectionDescriptor] | None = None,
 ):
     async def endpoint(request: Request, code: str) -> RedirectResponse:
         repo = registry.for_collection(collection.name)
         callback_url = str(request.base_url).rstrip("/") + callback_path
         login_code = await oidc.handle_callback(
-            provider, binding, collection, repo, code, callback_url
+            provider, binding, collection, repo, code, callback_url,
+            collections=collections, registry=registry,
         )
         frontend_url = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
         return RedirectResponse(url=f"{frontend_url}/auth/callback?code={login_code}")
@@ -263,7 +267,7 @@ async def _exchange_endpoint(payload: dict[str, str]) -> dict[str, str]:
     redeemed = login_codes.redeem(code)
     if redeemed is None:
         raise HTTPException(status_code=401, detail="Invalid or expired code")
-    subject, identity_collection = redeemed
+    subject, identity_collection, _ = redeemed
     return {"token": create_jwt_token(subject, identity_collection)}
 
 
@@ -361,10 +365,12 @@ async def _run_pipeline(
     try:
         path_params = {key: str(value) for key, value in request.path_params.items()}
         path_params.update(url_params)
+        pre_resolved_principal: dict[str, Any] | None = getattr(request.state, "principal", None)
         ctx = await pipeline.run(
             headers=dict(request.headers),
             url_params=path_params,
             body=body,
+            principal=pre_resolved_principal,
         )
     except UnauthorizedError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error

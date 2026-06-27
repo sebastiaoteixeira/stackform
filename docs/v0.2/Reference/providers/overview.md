@@ -60,12 +60,11 @@ A provider's `trust` decides who verifies its tokens on each request:
 | `trust` | Meaning |
 |---------|---------|
 | `app` (default) | After login the app mints and verifies its **own** session token. The IdP is used only during login; from then on the client carries the app's JWT. This is the current end-to-end behavior. |
-| `idp` | The client keeps carrying the **IdP's** token and the app verifies it against the IdP on every call, issuing no session of its own. Requires `issuer` and `audience` to verify against. |
+| `idp` | The client keeps carrying the **IdP's** token and the app verifies it against the IdP on every call, issuing no session of its own. Only `discovery_url` is required; `issuer` is derived from the discovery document automatically. |
 
 `trust: idp` is only valid for `oidc`/`saml` providers, and rejects the
 app-signing fields (`algorithm`, `secret`, `ttl`, `refresh`, `delivery`) that only
-make sense under `app` trust. A `trust: idp` provider that omits `issuer` or
-`audience` fails validation.
+make sense under `app` trust.
 
 When both an `app` provider and an `idp` provider exist, the generated auth
 dependency dispatches strictly on the bearer token's `iss` claim -- the app
@@ -90,11 +89,6 @@ sequenceDiagram
   A-->>C: response (principal resolved) or 401
 ```
 
-> **Status:** `trust: idp` is parsed and validated, but the per-call dispatch
-> above is not yet generated -- the IdP-verify branch is a planned seam. Use
-> `trust: app` (the default) for a working runtime; `idp` verification lands with
-> resource-server support.
-
 ## Required fields per type
 
 Each provider config is closed (`additionalProperties: false`): only the fields
@@ -107,11 +101,11 @@ required depends on `trust`.
 |-------|----------|-------------|
 | `type` | yes | Must be `oidc`. |
 | `trust` | no | `app` (default) or `idp`. |
-| `client_id` | yes | OAuth client identifier issued by the IdP. |
-| `client_secret` | yes under `trust: app` | OAuth client secret. |
-| `discovery_url` | yes under `trust: app` | OpenID configuration URL (`.../.well-known/openid-configuration`); the backend reads it to resolve endpoints. |
-| `issuer` | yes under `trust: idp` | Expected `iss` of the IdP's tokens. |
-| `audience` | yes under `trust: idp` | Expected `aud` of the IdP's tokens. |
+| `client_id` | yes | OAuth client identifier issued by the IdP (e.g. "Client ID" in Google console, "Application (client) ID" in Azure). |
+| `client_secret` | no | OAuth client secret. Omit it for a public client -- the token exchange runs without a `client_secret`. Supply it for confidential clients. |
+| `discovery_url` | yes | OpenID configuration URL (`.../.well-known/openid-configuration`); used to resolve endpoints, JWKS keys, and the expected token issuer. |
+| `issuer` | no | Override for the expected token `iss`. Normally not needed — the value is read from the discovery document automatically. |
+| `audience` | no | Override for the expected token `aud`. Defaults to `client_id`, which is correct for ID tokens on Google, Azure, and standard Keycloak. Set this only when the token's `aud` differs from `client_id` — for example, Azure access tokens scoped to a separate API registration (`api://...` or a Microsoft Graph scope), or when you configure a Keycloak audience mapper to add a custom audience. |
 
 There is no built-in discovery for any provider name. Names such as `google`,
 `microsoft`, or `apple` are not special; you must supply `discovery_url` for every
@@ -125,14 +119,15 @@ There is no built-in discovery for any provider name. Names such as `google`,
 | `trust` | no | `app` (default) or `idp`. |
 | `idp_metadata_url` | yes under `trust: app` | IdP metadata URL (fetched at request time). |
 | `sp_entity_id` | yes under `trust: app` | This service provider's entity ID. |
-| `issuer` | yes under `trust: idp` | Expected `iss` of the IdP's tokens. |
-| `audience` | yes under `trust: idp` | Expected `aud` of the IdP's tokens. |
+| `issuer` | no | Expected `iss` of the IdP's tokens. |
+| `audience` | no | Expected `aud` of the IdP's tokens. |
 
 ## Environment interpolation
 
-Any value may use `${VAR}` interpolation, resolved before schema validation. This
-keeps secrets out of the spec. A `${VAR:-default}` form supplies a fallback when
-the variable is unset:
+Any value may use `${VAR}` interpolation, resolved at build time before schema
+validation. This keeps secrets out of the *spec file*, but the resolved value is
+baked into the built artifact -- it is not deferred to runtime. A `${VAR:-default}`
+form supplies a fallback when the variable is unset:
 
 ```yaml
 providers:
@@ -143,8 +138,11 @@ providers:
     discovery_url: ${OIDC_DISCOVERY_URL:-https://idp.example.com/realms/my-realm/.well-known/openid-configuration}
 ```
 
-A referenced variable that has no value and no default aborts generation. See
-[Environment variables](../configuration/environment-variables.md).
+A referenced variable that has no value and no default aborts generation with
+`INTERPOLATION_MISSING_VAR`. Because the resolved value is baked into the artifact,
+a secret that must never appear in the build should be left out of the spec
+entirely; the deployed backend reads such values from its own runtime environment.
+See [Environment variables](../configuration/environment-variables.md).
 
 ## Routes a bound provider adds
 
