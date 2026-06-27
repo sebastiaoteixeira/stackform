@@ -17,7 +17,7 @@ dependencies = [
   "pymongo",
   "jinja2",
   "click",
-  "pyjwt",
+  "pyjwt[crypto]",
   "httpx",
   "simple-term-menu",
   "sqlalchemy[asyncio]>=2.0",

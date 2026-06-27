@@ -1,10 +1,10 @@
-import uuid
 from typing import Any, cast
 
 from ..auth import hash_password
 from ..request_context import RequestContext
 from yaml_api_generator.ir.api import IRRolesConfig
 from ..repositories.base import BaseRepository
+from ..utils.ids import generate_id as _generate_id
 from . import NotFoundError, Step
 
 
@@ -54,17 +54,6 @@ def _inject_canonical_id_list(
         cast(dict[str, Any], _inject_canonical_id(document, id_field))
         for document in documents
     ]
-
-
-def _generate_id(id_format: str) -> str:
-    if id_format == "uuidv7":
-        uuid7 = getattr(uuid, "uuid7", None)
-        if uuid7 is None:
-            raise RuntimeError("uuidv7 is not available in this Python runtime")
-        return str(uuid7())
-    if id_format == "uuidv4":
-        return str(uuid.uuid4())
-    raise ValueError(f"Unsupported id format: {id_format}")
 
 
 def _prepare_payload(

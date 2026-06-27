@@ -122,6 +122,8 @@ class PipelineBuilder:
                     self._ctx.auth.identity_collections,
                     self._ctx.auth.identity_id_fields,
                     self._registry,
+                    self._ctx.auth.providers,
+                    self._ctx.collections,
                 )
             )
 
