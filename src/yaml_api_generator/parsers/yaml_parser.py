@@ -448,6 +448,11 @@ def load_and_generate_ir(
         if auth_errors:
             raise ConfigErrors(auth_errors)
 
+        from .transformers.trust_validation import validate_spec_trust
+        trust_errors = validate_spec_trust(resolved)
+        if trust_errors:
+            raise ConfigErrors(trust_errors)
+
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
 
