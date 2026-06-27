@@ -77,6 +77,21 @@ def test_login_route_redirects_to_idp():
     assert "response_type=code" in location
 
 
+def test_logout_route_redirects_to_end_session():
+    oidc._discovery_cache[_DISCOVERY_URL] = {
+        "authorization_endpoint": "https://idp.test/authorize",
+        "token_endpoint": "https://idp.test/token",
+        "userinfo_endpoint": "https://idp.test/userinfo",
+        "end_session_endpoint": "https://idp.test/logout",
+    }
+    resp = _client().get("/api/v1/users/auth/keycloak/logout", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    location = resp.headers["location"]
+    assert location.startswith("https://idp.test/logout?")
+    assert "client_id=cid" in location
+    assert "post_logout_redirect_uri=" in location
+
+
 def test_exchange_route_rejects_bad_code():
     resp = _client().post("/api/v1/auth/exchange", json={"code": "nope"})
     assert resp.status_code == 401

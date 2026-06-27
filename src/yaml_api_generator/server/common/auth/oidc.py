@@ -53,6 +53,18 @@ async def build_login_redirect(provider: IROIDCProvider, callback_url: str) -> s
     return f"{discovery['authorization_endpoint']}?{urlencode(params)}"
 
 
+async def build_logout_redirect(provider: IROIDCProvider, post_logout_redirect_uri: str) -> str:
+    discovery = await _discovery(_resolve(provider.discovery_url))
+    end_session = discovery.get("end_session_endpoint")
+    if not end_session:
+        raise HTTPException(status_code=501, detail="Provider does not support end-session logout")
+    params = {
+        "client_id": _resolve(provider.client_id),
+        "post_logout_redirect_uri": post_logout_redirect_uri,
+    }
+    return f"{end_session}?{urlencode(params)}"
+
+
 async def handle_callback(
     provider: IROIDCProvider,
     binding: IRProviderBinding,
