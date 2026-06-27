@@ -1,11 +1,4 @@
-"""Password hashing and verification using PBKDF2-SHA256.
-
-Provides secure password storage with configurable iteration rounds.
-Uses PBKDF2 with SHA256 and 16-byte random salt.
-
-Functions:
-- hash_password(): Generate salted hash with configurable rounds
-- verify_password(): Constant-time verification against stored hash
+"""PBKDF2-SHA256 password hashing and constant-time verification.
 
 Environment:
 - PASSWORD_HASH_ROUNDS: PBKDF2 iterations (default: 390000)

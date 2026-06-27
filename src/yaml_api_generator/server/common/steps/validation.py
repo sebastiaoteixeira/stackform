@@ -1,18 +1,4 @@
-"""Request body validation step for pipeline.
-
-Validates incoming request bodies against collection field schemas.
-Performs type checking, constraint validation, and required field enforcement.
-
-Validation rules:
-- Type enforcement (string, number, boolean, datetime, enum, array, object)
-- Numeric constraints (min, max)
-- String constraints (minLength, maxLength)
-- Enum value checking
-- Required field enforcement (except for update operations)
-- Unknown field rejection
-
-Creates ValidateBodyStep factory that returns a configured step function.
-"""
+"""Request body validation pipeline step."""
 
 from dataclasses import dataclass
 from datetime import datetime

@@ -1,15 +1,8 @@
-"""JWT token creation and validation for authentication.
-
-Provides HS256-signed JWT tokens with configurable expiration.
-Tokens include subject (user ID) and identity collection metadata.
-
-Functions:
-- create_jwt_token(): Generate signed JWT with expiration
-- decode_jwt_token(): Verify and decode JWT claims
+"""HS256-signed JWT tokens with configurable expiration.
 
 Environment:
-- JWT_SECRET: Signing secret (default: dev placeholder)
-- JWT_EXPIRATION_HOURS: Token lifetime (default: 24)
+- JWT_SECRET: signing secret (required in production)
+- JWT_EXPIRATION_HOURS: token lifetime in hours (default: 24)
 """
 
 import os

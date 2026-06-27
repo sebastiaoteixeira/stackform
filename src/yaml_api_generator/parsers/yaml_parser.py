@@ -133,7 +133,6 @@ def _interpolate_deferred(value: str, secret: bool) -> str | EnvRef:
     for literal, sentinel in _BRACE_ESCAPES:
         value = value.replace(literal, sentinel)
 
-    # Resolve nested references iteratively (same fixed-point loop)
     def resolve_non_secret(match: re.Match[str]) -> str:
         token = INTERPOLATION_TOKEN.match(match.group(1))
         if token is None:
@@ -150,13 +149,11 @@ def _interpolate_deferred(value: str, secret: bool) -> str | EnvRef:
             if substituted == resolved:
                 break
             resolved = substituted
-        # If fully resolved (no remaining tokens), return the string directly
         if not INTERPOLATION_PATTERN.search(resolved):
             for literal, sentinel in _BRACE_ESCAPES:
                 resolved = resolved.replace(sentinel, literal[1])
             return resolved
 
-    # Capture the first ${VAR:-default} token as an EnvRef
     match = INTERPOLATION_PATTERN.search(value)
     if match:
         token = INTERPOLATION_TOKEN.match(match.group(1))

@@ -28,8 +28,8 @@ cd ..
 Edit the `.env` file with your configuration:
 
 ```bash
-{% for var in ctx.env_vars %}
-{{ var }}=your_value_here
+{% for name, value in ctx.env_vars.items() %}
+{{ name }}={{ value or "your_value_here" }}
 {% endfor %}
 {% if ctx.mongo_local %}
 MONGO_URI=mongodb://mongodb:27017

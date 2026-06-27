@@ -1,19 +1,4 @@
-"""Authorization expression AST for 'when' conditions.
-
-Represents parsed authorization expressions as an abstract syntax tree.
-Supports field references, literals, comparisons, and boolean logic.
-
-Expression types:
-- FieldRef: Reference to principal.* or document.* fields
-- StringLiteral: Constant string value
-- Equals/NotEquals: Comparison operators
-- In/NotIn: Membership tests
-- And/Or/Not: Boolean combinators
-
-Utilities:
-- needs_document(): Check if expression requires document binding
-- collect_roots(): Extract all root references (principal, document)
-"""
+"""Authorization expression AST for 'when' conditions."""
 
 from __future__ import annotations
 

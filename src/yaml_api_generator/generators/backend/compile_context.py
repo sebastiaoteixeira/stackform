@@ -32,6 +32,7 @@ class SettingField:
     python_type: str  # "str" | "int"
     default: str | None  # None -> required field
     secret: bool = False
+    generated: bool = False
 
 
 @dataclass(frozen=True)

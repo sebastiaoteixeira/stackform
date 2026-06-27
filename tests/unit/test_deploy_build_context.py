@@ -12,7 +12,7 @@ def _ctx(extra_services):
         runtime="docker",
         mongo_local=False,
         mongo_db="testdb",
-        env_vars=[],
+        env_vars={},
         has_auth=False,
         has_frontend=False,
         host="localhost",
@@ -82,5 +82,25 @@ deploy:
 """)
     ir = load_and_generate_ir(str(spec)).ir
     ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
-    assert "JWT_SECRET" in ctx.env_vars
-    assert "KEYCLOAK_CLIENT_SECRET" in ctx.env_vars
+    assert ctx.env_vars["JWT_SECRET"]
+    assert ctx.env_vars["KEYCLOAK_CLIENT_SECRET"] == ""
+
+
+def test_secrets_passthrough_with_dev_defaults_in_app_environment(tmp_path):
+    """Secrets pass through with shell defaults so the bundle starts without manual provisioning."""
+    from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
+    from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
+    from tests.conftest import VALID_DIR
+
+    spec = tmp_path / "spec.yaml"
+    spec.write_text((VALID_DIR / "auth-oidc.yaml").read_text() + """
+deploy:
+  runtime: docker
+  name: app
+  port: 8000
+""")
+    ir = load_and_generate_ir(str(spec)).ir
+    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    jwt = next(v for v in ctx.app_environment if v.startswith("JWT_SECRET="))
+    assert jwt.startswith("JWT_SECRET=${JWT_SECRET:-") and not jwt.endswith(":-}")
+    assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-}" in ctx.app_environment

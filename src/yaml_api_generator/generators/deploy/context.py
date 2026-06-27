@@ -20,7 +20,7 @@ class DeployContext:
     runtime: str
     mongo_local: bool
     mongo_db: str
-    env_vars: list[str]
+    env_vars: dict[str, str]
     has_auth: bool
     has_frontend: bool
     host: str

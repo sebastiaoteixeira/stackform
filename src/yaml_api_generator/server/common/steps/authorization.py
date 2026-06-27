@@ -1,24 +1,4 @@
-"""Authorization pipeline steps for access control.
-
-Enforces role-based and condition-based authorization rules.
-Supports pre-fetch and post-fetch authorization for fine-grained control.
-
-Authorization steps:
-- AuthorizeRouteStep(): Check authorization before repository access
-- PostFetchAuthorizeStep(): Check authorization after fetching document
-- ValidateIdentityCreateStep(): Ensure identity creation includes required fields
-
-Access rules support:
-- Role requirements with hierarchy (admin > editor > viewer)
-- Identity collection filtering (identity:users)
-- 'when' expressions (principal.role equals 'admin')
-- Document-dependent conditions (principal.id equals document.owner_id)
-- Allow/deny effects
-
-Exceptions:
-- UnauthorizedError: No authentication (401)
-- ForbiddenError: Authenticated but not authorized (403)
-"""
+"""Authorization pipeline steps for role-based and condition-based access control."""
 
 from . import Step
 
