@@ -1,12 +1,18 @@
+import os
 from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, create_model
 
+from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case
+from ..common.auth import oidc
+from ..common.auth.jwt import create_jwt_token
+from ..common.auth.login_codes import login_codes
 from ..common.server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
@@ -141,9 +147,113 @@ def register_fastapi_routes(
             openapi_extra=openapi_extra,
         )
 
+    register_provider_routes(app, ctx, registry)
     _configure_openapi_security(app, ctx.auth)
 
     return pipelines
+
+
+def _base_prefix(ctx: RuntimeContext) -> str:
+    prefix = ctx.app.base_path
+    if ctx.app.api_version:
+        prefix = f"{prefix}/{ctx.app.api_version}"
+    return prefix
+
+
+def register_provider_routes(
+    app: FastAPI,
+    ctx: RuntimeContext,
+    registry: RepositoryRegistry,
+) -> None:
+    """Mount OIDC provider routes for each identity collection that binds one.
+
+    Reaches parity with the generated backend's oidc_routes for the dev server:
+    a provider-listing endpoint, the login redirect, the callback, and the
+    shared one-time-code exchange.
+    """
+    auth = ctx.auth
+    base_prefix = _base_prefix(ctx)
+    has_oidc = False
+
+    for name, identity in auth.identity_collections.items():
+        bound = [
+            (binding, auth.providers.get(binding.provider))
+            for binding in identity.bindings
+            if auth.providers.get(binding.provider) is not None
+        ]
+        if not bound:
+            continue
+
+        listing = [{"name": b.provider, "type": p.type} for b, p in bound]
+        app.add_api_route(
+            f"{base_prefix}/{name}/auth/providers",
+            _providers_listing_endpoint(listing),
+            methods=["GET"],
+        )
+
+        for binding, provider in bound:
+            if not isinstance(provider, IROIDCProvider):
+                continue
+            has_oidc = True
+            collection = ctx.collections[name]
+            login_path = f"{base_prefix}/{name}/auth/{binding.provider}"
+            callback_path = f"{login_path}/callback"
+            app.add_api_route(
+                login_path, _oidc_login_endpoint(provider, callback_path), methods=["GET"]
+            )
+            app.add_api_route(
+                callback_path,
+                _oidc_callback_endpoint(provider, binding, collection, registry, callback_path),
+                methods=["GET"],
+            )
+
+    if has_oidc:
+        app.add_api_route(f"{base_prefix}/auth/exchange", _exchange_endpoint, methods=["POST"])
+
+
+def _providers_listing_endpoint(listing: list[dict[str, str]]):
+    async def endpoint() -> list[dict[str, str]]:
+        return listing
+
+    return endpoint
+
+
+def _oidc_login_endpoint(provider: IROIDCProvider, callback_path: str):
+    async def endpoint(request: Request) -> RedirectResponse:
+        callback_url = str(request.base_url).rstrip("/") + callback_path
+        return RedirectResponse(url=await oidc.build_login_redirect(provider, callback_url))
+
+    return endpoint
+
+
+def _oidc_callback_endpoint(
+    provider: IROIDCProvider,
+    binding: IRProviderBinding,
+    collection: RuntimeCollectionDescriptor,
+    registry: RepositoryRegistry,
+    callback_path: str,
+):
+    async def endpoint(request: Request, code: str) -> RedirectResponse:
+        repo = registry.for_collection(collection.name)
+        callback_url = str(request.base_url).rstrip("/") + callback_path
+        login_code = await oidc.handle_callback(
+            provider, binding, collection, repo, code, callback_url
+        )
+        frontend_url = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
+        return RedirectResponse(url=f"{frontend_url}/auth/callback?code={login_code}")
+
+    return endpoint
+
+
+async def _exchange_endpoint(payload: dict[str, str]) -> dict[str, str]:
+    code = payload.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+    redeemed = login_codes.redeem(code)
+    if redeemed is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired code")
+    subject, identity_collection = redeemed
+    return {"token": create_jwt_token(subject, identity_collection)}
 
 
 def _field_annotation(field_config: dict[str, Any]) -> Any:

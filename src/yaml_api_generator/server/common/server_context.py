@@ -73,6 +73,7 @@ class RuntimeAuthConfig:
     has_api_key_auth: bool
     # Transitively expanded: collection_name -> role -> set of included roles
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
+    providers: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
