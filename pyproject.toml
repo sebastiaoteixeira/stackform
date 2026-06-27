@@ -13,6 +13,7 @@ dependencies = [
   "pydantic",
   "pydantic-settings",
   "uvicorn",
+  "watchfiles",
   "pymongo",
   "jinja2",
   "click",

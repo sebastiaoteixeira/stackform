@@ -95,13 +95,34 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
 @click.option("--host", default="127.0.0.1", help="Host to bind")
 @click.option("-p", "--port", default=8000, type=int, help="Port to bind")
 @click.option("--raw", is_flag=True, help="Use raw ASGI runner")
+@click.option("-r", "--reload", is_flag=True, help="Reload the app when the spec changes")
 @click.option("--json", "output_json", is_flag=True, help="Output errors in JSON")
-def run(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool, output_json: bool):
+def run(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool, reload: bool, output_json: bool):
     """Run development server."""
     import uvicorn
 
     from ..parsers.yaml_parser import ConfigErrors
     from ..server import build_app, build_raw_app
+    from ..server.factory import RAW_ENV, SCHEMA_ENV, SPEC_ENV
+
+    if reload:
+        import os
+        from pathlib import Path
+
+        os.environ[SPEC_ENV] = yaml_file
+        os.environ[RAW_ENV] = "1" if raw else "0"
+        if schema_file:
+            os.environ[SCHEMA_ENV] = schema_file
+        uvicorn.run(
+            "yaml_api_generator.server.factory:create_app",
+            factory=True,
+            reload=True,
+            reload_dirs=[str(Path(yaml_file).parent)],
+            reload_includes=["*.yaml", "*.yml"],
+            host=host,
+            port=port,
+        )
+        return
 
     try:
         app = (
