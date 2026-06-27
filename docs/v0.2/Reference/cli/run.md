@@ -5,7 +5,7 @@ description: Serves an application directly from a YAML spec, with no build step
 
 Serves an application directly from a YAML spec, with no build step. This is the fastest way to try a spec: it parses, validates, and serves in one command.
 
-There is no hot reload -- the app is assembled from the spec when the process starts. Restart the command to pick up edits to the YAML file.
+By default the app is assembled from the spec once, when the process starts. Pass `-r`/`--reload` to watch the spec and rebuild the app whenever the YAML file changes; otherwise, restart the command to pick up edits.
 
 ## Usage
 
@@ -25,6 +25,7 @@ yaml-api run <file.yaml> [options]
 |--------|---------|-------------|
 | `--host` | `127.0.0.1` | Host address to bind. Use `0.0.0.0` to expose on all interfaces. |
 | `-p`, `--port` | `8000` | TCP port to listen on. |
+| `-r`, `--reload` | off | Watch the spec and rebuild the running app whenever it changes. |
 | `--raw` | off | Serve the raw-ASGI app instead of the FastAPI app. |
 | `-s`, `--schema` | auto-detected | Path to a JSON Schema for spec validation. The dialect is otherwise chosen from the spec's `version:` field. |
 | `--json` | off | Emit validation errors as JSON instead of human-readable text. |
@@ -39,6 +40,9 @@ yaml-api run myapp.yaml
 
 # Expose on all interfaces, port 3000
 yaml-api run myapp.yaml --host 0.0.0.0 -p 3000
+
+# Reload the app whenever the spec changes
+yaml-api run myapp.yaml --reload
 
 # Serve the raw-ASGI variant
 yaml-api run myapp.yaml --raw

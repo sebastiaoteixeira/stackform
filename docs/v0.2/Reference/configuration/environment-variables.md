@@ -98,10 +98,10 @@ not via spec interpolation. They are grouped by who reads them.
 |----------|---------|-------------|
 | `MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection string. |
 | `MONGO_DB` | `yaml_api` | MongoDB database name. |
-| `JWT_SECRET` | `yaml-api-dev-secret-change-me` | HMAC key for JWT signing (HS256). |
+| `JWT_SECRET` | *(required)* | HMAC key for JWT signing (HS256). The field has no default, so the generated backend fails fast at startup if it is unset. |
 | `JWT_EXPIRATION_HOURS` | `24` | JWT token lifetime in hours. |
 | `PASSWORD_HASH_ROUNDS` | `390000` | PBKDF2-HMAC-SHA256 iteration count for password hashing. |
-| `FRONTEND_URL` | `""` | Base URL the OIDC callback redirects to (`{FRONTEND_URL}/auth/callback?token=...`). Falls back to the request base URL when unset. |
+| `FRONTEND_URL` | `""` | Base URL the OIDC callback redirects to (`{FRONTEND_URL}/auth/callback?code=...`). Falls back to the request base URL when unset. |
 | `HOST` | `127.0.0.1` | Host the generated `app.py` binds to when run directly. |
 | `PORT` | `api.port` (or `8000`) | Port the generated `app.py` binds to when run directly. |
 
@@ -109,8 +109,10 @@ The compile-time `mongo.uri` / `mongo.database` from the spec are only baked int
 Docker deploy defaults; the generated backend itself always reads `MONGO_URI` /
 `MONGO_DB` at run time, falling back to the values above.
 
-**Warning:** The default `JWT_SECRET` is insecure. Always set it to a strong random
-value in production.
+**Warning:** `JWT_SECRET` is required. Set it to a strong random value (for example
+`openssl rand -hex 32`) in every environment, including local runs of the generated
+backend. A generated Docker deploy auto-fills a dev-ready value for you (see [Docker
+deploy](#docker-deploy-yaml-api-build--deploy)).
 
 ### `yaml-api run` dev server
 
@@ -120,9 +122,12 @@ value in production.
 | `YAML_API_MONGO_DB` | `mongo.database` from the spec | MongoDB database name for the dev server. |
 
 The dev server reads `JWT_SECRET`, `JWT_EXPIRATION_HOURS`, `PASSWORD_HASH_ROUNDS`,
-and `FRONTEND_URL` the same way the generated backend does. Note that `run` uses
-`YAML_API_MONGO_URI` / `YAML_API_MONGO_DB` (NOT `MONGO_URI` / `MONGO_DB`), and that
-its bind host and port come from the `--host` / `-p` flags, not from `HOST` / `PORT`.
+and `FRONTEND_URL` the same way the generated backend does, with one difference:
+`JWT_SECRET` falls back to the insecure default `yaml-api-dev-secret-change-me` when
+unset, so the dev server starts without configuration. The generated backend has no
+such fallback and requires `JWT_SECRET`. Note that `run` uses `YAML_API_MONGO_URI` /
+`YAML_API_MONGO_DB` (NOT `MONGO_URI` / `MONGO_DB`), and that its bind host and port
+come from the `--host` / `-p` flags, not from `HOST` / `PORT`.
 
 ```bash
 YAML_API_MONGO_URI=mongodb://localhost:27017 \
@@ -143,6 +148,20 @@ The generated `docker-compose.yml` exposes these for `docker compose`:
 | `FRONTEND_PORT` | `80` | Host port mapped to the frontend container. |
 | `VITE_API_BASE_URL` | `http://localhost:<port>/api/v1` | API base URL baked into the built frontend. |
 | `BACKEND_URL` | `http://app:<port>` | Upstream the frontend's nginx proxies to (set by the container entrypoint). |
+
+#### Secrets in the generated deploy
+
+The deploy emits each backend secret as `${NAME:-<default>}` in `docker-compose.yml`
+and lists it in the generated `.env`. How the default is filled depends on whether
+the generator owns the secret:
+
+- **Generated secrets** (e.g. `JWT_SECRET`) get a unique dev-ready value produced at
+  generation time with `secrets.token_urlsafe(32)`, so the deploy runs out of the box.
+  Override it for production by setting the variable in the environment or `.env`.
+- **Externally-required secrets** (e.g. a Keycloak `CLIENT_SECRET` referenced via
+  `${...}` in the spec) are surfaced with an empty default. They are listed for you to
+  fill, but the generator cannot supply them -- you must provide the value before the
+  deploy works.
 
 ## Auto-collected `.env.example`
 

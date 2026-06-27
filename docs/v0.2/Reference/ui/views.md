@@ -138,7 +138,8 @@ Auth components such as `auth-hero-split` and `auth-tabbed` accept `providers`
 (populated from your configured external providers), `allow_register`, and the
 `hero_content` object shown above. External SSO buttons are rendered from the
 `GET {basePath}[/{version}]/{collection}/auth/providers` endpoint, and a successful
-SSO login lands on `/auth/callback?token=...`, which the app shell consumes. See
+SSO login lands on `/auth/callback?code=...`, which the app shell redeems for a token
+at `/auth/exchange`. See
 [Login, SSO, and the token flow](../auth/login-and-sso.md).
 
 > **Enforcement status**

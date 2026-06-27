@@ -110,10 +110,13 @@ produces:
 |--------|------|-------------|
 | GET | `/api/v1/users/auth/providers` | List the external providers bound to this collection (`[{name, type}]`). |
 | GET | `/api/v1/users/auth/myoidc` | Redirect to the provider's `authorization_endpoint`. |
-| GET | `/api/v1/users/auth/myoidc/callback?code=...` | Handle the OAuth2 callback and issue an app JWT. |
+| GET | `/api/v1/users/auth/myoidc/callback?code=...` | Handle the OAuth2 callback and issue a one-time login code. |
+| POST | `/api/v1/auth/exchange` | Redeem a one-time login code for the app JWT. |
 
 The provider name in the path is the key from `providers:` (here `myoidc`),
-and the collection segment is the repository/identity-collection name.
+and the collection segment is the repository/identity-collection name. The
+`/auth/exchange` endpoint is collection-independent and emitted once whenever
+any collection binds an OIDC provider.
 
 ## Login and callback flow
 
@@ -129,10 +132,17 @@ and the collection segment is the repository/identity-collection name.
 4. Claims are mapped to local fields via `claim_mapping`; the user is matched on
    `identifier`. An existing user is logged in; a new one is created when
    `auto_provision` is `true`.
-5. The server mints an app JWT and 302-redirects to
-   `{FRONTEND_URL}/auth/callback?token=<jwt>`. The single-page frontend reads
-   the token from the query string. When `FRONTEND_URL` is unset, the redirect
-   falls back to this app's own base URL.
+5. The server mints a single-use, short-lived login code and 302-redirects to
+   `{FRONTEND_URL}/auth/callback?code=<code>`. The app JWT never travels in a
+   redirect URL. When `FRONTEND_URL` is unset, the redirect falls back to this
+   app's own base URL.
+6. The single-page frontend reads the `code` query parameter and `POST`s it to
+   `/api/v1/auth/exchange` as `{"code": "<code>"}`. The server redeems the code
+   and returns `{"token": "<jwt>"}`. The code is stored in an
+   `_oidc_login_codes` collection in the identity collection's datastore, lives
+   for 60 seconds, and is redeemed atomically (delete-on-read), so it works
+   exactly once even across workers. A missing code returns 400 `Missing code`;
+   an unknown or expired code returns 401 `Invalid or expired code`.
 
 Set the `FRONTEND_URL` environment variable on the generated backend so the
 final redirect lands on your UI rather than the API host.
@@ -145,6 +155,8 @@ final redirect lands on your UI rather than the API host.
 | 401 `Failed to fetch user info` | The `userinfo` (or GitHub user) request failed. |
 | 401 `Token expired` | The provider returned an already-expired `exp` claim. |
 | 403 `User not found and auto-provisioning is disabled` | No matching user and `auto_provision: false`. |
+| 400 `Missing code` | `/auth/exchange` was called without a `code`. |
+| 401 `Invalid or expired code` | The login code is unknown, already redeemed, or past its 60-second TTL. |
 
 For the full credential and token lifecycle (password login plus SSO), see
 [login-and-sso](../auth/login-and-sso.md). For claim mapping and

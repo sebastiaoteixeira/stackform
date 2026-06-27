@@ -27,22 +27,26 @@ docker-compose up -d
 Run a live FastAPI server directly from a YAML spec:
 
 ```bash
-yaml-api dev spec.yaml
+yaml-api run spec.yaml
 ```
 
 Options:
 
 - `--host` — bind address (default: `127.0.0.1`)
-- `--port` — bind port (default: `8000`)
-- `--schema` — path to a custom JSON Schema file (auto-detected from spec version if omitted)
+- `-p`, `--port` — bind port (default: `8000`)
+- `-r`, `--reload` — rebuild and reload the app when the spec changes
+- `--raw` — serve the raw-ASGI app instead of FastAPI
+- `-s`, `--schema` — path to a custom JSON Schema file (auto-detected from spec version if omitted)
 
-### Compile to a standalone project
+### Build a standalone project
 
-Generate a full project (backend + optional frontend):
+Generate a full project (backend, frontend, and deploy artifacts):
 
 ```bash
-yaml-api compile spec.yaml --output ./target
+yaml-api build spec.yaml --output ./target
 ```
+
+The positional `what` argument selects what to build — `all` (default), `backend`, `frontend`, or `deploy`. With `all`, the frontend is built when the spec has a `ui:` block and deploy artifacts when it has a `deploy:` block.
 
 Outputs:
 
@@ -51,9 +55,9 @@ Outputs:
 
 Options:
 
-- `--target` — `fastapi`, `drf`, or `raw` (default: `fastapi`)
-- `--output` — output directory (default: `./target`)
-- `--schema` — path to a custom JSON Schema file (auto-detected if omitted)
+- `-t`, `--target` — `fastapi`, `drf`, or `raw` (default: `fastapi`)
+- `-o`, `--output` — output directory (default: `./target`)
+- `-s`, `--schema` — path to a custom JSON Schema file (auto-detected if omitted)
 
 Run the compiled backend:
 
@@ -74,10 +78,10 @@ npm run dev
 ### Generate frontend only
 
 ```bash
-yaml-api frontend spec.yaml
+yaml-api build spec.yaml frontend --output ./target
 ```
 
-Output directory is read from `ui.frontend.output` in the spec, or overridden with `--output`.
+The React app is written to `target/frontend/`.
 
 ## Example
 
@@ -85,7 +89,7 @@ Try the blog example (backend + frontend):
 
 ```bash
 docker-compose up -d
-yaml-api compile examples/v02/api-with-ui.yaml
+yaml-api build examples/v02/api-with-ui.yaml
 cd target/backend && pip install -r requirements.txt && python app.py &
 cd target/frontend && npm install && npm run dev
 ```
@@ -93,7 +97,7 @@ cd target/frontend && npm install && npm run dev
 Or the admin panel example:
 
 ```bash
-yaml-api compile examples/v02/api-with-admin.yaml
+yaml-api build examples/v02/api-with-admin.yaml
 cd target/backend && pip install -r requirements.txt && python app.py &
 cd target/frontend && npm install && npm run dev
 ```
@@ -158,7 +162,7 @@ ui:
         collection: post-feed
 ```
 
-Built-in packs in `examples/packs/`:
+Example packs in `examples/packs/` (the only pack bundled with the generator is `generic`):
 
 - `blog` — grid/card/article/form layout for content sites
 - `admin` — PocketBase-style admin panel with sidebar, table, and modals

@@ -148,8 +148,9 @@ On first SSO login (the browser visits `GET /api/v1/my-collection/auth/myoidc`):
    are populated via `claim_mapping`, and `email` is the identifier.
 3. No record matches that `email`, so `auto_provision: true` creates one with `email`,
    `displayName`, `avatarUrl`, and a generated `uuid4` id.
-4. An application JWT is minted and the browser is redirected to
-   `{FRONTEND_URL}/auth/callback?token=<jwt>`. Subsequent logins match the existing record.
+4. A single-use login code is minted and the browser is redirected to
+   `{FRONTEND_URL}/auth/callback?code=<code>`; the SPA redeems it at
+   `/auth/exchange` for the application JWT. Subsequent logins match the existing record.
 
 ### Invite-only (no auto-provision)
 
@@ -173,10 +174,10 @@ record matches the binding `identifier`, the SSO callback returns 403 with detai
 
 The two SSO callbacks differ in shape:
 
-- **OIDC** (`GET .../auth/{provider}/callback?code=...`): on success, the engine mints an
-  application JWT and issues a 302 redirect to `{FRONTEND_URL}/auth/callback?token=<jwt>`
-  (when `FRONTEND_URL` is unset, the request base URL is used). The token is the
-  application's own JWT, not the provider token.
+- **OIDC** (`GET .../auth/{provider}/callback?code=...`): on success, the engine mints a
+  single-use login code and issues a 302 redirect to `{FRONTEND_URL}/auth/callback?code=<code>`
+  (when `FRONTEND_URL` is unset, the request base URL is used). The SPA then `POST`s the code
+  to `/auth/exchange` and receives the application's own JWT, not the provider token.
 - **SAML** (`POST .../auth/{provider}/callback`): on success, the engine returns JSON
   `{"token": "<jwt>", "user": {...}}` with `_id` and `_auth` stripped from the user object.
 

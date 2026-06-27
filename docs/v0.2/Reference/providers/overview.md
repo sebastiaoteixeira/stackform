@@ -109,7 +109,8 @@ routes under the entity's collection (the full path is
 |-----------------|---------|
 | `GET /api/v1/users/auth/providers` | Lists the external providers bound to this collection (consumed by the generated login page). |
 | `GET /api/v1/users/auth/myoidc` | Starts the login: 302 redirect to the IdP. |
-| `GET /api/v1/users/auth/myoidc/callback` | Completes the login: exchanges the `code`, maps claims, finds or provisions the user, mints an app JWT, and redirects to `{FRONTEND_URL}/auth/callback?token=<jwt>`. |
+| `GET /api/v1/users/auth/myoidc/callback` | Completes the IdP exchange: maps claims, finds or provisions the user, mints a one-time login code, and redirects to `{FRONTEND_URL}/auth/callback?code=<code>`. |
+| `POST /api/v1/auth/exchange` | Redeems the one-time login code (`{"code": "..."}`) for the app JWT (`{"token": "<jwt>"}`). Emitted once whenever any collection binds an OIDC provider. |
 
 These routes exist only when an entity actually binds the provider; a declared but
 unbound provider emits nothing.
