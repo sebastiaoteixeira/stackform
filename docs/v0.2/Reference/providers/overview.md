@@ -53,31 +53,56 @@ runtime flow.
 | `oidc` | OpenID Connect. The backend reads the provider's `discovery_url` at request time to find the authorization, token, and userinfo endpoints. |
 | `saml` | SAML 2.0 service provider. The backend fetches the IdP metadata at request time. |
 
+## Token trust
+
+A provider's `trust` decides who verifies its tokens on each request:
+
+| `trust` | Meaning |
+|---------|---------|
+| `app` (default) | After login the app mints and verifies its **own** session token. The IdP is used only during login; from then on the client carries the app's JWT. This is the current end-to-end behavior. |
+| `idp` | The client keeps carrying the **IdP's** token and the app verifies it against the IdP on every call, issuing no session of its own. Requires `issuer` and `audience` to verify against. |
+
+`trust: idp` is only valid for `oidc`/`saml` providers, and rejects the
+app-signing fields (`algorithm`, `secret`, `ttl`, `refresh`, `delivery`) that only
+make sense under `app` trust. A `trust: idp` provider that omits `issuer` or
+`audience` fails validation.
+
+> **Status:** `trust: idp` is parsed and validated, but per-call verification of
+> IdP tokens is not yet generated. Use `trust: app` (the default) for a working
+> runtime; `idp` verification lands with resource-server support.
+
 ## Required fields per type
 
 Each provider config is closed (`additionalProperties: false`): only the fields
-below are accepted, and unknown keys fail schema validation.
+below are accepted, and unknown keys fail schema validation. Which fields are
+required depends on `trust`.
 
 ### OIDC
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | yes | Must be `oidc`. |
+| `trust` | no | `app` (default) or `idp`. |
 | `client_id` | yes | OAuth client identifier issued by the IdP. |
-| `client_secret` | yes | OAuth client secret. |
-| `discovery_url` | yes (in practice) | OpenID configuration URL (`.../.well-known/openid-configuration`). The schema lists it as optional, but the backend needs it to resolve endpoints and an OIDC provider built without it will fail. Always set it. |
+| `client_secret` | yes under `trust: app` | OAuth client secret. |
+| `discovery_url` | yes under `trust: app` | OpenID configuration URL (`.../.well-known/openid-configuration`); the backend reads it to resolve endpoints. |
+| `issuer` | yes under `trust: idp` | Expected `iss` of the IdP's tokens. |
+| `audience` | yes under `trust: idp` | Expected `aud` of the IdP's tokens. |
 
 There is no built-in discovery for any provider name. Names such as `google`,
 `microsoft`, or `apple` are not special; you must supply `discovery_url` for every
-OIDC provider.
+`trust: app` OIDC provider.
 
 ### SAML
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | yes | Must be `saml`. |
-| `idp_metadata_url` | yes | IdP metadata URL (fetched at request time). |
-| `sp_entity_id` | yes | This service provider's entity ID. |
+| `trust` | no | `app` (default) or `idp`. |
+| `idp_metadata_url` | yes under `trust: app` | IdP metadata URL (fetched at request time). |
+| `sp_entity_id` | yes under `trust: app` | This service provider's entity ID. |
+| `issuer` | yes under `trust: idp` | Expected `iss` of the IdP's tokens. |
+| `audience` | yes under `trust: idp` | Expected `aud` of the IdP's tokens. |
 
 ## Environment interpolation
 

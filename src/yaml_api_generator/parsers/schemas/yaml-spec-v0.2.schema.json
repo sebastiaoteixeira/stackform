@@ -235,23 +235,41 @@
     },
     "OIDCProviderConfig": {
       "type": "object",
-      "required": ["type", "client_id", "client_secret", "discovery_url"],
+      "required": ["type", "client_id"],
       "properties": {
         "type": { "type": "string", "const": "oidc" },
+        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
         "client_id": { "type": "string" },
         "client_secret": { "type": "string" },
-        "discovery_url": { "type": "string" }
+        "discovery_url": { "type": "string" },
+        "issuer": { "type": "string" },
+        "audience": { "type": "string" }
       },
+      "if": {
+        "properties": { "trust": { "const": "idp" } },
+        "required": ["trust"]
+      },
+      "then": { "required": ["issuer", "audience"] },
+      "else": { "required": ["client_secret", "discovery_url"] },
       "additionalProperties": false
     },
     "SAMLProviderConfig": {
       "type": "object",
-      "required": ["type", "idp_metadata_url", "sp_entity_id"],
+      "required": ["type"],
       "properties": {
         "type": { "type": "string", "const": "saml" },
+        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
         "idp_metadata_url": { "type": "string" },
-        "sp_entity_id": { "type": "string" }
+        "sp_entity_id": { "type": "string" },
+        "issuer": { "type": "string" },
+        "audience": { "type": "string" }
       },
+      "if": {
+        "properties": { "trust": { "const": "idp" } },
+        "required": ["trust"]
+      },
+      "then": { "required": ["issuer", "audience"] },
+      "else": { "required": ["idp_metadata_url", "sp_entity_id"] },
       "additionalProperties": false
     },
     "FieldConfig": {

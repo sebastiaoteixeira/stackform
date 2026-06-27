@@ -3,6 +3,7 @@
 Coordinates specialized transformers to convert v0.2 YAML specifications into IR objects.
 """
 
+from dataclasses import fields as dataclass_fields
 from typing import Any
 
 from yaml_api_generator.ir import IRDocument
@@ -128,8 +129,13 @@ class V02Transformer:
 
     def _parse_providers(self, providers_data: dict[str, Any]) -> dict[str, IRProvider]:
         _CONSTRUCTORS: dict[str, type] = {"oidc": IROIDCProvider, "saml": IRSAMLProvider}
-        return {
-            name: _CONSTRUCTORS[cfg["type"]](name=name, **{k: v for k, v in cfg.items() if k != "type"})
-            for name, cfg in providers_data.items()
-            if isinstance(cfg, dict) and cfg.get("type") in _CONSTRUCTORS
-        }
+        providers: dict[str, IRProvider] = {}
+        for name, cfg in providers_data.items():
+            if not isinstance(cfg, dict):
+                continue
+            ctor = _CONSTRUCTORS.get(cfg.get("type"))
+            if ctor is None:
+                continue
+            accepted = {f.name for f in dataclass_fields(ctor)} - {"name"}
+            providers[name] = ctor(name=name, **{k: v for k, v in cfg.items() if k in accepted})
+        return providers

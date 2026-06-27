@@ -45,17 +45,31 @@ class EnvRef:
 class IROIDCProvider:
     name: str
     client_id: str
-    client_secret: str | EnvRef
-    discovery_url: str | EnvRef
     type: str = "oidc"
+    trust: str = "app"
+    client_secret: str | EnvRef | None = None
+    discovery_url: str | EnvRef | None = None
+    issuer: str | None = None
+    audience: str | None = None
+
+    @property
+    def is_idp(self) -> bool:
+        return self.trust == "idp"
 
 
 @dataclass(frozen=True)
 class IRSAMLProvider:
     name: str
-    idp_metadata_url: str | EnvRef
-    sp_entity_id: str | EnvRef
     type: str = "saml"
+    trust: str = "app"
+    idp_metadata_url: str | EnvRef | None = None
+    sp_entity_id: str | EnvRef | None = None
+    issuer: str | None = None
+    audience: str | None = None
+
+    @property
+    def is_idp(self) -> bool:
+        return self.trust == "idp"
 
 
 IRProvider = IROIDCProvider | IRSAMLProvider
