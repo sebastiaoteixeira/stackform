@@ -67,9 +67,33 @@ app-signing fields (`algorithm`, `secret`, `ttl`, `refresh`, `delivery`) that on
 make sense under `app` trust. A `trust: idp` provider that omits `issuer` or
 `audience` fails validation.
 
-> **Status:** `trust: idp` is parsed and validated, but per-call verification of
-> IdP tokens is not yet generated. Use `trust: app` (the default) for a working
-> runtime; `idp` verification lands with resource-server support.
+When both an `app` provider and an `idp` provider exist, the generated auth
+dependency dispatches strictly on the bearer token's `iss` claim -- the app
+issuer is verified with the app's own key, each IdP issuer against that IdP, and
+anything else is rejected (no "try every verifier"):
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as Generated app
+  participant I as IdP (JWKS)
+  C->>A: request + Authorization: Bearer <token>
+  A->>A: read iss (unverified)
+  alt iss == app issuer
+    A->>A: verify with app key (HS256)
+  else iss == <idp issuer>
+    A->>I: verify against issuer/audience
+    I-->>A: ok / reject
+  else unknown iss
+    A-->>C: 401 reject
+  end
+  A-->>C: response (principal resolved) or 401
+```
+
+> **Status:** `trust: idp` is parsed and validated, but the per-call dispatch
+> above is not yet generated -- the IdP-verify branch is a planned seam. Use
+> `trust: app` (the default) for a working runtime; `idp` verification lands with
+> resource-server support.
 
 ## Required fields per type
 
