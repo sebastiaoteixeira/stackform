@@ -1,11 +1,12 @@
 import base64
 from typing import Any
 
-from ..auth import verify_password
+from yaml_api_generator.ir.api import IROIDCProvider
+from ..auth import idp, oidc, verify_password
 from ..auth.jwt import decode_jwt_token
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
 from ..request_context import RequestContext
-from ..server_context import RuntimeIdentityDescriptor
+from ..server_context import RuntimeCollectionDescriptor, RuntimeIdentityDescriptor
 from ..repositories import BaseRepository, RepositoryRegistry
 from ..utils.field_access import get_nested_field
 from ..utils.document_matcher import find_document_with_password
@@ -17,6 +18,8 @@ def ResolvePrincipalStep(
     identity_collections: dict[str, RuntimeIdentityDescriptor],
     identity_id_fields: dict[str, str],
     registry: RepositoryRegistry,
+    providers: dict[str, Any] | None = None,
+    collections: dict[str, RuntimeCollectionDescriptor] | None = None,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
         if ctx.principal is not None:
@@ -25,11 +28,49 @@ def ResolvePrincipalStep(
             identity_collections=identity_collections,
             identity_id_fields=identity_id_fields,
             registry=registry,
+            providers=providers or {},
+            collections=collections or {},
             headers=ctx.headers,
         )
         return ctx
 
     return step
+
+
+async def _resolve_idp_principal(
+    bearer_token: str,
+    identity_collections: dict[str, RuntimeIdentityDescriptor],
+    collections: dict[str, RuntimeCollectionDescriptor],
+    providers: dict[str, Any],
+    registry: RepositoryRegistry,
+) -> dict[str, Any] | None:
+    issuer = idp.unverified_issuer(bearer_token)
+    if not issuer:
+        return None
+
+    for collection_name, identity in identity_collections.items():
+        for binding in identity.bindings:
+            provider = providers.get(binding.provider)
+            if not (isinstance(provider, IROIDCProvider) and provider.is_idp):
+                continue
+            if idp.issuer_of(provider) != issuer:
+                continue
+            claims = await idp.verify_idp_token(bearer_token, provider)
+            if claims is None:
+                raise UnauthorizedError("Invalid IdP token")
+            collection = collections[collection_name]
+            record = await oidc.resolve_record(
+                claims, binding, collection, registry.for_collection(collection_name)
+            )
+            if record is None:
+                raise UnauthorizedError("User not found and auto-provisioning is disabled")
+            return _build_principal(
+                record,
+                id_field=collection.id_field,
+                identity_collection=collection_name,
+                identity=identity,
+            )
+    return None
 
 
 async def _resolve_jwt_principal(
@@ -72,10 +113,22 @@ async def _resolve_identity_principal(
     identity_collections: dict[str, RuntimeIdentityDescriptor],
     identity_id_fields: dict[str, str],
     registry: RepositoryRegistry,
+    providers: dict[str, Any],
+    collections: dict[str, RuntimeCollectionDescriptor],
     headers: dict[str, str],
 ) -> dict[str, Any] | None:
     bearer_token = extract_bearer_token(headers)
     if bearer_token is not None:
+        idp_principal = await _resolve_idp_principal(
+            bearer_token,
+            identity_collections,
+            collections,
+            providers,
+            registry,
+        )
+        if idp_principal is not None:
+            return idp_principal
+
         jwt_principal = await _resolve_jwt_principal(
             bearer_token,
             identity_collections,

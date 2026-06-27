@@ -15,6 +15,6 @@ pydantic-settings
 {% if uses_sql %}sqlalchemy[asyncio]
 asyncpg
 {% endif %}
-pyjwt
+pyjwt[crypto]
 uuid_utils
 {% if ctx.auth.has_oidc_auth %}httpx{% endif %}
