@@ -81,7 +81,7 @@ Or ensure a local MongoDB is running on `localhost:27017`.
 yaml-api run myapp.yaml
 ```
 
-`run` serves the app in-process; it binds `127.0.0.1:8000` by default. Use `--host 0.0.0.0` and `-p`/`--port` to change that, `--raw` to use the raw ASGI runner, and `--json` for machine-readable errors. The server does not hot-reload; restart it to pick up spec changes.
+`run` serves the app in-process; it binds `127.0.0.1:8000` by default. Use `--host 0.0.0.0` and `-p`/`--port` to change that, `--raw` to use the raw ASGI runner, and `--json` for machine-readable errors. Pass `-r`/`--reload` to rebuild the app automatically when the spec changes; otherwise restart it to pick up edits.
 
 4. Open http://127.0.0.1:8000/docs to see the generated API in Swagger UI.
 

@@ -180,12 +180,16 @@ sequenceDiagram
     Backend->>Google: Exchange code at token_endpoint
     Backend->>Google: GET userinfo_endpoint with access token
     Backend->>Mongo: Find user by identifier, or provision if missing
-    Backend-->>Browser: 302 to FRONTEND_URL/auth/callback?token=<jwt>
+    Backend-->>Browser: 302 to FRONTEND_URL/auth/callback?code=<code>
+    Browser->>Backend: POST /api/v1/auth/exchange {code}
+    Backend-->>Browser: 200 {token}
 ```
 
-The callback issues the same app-signed JWT that password login produces, then
-redirects the browser to `{FRONTEND_URL}/auth/callback?token=<jwt>`. If `FRONTEND_URL`
-is unset, the backend's own base URL is used as the redirect host.
+Rather than putting the JWT in the redirect URL, the callback issues a single-use,
+short-lived login code and redirects the browser to `{FRONTEND_URL}/auth/callback?code=<code>`.
+The SPA then POSTs the code to `/api/v1/auth/exchange` and receives the same app-signed
+JWT that password login produces. If `FRONTEND_URL` is unset, the backend's own base URL
+is used as the redirect host.
 
 ### The provider-listing endpoint
 

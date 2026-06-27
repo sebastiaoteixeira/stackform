@@ -88,7 +88,7 @@ The provider is configured under the entity's `auth:` block.
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
 | `identifier` | effectively yes | string (field name) | The field used as the login username. Not schema-enforced, but login needs it. Common values: `email`, `username`. |
-| `via` | effectively yes | string or list | Built-in providers to enable. Use `password` here; may be a list (for example `[password, apiKey]`) to combine built-in providers. |
+| `via` | effectively yes | string or list | Built-in providers to enable. Use `password` here; may be a list (for example `[password, apiKey]`) to combine built-in providers. A list entry may also be an object declaring an inline provider binding (`provider`, `identifier`, `claim_mapping`, `auto_provision`) -- equivalent to an `auth.bindings` entry. See [Auth overview](./overview.md#auth-block). |
 | `roles` | no | string (field name) | Names an existing `enum` field that carries the principal's role. See [Roles overview](../roles/overview.md). |
 | `bindings` | no | list | External identity providers (OIDC/SAML). See [Login, SSO, and the token flow](./login-and-sso.md) and [Claim mapping](./claim-mapping.md). |
 

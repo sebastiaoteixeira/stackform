@@ -86,12 +86,38 @@ Effects:
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
 | `identifier` | effectively yes | string (field name) | The field used as the login username (for password) or matched value. Not schema-enforced, but auth cannot resolve a principal without it. |
-| `via` | effectively yes | string or list of strings | Built-in methods: `"password"`, `"apiKey"`, or a list of both. Not schema-enforced. |
+| `via` | effectively yes | string, list of strings, or list of objects | Built-in methods (`"password"`, `"apiKey"`) as strings, and/or inline provider bindings as objects (see below). |
 | `roles` | no | string (field name) | Names an `enum` field that holds the principal's role. See [roles overview](../roles/overview.md). |
 | `bindings` | no | list of objects | External identity providers (OIDC/SAML). Each entry sets `provider`, `identifier`, optional `claim_mapping` and `auto_provision`. See [claim mapping](./claim-mapping.md). |
 
-`via` is for the built-in `password` and `apiKey` methods only. External providers
-(Google, SAML, and so on) are attached through `auth.bindings`, not `via`.
+`via` accepts plain strings for the built-in `password` and `apiKey` methods. A list
+entry may instead be an object that declares an external provider binding inline,
+equivalent to adding the same entry under `auth.bindings`. Each object takes:
+
+| Key | Required | Type | Description |
+|-----|----------|------|-------------|
+| `provider` | yes | string | Name of the configured external provider (OIDC/SAML). |
+| `identifier` | no | string (field name) | Field matched against the provider's principal. Defaults to `auth.identifier`. |
+| `claim_mapping` | no | map (string → string) | Maps provider claims onto entity fields. See [claim mapping](./claim-mapping.md). |
+| `auto_provision` | no | boolean | Create a local record on first login when no match exists. Defaults to `true`. |
+
+Bindings declared in `via` are merged with any under `auth.bindings`; a `via` binding
+wins if both name the same `provider`.
+
+```yaml
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via:
+        - password
+        - provider: google
+          identifier: email
+          claim_mapping: { email: email, name: displayName }
+          auto_provision: true
+      roles: role
+```
 
 ### Role hierarchy
 

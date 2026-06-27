@@ -249,7 +249,8 @@ Common callback failures (status from `GET /api/v1/{collection}/auth/{provider}/
 - `403 {"detail": "User not found and auto-provisioning is disabled"}` -- no matching
   local user and the binding set `auto_provision: false` (it defaults to true).
 
-On success the callback mints an app JWT and redirects to
-`{FRONTEND_URL}/auth/callback?token=<jwt>`. Set `FRONTEND_URL` so the redirect reaches
-your UI; if unset it falls back to the backend's own base URL. The generated login page
-discovers available providers from `GET /api/v1/{collection}/auth/providers`.
+On success the callback issues a single-use login code and redirects to
+`{FRONTEND_URL}/auth/callback?code=<code>`; the SPA redeems it for an app JWT by POSTing
+to `/api/v1/auth/exchange`. Set `FRONTEND_URL` so the redirect reaches your UI; if unset
+it falls back to the backend's own base URL. The generated login page discovers available
+providers from `GET /api/v1/{collection}/auth/providers`.

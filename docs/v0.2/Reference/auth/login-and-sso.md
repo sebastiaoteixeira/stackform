@@ -155,8 +155,11 @@ sequenceDiagram
   I-->>A: access_token
   A->>I: GET userinfo_endpoint (Bearer access_token)
   I-->>A: claims
-  A->>A: map claims, find-or-provision record, mint app JWT
-  A-->>B: 302 to FRONTEND_URL/auth/callback?token=<jwt>
+  A->>A: map claims, find-or-provision record, issue one-time login code
+  A-->>B: 302 to FRONTEND_URL/auth/callback?code=<code>
+  B->>A: POST /api/v1/auth/exchange {code}
+  A->>A: redeem code (single-use), mint app JWT
+  A-->>B: 200 {token}
 ```
 
 Notes on the callback:
@@ -167,9 +170,16 @@ Notes on the callback:
   the `email`, then `login`, then `sub` claim for the identifier value.
 - A provisioned record gets a server-generated id (uuid4).
 - Token exchange failure, userinfo failure, or an expired token each return 401.
-- The final redirect target is `{FRONTEND_URL}/auth/callback?token=<jwt>`. If
-  `FRONTEND_URL` is unset, the app's own base URL is used. The React login page reads
-  the `token` query parameter and stores it.
+- The app JWT never travels in a redirect URL. The callback instead mints a
+  single-use login code and redirects to `{FRONTEND_URL}/auth/callback?code=<code>`.
+  If `FRONTEND_URL` is unset, the app's own base URL is used. The React login page
+  reads the `code` query parameter and `POST`s it to `/api/v1/auth/exchange` as
+  `{"code": "<code>"}`, receiving `{"token": "<jwt>"}` in return.
+- The login code is stored in an `_oidc_login_codes` collection in the identity
+  collection's datastore (Mongo or SQL), lives for 60 seconds, and is redeemed
+  atomically (delete-on-read), so a code works exactly once even across workers.
+  A missing code returns 400 (`Missing code`); an unknown or expired code returns
+  401 (`Invalid or expired code`).
 
 ### Password login inset
 
@@ -254,7 +264,7 @@ endpoint to render one SSO button per provider, alongside the password login for
 | `JWT_SECRET` | all login paths | HS256 signing secret. Set a strong value in production. |
 | `JWT_EXPIRATION_HOURS` | all login paths | Token lifetime in hours (default 24). |
 | `PASSWORD_HASH_ROUNDS` | password register/login | PBKDF2 iteration count (default 390000). |
-| `FRONTEND_URL` | OIDC callback | Base for the `.../auth/callback?token=` redirect. |
+| `FRONTEND_URL` | OIDC callback | Base for the `.../auth/callback?code=` redirect. |
 
 Provider `${VAR}` placeholders (such as `client_secret` and `discovery_url`) are
 interpolated from the environment at generation time.
