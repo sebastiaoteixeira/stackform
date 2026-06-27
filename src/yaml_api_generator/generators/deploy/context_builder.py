@@ -22,8 +22,11 @@ def build_deploy_context(
     name = deploy.name or "app"
     mongo_db = ir.mongo.database
     secret_fields = [f for f in build_settings_fields(build_context(ir)) if f.secret]
-    secret_vars = [f.env_name for f in secret_fields]
-    env_vars = list(dict.fromkeys([*deploy.env_vars, *secret_vars]))
+    dev_defaults = {f.env_name: token_urlsafe(32) for f in secret_fields if f.generated}
+    env_vars = {
+        var: dev_defaults.get(var, "")
+        for var in dict.fromkeys([*deploy.env_vars, *(f.env_name for f in secret_fields)])
+    }
     datastores = _build_datastores(ir)
 
     common = dict(
@@ -51,9 +54,7 @@ def build_deploy_context(
             f"PORT=${{PORT:-{deploy.port}}}",
             "FRONTEND_URL=${FRONTEND_URL:-http://localhost}",
         ) + tuple(
-            f"{f.env_name}=${{{f.env_name}:-{token_urlsafe(32)}}}"
-            if f.generated
-            else f"{f.env_name}=${{{f.env_name}:?{f.env_name} is required}}"
+            f"{f.env_name}=${{{f.env_name}:-{dev_defaults.get(f.env_name, '')}}}"
             for f in secret_fields
         )
         return DockerDeployContext(
