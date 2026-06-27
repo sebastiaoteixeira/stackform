@@ -1,3 +1,5 @@
+from typing import Any
+
 from yaml_api_generator.ir import (
     IRCollection,
     IRDocument,
@@ -28,6 +30,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
     auth = _build_auth_config(
         document.identityCollections,
         document.collections,
+        document.providers,
     )
     operations = _build_operations(document)
 
@@ -104,6 +107,7 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
 def _build_auth_config(
     identity_collections: dict[str, IRIdentityCollection],
     collections: dict[str, IRCollection],
+    providers: dict[str, Any],
 ) -> RuntimeAuthConfig:
     identity_descriptors: dict[str, RuntimeIdentityDescriptor] = {}
     identity_id_fields: dict[str, str] = {}
@@ -150,4 +154,5 @@ def _build_auth_config(
         has_password_auth=has_password,
         has_api_key_auth=has_api_key,
         role_hierarchies=flattened_hierarchies,
+        providers=providers,
     )
