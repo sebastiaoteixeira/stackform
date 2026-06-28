@@ -1,0 +1,1372 @@
+version: "0.2"
+
+api:
+  basePath: /api
+  version: v1
+  port: 80
+  cors:
+    origins: ["*"]
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+    auth:
+      register: true
+      login: true
+
+datastores:
+  default:
+    type: mongodb
+    uri: mongodb://localhost:27017
+    database: trustrisk
+
+providers:
+  keycloak:
+    type: oidc
+    client_id: trustrisk
+    client_secret: "${KEYCLOAK_CLIENT_SECRET}"
+    discovery_url: "${KEYCLOAK_DISCOVERY_URL:-http://keycloak:8080/realms/trustrisk/.well-known/openid-configuration}"
+
+entities:
+  baseModel:
+    abstract: true
+    fields:
+      id: { type: id }
+      createdAt: { type: datetime }
+      updatedAt: { type: datetime }
+      removedAt: { type: datetime }
+      removed: { type: boolean, default: false }
+
+  language:
+    fields:
+      id: { type: id }
+      code: { type: string, maxLength: 10, unique: true, required: true }
+      name: { type: string, maxLength: 50, required: true }
+
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password1
+      bindings:
+        - provider: keycloak
+          identifier: email
+          claim_mapping:
+            email: email
+            name: name
+            firstName: given_name
+            lastName: family_name
+            keycloakSub: sub
+          auto_provision: true
+    fields:
+      id: { type: id }
+      email: { type: string, maxLength: 255, required: true, unique: true, format: email }
+      name: { type: string, maxLength: 150, required: true }
+      keycloakSub: { type: string, maxLength: 255, unique: true, readonly: true }
+      keycloakRealm: { type: string, maxLength: 100, readonly: true }
+      username: { type: string, maxLength: 150 }
+      firstName: { type: string, maxLength: 150 }
+      lastName: { type: string, maxLength: 150 }
+      isActive: { type: boolean, default: true, readonly: true }
+      lastLoginAt: { type: datetime, readonly: true }
+      lastSyncAt: { type: datetime, readonly: true }
+
+  organization:
+    extends: baseModel
+    fields:
+      name: { type: string, maxLength: 255, required: true }
+      slug: { type: string, maxLength: 100, unique: true, required: true }
+      description: { type: string }
+      keycloakRealm: { type: string, maxLength: 100 }
+      keycloakGroupId: { type: string, maxLength: 255 }
+      isActive: { type: boolean, default: true }
+
+  organizationUnit:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      parentId: { type: ref, ref: organizationUnit }
+      name: { type: string, maxLength: 255, required: true }
+      code: { type: string, maxLength: 50 }
+      description: { type: string }
+      managerId: { type: ref, ref: user }
+
+  organizationMembership:
+    extends: baseModel
+    fields:
+      userId: { type: ref, ref: user, required: true }
+      organizationId: { type: ref, ref: organization, required: true }
+      organizationUnitId: { type: ref, ref: organizationUnit }
+      isActive: { type: boolean, default: true }
+      joinedAt: { type: datetime }
+      invitedById: { type: ref, ref: user }
+
+  attachment:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      filePath: { type: string, required: true }
+      mimeType: { type: string, maxLength: 100 }
+      size: { type: number }
+      description: { type: string }
+      uploadedById: { type: ref, ref: user }
+      entityType: { type: string, maxLength: 100, required: true }
+      entityId: { type: string, required: true }
+
+  auditLog:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      actorId: { type: ref, ref: user }
+      action:
+        type: enum
+        values: [create, update, delete, restore, login, logout, export, approve, reject, clone]
+        required: true
+      entityType: { type: string, maxLength: 100, required: true }
+      entityId: { type: string, required: true }
+      diff: { type: object }
+      ipAddress: { type: string, maxLength: 45 }
+      userAgent: { type: string, maxLength: 255 }
+
+  riskMethodology:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      code: { type: string, maxLength: 50, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+      impactAggregation:
+        type: enum
+        values: [max, sum, weighted_sum, average, product]
+        default: max
+      scoringFormula:
+        type: enum
+        values: [likelihood_x_impact, likelihood_plus_impact, fmea_rpn, custom]
+        default: likelihood_x_impact
+      formulaExpression: { type: string, maxLength: 255 }
+
+  dimension:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      code: { type: string, maxLength: 50, required: true }
+      name: { type: string, maxLength: 100, required: true }
+      description: { type: string }
+      appliesToValuation: { type: boolean, default: true }
+      appliesToImpact: { type: boolean, default: true }
+      direction:
+        type: enum
+        values: [higher_is_worse, lower_is_worse]
+        default: higher_is_worse
+      defaultWeight: { type: number, default: 1.0 }
+      languageId: { type: ref, ref: language }
+
+  methodologyDimension:
+    extends: baseModel
+    fields:
+      methodologyId: { type: ref, ref: riskMethodology, required: true }
+      dimensionId: { type: ref, ref: dimension, required: true }
+      weight: { type: number, default: 1.0 }
+      isRequired: { type: boolean, default: true }
+      order: { type: number, default: 0 }
+
+  riskAnalysisProcess:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      methodologyId: { type: ref, ref: riskMethodology, required: true }
+      versionNumber: { type: number, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+      status:
+        type: enum
+        values: [draft, in_progress, under_review, approved, archived]
+        default: draft
+      clonedFromId: { type: ref, ref: riskAnalysisProcess }
+      clonedAt: { type: datetime }
+      highRiskLevel: { type: number, required: true }
+      mediumRiskLevel: { type: number, required: true }
+      isActive: { type: boolean, default: false }
+      activeFrom: { type: datetime }
+      activeTo: { type: datetime }
+      ownerId: { type: ref, ref: user }
+      approvedById: { type: ref, ref: user }
+      approvedAt: { type: datetime }
+
+  dimensionLevel:
+    extends: baseModel
+    fields:
+      dimensionId: { type: ref, ref: dimension, required: true }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      rank: { type: number, min: 0, required: true }
+      label: { type: string, maxLength: 100, required: true }
+      description: { type: string }
+      numericValue: { type: number }
+      riskCandidate: { type: boolean, default: false }
+      colorHex: { type: string, maxLength: 7 }
+      languageId: { type: ref, ref: language }
+
+  likelihood:
+    extends: baseModel
+    fields:
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      value: { type: number, required: true }
+      label: { type: string, maxLength: 100, required: true }
+      description: { type: string, maxLength: 255 }
+      languageId: { type: ref, ref: language }
+
+  riskMatrixCell:
+    extends: baseModel
+    fields:
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      likelihoodId: { type: ref, ref: likelihood, required: true }
+      impactRank: { type: number, required: true }
+      riskLevel: { type: number, required: true }
+      band:
+        type: enum
+        values: [low, medium, high, critical]
+        required: true
+      colorHex: { type: string, maxLength: 7 }
+
+  organizationSecurityInfo:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      activitiesSecurityInfo: { type: string }
+      recommendations: { type: string }
+      additionalInfo: { type: string }
+      isActive: { type: boolean, default: true }
+      activeFrom: { type: datetime }
+      activeTo: { type: datetime }
+
+  businessProcessCategory:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 100, required: true }
+      description: { type: string }
+
+  businessProcess:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      code: { type: string, maxLength: 50 }
+      description: { type: string }
+      categoryId: { type: ref, ref: businessProcessCategory }
+      parentId: { type: ref, ref: businessProcess }
+      ownerId: { type: ref, ref: user }
+      organizationUnitId: { type: ref, ref: organizationUnit }
+      isActive: { type: boolean, default: true }
+
+  assetCategory:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 100, required: true }
+      description: { type: string }
+
+  asset:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+      categoryId: { type: ref, ref: assetCategory }
+      ownerId: { type: ref, ref: user }
+      custodianId: { type: ref, ref: user }
+      organizationUnitId: { type: ref, ref: organizationUnit }
+      visibility:
+        type: enum
+        values: [public, private, restricted, confidential, sensitive]
+        default: public
+      isActive: { type: boolean, default: true }
+
+  businessProcessAsset:
+    extends: baseModel
+    fields:
+      businessProcessId: { type: ref, ref: businessProcess, required: true }
+      assetId: { type: ref, ref: asset, required: true }
+      role:
+        type: enum
+        values: [supports, produces, consumes, stores, processes]
+        default: supports
+
+  valuation:
+    extends: baseModel
+    fields:
+      subjectType: { type: string, maxLength: 50, required: true }
+      subjectId: { type: string, required: true }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      overallRank: { type: number }
+      overallValue: { type: number }
+      maxDimensionId: { type: ref, ref: dimension }
+      isCandidate: { type: boolean, default: false }
+      notes: { type: string }
+
+  valuationItem:
+    extends: baseModel
+    fields:
+      valuationId: { type: ref, ref: valuation, required: true }
+      dimensionId: { type: ref, ref: dimension, required: true }
+      levelId: { type: ref, ref: dimensionLevel, required: true }
+      rationale: { type: string }
+
+  riskAnalysisCandidate:
+    extends: baseModel
+    fields:
+      subjectType: { type: string, maxLength: 50, required: true }
+      subjectId: { type: string, required: true }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      reason: { type: string, required: true }
+      isCandidate: { type: boolean, default: true }
+
+  threatCategory:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 100, required: true }
+      description: { type: string }
+
+  threatOrigin:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      acronym: { type: string, maxLength: 10, required: true }
+      description: { type: string, maxLength: 255 }
+
+  threat:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string, required: true }
+
+  threatThreatOrigin:
+    extends: baseModel
+    fields:
+      threatId: { type: ref, ref: threat, required: true }
+      threatOriginId: { type: ref, ref: threatOrigin, required: true }
+
+  threatThreatCategory:
+    extends: baseModel
+    fields:
+      threatId: { type: ref, ref: threat, required: true }
+      threatCategoryId: { type: ref, ref: threatCategory, required: true }
+
+  vulnerabilityType:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      type: { type: string, maxLength: 255, required: true }
+
+  vulnerability:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string, required: true }
+      typeId: { type: ref, ref: vulnerabilityType }
+
+  threatVulnerability:
+    extends: baseModel
+    fields:
+      threatId: { type: ref, ref: threat, required: true }
+      vulnerabilityId: { type: ref, ref: vulnerability, required: true }
+
+  controlFramework:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 100, required: true }
+      version: { type: string, maxLength: 20 }
+      description: { type: string }
+
+  controlCategory:
+    extends: baseModel
+    fields:
+      frameworkId: { type: ref, ref: controlFramework, required: true }
+      code: { type: string, maxLength: 20, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+
+  control:
+    extends: baseModel
+    fields:
+      frameworkId: { type: ref, ref: controlFramework, required: true }
+      categoryId: { type: ref, ref: controlCategory }
+      code: { type: string, maxLength: 50, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string, required: true }
+      type:
+        type: enum
+        values: [preventive, detective, corrective, deterrent, compensating]
+        default: preventive
+
+  controlThreat:
+    extends: baseModel
+    fields:
+      controlId: { type: ref, ref: control, required: true }
+      threatId: { type: ref, ref: threat, required: true }
+
+  controlImplementation:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      controlId: { type: ref, ref: control, required: true }
+      assetId: { type: ref, ref: asset }
+      businessProcessId: { type: ref, ref: businessProcess }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      status:
+        type: enum
+        values: [planned, in_progress, implemented, verified, retired]
+        default: planned
+      effectiveness:
+        type: enum
+        values: [not_assessed, ineffective, partially_effective, effective, highly_effective]
+        default: not_assessed
+      responsibleId: { type: ref, ref: user }
+      implementedAt: { type: datetime }
+      lastReviewedAt: { type: datetime }
+      nextReviewDue: { type: datetime }
+      notes: { type: string }
+
+  riskCategory:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      code: { type: string, maxLength: 50, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+      parentId: { type: ref, ref: riskCategory }
+
+  riskStatus:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 50, required: true }
+      description: { type: string }
+      isTerminal: { type: boolean, default: false }
+      languageId: { type: ref, ref: language }
+
+  risk:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      reference: { type: string, maxLength: 50, required: true }
+      title: { type: string, maxLength: 255, required: true }
+      description: { type: string, required: true }
+      categoryId: { type: ref, ref: riskCategory }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      ownerId: { type: ref, ref: user }
+      businessProcessId: { type: ref, ref: businessProcess }
+      assetId: { type: ref, ref: asset }
+      threatId: { type: ref, ref: threat }
+      vulnerabilityId: { type: ref, ref: vulnerability }
+      currentLikelihood: { type: number }
+      currentImpact: { type: number }
+      currentRiskLevel: { type: number }
+      currentBand:
+        type: enum
+        values: [low, medium, high, critical]
+      statusId: { type: ref, ref: riskStatus }
+      identifiedAt: { type: datetime }
+      identifiedById: { type: ref, ref: user }
+      clonedFromId: { type: ref, ref: risk }
+
+  riskAssessment:
+    extends: baseModel
+    fields:
+      riskId: { type: ref, ref: risk, required: true }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      assessorId: { type: ref, ref: user }
+      assessmentType:
+        type: enum
+        values: [inherent, residual, target]
+        default: inherent
+      likelihoodId: { type: ref, ref: likelihood }
+      likelihoodValue: { type: number }
+      overallImpact: { type: number, required: true }
+      riskLevel: { type: number, required: true }
+      band:
+        type: enum
+        values: [low, medium, high, critical]
+      assessmentDate: { type: datetime }
+      comments: { type: string }
+
+  riskAssessmentControlImplementation:
+    extends: baseModel
+    fields:
+      riskAssessmentId: { type: ref, ref: riskAssessment, required: true }
+      controlImplementationId: { type: ref, ref: controlImplementation, required: true }
+
+  riskAssessmentImpact:
+    extends: baseModel
+    fields:
+      assessmentId: { type: ref, ref: riskAssessment, required: true }
+      dimensionId: { type: ref, ref: dimension, required: true }
+      levelId: { type: ref, ref: dimensionLevel, required: true }
+      value: { type: number }
+      rationale: { type: string }
+
+  riskTreatment:
+    extends: baseModel
+    fields:
+      riskId: { type: ref, ref: risk, required: true }
+      processId: { type: ref, ref: riskAnalysisProcess, required: true }
+      strategy:
+        type: enum
+        values: [accept, mitigate, transfer, avoid]
+        required: true
+      justification: { type: string, required: true }
+      approverId: { type: ref, ref: user }
+      approvedAt: { type: datetime }
+      status:
+        type: enum
+        values: [proposed, approved, rejected, executing, completed]
+        default: proposed
+      targetDate: { type: datetime }
+
+  actionStatus:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 50, required: true }
+      description: { type: string }
+      isTerminal: { type: boolean, default: false }
+
+  actionPlan:
+    extends: baseModel
+    fields:
+      treatmentId: { type: ref, ref: riskTreatment, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+      ownerId: { type: ref, ref: user }
+      startDate: { type: datetime }
+      dueDate: { type: datetime }
+      statusId: { type: ref, ref: actionStatus }
+
+  action:
+    extends: baseModel
+    fields:
+      planId: { type: ref, ref: actionPlan, required: true }
+      controlId: { type: ref, ref: control }
+      title: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+      assigneeId: { type: ref, ref: user }
+      dueDate: { type: datetime }
+      completedAt: { type: datetime }
+      statusId: { type: ref, ref: actionStatus }
+      progress: { type: number, default: 0, min: 0, max: 100 }
+
+  incidentSeverity:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 50, required: true }
+      rank: { type: number, required: true }
+      description: { type: string }
+
+  incidentStatus:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization }
+      name: { type: string, maxLength: 50, required: true }
+      description: { type: string }
+      isTerminal: { type: boolean, default: false }
+
+  incident:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      reference: { type: string, maxLength: 50, required: true }
+      title: { type: string, maxLength: 255, required: true }
+      description: { type: string, required: true }
+      occurredAt: { type: datetime, required: true }
+      detectedAt: { type: datetime }
+      reportedById: { type: ref, ref: user }
+      assigneeId: { type: ref, ref: user }
+      severityId: { type: ref, ref: incidentSeverity }
+      statusId: { type: ref, ref: incidentStatus }
+      rootCause: { type: string }
+      resolution: { type: string }
+      closedAt: { type: datetime }
+
+  incidentAsset:
+    extends: baseModel
+    fields:
+      incidentId: { type: ref, ref: incident, required: true }
+      assetId: { type: ref, ref: asset, required: true }
+
+  incidentBusinessProcess:
+    extends: baseModel
+    fields:
+      incidentId: { type: ref, ref: incident, required: true }
+      businessProcessId: { type: ref, ref: businessProcess, required: true }
+
+  incidentRisk:
+    extends: baseModel
+    fields:
+      incidentId: { type: ref, ref: incident, required: true }
+      riskId: { type: ref, ref: risk, required: true }
+
+  kri:
+    extends: baseModel
+    fields:
+      organizationId: { type: ref, ref: organization, required: true }
+      name: { type: string, maxLength: 255, required: true }
+      description: { type: string }
+      riskId: { type: ref, ref: risk }
+      businessProcessId: { type: ref, ref: businessProcess }
+      dimensionId: { type: ref, ref: dimension }
+      unit: { type: string, maxLength: 50 }
+      direction:
+        type: enum
+        values: [higher_is_worse, lower_is_worse]
+        default: higher_is_worse
+      thresholdGreen: { type: number }
+      thresholdAmber: { type: number }
+      thresholdRed: { type: number }
+      frequency:
+        type: enum
+        values: [daily, weekly, monthly, quarterly, yearly, on_demand]
+        default: monthly
+      ownerId: { type: ref, ref: user }
+      isActive: { type: boolean, default: true }
+
+  kriMeasurement:
+    extends: baseModel
+    fields:
+      kriId: { type: ref, ref: kri, required: true }
+      measuredAt: { type: datetime, required: true }
+      value: { type: number, required: true }
+      band:
+        type: enum
+        values: [green, amber, red]
+      measuredById: { type: ref, ref: user }
+      notes: { type: string }
+
+repositories:
+  languages:
+    entity: language
+  users:
+    entity: user
+  organizations:
+    entity: organization
+  organizationUnits:
+    entity: organizationUnit
+  organizationMemberships:
+    entity: organizationMembership
+  attachments:
+    entity: attachment
+  auditLogs:
+    entity: auditLog
+  riskMethodologies:
+    entity: riskMethodology
+  dimensions:
+    entity: dimension
+  methodologyDimensions:
+    entity: methodologyDimension
+  riskAnalysisProcesses:
+    entity: riskAnalysisProcess
+  dimensionLevels:
+    entity: dimensionLevel
+  likelihoods:
+    entity: likelihood
+  riskMatrixCells:
+    entity: riskMatrixCell
+  organizationSecurityInfos:
+    entity: organizationSecurityInfo
+  businessProcessCategories:
+    entity: businessProcessCategory
+  businessProcesses:
+    entity: businessProcess
+  assetCategories:
+    entity: assetCategory
+  assets:
+    entity: asset
+  businessProcessAssets:
+    entity: businessProcessAsset
+  valuations:
+    entity: valuation
+  valuationItems:
+    entity: valuationItem
+  riskAnalysisCandidates:
+    entity: riskAnalysisCandidate
+  threatCategories:
+    entity: threatCategory
+  threatOrigins:
+    entity: threatOrigin
+  threats:
+    entity: threat
+  threatThreatOrigins:
+    entity: threatThreatOrigin
+  threatThreatCategories:
+    entity: threatThreatCategory
+  vulnerabilityTypes:
+    entity: vulnerabilityType
+  vulnerabilities:
+    entity: vulnerability
+  threatVulnerabilities:
+    entity: threatVulnerability
+  controlFrameworks:
+    entity: controlFramework
+  controlCategories:
+    entity: controlCategory
+  controls:
+    entity: control
+  controlThreats:
+    entity: controlThreat
+  controlImplementations:
+    entity: controlImplementation
+  riskCategories:
+    entity: riskCategory
+  riskStatuses:
+    entity: riskStatus
+  risks:
+    entity: risk
+  riskAssessments:
+    entity: riskAssessment
+  riskAssessmentControlImplementations:
+    entity: riskAssessmentControlImplementation
+  riskAssessmentImpacts:
+    entity: riskAssessmentImpact
+  riskTreatments:
+    entity: riskTreatment
+  actionStatuses:
+    entity: actionStatus
+  actionPlans:
+    entity: actionPlan
+  actions:
+    entity: action
+  incidentSeverities:
+    entity: incidentSeverity
+  incidentStatuses:
+    entity: incidentStatus
+  incidents:
+    entity: incident
+  incidentAssets:
+    entity: incidentAsset
+  incidentBusinessProcesses:
+    entity: incidentBusinessProcess
+  incidentRisks:
+    entity: incidentRisk
+  kris:
+    entity: kri
+  kriMeasurements:
+    entity: kriMeasurement
+
+services:
+  languages:
+    repository: languages
+  users:
+    repository: users
+  organizations:
+    repository: organizations
+  organizationUnits:
+    repository: organizationUnits
+  organizationMemberships:
+    repository: organizationMemberships
+  attachments:
+    repository: attachments
+  auditLogs:
+    repository: auditLogs
+  riskMethodologies:
+    repository: riskMethodologies
+  dimensions:
+    repository: dimensions
+  methodologyDimensions:
+    repository: methodologyDimensions
+  riskAnalysisProcesses:
+    repository: riskAnalysisProcesses
+  dimensionLevels:
+    repository: dimensionLevels
+  likelihoods:
+    repository: likelihoods
+  riskMatrixCells:
+    repository: riskMatrixCells
+  organizationSecurityInfos:
+    repository: organizationSecurityInfos
+  businessProcessCategories:
+    repository: businessProcessCategories
+  businessProcesses:
+    repository: businessProcesses
+  assetCategories:
+    repository: assetCategories
+  assets:
+    repository: assets
+  businessProcessAssets:
+    repository: businessProcessAssets
+  valuations:
+    repository: valuations
+  valuationItems:
+    repository: valuationItems
+  riskAnalysisCandidates:
+    repository: riskAnalysisCandidates
+  threatCategories:
+    repository: threatCategories
+  threatOrigins:
+    repository: threatOrigins
+  threats:
+    repository: threats
+  threatThreatOrigins:
+    repository: threatThreatOrigins
+  threatThreatCategories:
+    repository: threatThreatCategories
+  vulnerabilityTypes:
+    repository: vulnerabilityTypes
+  vulnerabilities:
+    repository: vulnerabilities
+  threatVulnerabilities:
+    repository: threatVulnerabilities
+  controlFrameworks:
+    repository: controlFrameworks
+  controlCategories:
+    repository: controlCategories
+  controls:
+    repository: controls
+  controlThreats:
+    repository: controlThreats
+  controlImplementations:
+    repository: controlImplementations
+  riskCategories:
+    repository: riskCategories
+  riskStatuses:
+    repository: riskStatuses
+  risks:
+    repository: risks
+  riskAssessments:
+    repository: riskAssessments
+  riskAssessmentControlImplementations:
+    repository: riskAssessmentControlImplementations
+  riskAssessmentImpacts:
+    repository: riskAssessmentImpacts
+  riskTreatments:
+    repository: riskTreatments
+  actionStatuses:
+    repository: actionStatuses
+  actionPlans:
+    repository: actionPlans
+  actions:
+    repository: actions
+  incidentSeverities:
+    repository: incidentSeverities
+  incidentStatuses:
+    repository: incidentStatuses
+  incidents:
+    repository: incidents
+  incidentAssets:
+    repository: incidentAssets
+  incidentBusinessProcesses:
+    repository: incidentBusinessProcesses
+  incidentRisks:
+    repository: incidentRisks
+  kris:
+    repository: kris
+  kriMeasurements:
+    repository: kriMeasurements
+
+ui:
+  frontend:
+    pack: generic
+    output: ./trustrisk-ui
+    overwrite: always
+  config:
+    app_name: TrustRisk
+    require_auth: false
+    fonts:
+      ui: IBM Plex Sans
+      hand: IBM Plex Sans
+      mono: IBM Plex Mono
+      import_from_google: true
+      use_handwritten_titles: false
+    colors:
+      bg: "oklch(0.98 0.002 240)"
+      surface: "oklch(1 0 0)"
+      ink: "oklch(0.18 0.015 240)"
+      ink_dim: "oklch(0.45 0.008 240)"
+      ink_faint: "oklch(0.68 0.004 240)"
+      line: "oklch(0.88 0.004 240)"
+      line_strong: "oklch(0.72 0.008 240)"
+      fill: "oklch(0.95 0.004 240)"
+      fill_2: "oklch(0.92 0.006 240)"
+      accent: "oklch(0.50 0.18 25)"
+      accent_soft: "oklch(0.96 0.04 25)"
+      accent_ink: "oklch(0.35 0.18 25)"
+      danger: "oklch(0.50 0.20 25)"
+      danger_soft: "oklch(0.96 0.04 25)"
+      success: "oklch(0.58 0.14 150)"
+      success_soft: "oklch(0.94 0.05 150)"
+      warn: "oklch(0.68 0.16 60)"
+      warn_soft: "oklch(0.95 0.06 60)"
+      radius: "4px"
+
+  views:
+    login:
+      path: /login
+      component: auth-hero-split
+      props:
+        hero_content:
+          title: Welcome back.
+          signup_title: Get started.
+          subtitle: Manage risk with confidence.
+          quote: The platform that changed how we approach compliance.
+
+    dashboard:
+      path: /
+      component: list-card-grid
+      props:
+        collection: riskAnalysisProcess
+        field_roles:
+          title: name
+          content: description
+          status: status
+          date: createdAt
+
+    organizations:
+      path: /organizations
+      component: crud
+      props:
+        collection: organization
+        list: list-table
+        form: form-stacked
+        detail: detail-two-column
+        field_roles:
+          title: name
+          content: description
+
+    organization_units:
+      path: /organization-units
+      component: crud
+      props:
+        collection: organizationUnit
+        list: list-table
+        form: form-stacked
+        detail: detail-two-column
+        field_roles:
+          title: name
+          content: description
+
+    risk_processes:
+      path: /risk-analysis-processes
+      component: crud
+      props:
+        collection: riskAnalysisProcess
+        list: list-table
+        form: form-sectioned
+        detail: detail-tabbed
+        field_roles:
+          title: name
+          content: description
+          status: status
+          date: createdAt
+
+    risks:
+      path: /risks
+      component: crud
+      props:
+        collection: risk
+        list: list-table
+        form: form-stacked
+        detail: detail-two-column
+        field_roles:
+          title: title
+          content: description
+          status: currentBand
+          date: identifiedAt
+
+    risk_assessments:
+      path: /risk-assessments
+      component: crud
+      props:
+        collection: riskAssessment
+        list: list-table
+        field_roles:
+          status: assessmentType
+          date: assessmentDate
+
+    assets:
+      path: /assets
+      component: crud
+      props:
+        collection: asset
+        list: list-table
+        detail: detail-two-column
+        field_roles:
+          title: name
+          content: description
+          status: visibility
+
+    business_processes:
+      path: /business-processes
+      component: crud
+      props:
+        collection: businessProcess
+        list: list-table
+        field_roles:
+          title: name
+          content: description
+
+    threats:
+      path: /threats
+      component: crud
+      props:
+        collection: threat
+        list: list-table
+        field_roles:
+          title: name
+          content: description
+
+    vulnerabilities:
+      path: /vulnerabilities
+      component: crud
+      props:
+        collection: vulnerability
+        list: list-table
+        field_roles:
+          title: name
+          content: description
+
+    controls:
+      path: /controls
+      component: crud
+      props:
+        collection: control
+        list: list-grouped
+        field_roles:
+          title: name
+          content: description
+          status: type
+
+    control_implementations:
+      path: /control-implementations
+      component: crud
+      props:
+        collection: controlImplementation
+        list: list-table
+        field_roles:
+          status: status
+          date: implementedAt
+
+    incidents:
+      path: /incidents
+      component: crud
+      props:
+        collection: incident
+        list: list-table
+        detail: detail-two-column
+        field_roles:
+          title: title
+          content: description
+          date: occurredAt
+
+    kris:
+      path: /kris
+      component: crud
+      props:
+        collection: kri
+        list: list-table
+        field_roles:
+          title: name
+          content: description
+          status: direction
+
+    action_plans:
+      path: /action-plans
+      component: crud
+      props:
+        collection: actionPlan
+        list: list-table
+        field_roles:
+          title: name
+          content: description
+          date: dueDate
+
+    actions:
+      path: /actions
+      component: crud
+      props:
+        collection: action
+        list: list-table
+        field_roles:
+          title: title
+          content: description
+          date: dueDate
+
+    users:
+      path: /users
+      component: crud
+      props:
+        collection: user
+        list: list-table
+        field_roles:
+          title: name
+          date: lastLoginAt
+
+    methodologies:
+      path: /methodologies
+      component: crud
+      props:
+        collection: riskMethodology
+        list: list-table
+        field_roles:
+          title: name
+          content: description
+          status: scoringFormula
+
+    dimensions:
+      path: /dimensions
+      component: crud
+      props:
+        collection: dimension
+        list: list-table
+        field_roles:
+          title: name
+          content: description
+          status: direction
+
+controllers:
+  languages:
+    service: languages
+    base_path: /languages
+    access: "*"
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+    operations:
+      register: { access: public }
+      login: { access: public }
+  organizations:
+    service: organizations
+    base_path: /organizations
+    access: "*"
+  organizationUnits:
+    service: organizationUnits
+    base_path: /organization-units
+    access: "*"
+  organizationMemberships:
+    service: organizationMemberships
+    base_path: /organization-memberships
+    access: "*"
+  attachments:
+    service: attachments
+    base_path: /attachments
+    access: "*"
+  auditLogs:
+    service: auditLogs
+    base_path: /audit-logs
+    access: "*"
+  riskMethodologies:
+    service: riskMethodologies
+    base_path: /risk-methodologies
+    access: "*"
+  dimensions:
+    service: dimensions
+    base_path: /dimensions
+    access: "*"
+  methodologyDimensions:
+    service: methodologyDimensions
+    base_path: /methodology-dimensions
+    access: "*"
+  riskAnalysisProcesses:
+    service: riskAnalysisProcesses
+    base_path: /risk-analysis-processes
+    access: "*"
+  dimensionLevels:
+    service: dimensionLevels
+    base_path: /dimension-levels
+    access: "*"
+  likelihoods:
+    service: likelihoods
+    base_path: /likelihoods
+    access: "*"
+  riskMatrixCells:
+    service: riskMatrixCells
+    base_path: /risk-matrix-cells
+    access: "*"
+  organizationSecurityInfos:
+    service: organizationSecurityInfos
+    base_path: /organization-security-infos
+    access: "*"
+  businessProcessCategories:
+    service: businessProcessCategories
+    base_path: /business-process-categories
+    access: "*"
+  businessProcesses:
+    service: businessProcesses
+    base_path: /business-processes
+    access: "*"
+  assetCategories:
+    service: assetCategories
+    base_path: /asset-categories
+    access: "*"
+  assets:
+    service: assets
+    base_path: /assets
+    access: "*"
+  businessProcessAssets:
+    service: businessProcessAssets
+    base_path: /business-process-assets
+    access: "*"
+  valuations:
+    service: valuations
+    base_path: /valuations
+    access: "*"
+  valuationItems:
+    service: valuationItems
+    base_path: /valuation-items
+    access: "*"
+  riskAnalysisCandidates:
+    service: riskAnalysisCandidates
+    base_path: /risk-analysis-candidates
+    access: "*"
+  threatCategories:
+    service: threatCategories
+    base_path: /threat-categories
+    access: "*"
+  threatOrigins:
+    service: threatOrigins
+    base_path: /threat-origins
+    access: "*"
+  threats:
+    service: threats
+    base_path: /threats
+    access: "*"
+  threatThreatOrigins:
+    service: threatThreatOrigins
+    base_path: /threat-threat-origins
+    access: "*"
+  threatThreatCategories:
+    service: threatThreatCategories
+    base_path: /threat-threat-categories
+    access: "*"
+  vulnerabilityTypes:
+    service: vulnerabilityTypes
+    base_path: /vulnerability-types
+    access: "*"
+  vulnerabilities:
+    service: vulnerabilities
+    base_path: /vulnerabilities
+    access: "*"
+  threatVulnerabilities:
+    service: threatVulnerabilities
+    base_path: /threat-vulnerabilities
+    access: "*"
+  controlFrameworks:
+    service: controlFrameworks
+    base_path: /control-frameworks
+    access: "*"
+  controlCategories:
+    service: controlCategories
+    base_path: /control-categories
+    access: "*"
+  controls:
+    service: controls
+    base_path: /controls
+    access: "*"
+  controlThreats:
+    service: controlThreats
+    base_path: /control-threats
+    access: "*"
+  controlImplementations:
+    service: controlImplementations
+    base_path: /control-implementations
+    access: "*"
+  riskCategories:
+    service: riskCategories
+    base_path: /risk-categories
+    access: "*"
+  riskStatuses:
+    service: riskStatuses
+    base_path: /risk-statuses
+    access: "*"
+  risks:
+    service: risks
+    base_path: /risks
+    access: "*"
+  riskAssessments:
+    service: riskAssessments
+    base_path: /risk-assessments
+    access: "*"
+  riskAssessmentControlImplementations:
+    service: riskAssessmentControlImplementations
+    base_path: /risk-assessment-control-implementations
+    access: "*"
+  riskAssessmentImpacts:
+    service: riskAssessmentImpacts
+    base_path: /risk-assessment-impacts
+    access: "*"
+  riskTreatments:
+    service: riskTreatments
+    base_path: /risk-treatments
+    access: "*"
+  actionStatuses:
+    service: actionStatuses
+    base_path: /action-statuses
+    access: "*"
+  actionPlans:
+    service: actionPlans
+    base_path: /action-plans
+    access: "*"
+  actions:
+    service: actions
+    base_path: /actions
+    access: "*"
+  incidentSeverities:
+    service: incidentSeverities
+    base_path: /incident-severities
+    access: "*"
+  incidentStatuses:
+    service: incidentStatuses
+    base_path: /incident-statuses
+    access: "*"
+  incidents:
+    service: incidents
+    base_path: /incidents
+    access: "*"
+  incidentAssets:
+    service: incidentAssets
+    base_path: /incident-assets
+    access: "*"
+  incidentBusinessProcesses:
+    service: incidentBusinessProcesses
+    base_path: /incident-business-processes
+    access: "*"
+  incidentRisks:
+    service: incidentRisks
+    base_path: /incident-risks
+    access: "*"
+  kris:
+    service: kris
+    base_path: /kris
+    access: "*"
+  kriMeasurements:
+    service: kriMeasurements
+    base_path: /kri-measurements
+    access: "*"
+
+deploy:
+  runtime: docker
+  name: trustrisk
+  port: 8000
+
+  services:
+    keycloak:
+      image: quay.io/keycloak/keycloak:26.0
+      command: start-dev
+      environment:
+        - KC_DB=dev-mem
+        - KEYCLOAK_ADMIN=admin
+        - KEYCLOAK_ADMIN_PASSWORD=admin
+        - KC_HOSTNAME=http://localhost:8080
+        - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
+        - KC_HOSTNAME_STRICT=false
+      ports:
+        - "8080:8080"
