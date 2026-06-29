@@ -9,6 +9,26 @@ from .base import BaseRepository
 from .bindings import resolve
 
 
+_NON_NULL_BSON_TYPES = [
+    "double",
+    "string",
+    "object",
+    "array",
+    "binData",
+    "objectId",
+    "bool",
+    "date",
+    "regex",
+    "javascript",
+    "int",
+    "timestamp",
+    "long",
+    "decimal",
+    "minKey",
+    "maxKey",
+]
+
+
 @dataclass(frozen=True)
 class MongoRepositoryConfig:
     uri: str
@@ -46,7 +66,7 @@ class MongoRepository(BaseRepository):
         await self.collection(collection_name).create_index(
             field_name,
             unique=True,
-            partialFilterExpression={field_name: {"$exists": True, "$ne": None}},
+            partialFilterExpression={field_name: {"$type": _NON_NULL_BSON_TYPES}},
         )
 
     async def list(self, collection_name: str) -> list[dict[str, Any]]:
@@ -73,6 +93,8 @@ class MongoRepository(BaseRepository):
     async def upsert_by(
         self, collection_name: str, key_field: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
+        if payload.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
         id_field = self._id_fields.get(collection_name, "id")
         on_insert = {id_field: payload[id_field]} if id_field in payload else {}
         update_fields = {k: v for k, v in payload.items() if k != id_field}

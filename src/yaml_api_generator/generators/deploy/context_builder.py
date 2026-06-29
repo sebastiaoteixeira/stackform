@@ -1,11 +1,10 @@
 from collections import Counter
-from secrets import token_urlsafe
 
 from sqlalchemy.engine import make_url
 
 from ...ir import IRDocument, IRPostgres
 from ..backend.builders import build_context
-from ..backend.builders.settings_builder import build_settings_fields
+from ..backend.builders.settings_builder import build_settings_fields, generated_secret_values
 from .context import DeployContext, DeployDatastore, DockerDeployContext, SystemdDeployContext
 
 
@@ -22,7 +21,7 @@ def build_deploy_context(
     name = deploy.name or "app"
     mongo_db = ir.mongo.database
     secret_fields = [f for f in build_settings_fields(build_context(ir)) if f.secret]
-    dev_defaults = {f.env_name: token_urlsafe(32) for f in secret_fields if f.generated}
+    dev_defaults = generated_secret_values(secret_fields)
     env_vars = {
         var: dev_defaults.get(var, "")
         for var in dict.fromkeys([*deploy.env_vars, *(f.env_name for f in secret_fields)])

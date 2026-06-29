@@ -3,6 +3,26 @@ from pymongo import AsyncMongoClient
 from settings import settings
 
 
+_NON_NULL_BSON_TYPES = [
+    "double",
+    "string",
+    "object",
+    "array",
+    "binData",
+    "objectId",
+    "bool",
+    "date",
+    "regex",
+    "javascript",
+    "int",
+    "timestamp",
+    "long",
+    "decimal",
+    "minKey",
+    "maxKey",
+]
+
+
 _client: AsyncMongoClient | None = None
 _db = None
 
@@ -34,5 +54,5 @@ async def initialize_indexes(unique_indexes: dict[str, list[str]]) -> None:
             await db[collection_name].create_index(
                 field_name,
                 unique=True,
-                partialFilterExpression={field_name: {"$exists": True, "$ne": None}},
+                partialFilterExpression={field_name: {"$type": _NON_NULL_BSON_TYPES}},
             )

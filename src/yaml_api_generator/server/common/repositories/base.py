@@ -49,6 +49,8 @@ class BaseRepository(ABC):
         Backends with a native atomic upsert override this; the fallback resolves
         the existing record through the standard list/update/create operations.
         """
+        if payload.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
         existing = next(
             (
                 d

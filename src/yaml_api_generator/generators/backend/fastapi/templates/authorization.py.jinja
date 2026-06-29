@@ -1,14 +1,26 @@
 from typing import Any
+from uuid import UUID
 
 from fastapi import HTTPException
 
+try:
+    from bson import ObjectId
+
+    _IDISH = (UUID, ObjectId)
+except ImportError:
+    _IDISH = (UUID,)
+
 
 def _values_equal(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left is right
     if left == right:
         return True
-    if left is None or right is None:
-        return False
-    return str(left) == str(right)
+    if isinstance(left, _IDISH) or isinstance(right, _IDISH):
+        return str(left) == str(right)
+    return False
 
 
 ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | role_hierarchies_py }}

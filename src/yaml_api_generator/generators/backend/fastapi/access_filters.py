@@ -38,11 +38,21 @@ def _safe_nested(root: str, path: tuple[str, ...]) -> str:
     return f'{root}{chain}.get("{path[-1]}")'
 
 
-def _operand_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
+def _operand_to_python(
+    expr: WhenExpr,
+    record_roots: frozenset[str],
+    wrapper_roots: frozenset[str],
+) -> str:
     if isinstance(expr, StringLiteral):
         return f'"{expr.value}"'
     if isinstance(expr, FieldRef):
-        if expr.root in request_roots:
+        if expr.root in record_roots:
+            if not expr.path:
+                return expr.root
+            if len(expr.path) == 1:
+                return f'{expr.root}.get("{expr.path[0]}")'
+            return _safe_nested(expr.root, expr.path)
+        if expr.root in wrapper_roots:
             return _safe_nested(expr.root, expr.path) if expr.path else expr.root
         if not expr.path:
             return f'{expr.root}.get("sub")'
@@ -55,9 +65,13 @@ def _operand_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
     return "None"
 
 
-def _when_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
-    operand = lambda e: _operand_to_python(e, request_roots)
-    recurse = lambda e: _when_to_python(e, request_roots)
+def _when_to_python(
+    expr: WhenExpr,
+    record_roots: frozenset[str],
+    wrapper_roots: frozenset[str],
+) -> str:
+    operand = lambda e: _operand_to_python(e, record_roots, wrapper_roots)
+    recurse = lambda e: _when_to_python(e, record_roots, wrapper_roots)
     if isinstance(expr, Equals):
         return f"_values_equal({operand(expr.left)}, {operand(expr.right)})"
     if isinstance(expr, NotEquals):
@@ -77,12 +91,13 @@ def _when_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
 
 def rule_to_python(rule: AccessRuleDescriptor) -> str:
     """Compile a single access rule to an inline Python boolean expression."""
-    request_roots = frozenset(sym.name for sym in rule.request_symbols)
+    record_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_record_shaped)
+    wrapper_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_whole)
     conditions: list[str] = []
     if rule.required_role is not None:
         conditions.append(f'_principal_has_role(principal, "{rule.required_role}")')
     if rule.when is not None:
-        conditions.append(_when_to_python(rule.when, request_roots))
+        conditions.append(_when_to_python(rule.when, record_roots, wrapper_roots))
     return " and ".join(conditions) if conditions else "True"
 
 
@@ -112,7 +127,7 @@ def request_symbol_binding(symbol) -> str:
     if symbol.is_whole:
         parts = ", ".join(f'"{part}": {source}' for part, source in _PART_SOURCE.items())
         return f"{symbol.name} = {{{parts}}}"
-    return f"{symbol.name} = {_PART_SOURCE[symbol.part]}"
+    return f"{symbol.name} = {_PART_SOURCE[symbol.effective_part]}"
 
 
 def needs_request_rule(rule: AccessRuleDescriptor) -> bool:

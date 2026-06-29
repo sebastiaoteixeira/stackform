@@ -3,8 +3,10 @@ from yaml_api_generator.generators.backend.drf.generator import DRFGenerator
 from yaml_api_generator.generators.backend.raw.generator import RawASGIGenerator
 from yaml_api_generator.generators.backend.fastapi.type_mapper import python_type
 from yaml_api_generator.generators.backend.drf.type_mapper import drf_field
-from yaml_api_generator.generators.backend.compile_context import FieldDescriptor
+from yaml_api_generator.generators.backend.compile_context import AppConfig, AuthConfig, CompileContext, FieldDescriptor
+from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.generators.backend.context_builder import build_context
+from yaml_api_generator.ir.api import IROIDCProvider, IRSAMLProvider
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 from tests.conftest import VALID_DIR
 
@@ -393,3 +395,54 @@ def test_public_only_routes_omit_dead_auth_imports(tmp_path):
     posts_src = (out2 / "routes" / "posts.py").read_text()
     assert "require_principal" not in posts_src
     assert "_principal_has_role" not in posts_src
+
+
+def test_build_settings_fields_skips_saml_provider_client_secret():
+    oidc = IROIDCProvider(name="keycloak", client_id="app", client_secret="s3cr3t", trust="app")
+    saml = IRSAMLProvider(name="corp-saml", trust="app")
+    auth = AuthConfig(
+        enabled=True,
+        identity_collections=[],
+        has_password_auth=False,
+        has_api_key_auth=False,
+        has_oidc_auth=True,
+        has_app_oidc_auth=True,
+        providers={"keycloak": oidc, "corp-saml": saml},
+    )
+    ctx = CompileContext(
+        app=AppConfig(base_path="/api", api_version="v1"),
+        models=[],
+        routes=[],
+        auth=auth,
+        datastores={},
+        collections={},
+    )
+    fields = build_settings_fields(ctx)
+    env_names = {f.env_name for f in fields}
+    assert "KEYCLOAK_CLIENT_SECRET" in env_names
+    assert not any("SAML" in name and "SECRET" in name for name in env_names)
+
+
+def test_fastapi_emits_env_files(tmp_path):
+    ctx_auth = _ctx_from_fixture("auth-password.yaml")
+    gen = FastAPIGenerator()
+    out_auth = tmp_path / "auth"
+    gen.generate(ctx_auth, out_auth)
+    env_content = (out_auth / ".env").read_text()
+    assert (out_auth / ".env").exists()
+    assert "JWT_SECRET=" in env_content
+    jwt_line = next(l for l in env_content.splitlines() if l.startswith("JWT_SECRET="))
+    assert len(jwt_line) > len("JWT_SECRET=")
+
+    ctx_basic = _ctx_from_fixture("basic-crud.yaml")
+    gen2 = FastAPIGenerator()
+    out_basic = tmp_path / "basic"
+    gen2.generate(ctx_basic, out_basic)
+    basic_env = (out_basic / ".env").read_text()
+    assert (out_basic / ".env").exists()
+    assert "JWT_SECRET" not in basic_env
+
+    example = (out_auth / ".env.example").read_text()
+    assert (out_auth / ".env.example").exists()
+    jwt_example = next(l for l in example.splitlines() if l.startswith("JWT_SECRET="))
+    assert jwt_example == "JWT_SECRET=<jwt_secret>"

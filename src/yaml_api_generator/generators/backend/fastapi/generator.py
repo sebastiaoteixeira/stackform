@@ -3,7 +3,7 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
+from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields, generated_secret_values
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
@@ -62,6 +62,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         collections_by_name = group_by_collection(context)
 
         self._render_settings(env, context, output_dir)
+        self._render_env(env, context, output_dir)
         self._render_app(env, context, output_dir)
         self._render_models(env, context, collections_by_name, output_dir)
         self._render_dtos(env, context, output_dir)
@@ -83,6 +84,23 @@ class FastAPIGenerator(TemplateBasedGenerator):
         template = env.get_template("settings.py.jinja")
         content = template.render(settings_fields=build_settings_fields(context))
         (output_dir / "settings.py").write_text(content)
+
+    def _render_env(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        fields = build_settings_fields(context)
+        secret_values = generated_secret_values(fields)
+        env_values = {
+            f.env_name: secret_values.get(f.env_name, f.default or "")
+            for f in fields
+        }
+        example_values = {
+            f.env_name: f"<{f.env_name.lower()}>" if f.secret else (f.default or "")
+            for f in fields
+        }
+        template = env.get_template("env.jinja")
+        (output_dir / ".env").write_text(template.render(settings_fields=fields, values=env_values))
+        (output_dir / ".env.example").write_text(template.render(settings_fields=fields, values=example_values))
 
     def _render_app(
         self, env: Environment, context: CompileContext, output_dir: Path

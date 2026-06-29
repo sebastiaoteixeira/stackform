@@ -74,6 +74,8 @@ class SQLRepository(BaseRepository):
     ) -> dict[str, Any]:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+        if payload.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
         table = self._table(collection_name)
         values = self._known_columns(collection_name, payload)
         statement = pg_insert(table).values(**values)

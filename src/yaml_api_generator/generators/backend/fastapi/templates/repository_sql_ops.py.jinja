@@ -60,6 +60,8 @@ class SQLRepositoryBase:
     async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+        if data.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
         values = dict(self._known(data))
         if self._generate_id is not None:
             values.setdefault(self.ID_FIELD, self._generate_id())
