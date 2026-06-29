@@ -138,11 +138,13 @@ controllers:
         access:
           - given:
               caller: identity:user
+              document: orgs
             when: caller.sub equals document.ownerId
       delete:
         access:
           - given:
               caller: identity:user
+              document: orgs
             when: caller.sub equals document.ownerId
 
   resources:
@@ -161,6 +163,7 @@ controllers:
         access:
           - given:
               caller: identity:user
+              document: resources
             when: caller.sub equals document.ownerId
 ```
 
@@ -196,11 +199,14 @@ payload omits `tier`. Note that tier matching is exact: there is no inheritance,
 note above on hierarchy).
 
 **Ownership rules see only the route's own record.** A rule with `given.caller:
-identity:user` plus `when: caller.sub equals document.ownerId` reads `document` as the
-record fetched for that route (the org for `PATCH /api/v1/orgs/{id}`, the resource for
-`DELETE /api/v1/resources/{id}`). `document` is a built-in symbol auto-bound to that
-fetched record; `caller` is a custom symbol bound to the authenticated principal, and
-`caller.sub` is its id. There is no cross-collection lookup: an ownership rule on the
+identity:user` plus `given.document: orgs` (or `document: resources`) and
+`when: caller.sub equals document.ownerId` reads `document` as the record fetched for
+that route (the org for `PATCH /api/v1/orgs/{id}`, the resource for
+`DELETE /api/v1/resources/{id}`). There are no built-in roots: both `caller` and
+`document` are symbol names this spec declares in `given:` -- `caller` bound to the
+authenticated principal (so `caller.sub` is its id) and `document` bound to the route's
+collection. The names are arbitrary; an undeclared root would abort generation with
+`WHEN_UNBOUND_SYMBOL`. There is no cross-collection lookup: an ownership rule on the
 `orgs` controller cannot fetch a separate `memberships` document. That is why this spec
 stores ownership directly on each record (`org.ownerId`, `resource.ownerId`) instead of
 using a join entity. The record is fetched before the rule runs, so a missing id

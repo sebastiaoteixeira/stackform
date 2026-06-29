@@ -7,7 +7,7 @@ description: Attribute-based access control with given/when/then -- compare the 
 
 ABAC is access control based on attributes of the request, the authenticated user (the *principal*), and the document being accessed.
 
-A key concept used throughout ABAC rules is `principal.sub`. The `sub` (short for "subject") is the authenticated user's primary-key value -- their `id`. It is available on every authenticated request and is the main way to compare "who is making this request" against "who owns this document."
+A key concept used throughout ABAC rules is `principal.sub`. The `sub` (short for "subject") is the authenticated user's primary-key value -- their `id`. There are no built-in root symbols: `principal` is just the conventional name for the identity you bind in the rule's `given:` block, and `.sub` is the main way to compare "who is making this request" against "who owns this document." Every root a `when:` references must be declared in `given:`, or generation aborts with `WHEN_UNBOUND_SYMBOL`.
 
 > **Enforcement status**
 >

@@ -123,17 +123,21 @@ The only operands are field references and single-quoted string literals.
 
 ### Field references
 
-A field reference is a dotted path rooted at a bound symbol.
+A field reference is a dotted path rooted at a symbol bound in the rule's `given:`.
+The paths below assume `given: { principal: identity:user, document: <collection> }`;
+the names are the author's choice.
 
 | Path | Description |
 |------|-------------|
-| `principal` | The principal's subject id (the `sub` claim), as a string. A bare `principal` resolves to this. |
-| `principal.sub` | Same value as bare `principal` written explicitly. |
-| `principal.record.fieldName` | A field on the principal's stored record (the identity document, with `_auth` and `password` removed). |
-| `document.fieldName` | A field on the document loaded for this request (the record being read or written). |
+| `principal` | The bound identity's subject id (the `sub` claim), as a string. A bare reference to the symbol resolves to this. |
+| `principal.sub` | Same value as the bare symbol written explicitly. |
+| `principal.record.fieldName` | A field on the identity's stored record (the identity document, with `_auth` and `password` removed). |
+| `document.fieldName` | A field on the document the symbol is bound to (the record being read or written). |
 
-The built-in roots `principal` and `document` are bound automatically. If you declare
-custom symbol names with `given:` on the access rule, reference those names instead.
+There are no built-in roots. Every root referenced here MUST be declared in `given:`,
+or generation aborts with `WHEN_UNBOUND_SYMBOL`. `principal` and `document` are
+conventional names, not keywords -- name your symbols whatever you like in `given:`
+and reference those names.
 
 ### String literals
 

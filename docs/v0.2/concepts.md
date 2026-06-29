@@ -113,7 +113,7 @@ Controllers declare access with the `access:` keyword, either on the whole contr
 - `<entity>:*`: any member of that identity collection.
 - `<entity>:<role>`: a principal of that collection holding that exact role.
 
-Ownership and conditional access use `when` rules with a `given` document binding, evaluated after the target record is fetched (a missing record returns 404 before any ownership check). `when` operators are the words `equals`, `not equals`, `and`, `or`, `not`, `in`, and `not in`; operands are field references and single-quoted strings. Stored fields are read through `principal.record.<field>`.
+Ownership and conditional access use `when` rules. Every root the `when` references must be declared in the rule's `given` block (binding either an identity or a document/collection); an undeclared root is a build-time error (`WHEN_UNBOUND_SYMBOL`). `principal` and `document` are conventional names, not built-in roots. Document-bound rules are evaluated after the target record is fetched (a missing record returns 404 before any ownership check). `when` operators are the words `equals`, `not equals`, `and`, `or`, `not`, `in`, and `not in`; operands are field references and single-quoted strings. Stored identity fields are read through `<name>.record.<field>`.
 
 > **Enforcement status**
 >
@@ -128,7 +128,7 @@ Ownership and conditional access use `when` rules with a `given` document bindin
 
 ## Glossary
 
-- Principal: the authenticated identity making a request. Holds the subject id (`sub`), the identity collection name, the database record (`record`), and any roles read from the identity's role field.
+- Principal: the authenticated identity making a request. Holds the subject id (`sub`), the identity collection name (`identity_collection`), the database record (`record`), and any roles read from the identity's role field (`roles`). In a `when:` rule it is bound under an author-chosen name in `given:` (conventionally `principal`); there is no built-in `principal` root.
 - JWT: JSON Web Token. A signed string carrying only `sub` and `identity_collection` (plus `iat`/`exp`); the record and roles are loaded from MongoDB on every request.
 - Repository: the data access layer that maps an entity to a MongoDB collection and selects its CRUD operations.
 - Service: the business logic layer between controllers and repositories. By default it passes through to the repository; custom handlers go here.
