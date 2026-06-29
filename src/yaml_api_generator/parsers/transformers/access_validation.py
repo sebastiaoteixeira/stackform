@@ -6,10 +6,9 @@ key's shape, so several security-relevant mistakes pass schema validation yet
 silently mis-authorize at runtime. These checks run on the pre-desugar spec,
 mirroring ``validate_spec_constraints``, and reject the spec with coded errors:
 
-- WHEN_UNBOUND_SYMBOL: a ``when`` field reference whose root is neither bound in
-  the rule's ``given`` symbols nor a built-in root (principal/document). An
-  unbound root (e.g. ``ghost.sub``) evaluates against a missing symbol and
-  silently neuters the rule.
+- WHEN_UNBOUND_SYMBOL: a ``when`` field reference whose root is not bound in
+  the rule's ``given`` symbols. An unbound root (e.g. ``ghost.sub``) evaluates
+  against a missing symbol and silently neuters the rule.
 - ACCESS_RULE_INVALID: covers the remaining contradictions and ambiguities --
   a role not declared in the entity's ``roles.values``; a document-dependent
   ``when`` on a CREATE operation (pre-fetch authorization short-circuits
@@ -21,16 +20,24 @@ mirroring ``validate_spec_constraints``, and reject the spec with coded errors:
 from typing import Any
 
 from yaml_api_generator.ir.when import collect_roots, needs_document
-from yaml_api_generator.parsers.when_parser import parse_when_list
+from yaml_api_generator.parsers.when_parser import parse_request_binding, parse_when_list
 from yaml_api_generator.parsers.yaml_parser import ConfigError
-
-# Roots that the authorizer always injects into the symbol table regardless of
-# the rule's declared ``given`` bindings (see authorization._evaluate_rule).
-_BUILTIN_ROOTS = frozenset({"principal", "document"})
 
 # Operations whose route is a POST create: pre-fetch authorization runs with no
 # document, so any document-dependent rule on them is short-circuited to allow.
 _CREATE_OPERATIONS = frozenset({"create", "register"})
+
+# Operations whose request carries no body: binding request.body / request:<type>
+# on them can never resolve.
+_BODILESS_OPERATIONS = frozenset({"get", "list", "delete"})
+
+_PRIMITIVE_TYPES = frozenset({"string", "number", "boolean", "datetime"})
+
+
+def _is_request_value(value: Any) -> bool:
+    return isinstance(value, str) and (
+        value == "request" or value.startswith(("request.", "request:"))
+    )
 
 
 def _invalid(message: str, path: str, hint: str) -> ConfigError:
@@ -127,14 +134,14 @@ def _check_when(
         errors.extend(when_errors)
         return None
 
-    bound = set((rule.get("given") or {}).keys()) | _BUILTIN_ROOTS
+    bound = set((rule.get("given") or {}).keys())
     for root in collect_roots(expr):
         if root not in bound:
             errors.append(ConfigError(
                 code="WHEN_UNBOUND_SYMBOL",
                 message=f"when references unbound symbol '{root}'",
                 path=f"{path}.when",
-                hint=f"Bind '{root}' in this rule's 'given' or use principal/document",
+                hint=f"Bind '{root}' in this rule's 'given'",
             ))
 
     if is_create and (needs_document(expr) or rule.get("document_symbols")):
@@ -146,12 +153,50 @@ def _check_when(
     return expr
 
 
+def _check_request_bindings(
+    given: dict[str, Any],
+    path: str,
+    op_name: str | None,
+    known_types: frozenset[str],
+    errors: list[ConfigError],
+) -> None:
+    for symbol_name, value in given.items():
+        if not _is_request_value(value):
+            continue
+        binding_path = f"{path}.given.{symbol_name}"
+        parsed, parse_errors = parse_request_binding(value, binding_path)
+        errors.extend(parse_errors)
+        if parsed is None:
+            continue
+        part, type_name, _ = parsed
+        binds_body = part is None or part == "body"
+        if binds_body and op_name in _BODILESS_OPERATIONS:
+            errors.append(ConfigError(
+                code="REQUEST_BODY_ON_BODILESS_OP",
+                message=f"request body bound on bodiless operation '{op_name}'",
+                path=binding_path,
+                hint="body bindings apply only to create/update/replace",
+            ))
+        if (
+            type_name is not None
+            and type_name not in _PRIMITIVE_TYPES
+            and type_name not in known_types
+        ):
+            errors.append(ConfigError(
+                code="REQUEST_TYPE_NOT_FOUND",
+                message=f"request type '{type_name}' is not a primitive, entity or dto",
+                path=binding_path,
+            ))
+
+
 def _check_rule_list(
     access: list[Any],
     path: str,
     declared_roles: dict[str, frozenset[str]],
     auth_entities: set[str],
     is_create: bool,
+    op_name: str | None,
+    known_types: frozenset[str],
     errors: list[ConfigError],
 ) -> None:
     if access == []:
@@ -171,8 +216,14 @@ def _check_rule_list(
             _track_contradiction(item, "allow", item_path, seen, errors)
         elif isinstance(item, dict):
             given = item.get("given") or {}
+            if isinstance(given, dict):
+                _check_request_bindings(
+                    given, item_path, op_name, known_types, errors
+                )
             given_doc = isinstance(given, dict) and any(
-                isinstance(value, str) and not value.startswith("identity:")
+                isinstance(value, str)
+                and not value.startswith("identity:")
+                and not _is_request_value(value)
                 for value in given.values()
             )
             expr = _check_when(
@@ -207,13 +258,16 @@ def _check_access(
     declared_roles: dict[str, frozenset[str]],
     auth_entities: set[str],
     is_create: bool,
+    op_name: str | None,
+    known_types: frozenset[str],
     errors: list[ConfigError],
 ) -> None:
     if isinstance(access, str):
         _check_role_string(access, path, declared_roles, auth_entities, errors)
     elif isinstance(access, list):
         _check_rule_list(
-            access, path, declared_roles, auth_entities, is_create, errors
+            access, path, declared_roles, auth_entities,
+            is_create, op_name, known_types, errors,
         )
 
 
@@ -222,6 +276,9 @@ def validate_spec_access(spec: dict[str, Any]) -> list[ConfigError]:
     errors: list[ConfigError] = []
     declared_roles = _declared_roles(spec)
     auth_entities = _auth_entities(spec)
+    known_types = frozenset(
+        (spec.get("entities") or {}).keys() | (spec.get("dto") or {}).keys()
+    )
 
     for controller_name, controller in (spec.get("controllers") or {}).items():
         if not isinstance(controller, dict):
@@ -230,7 +287,7 @@ def validate_spec_access(spec: dict[str, Any]) -> list[ConfigError]:
         if "access" in controller:
             _check_access(
                 controller["access"], f"{base}.access",
-                declared_roles, auth_entities, False, errors,
+                declared_roles, auth_entities, False, None, known_types, errors,
             )
         for section in ("operations", "routes"):
             for op_name, op in (controller.get(section) or {}).items():
@@ -239,6 +296,6 @@ def validate_spec_access(spec: dict[str, Any]) -> list[ConfigError]:
                 _check_access(
                     op["access"], f"{base}.{section}.{op_name}.access",
                     declared_roles, auth_entities,
-                    op_name in _CREATE_OPERATIONS, errors,
+                    op_name in _CREATE_OPERATIONS, op_name, known_types, errors,
                 )
     return errors

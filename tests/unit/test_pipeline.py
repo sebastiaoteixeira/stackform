@@ -1,6 +1,6 @@
 import pytest
 
-from yaml_api_generator.ir import IRDocumentBinding, IRProviderBinding
+from yaml_api_generator.ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
 from yaml_api_generator.server.common.request_context import RequestContext
 from yaml_api_generator.server.common.pipeline import Pipeline
 from yaml_api_generator.server.common.pipeline_builder import PipelineBuilder
@@ -327,6 +327,7 @@ async def test_builder_update_with_document_rule_allows_matching_principal():
             RuntimeAccessRule(
                 principal="identity:users",
                 when=when_expr,
+                identity_symbols={"principal": IRIdentityBinding(entity_name="users", collection_name="users")},
                 document_symbols={"document": IRDocumentBinding(collection="items")},
                 effect="allow",
             ),

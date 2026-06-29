@@ -10,7 +10,7 @@ from ..server_context import (
     RuntimeIdentityDescriptor,
 )
 from ..when_eval import evaluate_when_with_symbols
-from yaml_api_generator.ir.when import collect_roots, needs_document as _when_needs_document
+from yaml_api_generator.ir.when import needs_document as _when_needs_document
 
 
 class UnauthorizedError(ValueError):
@@ -132,24 +132,48 @@ def _resolve_document_symbols(
     return symbols
 
 
+_REQUEST_PARTS = ("body", "path", "query", "header", "cookie")
+
+
+def _request_object(ctx: RequestContext) -> dict[str, object | None]:
+    return {
+        "body": ctx.body,
+        "path": ctx.url_params,
+        "query": ctx.query,
+        "header": ctx.headers,
+        "cookie": ctx.cookies,
+    }
+
+
+def _resolve_request_symbols(
+    rule: RuntimeAccessRule,
+    ctx: RequestContext,
+) -> dict[str, object | None]:
+    request_object = _request_object(ctx)
+    symbols: dict[str, object | None] = {}
+    for symbol_name, binding in rule.request_symbols.items():
+        symbols[symbol_name] = (
+            request_object.get(binding.part)
+            if binding.part in _REQUEST_PARTS
+            else request_object
+        )
+    return symbols
+
+
 def _evaluate_rule(
     rule: RuntimeAccessRule,
     principal: dict | None,
     document: dict | None,
+    ctx: RequestContext,
 ) -> bool:
     if rule.when is None:
         return True
 
-    symbols: dict[str, dict | None] = {}
-    symbols.update(_resolve_identity_symbols(rule, principal))
-    symbols.update(_resolve_document_symbols(rule, document))
-
-    roots_in_when = collect_roots(rule.when)
-    if "principal" in roots_in_when and "principal" not in symbols:
-        symbols["principal"] = principal
-    if "document" in roots_in_when and "document" not in symbols:
-        symbols["document"] = document
-
+    symbols: dict[str, object | None] = {
+        **_resolve_identity_symbols(rule, principal),
+        **_resolve_document_symbols(rule, document),
+        **_resolve_request_symbols(rule, ctx),
+    }
     return evaluate_when_with_symbols(rule.when, symbols)
 
 
@@ -171,7 +195,7 @@ def AuthorizeRouteStep(
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
-            matched = _evaluate_rule(rule, ctx.principal, None)
+            matched = _evaluate_rule(rule, ctx.principal, None, ctx)
             if matched:
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
@@ -196,7 +220,7 @@ def PostFetchAuthorizeStep(
                 continue
 
             doc = document if _rule_needs_document(rule) else None
-            matched = _evaluate_rule(rule, ctx.principal, doc)
+            matched = _evaluate_rule(rule, ctx.principal, doc, ctx)
             if matched:
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")

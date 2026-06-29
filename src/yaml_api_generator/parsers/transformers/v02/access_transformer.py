@@ -5,9 +5,18 @@ Parses access control rules from YAML into IRAccessRule objects.
 
 from typing import Any
 
-from yaml_api_generator.ir import IRAccessRule, IRDocumentBinding, IRIdentityBinding
+from yaml_api_generator.ir import (
+    IRAccessRule,
+    IRDocumentBinding,
+    IRIdentityBinding,
+    IRRequestBinding,
+)
 from yaml_api_generator.parsers.yaml_parser import ConfigError
-from yaml_api_generator.parsers.when_parser import parse_document_binding, parse_when_list
+from yaml_api_generator.parsers.when_parser import (
+    parse_document_binding,
+    parse_request_binding,
+    parse_when_list,
+)
 from yaml_api_generator.parsers.transformers.principal_resolver import resolve_principal
 
 
@@ -99,6 +108,7 @@ class AccessTransformer:
 
         identity_symbols: dict[str, IRIdentityBinding] = {}
         document_symbols: dict[str, IRDocumentBinding] = {}
+        request_symbols: dict[str, IRRequestBinding] = {}
 
         if isinstance(given, dict):
             for symbol_name, symbol_value in given.items():
@@ -119,6 +129,19 @@ class AccessTransformer:
                         identity_symbols[symbol_name] = IRIdentityBinding(
                             entity_name=entity_name,
                             collection_name=collection,
+                        )
+                elif symbol_value == "request" or symbol_value.startswith(
+                    ("request.", "request:")
+                ):
+                    parsed_req, req_errors = parse_request_binding(
+                        symbol_value, f"{path}.given.{symbol_name}"
+                    )
+                    errors.extend(req_errors)
+                    if parsed_req is not None:
+                        request_symbols[symbol_name] = IRRequestBinding(
+                            part=parsed_req[0],
+                            type_name=parsed_req[1],
+                            raw=parsed_req[2],
                         )
                 else:
                     parsed, doc_errors = parse_document_binding(
@@ -147,6 +170,7 @@ class AccessTransformer:
             required_role=None,
             identity_symbols=identity_symbols,
             document_symbols=document_symbols,
+            request_symbols=request_symbols,
             when=when_expr,
             effect=effect,
             filter=rule.get("filter"),

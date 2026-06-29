@@ -13,6 +13,7 @@ from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from .access_transformer import AccessTransformer
 from .collection_transformer import CollectionTransformer
 from .datastore_transformer import parse_datastores
+from .dto_transformer import DtoTransformer
 from .identity_transformer import IdentityTransformer
 from .repository_transformer import RepositoryTransformer
 from .route_transformer import RouteTransformer
@@ -24,6 +25,7 @@ class V02Transformer:
     def __init__(self):
         self._repository = RepositoryTransformer()
         self._collection = CollectionTransformer()
+        self._dto = DtoTransformer()
         self._identity = IdentityTransformer()
         self._access = AccessTransformer()
         self._route = RouteTransformer(self._access)
@@ -49,6 +51,7 @@ class V02Transformer:
         controllers_data: dict[str, Any] = resolved.get("controllers", {})
         roles_data: dict[str, Any] = resolved.get("roles", {})
         providers_data: dict[str, Any] = resolved.get("providers", {})
+        dtos_data: dict[str, Any] = resolved.get("dto", {})
 
         datastores, default_datastore, datastore_errors = parse_datastores(resolved)
         if datastore_errors:
@@ -109,6 +112,10 @@ class V02Transformer:
 
         providers = self._parse_providers(providers_data)
 
+        dtos, dto_errors = self._dto.transform(dtos_data)
+        if dto_errors:
+            raise ConfigErrors(dto_errors)
+
         mongo_config = resolved.get("mongo", {})
         return IRDocument(
             version=str(resolved["version"]),
@@ -116,6 +123,7 @@ class V02Transformer:
             collections=collections,
             routes=routes,
             identityCollections=identity_collections,
+            dtos=dtos,
             services=services,
             role_hierarchies=role_hierarchies,
             mongo=self._route.build_mongo(mongo_config),

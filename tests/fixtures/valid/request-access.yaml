@@ -1,0 +1,50 @@
+version: "0.2"
+api:
+  basePath: /api
+  version: v1
+  operations:
+    defaults: { list: true, get: true, create: true, update: true, delete: true }
+    auth: { register: true, login: true }
+mongo:
+  uri: mongodb://localhost:27017
+  database: testdb
+dto:
+  createMembership:
+    fields:
+      role: { type: enum, values: [admin, member, viewer], required: true }
+entities:
+  user:
+    type: auth
+    auth: { identifier: email, via: password, roles: role }
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      role: { type: enum, values: [admin, user], default: user }
+  membership:
+    fields:
+      id: { type: id }
+      role: { type: string }
+      orgId: { type: string }
+repositories:
+  users: { entity: user }
+  memberships: { entity: membership }
+services:
+  users: { repository: users }
+  memberships: { repository: memberships }
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+    operations:
+      register: { access: public }
+      login: { access: public }
+  memberships:
+    service: memberships
+    base_path: /memberships
+    access: "*"
+    operations:
+      create:
+        access:
+          - given: { caller: "identity:user", payload: "request:createMembership" }
+            when: "caller.role equals 'admin'"

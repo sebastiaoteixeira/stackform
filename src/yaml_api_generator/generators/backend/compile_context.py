@@ -91,12 +91,30 @@ class DocumentBindingDescriptor:
     id_param: str | None = None
 
 
+_OPENAPI_PARTS = ("body", "path", "query", "header", "cookie")
+
+
+@dataclass(frozen=True)
+class RequestSymbolDescriptor:
+    name: str
+    part: str | None
+    type_name: str | None = None
+
+    @property
+    def is_whole(self) -> bool:
+        return self.part is None
+
+    def binds(self, part: str) -> bool:
+        return self.is_whole or self.part == part
+
+
 @dataclass(frozen=True)
 class AccessRuleDescriptor:
     principal: str
     required_role: str | None = None
     identity_symbols: list[str] = field(default_factory=list)
     document_symbols: list[str] = field(default_factory=list)
+    request_symbols: list[RequestSymbolDescriptor] = field(default_factory=list)
     when: WhenExpr | None = None
     effect: str = "allow"
 
@@ -116,8 +134,19 @@ class RouteDescriptor:
     password_via: bool
     handler: str | None = None
     access_rules: list[AccessRuleDescriptor] | None = None
+    path_params: list[str] = field(default_factory=list)
+    needs_request: bool = False
+    typed_body_model: str | None = None
     # IR service name (expanded flat key, e.g. "list-posts") backing this route.
     service: str | None = None
+
+    @property
+    def request_symbols(self) -> list[RequestSymbolDescriptor]:
+        seen: dict[str, RequestSymbolDescriptor] = {}
+        for rule in self.access_rules or ():
+            for sym in rule.request_symbols:
+                seen.setdefault(sym.name, sym)
+        return list(seen.values())
 
 
 @dataclass(frozen=True)
@@ -220,6 +249,7 @@ class CompileContext:
     repository_inherits: dict[str, str] = field(default_factory=dict)
     # IR services keyed by their expanded flat name (e.g. "list-posts").
     services: dict[str, IRService] = field(default_factory=dict)
+    dto_models: list[ModelDescriptor] = field(default_factory=list)
 
     @property
     def datastore_types(self) -> set[str]:

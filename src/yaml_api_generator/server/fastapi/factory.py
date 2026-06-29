@@ -365,12 +365,24 @@ async def _run_pipeline(
     try:
         path_params = {key: str(value) for key, value in request.path_params.items()}
         path_params.update(url_params)
+        query_params = getattr(request, "query_params", None)
+        query: dict[str, str | list[str]] = (
+            {
+                key: values if len(values) > 1 else values[0]
+                for key in query_params
+                for values in (query_params.getlist(key),)
+            }
+            if query_params is not None
+            else {}
+        )
         pre_resolved_principal: dict[str, Any] | None = getattr(request.state, "principal", None)
         ctx = await pipeline.run(
             headers=dict(request.headers),
             url_params=path_params,
             body=body,
             principal=pre_resolved_principal,
+            query=query,
+            cookies=dict(getattr(request, "cookies", {})),
         )
     except UnauthorizedError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error

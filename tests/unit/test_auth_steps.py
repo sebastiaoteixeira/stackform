@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from yaml_api_generator.ir import IRProviderBinding
+from yaml_api_generator.ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
 from yaml_api_generator.server.common.request_context import RequestContext
 from yaml_api_generator.server.common.server_context import (
     RuntimeAccessRule,
@@ -690,7 +690,13 @@ class TestAuthorizeRouteStep:
             FieldRef("principal", ("sub",)),
             StringLiteral("u1"),
         )
-        rules = [RuntimeAccessRule(principal="identity:users", when=when)]
+        rules = [
+            RuntimeAccessRule(
+                principal="identity:users",
+                when=when,
+                identity_symbols={"principal": IRIdentityBinding(entity_name="users", collection_name="users")},
+            )
+        ]
         step = AuthorizeRouteStep(access_rules=rules)
         ctx = _make_ctx(
             principal={
@@ -761,7 +767,14 @@ class TestPostFetchAuthorizeStep:
             FieldRef("document", ("authorId",)),
             FieldRef("principal", ("sub",)),
         )
-        rules = [RuntimeAccessRule(principal="identity:users", when=when)]
+        rules = [
+            RuntimeAccessRule(
+                principal="identity:users",
+                when=when,
+                identity_symbols={"principal": IRIdentityBinding(entity_name="users", collection_name="users")},
+                document_symbols={"document": IRDocumentBinding(collection="posts")},
+            )
+        ]
         step = PostFetchAuthorizeStep(access_rules=rules)
         ctx = _make_ctx(
             principal={
@@ -813,7 +826,14 @@ class TestPostFetchAuthorizeStep:
             FieldRef("document", ("authorId",)),
             FieldRef("principal", ("sub",)),
         )
-        rules = [RuntimeAccessRule(principal="identity:users", when=when)]
+        rules = [
+            RuntimeAccessRule(
+                principal="identity:users",
+                when=when,
+                identity_symbols={"principal": IRIdentityBinding(entity_name="users", collection_name="users")},
+                document_symbols={"document": IRDocumentBinding(collection="posts")},
+            )
+        ]
         step = PostFetchAuthorizeStep(access_rules=rules)
         ctx = _make_ctx(
             principal={

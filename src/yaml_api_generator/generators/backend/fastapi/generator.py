@@ -48,8 +48,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["sql_column"] = sql_filters.sql_column
         env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
+        env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.tests["needs_document_rule"] = access_filters.needs_document_rule
+        env.tests["needs_request_rule"] = access_filters.needs_request_rule
         env.tests["unconditional"] = access_filters.is_unconditional
         env.globals["needs_datetime_import"] = type_mapper.needs_datetime_import
         env.globals["needs_literal_import"] = type_mapper.needs_literal_import
@@ -62,6 +64,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_settings(env, context, output_dir)
         self._render_app(env, context, output_dir)
         self._render_models(env, context, collections_by_name, output_dir)
+        self._render_dtos(env, context, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
@@ -107,6 +110,19 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 should_render=lambda col_name, col_data, ctx: bool(col_data["models"]),
             )
         )
+
+    def _render_dtos(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        if not context.dto_models:
+            return
+        models_dir = output_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        content = env.get_template("models.py.jinja").render(
+            models=context.dto_models,
+            all_fields=[f for m in context.dto_models for f in m.fields],
+        )
+        (models_dir / "_dto.py").write_text(content)
 
     def _render_services(
         self,

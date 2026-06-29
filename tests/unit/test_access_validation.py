@@ -37,6 +37,14 @@ def test_unbound_symbol_in_when_rejected():
     assert "WHEN_UNBOUND_SYMBOL" in _codes(controllers)
 
 
+def test_undeclared_principal_in_when_rejected():
+    controllers = {"c": {"operations": {"get": {"access": [{
+        "given": {"document": "articles"},
+        "when": "principal.sub equals document.author_id",
+    }]}}}}
+    assert "WHEN_UNBOUND_SYMBOL" in _codes(controllers)
+
+
 def test_given_bound_symbol_accepted():
     controllers = {"c": {"operations": {"update": {"access": [{
         "given": {"xx": "identity:user", "document": "articles"},

@@ -171,11 +171,25 @@ class IRIdentityBinding:
 
 
 @dataclass(frozen=True)
+class IRRequestBinding:
+    part: str | None = None
+    type_name: str | None = None
+    raw: bool = False
+
+
+@dataclass(frozen=True)
+class IRDto:
+    name: str
+    fields: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class IRAccessRule:
     principal: str
     required_role: str | None = None
     identity_symbols: dict[str, IRIdentityBinding] = field(default_factory=dict)
     document_symbols: dict[str, IRDocumentBinding] = field(default_factory=dict)
+    request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
     filter: str | None = None
@@ -294,6 +308,7 @@ class IRDocument:
     collections: dict[str, IRCollection]
     routes: list[IRRoute]
     identityCollections: dict[str, IRIdentityCollection]
+    dtos: dict[str, IRDto] = field(default_factory=dict)
     services: dict[str, IRService] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)

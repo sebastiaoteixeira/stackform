@@ -22,6 +22,8 @@ class Pipeline:
         body: dict[str, Any] | None = None,
         response: Any | None = None,
         repositories: Any | None = None,
+        query: Mapping[str, str | list[str]] | None = None,
+        cookies: Mapping[str, str] | None = None,
     ) -> None:
         self.steps = list(steps)
         self._base_ctx = RequestContext(
@@ -37,6 +39,8 @@ class Pipeline:
             body=deepcopy(body) if body is not None else None,
             response=deepcopy(response) if response is not None else None,
             repositories=repositories,
+            query=dict(query) if query is not None else None,
+            cookies=dict(cookies) if cookies is not None else None,
         )
 
     def _clone_context(self, ctx: RequestContext) -> RequestContext:
@@ -53,6 +57,8 @@ class Pipeline:
             body=deepcopy(ctx.body) if ctx.body is not None else None,
             response=deepcopy(ctx.response) if ctx.response is not None else None,
             repositories=ctx.repositories,
+            query=dict(ctx.query) if ctx.query is not None else None,
+            cookies=dict(ctx.cookies) if ctx.cookies is not None else None,
         )
 
     async def run(
@@ -70,6 +76,8 @@ class Pipeline:
         principal: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
         response: Any | None = None,
+        query: Mapping[str, str | list[str]] | None = None,
+        cookies: Mapping[str, str] | None = None,
     ) -> RequestContext:
         current_ctx = (
             self._clone_context(context)
@@ -99,6 +107,10 @@ class Pipeline:
             current_ctx.body = deepcopy(body)
         if response is not None:
             current_ctx.response = deepcopy(response)
+        if query is not None:
+            current_ctx.query = dict(query)
+        if cookies is not None:
+            current_ctx.cookies = dict(cookies)
 
         for step in self.steps:
             result = step(current_ctx)

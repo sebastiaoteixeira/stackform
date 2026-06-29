@@ -5,7 +5,8 @@ Converts IR collections into Pydantic model descriptors with field validation.
 
 from typing import Any
 
-from yaml_api_generator.ir import CRUD_OPERATIONS, IRCollection, IRIdentityCollection, IRRepository
+from yaml_api_generator.ir import CRUD_OPERATIONS, IRCollection, IRDto, IRIdentityCollection, IRRepository
+from yaml_api_generator.utils.strings import to_pascal_case
 from ..compile_context import FieldDescriptor, ModelDescriptor
 
 
@@ -51,6 +52,17 @@ class ModelBuilder:
                 )
 
         return models
+
+    def build_dto_models(self, dtos: dict[str, IRDto]) -> list[ModelDescriptor]:
+        return [
+            ModelDescriptor(
+                name=to_pascal_case(dto.name),
+                collection=dto.name,
+                operation="dto",
+                fields=self.build_fields(dto, "dto", None),
+            )
+            for dto in dtos.values()
+        ]
 
     def build_fields(
         self,
