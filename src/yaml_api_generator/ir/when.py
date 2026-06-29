@@ -63,6 +63,13 @@ class NotIn(WhenExpr):
     values: tuple[Any, ...]
 
 
+@dataclass(frozen=True)
+class PolicyRef(WhenExpr):
+    name: str
+    args: tuple[str, ...] = ()
+    has_parens: bool = False
+
+
 def needs_document(expr: WhenExpr) -> bool:
     if isinstance(expr, FieldRef):
         return expr.root == "document"
