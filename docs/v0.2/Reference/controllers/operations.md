@@ -217,16 +217,25 @@ Notes on the rule object:
 
 - `given:` keys are symbol names you choose. A value of `identity:<entity>`
   binds the principal; any other value is a document binding
-  (`<collection>` or `<collection> by <param>`). The names `principal` and
-  `document` are also auto-bound inside `when:` when referenced.
+  (`<collection>` or `<collection> by <param>`). There are no built-in roots:
+  every symbol a `when:` references must be declared in `given:`, or generation
+  aborts with `WHEN_UNBOUND_SYMBOL`. `principal` and `document` are conventional
+  names (as bound above), not keywords.
 - `when:` uses words, not operators: `equals`, `not equals`, `and`, `or`,
   `not`, `in`, `not in`. Operands are field references (for example
   `document.ownerId`) and single-quoted string literals. Stored fields on the
   caller are read via `principal.record.<field>`.
 - Rules needing a document are evaluated after the record is fetched; a missing
   record returns 404 before any ownership check. `create` has no document, so
-  it is authorized before insert (role/keyword rules only). See
-  `access-control.md` for full evaluation order.
+  document rules never run for it. To authorize a create against its own
+  payload, bind the request body in `given:` (for example
+  `member: request.body:createMembership`) and test it in `when:`. See
+  `access-control.md` (Request access) and the
+  [when expressions](../when-expressions/overview.md) reference for the binding
+  forms, the applicability matrix, and the new error codes
+  (`REQUEST_BODY_ON_BODILESS_OP`, `REQUEST_TYPE_ON_LEAF`,
+  `REQUEST_PATH_PARAM_NOT_DECLARED`, `REQUEST_TYPE_NOT_FOUND`,
+  `REQUEST_BINDING_INVALID`).
 
 > **Enforcement status**
 >

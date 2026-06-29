@@ -3,6 +3,7 @@
   "pages": [
     "configuration",
     "entities",
+    "dto",
     "auth",
     "roles",
     "repositories",

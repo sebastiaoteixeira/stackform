@@ -92,14 +92,15 @@ access:
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `given.<symbol>` | no | `identity:<entityName>` or `<collection>[ by <param>]` | Binds a symbol used in `when:`. The symbol name is yours to choose. |
+| `given.<symbol>` | yes, for every root in `when:` | `identity:<entityName>` or `<collection>[ by <param>]` | Binds a symbol used in `when:`. The symbol name is yours to choose. Any root referenced in `when:` but not declared here aborts generation with `WHEN_UNBOUND_SYMBOL`. |
 | `when` | no | string or list of strings | Condition expression. List entries are ANDed. See [when expressions](../when-expressions/overview.md). |
 | `then` | no | `"allow"` (default) or `"deny"` | Effect when the rule matches. |
 
-Symbol names in `given` are arbitrary. The two well-known roots `principal` and
-`document` are auto-bound when referenced in `when:` even if you do not name them
-in `given` -- `given` is for binding additional or custom symbols. The conventional
-form uses `principal:` for the caller and `document:` for the route's record:
+Symbol names in `given` are arbitrary. There are no built-in roots: every symbol a
+`when:` references must be declared in `given`, or generation aborts with
+`WHEN_UNBOUND_SYMBOL`. `principal` and `document` are conventional names, not
+keywords. The conventional form uses `principal:` for the caller and `document:` for
+the route's record:
 
 ```yaml
 given:
@@ -138,7 +139,64 @@ references `document.*`) is handled in two phases:
 - After the fetch, document rules are re-evaluated against the loaded record.
 
 `create` has no existing record, so document rules never run for create. Use
-principal-only rules (roles, `<entity>:*`) for create access.
+principal-only rules (roles, `<entity>:*`) for create access — or a request
+binding (below), which can reason about the submitted payload itself.
+
+## Request access
+
+A `given:` symbol can bind the **incoming request** instead of (or alongside) the
+principal and the route's document. This is how a rule reads the request body,
+path parameters, query string, headers, or cookies of the call being authorized.
+The parts use OpenAPI parameter-location vocabulary (`path`, `query`, `header`,
+`cookie`) plus the request `body`. The binding forms (`request`,
+`request:<type>`, `request.<part>`, `request.<part>:<type>`) and the
+part-qualified access in `when:` are documented in full under
+[when expressions](../when-expressions/overview.md).
+
+### The create gap it closes
+
+Document rules never run for `create`, because there is no fetched record. That
+left create rules unable to look at what was being created — only at the
+principal. A request binding fills that gap: the create rule can validate and
+inspect the very payload being submitted.
+
+```yaml
+controllers:
+  membership:
+    service: membership
+    operations:
+      create:
+        access:
+          - admin                              # admins create any role
+          - given:
+              principal: identity:user
+              member: request.body:createMembership
+            when: member.body.role not equals 'admin'
+```
+
+Admins fall through the first rule. Everyone else may create a membership only
+when the submitted `role` is not `admin`. The `:createMembership` DTO validates
+the body before the rule runs; an invalid body is 422 and the rule never fires.
+
+### Applicability matrix
+
+| Part | `create` | `update` | `replace` | `get` | `list` | `delete` |
+|------|----------|----------|-----------|-------|--------|----------|
+| `body` | yes | yes | yes | no | no | no |
+| `path` | yes | yes | yes | yes | yes | yes |
+| `query` | yes | yes | yes | yes | yes | yes |
+| `header` | yes | yes | yes | yes | yes | yes |
+| `cookie` | yes | yes | yes | yes | yes | yes |
+
+A body binding (`request.body` or `request:<type>`) on a bodiless operation
+(`get`, `list`, `delete`) fails generation with `REQUEST_BODY_ON_BODILESS_OP`.
+
+### Runtime model
+
+Request resolution is fail-safe: a missing leaf resolves to `null`, never an
+error. A typed body is validated **before** authorization — an invalid body
+returns 422 and the rule never executes. This runs identically in the generated
+FastAPI backend, the generated DRF backend, and `yaml-api run`.
 
 ```mermaid
 flowchart TD
@@ -313,10 +371,17 @@ controllers:
 | Role used with no auth entities defined | `ACCESS_NO_AUTH_ENTITY` | "Cannot use role 'X' without auth entities" |
 | Malformed `given` document binding | `DOCUMENT_BINDING_INVALID` | "Invalid document binding: 'X'. Expected '<collection>' or '<collection> by <param>'" |
 | Invalid `when` expression | `WHEN_EXPR_INVALID` / `WHEN_OPERAND_INVALID` / `WHEN_OPERAND_MISSING` | See [when expressions](../when-expressions/overview.md). |
+| `when` references a root not declared in `given` | `WHEN_UNBOUND_SYMBOL` | "Unbound symbol 'X' in when expression; declare it in 'given'" |
+| Invalid `request*` binding value in `given` | `REQUEST_BINDING_INVALID` | "Invalid request binding: 'X'" |
+| Request binding `:<type>` not a primitive/entity/DTO | `REQUEST_TYPE_NOT_FOUND` | "Request binding type 'X' is not a primitive, entity, or DTO" |
+| `:<type>` on a leaf, `header`, or `cookie` | `REQUEST_TYPE_ON_LEAF` | "Request binding type is only allowed on body/path/query" |
+| `request.path.<name>` not in the route's path template | `REQUEST_PATH_PARAM_NOT_DECLARED` | "Path parameter '<name>' is not declared in the route path" |
+| `request.body` / `request:<type>` on `get`/`list`/`delete` | `REQUEST_BODY_ON_BODILESS_OP` | "Request body binding is not allowed on a bodiless operation" |
 
 ## See Also
 
 - [When expressions](../when-expressions/overview.md)
 - [When operators](../when-expressions/operators.md)
+- [DTOs](../dto/overview.md)
 - [Roles overview](../roles/overview.md)
 - [Auth overview](../auth/overview.md)

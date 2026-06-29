@@ -97,8 +97,9 @@ before ownership is checked.
 The `given:` map binds symbol names used in the `when` expression. `principal:
 identity:user` binds the calling principal and scopes the rule to the `user` identity
 collection; `document: posts` loads the route's `posts` record so `document.authorId`
-resolves. The built-in `principal` and `document` roots are available even without
-`given`, but `given` lets you name and scope them explicitly.
+resolves. There are no built-in roots: every symbol a `when:` references must be
+declared in `given` (an undeclared root is a build-time error). `principal` and
+`document` are conventional names you chose here, not keywords.
 
 ### DELETE /api/v1/users/{id}
 
