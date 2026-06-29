@@ -195,7 +195,9 @@ the same.
 ### Environment-variable interpolation
 
 `client_id`, `client_secret`, and `discovery_url` accept `${VAR}` interpolation, so secrets
-stay out of the spec:
+stay out of the spec. `client_id` and `discovery_url` are resolved at build time;
+`client_secret` is read at run time from a `<PROVIDER>_CLIENT_SECRET` env var
+(e.g. `KEYCLOAK_CLIENT_SECRET`) via a `SecretStr` setting, never baked as a literal:
 
 ```yaml
 providers:

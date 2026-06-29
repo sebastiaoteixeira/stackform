@@ -1,6 +1,6 @@
 ---
 title: "Environment Variables and Interpolation"
-description: Substitutes environment variable values into YAML string scalars after the YAML is parsed and before schema validation, plus the runtime variables the generated backend, the dev server, and a Docker deploy read directly.
+description: Substitutes environment variable values into YAML string scalars after the YAML is parsed and before schema validation, plus the runtime variables the generated backend, the dev server, and a Docker deploy read directly -- including the JWT and provider client secrets the backend reads at run time via pydantic SecretStr settings.
 ---
 
 There are two distinct ways environment variables reach a generated app, and they do
@@ -9,22 +9,28 @@ not overlap:
 1. **Spec interpolation (build time).** `${VAR}` or `${VAR:-default}` inside any
    string value in the YAML spec is a build-time macro. It is resolved by the parser
    from the environment when the spec is loaded -- for both `yaml-api build` and
-   `yaml-api run` -- and the resolved value is baked into the output. There is no
-   runtime deferral: no spec field is special-cased as a "runtime secret", so a
-   `${VAR}` reference never survives into the artifact as a placeholder.
+   `yaml-api run` -- and the resolved value is baked into the output. Most fields are
+   baked this way, with one exception: a provider's `client_secret` is never baked as
+   a code literal. The generator routes it to a per-provider runtime setting
+   (`<PROVIDER>_CLIENT_SECRET`) instead (see the **Secrets** note below).
 2. **Runtime variables.** The generated backend, the `yaml-api run` dev server, and
    a generated Docker deploy read a fixed set of variables (listed under
    [Runtime variables](#runtime-variables)) directly from the process environment at
    run time. These are read by the generated *code*, not by spec interpolation, and
-   are never written in the spec.
+   are never written in the spec. Secret-typed settings (`JWT_SECRET`, each
+   confidential provider's `<PROVIDER>_CLIENT_SECRET`) are pydantic `SecretStr`
+   fields, read in code via `settings.<NAME>.get_secret_value()`.
 
-> **Secrets.** Because spec interpolation is build-time only, a secret written as
-> `${SECRET}` in the spec is resolved at build time and baked into the built
-> artifact. If a secret must stay out of the build, do not place it in the spec at
-> all -- the deployed backend reads its own runtime environment directly (see the
-> [Runtime variables](#runtime-variables) the generated code reads). This is a change
-> from earlier versions, which deferred certain fields (such as `client_secret` or a
-> datastore password) to runtime via a settings layer; no such deferral exists now.
+> **Secrets.** A provider `client_secret` is **not** baked into the artifact. When a
+> confidential OIDC provider declares a `client_secret`, the generator emits a
+> `<PROVIDER>_CLIENT_SECRET` env var (for a provider named `keycloak`, that is
+> `KEYCLOAK_CLIENT_SECRET`) backed by a pydantic `SecretStr` setting, and the token
+> exchange reads it at run time with
+> `settings.<PROVIDER>_CLIENT_SECRET.get_secret_value()`. The literal secret must
+> never live in the spec: write only a placeholder there (or omit the field) and
+> provide the real value through the runtime environment. The same applies to
+> `JWT_SECRET`. Earlier prerelease builds baked `client_secret` into the output as a
+> literal; that no longer happens.
 
 ## Spec Interpolation
 
@@ -112,7 +118,8 @@ not via spec interpolation. They are grouped by who reads them.
 |----------|---------|-------------|
 | `MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection string. |
 | `MONGO_DB` | `yaml_api` | MongoDB database name. |
-| `JWT_SECRET` | *(required)* | HMAC key for JWT signing (HS256). The field has no default, so the generated backend fails fast at startup if it is unset. |
+| `JWT_SECRET` | *(generated)* | HMAC key for JWT signing (HS256), a `SecretStr` setting. The generated backend bundle ships a `.env` with a real value (`secrets.token_urlsafe`), so a fresh bundle runs without manual setup; override it for production. |
+| `<PROVIDER>_CLIENT_SECRET` | *(none)* | OAuth2 client secret for each confidential OIDC provider (e.g. `KEYCLOAK_CLIENT_SECRET` for a provider named `keycloak`), a `SecretStr` setting read at run time via `settings.<PROVIDER>_CLIENT_SECRET.get_secret_value()`. Emitted only when the provider declares a `client_secret`. |
 | `JWT_EXPIRATION_HOURS` | `24` | JWT token lifetime in hours. |
 | `PASSWORD_HASH_ROUNDS` | `390000` | PBKDF2-HMAC-SHA256 iteration count for password hashing. |
 | `FRONTEND_URL` | `""` | Base URL the OIDC callback redirects to (`{FRONTEND_URL}/auth/callback?code=...`). Falls back to the request base URL when unset. |
@@ -123,10 +130,13 @@ The compile-time `mongo.uri` / `mongo.database` from the spec are only baked int
 Docker deploy defaults; the generated backend itself always reads `MONGO_URI` /
 `MONGO_DB` at run time, falling back to the values above.
 
-**Warning:** `JWT_SECRET` is required. Set it to a strong random value (for example
-`openssl rand -hex 32`) in every environment, including local runs of the generated
-backend. A generated Docker deploy auto-fills a dev-ready value for you (see [Docker
-deploy](#docker-deploy-yaml-api-build--deploy)).
+**Warning:** `JWT_SECRET` is a secret. The generated backend bundle ships a `.env`
+with a unique generated value (see [Generated `.env` /
+`.env.example`](#generated-env--envexample)), so a fresh bundle starts without
+manual setup -- but that value is meant for development. Set a strong random value
+(for example `openssl rand -hex 32`) for any non-development deployment. A generated
+Docker deploy never bakes a secret into the bundle; it generates one at deploy time
+(see [Docker deploy](#docker-deploy-yaml-api-build--deploy)).
 
 ### `yaml-api run` dev server
 
@@ -162,33 +172,55 @@ The generated `docker-compose.yml` exposes these for `docker compose`:
 | `FRONTEND_PORT` | `80` | Host port mapped to the frontend container. |
 | `VITE_API_BASE_URL` | `http://localhost:<port>/api/v1` | API base URL baked into the built frontend. |
 | `BACKEND_URL` | `http://app:<port>` | Upstream the frontend's nginx proxies to (set by the container entrypoint). |
+| `JWT_SECRET` | *(deploy-time)* | App JWT signing secret. Referenced as a bare `${JWT_SECRET}`; generated at deploy time by Ansible (see below). |
+| `<PROVIDER>_CLIENT_SECRET` | *(deploy-time)* | Each confidential OIDC provider's client secret (e.g. `KEYCLOAK_CLIENT_SECRET`). Referenced as a bare `${VAR}`; generated at deploy time by Ansible (see below). |
 
 #### Secrets in the generated deploy
 
-The deploy emits each backend secret as `${NAME:-<default>}` in `docker-compose.yml`
-and lists it in the generated `.env`. These secrets are the framework runtime
-variables the generated code reads (currently only `JWT_SECRET`), not values pulled
-from spec interpolation -- a `${VAR}` in the spec has already been resolved and baked
-in by the time the deploy is generated.
+Nothing secret is baked into the deploy bundle. The generated `deploy/` is an Ansible
+playbook (`playbook.yml`, `inventory.yml`, `roles/`) plus the `docker-compose.yml`.
+In compose, each secret is referenced as a **bare** `${VAR}` (no `:-<default>`
+fallback) and the app service loads them through `env_file: .env`; non-secret
+datastore variables keep their `${VAR:-default}` form.
 
-`JWT_SECRET` is generated: it gets a unique dev-ready value produced at generation
-time with `secrets.token_urlsafe(32)`, so the deploy runs out of the box. Override it
-for production by setting the variable in the environment or `.env`.
+Secrets are generated at **deploy time**, not generation time. The Ansible app role
+produces a value for each secret with the `password` lookup
+(`lookup('ansible.builtin.password', playbook_dir + '/.secrets/<NAME> ...')`), which
+persists it under the playbook's `.secrets/` directory so reruns are idempotent. A
+template task then renders the remote `/opt/<name>/.env` (mode `0600`) from those
+values, and `docker compose` reads it via `env_file`. The `.secrets/` directory and
+the remote `.env` are the only places the plaintext secret ever exists.
 
-Any additional runtime variables your backend needs (for example a secret the backend
-reads directly rather than one interpolated into the spec) are declared explicitly in
-the spec's `deploy.env_vars` list; those are emitted with an empty default for you to
-fill.
+This currently covers the framework secrets the generated code reads (`JWT_SECRET`
+and each confidential provider's `<PROVIDER>_CLIENT_SECRET`). Any additional runtime
+variables your backend needs are declared explicitly in the spec's `deploy.env_vars`
+list and emitted with an empty default for you to fill.
 
 ## Generated `.env` / `.env.example`
 
-When a `deploy:` block is present, `yaml-api build ... deploy` writes a `.env`
-listing the runtime variables the generated backend reads: the framework secret
-variables (currently `JWT_SECRET`, pre-filled with a generated dev value) plus
-whatever is declared in the spec's `deploy.env_vars`. It does **not** scan the spec
-for `${VAR}` interpolation references -- those are build-time macros, already resolved
-and baked into the artifact before the deploy is generated, so there is nothing left
-to surface.
+### Backend bundle
+
+A plain backend build (`yaml-api build`, fastapi target) -- with or without a
+`deploy:` block -- writes both files next to the backend:
+
+- `.env` lists every runtime setting with real values: secret-typed settings
+  (`JWT_SECRET`, each `<PROVIDER>_CLIENT_SECRET`) get a generated value via
+  `secrets.token_urlsafe`, and other settings get their default. So a freshly built
+  backend bundle runs without exporting `JWT_SECRET` yourself.
+- `.env.example` lists the same keys but with placeholders for secrets
+  (`JWT_SECRET=<jwt_secret>`, `KEYCLOAK_CLIENT_SECRET=<keycloak_client_secret>`),
+  ready to commit as a template.
+
+A provider `client_secret` you wrote in the spec is **not** copied here as a literal:
+its value is whatever the runtime `<PROVIDER>_CLIENT_SECRET` env var carries, so set
+the real secret in `.env` before going to production.
+
+### Deploy bundle
+
+The deploy bundle does **not** ship a secret-filled `.env`. Its remote `.env` is
+rendered on the target host at deploy time by Ansible from the values under the
+playbook's `.secrets/` directory (mode `0600`); see [Secrets in the generated
+deploy](#secrets-in-the-generated-deploy). Nothing secret is baked into the bundle.
 
 ## Examples
 
@@ -215,9 +247,13 @@ providers:
 ```
 
 Each `${VAR}` here without a `:-default` aborts the build if the variable is unset.
-The resolved values are baked into the output: `client_secret` is a build-time value,
-not a runtime secret. For a public client, drop the `client_secret` line entirely
-(it is optional). See [OIDC provider](../providers/oidc.md#fields).
+`client_id` and `discovery_url` are baked into the output. `client_secret` is the
+exception: it is **not** baked. Its presence makes the generator emit a
+`<PROVIDER>_CLIENT_SECRET` env var (here `MYOIDC_CLIENT_SECRET`) backed by a
+`SecretStr` setting, read at run time. The `${OIDC_CLIENT_SECRET}` placeholder above
+just marks the field as confidential; supply the real secret through the runtime
+environment, never in the spec. For a public client, drop the `client_secret` line
+entirely (it is optional). See [OIDC provider](../providers/oidc.md#fields).
 
 ## Edge Cases
 

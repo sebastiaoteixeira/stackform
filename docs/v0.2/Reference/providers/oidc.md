@@ -21,7 +21,11 @@ providers:
 The provider object is closed (`additionalProperties: false`): only the fields
 below are accepted. Any value supports `${VAR}` interpolation, including the
 `${VAR:-default}` form. Interpolation is resolved at build time and baked into the
-output, so a `${VAR}` value never reaches the artifact as a placeholder -- see
+output -- with one exception: `client_secret` is never baked. When present, it
+triggers a `<PROVIDER>_CLIENT_SECRET` env var (e.g. `KEYCLOAK_CLIENT_SECRET`) backed
+by a pydantic `SecretStr` setting, read at run time via
+`settings.<PROVIDER>_CLIENT_SECRET.get_secret_value()`. The spec must hold only a
+placeholder, never the literal secret -- see
 [Environment variables](../configuration/environment-variables.md) for what that
 means for secrets.
 
@@ -37,7 +41,7 @@ incoming IdP tokens and requires just `type`, `client_id`, and `discovery_url`; 
 | `type` | yes | Must be `oidc`. |
 | `trust` | no | `app` (default) or `idp`. See [Token trust](./overview.md#token-trust). |
 | `client_id` | yes | OAuth2 client ID from the provider's developer console. |
-| `client_secret` | no | OAuth2 client secret. Omit it entirely for a public client -- the token exchange then runs without a `client_secret`, which is correct for clients the IdP marks as public. Supply it for confidential clients, always via `${VAR}` interpolation. |
+| `client_secret` | no | OAuth2 client secret. Omit it entirely for a public client -- the token exchange then runs without a `client_secret`, which is correct for clients the IdP marks as public. For confidential clients, its presence emits a `<PROVIDER>_CLIENT_SECRET` env var (e.g. `KEYCLOAK_CLIENT_SECRET`) read at run time via a `SecretStr` setting; the spec value is only a placeholder, never the literal secret. |
 | `discovery_url` | yes (effectively) | OIDC discovery endpoint (`.../.well-known/openid-configuration`). The generated routes read `authorization_endpoint`, `token_endpoint`, and `userinfo_endpoint` from it, so login fails without it. There is no automatic inference for "well-known" provider names -- always supply it. |
 | `issuer` | no | Override for the expected token `iss` (only meaningful under `trust: idp`, where it is otherwise derived from the discovery document). |
 | `audience` | no | Override for the expected token `aud` (only meaningful under `trust: idp`, where it defaults to `client_id`). See [Token trust](./overview.md#token-trust). |
