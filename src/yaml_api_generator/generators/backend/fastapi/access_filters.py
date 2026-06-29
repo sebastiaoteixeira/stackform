@@ -17,6 +17,7 @@ from yaml_api_generator.ir.when import (
     Or,
     StringLiteral,
     WhenExpr,
+    collect_roots,
     needs_document,
 )
 
@@ -32,10 +33,17 @@ def py_literal(value: object) -> str:
     return repr(value)
 
 
-def _operand_to_python(expr: WhenExpr) -> str:
+def _safe_nested(root: str, path: tuple[str, ...]) -> str:
+    chain = "".join(f'.get("{p}", {{}})' for p in path[:-1])
+    return f'{root}{chain}.get("{path[-1]}")'
+
+
+def _operand_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
     if isinstance(expr, StringLiteral):
         return f'"{expr.value}"'
     if isinstance(expr, FieldRef):
+        if expr.root in request_roots:
+            return _safe_nested(expr.root, expr.path) if expr.path else expr.root
         if not expr.path:
             return f'{expr.root}.get("sub")'
         if len(expr.path) == 1:
@@ -47,31 +55,34 @@ def _operand_to_python(expr: WhenExpr) -> str:
     return "None"
 
 
-def _when_to_python(expr: WhenExpr) -> str:
+def _when_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
+    operand = lambda e: _operand_to_python(e, request_roots)
+    recurse = lambda e: _when_to_python(e, request_roots)
     if isinstance(expr, Equals):
-        return f"{_operand_to_python(expr.left)} == {_operand_to_python(expr.right)}"
+        return f"{operand(expr.left)} == {operand(expr.right)}"
     if isinstance(expr, NotEquals):
-        return f"{_operand_to_python(expr.left)} != {_operand_to_python(expr.right)}"
+        return f"{operand(expr.left)} != {operand(expr.right)}"
     if isinstance(expr, And):
-        return f"({_when_to_python(expr.left)} and {_when_to_python(expr.right)})"
+        return f"({recurse(expr.left)} and {recurse(expr.right)})"
     if isinstance(expr, Or):
-        return f"({_when_to_python(expr.left)} or {_when_to_python(expr.right)})"
+        return f"({recurse(expr.left)} or {recurse(expr.right)})"
     if isinstance(expr, Not):
-        return f"(not {_when_to_python(expr.operand)})"
+        return f"(not {recurse(expr.operand)})"
     if isinstance(expr, In):
-        return f"{_operand_to_python(expr.left)} in {tuple(expr.values)!r}"
+        return f"{operand(expr.left)} in {tuple(expr.values)!r}"
     if isinstance(expr, NotIn):
-        return f"{_operand_to_python(expr.left)} not in {tuple(expr.values)!r}"
+        return f"{operand(expr.left)} not in {tuple(expr.values)!r}"
     return "False"
 
 
 def rule_to_python(rule: AccessRuleDescriptor) -> str:
     """Compile a single access rule to an inline Python boolean expression."""
+    request_roots = frozenset(sym.name for sym in rule.request_symbols)
     conditions: list[str] = []
     if rule.required_role is not None:
         conditions.append(f'_principal_has_role(principal, "{rule.required_role}")')
     if rule.when is not None:
-        conditions.append(_when_to_python(rule.when))
+        conditions.append(_when_to_python(rule.when, request_roots))
     return " and ".join(conditions) if conditions else "True"
 
 
@@ -85,6 +96,27 @@ def role_hierarchies_py(hierarchies: dict[str, dict[str, set[str]]]) -> str:
         for collection, roles in hierarchies.items()
     )
     return "{" + collections + "}"
+
+
+_PART_SOURCE = {
+    "body": "_request_body",
+    "path": "_request_path",
+    "query": "_request_query",
+    "header": "_request_header",
+    "cookie": "_request_cookie",
+}
+
+
+def request_symbol_binding(symbol) -> str:
+    """Compile a request symbol descriptor to its local-variable assignment."""
+    if symbol.is_whole:
+        parts = ", ".join(f'"{part}": {source}' for part, source in _PART_SOURCE.items())
+        return f"{symbol.name} = {{{parts}}}"
+    return f"{symbol.name} = {_PART_SOURCE[symbol.part]}"
+
+
+def needs_request_rule(rule: AccessRuleDescriptor) -> bool:
+    return bool(rule.request_symbols)
 
 
 def needs_post_fetch(route: RouteDescriptor) -> bool:

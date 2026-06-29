@@ -381,6 +381,11 @@ def load_and_generate_ir(
         if constraint_errors:
             raise ConfigErrors(constraint_errors)
 
+        from .transformers.dto_validation import validate_spec_dtos
+        dto_errors = validate_spec_dtos(resolved)
+        if dto_errors:
+            raise ConfigErrors(dto_errors)
+
         from .transformers.access_validation import validate_spec_access
         access_errors = validate_spec_access(resolved)
         if access_errors:
@@ -410,6 +415,11 @@ def load_and_generate_ir(
         path_errors = validate_spec_paths(resolved)
         if path_errors:
             raise ConfigErrors(path_errors)
+
+        from .transformers.request_path_validation import validate_spec_request_paths
+        request_path_errors = validate_spec_request_paths(resolved)
+        if request_path_errors:
+            raise ConfigErrors(request_path_errors)
 
     ui_block = resolved.get("ui", None)
 

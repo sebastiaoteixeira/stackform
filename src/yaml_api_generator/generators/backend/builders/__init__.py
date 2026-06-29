@@ -50,8 +50,9 @@ class ContextBuilder:
 
         identity_map = document.identityCollections
         models = self._model.build_models(document.collections, identity_map, document.repositories)
+        dto_models = self._model.build_dto_models(document.dtos)
         model_index = {m.name: m for m in models}
-        routes = self._route.build_routes(document, model_index)
+        routes = self._route.build_routes(document, model_index, document.dtos)
 
         raw_collections: dict[str, Any] = {}
         for name, col in document.collections.items():
@@ -105,6 +106,7 @@ class ContextBuilder:
             repository_abstract=repository_abstract,
             repository_inherits=repository_inherits,
             services=dict(document.services),
+            dto_models=dto_models,
         )
 
 

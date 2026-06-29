@@ -85,6 +85,7 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                     required_role=rule.required_role,
                     identity_symbols=rule.identity_symbols,
                     document_symbols=rule.document_symbols,
+                    request_symbols=rule.request_symbols,
                     when=rule.when,
                     effect=rule.effect,
                 )

@@ -1,7 +1,12 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from yaml_api_generator.ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
+from yaml_api_generator.ir import (
+    IRDocumentBinding,
+    IRIdentityBinding,
+    IRProviderBinding,
+    IRRequestBinding,
+)
 from yaml_api_generator.ir.api import IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
 
@@ -49,6 +54,7 @@ class RuntimeAccessRule:
     required_role: str | None = None
     identity_symbols: dict[str, IRIdentityBinding] = field(default_factory=dict)
     document_symbols: dict[str, IRDocumentBinding] = field(default_factory=dict)
+    request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
 

@@ -89,7 +89,7 @@ class _Parser:
         left = self._parse_and()
         if left is None:
             return None
-        while self._peek() and self._peek()[0] == "OR":
+        while (tok := self._peek()) and tok[0] == "OR":
             self._consume()
             right = self._parse_and()
             if right is None:
@@ -101,7 +101,7 @@ class _Parser:
         left = self._parse_not()
         if left is None:
             return None
-        while self._peek() and self._peek()[0] == "AND":
+        while (tok := self._peek()) and tok[0] == "AND":
             self._consume()
             right = self._parse_not()
             if right is None:
@@ -110,13 +110,13 @@ class _Parser:
         return left
 
     def _parse_not(self) -> WhenExpr | None:
-        if self._peek() and self._peek()[0] == "NOT":
+        if (tok := self._peek()) and tok[0] == "NOT":
             self._consume()
             operand = self._parse_not()
             if operand is None:
                 return None
             return Not(operand=operand)
-        if self._peek() and self._peek()[0] == "LPAREN":
+        if (tok := self._peek()) and tok[0] == "LPAREN":
             self._consume()
             inner = self._parse_or()
             if inner is None:
@@ -284,6 +284,58 @@ def parse_when_list(
     for expr in exprs[1:]:
         result = And(left=result, right=expr)
     return result, []
+
+
+_REQUEST_PARTS = frozenset({"body", "path", "query", "header", "cookie"})
+_REQUEST_TYPEABLE_PARTS = frozenset({"body", "path", "query"})
+
+
+def parse_request_binding(
+    raw: str, path: str
+) -> tuple[tuple[str | None, str | None, bool] | None, list[ConfigError]]:
+    """Parse a request binding: 'request[.<part>][:<type>]'.
+
+    Returns (part, type_name, raw) where part is None for the whole request and
+    raw is True when no ``:<type>`` was given. ``:<type>`` is legal only on
+    object-shaped targets (whole request -> body, body, path, query).
+    """
+    head, sep, type_name = raw.strip().partition(":")
+    type_name = type_name.strip() if sep else None
+    if type_name == "":
+        return None, [ConfigError(
+            code="REQUEST_TYPE_NOT_FOUND",
+            message=f"Empty type in request binding: '{raw}'",
+            path=path,
+        )]
+
+    if head == "request":
+        part: str | None = None
+    elif head.startswith("request."):
+        part = head[len("request."):]
+        if part not in _REQUEST_PARTS:
+            return None, [ConfigError(
+                code="REQUEST_BINDING_INVALID",
+                message=f"Unknown request part '{part}' in '{raw}'",
+                path=path,
+                hint="Use one of body, path, query, header, cookie",
+            )]
+    else:
+        return None, [ConfigError(
+            code="REQUEST_BINDING_INVALID",
+            message=f"Invalid request binding: '{raw}'",
+            path=path,
+        )]
+
+    typeable = part is None or part in _REQUEST_TYPEABLE_PARTS
+    if type_name is not None and not typeable:
+        return None, [ConfigError(
+            code="REQUEST_TYPE_ON_LEAF",
+            message=f"Type annotation is not allowed on request.{part}",
+            path=path,
+            hint="Types apply only to body, path or query (object-shaped parts)",
+        )]
+
+    return (part, type_name, sep == ""), []
 
 
 def parse_document_binding(

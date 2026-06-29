@@ -109,6 +109,12 @@
         "$ref": "#/$defs/ProviderConfig"
       }
     },
+    "dto": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DtoConfig"
+      }
+    },
     "ui": {
       "type": "object"
     },
@@ -282,6 +288,17 @@
       },
       "then": { "required": ["issuer", "audience"] },
       "else": { "required": ["idp_metadata_url", "sp_entity_id"] },
+      "additionalProperties": false
+    },
+    "DtoConfig": {
+      "type": "object",
+      "required": ["fields"],
+      "properties": {
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
+        }
+      },
       "additionalProperties": false
     },
     "FieldConfig": {
@@ -538,6 +555,7 @@
             "oneOf": [
               { "type": "string", "enum": ["public", "authenticated"] },
               { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" },
+              { "type": "string", "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$" },
               { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$" }
             ]
           }

@@ -28,6 +28,8 @@ class RequestContext:
     body: dict[str, Any] | None
     response: Any | None
     repositories: Any | None = None
+    query: dict[str, str | list[str]] | None = None
+    cookies: dict[str, str] | None = None
 
     def repository_for(self, collection: str | None) -> Any:
         """Resolve the repository backing a collection (cross-store access)."""
