@@ -1,6 +1,6 @@
 ---
 title: "DTO Definitions"
-description: The top-level dto: section declares request-shaped types — fields and validators only, with no persistence — for validating the incoming request body inside access rules.
+description: "The top-level dto: section declares request-shaped types — fields and validators only, with no persistence — for validating the incoming request body inside access rules."
 ---
 
 The top-level `dto:` section declares request-shaped types you can validate the
