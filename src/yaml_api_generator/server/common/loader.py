@@ -33,6 +33,21 @@ def create_repositories(yaml_file: str, schema_file: str | Path | None = None):
     return ir, registry
 
 
+async def initialize_indexes(ir: IRDocument, registry: RepositoryRegistry) -> None:
+    """Materialize unique:true fields as backend-level unique indexes.
+
+    SQL backends already enforce uniqueness through the column constraint built
+    into the table schema; only document stores need explicit index creation.
+    """
+    for col_name, collection in ir.collections.items():
+        repo = registry.for_collection(col_name)
+        if not isinstance(repo, MongoRepository):
+            continue
+        for field_name, cfg in collection.fields.items():
+            if isinstance(cfg, dict) and cfg.get("unique"):
+                await repo.create_unique_index(col_name, field_name)
+
+
 def build_registry(ir: IRDocument, create_schema: bool = True) -> RepositoryRegistry:
     repositories: dict[str, BaseRepository] = {}
     for name, datastore in ir.datastores.items():

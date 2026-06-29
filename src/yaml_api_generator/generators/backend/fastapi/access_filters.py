@@ -59,9 +59,9 @@ def _when_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
     operand = lambda e: _operand_to_python(e, request_roots)
     recurse = lambda e: _when_to_python(e, request_roots)
     if isinstance(expr, Equals):
-        return f"{operand(expr.left)} == {operand(expr.right)}"
+        return f"_values_equal({operand(expr.left)}, {operand(expr.right)})"
     if isinstance(expr, NotEquals):
-        return f"{operand(expr.left)} != {operand(expr.right)}"
+        return f"(not _values_equal({operand(expr.left)}, {operand(expr.right)}))"
     if isinstance(expr, And):
         return f"({recurse(expr.left)} and {recurse(expr.right)})"
     if isinstance(expr, Or):
@@ -69,9 +69,9 @@ def _when_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
     if isinstance(expr, Not):
         return f"(not {recurse(expr.operand)})"
     if isinstance(expr, In):
-        return f"{operand(expr.left)} in {tuple(expr.values)!r}"
+        return f"any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r})"
     if isinstance(expr, NotIn):
-        return f"{operand(expr.left)} not in {tuple(expr.values)!r}"
+        return f"(not any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r}))"
     return "False"
 
 

@@ -45,6 +45,16 @@ class RepositoryBase:
         await self._col.insert_one(data)
         return self._normalize(data)
 
+    async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
+        on_insert = {self.ID_FIELD: self._generate_id()} if self._generate_id is not None else {}
+        doc = await self._col.find_one_and_update(
+            {key_field: data.get(key_field)},
+            {"$set": data, "$setOnInsert": on_insert},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(doc)
+
 
 class ListOp:
     async def list(self) -> list[dict[str, Any]]:

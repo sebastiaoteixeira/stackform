@@ -25,3 +25,14 @@ def get_database():
     if _db is None:
         raise RuntimeError("Database not connected")
     return _db
+
+
+async def initialize_indexes(unique_indexes: dict[str, list[str]]) -> None:
+    db = get_database()
+    for collection_name, fields in unique_indexes.items():
+        for field_name in fields:
+            await db[collection_name].create_index(
+                field_name,
+                unique=True,
+                partialFilterExpression={field_name: {"$exists": True, "$ne": None}},
+            )

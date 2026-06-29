@@ -42,6 +42,13 @@ class MongoRepository(BaseRepository):
             raise RuntimeError("MongoRepository is not connected")
         return self._db[name]
 
+    async def create_unique_index(self, collection_name: str, field_name: str) -> None:
+        await self.collection(collection_name).create_index(
+            field_name,
+            unique=True,
+            partialFilterExpression={field_name: {"$exists": True, "$ne": None}},
+        )
+
     async def list(self, collection_name: str) -> list[dict[str, Any]]:
         cursor = self.collection(collection_name).find({})
         documents = await cursor.to_list(length=None)
@@ -62,6 +69,20 @@ class MongoRepository(BaseRepository):
         created = dict(payload)
         created.setdefault("_id", str(inserted.inserted_id))
         return self._normalize_document_required(created)
+
+    async def upsert_by(
+        self, collection_name: str, key_field: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        id_field = self._id_fields.get(collection_name, "id")
+        on_insert = {id_field: payload[id_field]} if id_field in payload else {}
+        update_fields = {k: v for k, v in payload.items() if k != id_field}
+        document = await self.collection(collection_name).find_one_and_update(
+            {key_field: payload.get(key_field)},
+            {"$set": update_fields, "$setOnInsert": on_insert},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize_document_required(document)
 
     async def update(
         self,

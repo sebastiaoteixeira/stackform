@@ -16,6 +16,7 @@ from yaml_api_generator.ir.when import (
     needs_document,
 )
 from .utils.field_access import get_nested_field
+from .utils.value_compare import values_equal
 
 __all__ = ["evaluate_when_with_symbols", "needs_document"]
 
@@ -34,9 +35,9 @@ def _resolve_field(
 
 def _evaluate(expr: WhenExpr, symbols: dict[str, dict | None]) -> bool:
     if isinstance(expr, Equals):
-        return _resolve(expr.left, symbols) == _resolve(expr.right, symbols)
+        return values_equal(_resolve(expr.left, symbols), _resolve(expr.right, symbols))
     if isinstance(expr, NotEquals):
-        return _resolve(expr.left, symbols) != _resolve(expr.right, symbols)
+        return not values_equal(_resolve(expr.left, symbols), _resolve(expr.right, symbols))
     if isinstance(expr, And):
         return _evaluate(expr.left, symbols) and _evaluate(expr.right, symbols)
     if isinstance(expr, Or):
@@ -44,9 +45,9 @@ def _evaluate(expr: WhenExpr, symbols: dict[str, dict | None]) -> bool:
     if isinstance(expr, Not):
         return not _evaluate(expr.operand, symbols)
     if isinstance(expr, In):
-        return _resolve(expr.left, symbols) in expr.values
+        return any(values_equal(_resolve(expr.left, symbols), v) for v in expr.values)
     if isinstance(expr, NotIn):
-        return _resolve(expr.left, symbols) not in expr.values
+        return not any(values_equal(_resolve(expr.left, symbols), v) for v in expr.values)
     return False
 
 

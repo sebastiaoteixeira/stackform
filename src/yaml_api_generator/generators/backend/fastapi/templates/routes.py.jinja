@@ -26,7 +26,7 @@ from dependencies.repositories import get_{{ collection_name }}_repository
 from dependencies.auth import require_principal
 {% endif %}
 {% if auth.enabled and ns_auth.needs_role %}
-from dependencies.authorization import _principal_has_role
+from dependencies.authorization import _principal_has_role, _values_equal
 {% endif %}
 {% set ns = namespace(model_imports=[]) %}
 {% for route in crud_routes %}

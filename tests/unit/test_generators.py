@@ -330,8 +330,7 @@ def test_oidc_callback_uses_repository_not_raw_datastore(tmp_path):
     assert "get_database" not in oidc_src
     assert "insert_one" not in oidc_src and "find_one" not in oidc_src
     assert "Depends(get_users_repository)" in oidc_src
-    assert 'repo.find_by("email"' in oidc_src
-    assert "repo.insert(user_fields)" in oidc_src
+    assert 'repo.upsert_by("email"' in oidc_src
 
 
 def test_oidc_login_codes_stored_in_collection_datastore(tmp_path):

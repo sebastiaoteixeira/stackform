@@ -1,4 +1,14 @@
+from typing import Any
+
 from fastapi import HTTPException
+
+
+def _values_equal(left: Any, right: Any) -> bool:
+    if left == right:
+        return True
+    if left is None or right is None:
+        return False
+    return str(left) == str(right)
 
 
 ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | role_hierarchies_py }}
