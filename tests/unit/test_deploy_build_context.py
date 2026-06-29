@@ -68,7 +68,7 @@ def test_image_service_untouched(tmp_path):
 
 
 def test_required_secrets_are_added_to_env_vars(tmp_path):
-    """JWT_SECRET and other backend secrets must surface in deploy env vars."""
+    """JWT_SECRET and other backend secrets must surface in deploy secret_env_names."""
     from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
     from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
     from tests.conftest import VALID_DIR
@@ -82,12 +82,14 @@ deploy:
 """)
     ir = load_and_generate_ir(str(spec)).ir
     ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
-    assert ctx.env_vars["JWT_SECRET"]
+    assert "JWT_SECRET" in ctx.secret_env_names
+    assert "KEYCLOAK_CLIENT_SECRET" in ctx.secret_env_names
+    assert ctx.env_vars["JWT_SECRET"] == ""
     assert ctx.env_vars["KEYCLOAK_CLIENT_SECRET"] == ""
 
 
-def test_secrets_passthrough_with_dev_defaults_in_app_environment(tmp_path):
-    """Secrets pass through with shell defaults so the bundle starts without manual provisioning."""
+def test_secrets_required_passthrough_in_app_environment(tmp_path):
+    """Secrets use required passthrough ${VAR} in compose — no plaintext default baked in."""
     from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
     from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
     from tests.conftest import VALID_DIR
@@ -101,6 +103,34 @@ deploy:
 """)
     ir = load_and_generate_ir(str(spec)).ir
     ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
-    jwt = next(v for v in ctx.app_environment if v.startswith("JWT_SECRET="))
-    assert jwt.startswith("JWT_SECRET=${JWT_SECRET:-") and not jwt.endswith(":-}")
-    assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-}" in ctx.app_environment
+    assert "JWT_SECRET=${JWT_SECRET}" in ctx.app_environment
+    assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}" in ctx.app_environment
+    assert not any(":-" in v for v in ctx.app_environment if "JWT_SECRET" in v)
+
+
+def test_ansible_role_generates_secrets_and_renders_env(tmp_path):
+    """The Ansible app role must generate secrets via password lookup and template .env on remote."""
+    from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
+    from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
+    from yaml_api_generator.generators.deploy.docker.generator import DockerDeployGenerator
+    from tests.conftest import VALID_DIR
+
+    spec = tmp_path / "spec.yaml"
+    spec.write_text((VALID_DIR / "auth-oidc.yaml").read_text() + """
+deploy:
+  runtime: docker
+  name: app
+  port: 8000
+""")
+    ir = load_and_generate_ir(str(spec)).ir
+    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    out = tmp_path / "out"
+    DockerDeployGenerator().generate(ctx, out, tmp_path)
+
+    tasks = (out / "roles" / "app" / "tasks" / "main.yml").read_text()
+    assert "lookup('ansible.builtin.password'" in tasks
+    assert "template:" in tasks
+    assert "env.j2" in tasks
+
+    assert not (out / ".env").exists()
+    assert (out / "roles" / "app" / "templates" / "env.j2").exists()
