@@ -115,6 +115,12 @@
         "$ref": "#/$defs/DtoConfig"
       }
     },
+    "policies": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/PolicyConfig"
+      }
+    },
     "ui": {
       "type": "object"
     },
@@ -297,6 +303,27 @@
         "fields": {
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PolicyConfig": {
+      "type": "object",
+      "required": ["when"],
+      "properties": {
+        "given": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "params": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "when": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
         }
       },
       "additionalProperties": false
@@ -545,7 +572,8 @@
       "type": "object",
       "anyOf": [
         { "required": ["given"] },
-        { "required": ["then"] }
+        { "required": ["then"] },
+        { "required": ["when"] }
       ],
       "properties": {
         "given": {

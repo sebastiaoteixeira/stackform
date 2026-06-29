@@ -12,6 +12,7 @@ from ..ir import (
     NotEquals,
     NotIn,
     Or,
+    PolicyRef,
     StringLiteral,
     WhenExpr,
 )
@@ -33,6 +34,7 @@ _TOKEN_PATTERNS = [
     ("RPAREN",     r"\)"),
     ("COMMA",      r","),
     ("STRING",     r"'[^']*'"),
+    ("POLICY",     r"policy:[a-zA-Z][a-zA-Z0-9_]*(?:\([^)]*\))?"),
     ("FIELDREF",   r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.\w+)+"),
     ("WORD",       r"\w+"),
     ("WS",         r"\s+"),
@@ -131,7 +133,19 @@ class _Parser:
                 return None
             self._consume()
             return inner
+        if (tok := self._peek()) and tok[0] == "POLICY":
+            self._consume()
+            return self._parse_policy_ref(tok[1])
         return self._parse_comparison()
+
+    def _parse_policy_ref(self, lexeme: str) -> WhenExpr:
+        body = lexeme[len("policy:"):]
+        name, sep, rest = body.partition("(")
+        if not sep:
+            return PolicyRef(name=name, args=(), has_parens=False)
+        inner = rest[:-1].strip()
+        args = tuple(a.strip() for a in inner.split(",")) if inner else ()
+        return PolicyRef(name=name, args=args, has_parens=True)
 
     def _parse_comparison(self) -> WhenExpr | None:
         lhs = self._parse_operand()

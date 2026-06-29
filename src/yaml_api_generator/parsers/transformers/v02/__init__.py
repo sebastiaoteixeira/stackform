@@ -15,6 +15,8 @@ from .collection_transformer import CollectionTransformer
 from .datastore_transformer import parse_datastores
 from .dto_transformer import DtoTransformer
 from .identity_transformer import IdentityTransformer
+from .policies_transformer import PoliciesTransformer
+from .policy_expansion import expand_rule_policies
 from .repository_transformer import RepositoryTransformer
 from .route_transformer import RouteTransformer
 
@@ -29,6 +31,7 @@ class V02Transformer:
         self._identity = IdentityTransformer()
         self._access = AccessTransformer()
         self._route = RouteTransformer(self._access)
+        self._policies = PoliciesTransformer()
 
     def transform(self, resolved: dict[str, Any]) -> IRDocument:
         """Transform v0.2 YAML specification to IR.
@@ -52,6 +55,7 @@ class V02Transformer:
         roles_data: dict[str, Any] = resolved.get("roles", {})
         providers_data: dict[str, Any] = resolved.get("providers", {})
         dtos_data: dict[str, Any] = resolved.get("dto", {})
+        policies_data: dict[str, Any] = resolved.get("policies", {})
 
         datastores, default_datastore, datastore_errors = parse_datastores(resolved)
         if datastore_errors:
@@ -110,6 +114,14 @@ class V02Transformer:
             entity_to_collection,
         )
 
+        policies, policy_errors = self._policies.transform(
+            policies_data, entity_to_collection
+        )
+        if policy_errors:
+            raise ConfigErrors(policy_errors)
+
+        routes = self._expand_route_policies(routes, policies, entity_to_collection)
+
         providers = self._parse_providers(providers_data)
 
         dtos, dto_errors = self._dto.transform(dtos_data)
@@ -132,8 +144,36 @@ class V02Transformer:
             deploy=self._route.build_deploy(resolved.get("deploy"), mongo_config, providers, datastores),
             repositories=repositories,
             providers=providers,
+            policies=policies,
             ui_config=resolved.get("ui"),
         )
+
+    def _expand_route_policies(
+        self,
+        routes: list[Any],
+        policies: dict[str, Any],
+        entity_to_collection: dict[str, str],
+    ) -> list[Any]:
+        from dataclasses import replace
+
+        errors = []
+        expanded_routes = []
+        for route in routes:
+            if not route.access_rules:
+                expanded_routes.append(route)
+                continue
+            new_rules = []
+            for index, rule in enumerate(route.access_rules):
+                expanded, rule_errors = expand_rule_policies(
+                    rule, policies, entity_to_collection,
+                    f"{route.method} {route.path} access[{index}]",
+                )
+                errors.extend(rule_errors)
+                new_rules.append(expanded)
+            expanded_routes.append(replace(route, access_rules=new_rules))
+        if errors:
+            raise ConfigErrors(errors)
+        return expanded_routes
 
     def _parse_providers(self, providers_data: dict[str, Any]) -> dict[str, IRProvider]:
         _CONSTRUCTORS: dict[str, type] = {"oidc": IROIDCProvider, "saml": IRSAMLProvider}

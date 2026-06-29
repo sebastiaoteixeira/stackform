@@ -177,6 +177,17 @@ class IRRequestBinding:
     raw: bool = False
 
 
+IRBinding = IRIdentityBinding | IRDocumentBinding | IRRequestBinding
+
+
+@dataclass(frozen=True)
+class IRPolicy:
+    name: str
+    when: WhenExpr
+    given: dict[str, IRBinding] = field(default_factory=dict)
+    params: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class IRDto:
     name: str
@@ -317,6 +328,7 @@ class IRDocument:
     default_datastore: str = "default"
     deploy: IRDeploy | None = None
     repositories: dict[str, IRRepository] = field(default_factory=dict)
+    policies: dict[str, IRPolicy] = field(default_factory=dict)
     ui_config: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:

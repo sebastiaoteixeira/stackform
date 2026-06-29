@@ -386,6 +386,11 @@ def load_and_generate_ir(
         if dto_errors:
             raise ConfigErrors(dto_errors)
 
+        from .transformers.policy_validation import validate_spec_policies
+        policy_errors = validate_spec_policies(resolved)
+        if policy_errors:
+            raise ConfigErrors(policy_errors)
+
         from .transformers.access_validation import validate_spec_access
         access_errors = validate_spec_access(resolved)
         if access_errors:

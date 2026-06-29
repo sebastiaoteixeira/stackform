@@ -12,12 +12,9 @@ from yaml_api_generator.ir import (
     IRRequestBinding,
 )
 from yaml_api_generator.parsers.yaml_parser import ConfigError
-from yaml_api_generator.parsers.when_parser import (
-    parse_document_binding,
-    parse_request_binding,
-    parse_when_list,
-)
+from yaml_api_generator.parsers.when_parser import parse_when_list
 from yaml_api_generator.parsers.transformers.principal_resolver import resolve_principal
+from yaml_api_generator.parsers.transformers.v02.binding_classifier import classify_binding
 
 
 class AccessTransformer:
@@ -114,44 +111,16 @@ class AccessTransformer:
             for symbol_name, symbol_value in given.items():
                 if not isinstance(symbol_value, str):
                     continue
-                if symbol_value.startswith("identity:"):
-                    entity_name = symbol_value[len("identity:"):]
-                    collection = entity_to_collection.get(entity_name)
-                    if collection is None:
-                        errors.append(
-                            ConfigError(
-                                code="ACCESS_UNKNOWN_ENTITY",
-                                message=f"Unknown auth entity '{entity_name}' in access rule",
-                                path=f"{path}.given.{symbol_name}",
-                            )
-                        )
-                    else:
-                        identity_symbols[symbol_name] = IRIdentityBinding(
-                            entity_name=entity_name,
-                            collection_name=collection,
-                        )
-                elif symbol_value == "request" or symbol_value.startswith(
-                    ("request.", "request:")
-                ):
-                    parsed_req, req_errors = parse_request_binding(
-                        symbol_value, f"{path}.given.{symbol_name}"
-                    )
-                    errors.extend(req_errors)
-                    if parsed_req is not None:
-                        request_symbols[symbol_name] = IRRequestBinding(
-                            part=parsed_req[0],
-                            type_name=parsed_req[1],
-                            raw=parsed_req[2],
-                        )
-                else:
-                    parsed, doc_errors = parse_document_binding(
-                        symbol_value, f"{path}.given.{symbol_name}"
-                    )
-                    errors.extend(doc_errors)
-                    if parsed is not None:
-                        document_symbols[symbol_name] = IRDocumentBinding(
-                            collection=parsed[0], id_param=parsed[1]
-                        )
+                binding, binding_errors = classify_binding(
+                    symbol_value, f"{path}.given.{symbol_name}", entity_to_collection
+                )
+                errors.extend(binding_errors)
+                if isinstance(binding, IRIdentityBinding):
+                    identity_symbols[symbol_name] = binding
+                elif isinstance(binding, IRRequestBinding):
+                    request_symbols[symbol_name] = binding
+                elif isinstance(binding, IRDocumentBinding):
+                    document_symbols[symbol_name] = binding
 
         when_expr = None
         when_raw = rule.get("when")

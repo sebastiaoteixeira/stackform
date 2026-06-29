@@ -93,22 +93,34 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 {% endif %}
 {% endmacro %}
 
+{# Alias every identity symbol to the resolved principal so fresh policy #}
+{# symbols (e.g. _p0_ownOrg__user) resolve like the literal `principal`. #}
+{% macro identity_locals(route) %}
+{% set ns_id = namespace(symbols=[]) %}
+{% for rule in route.access_rules %}
+{% for symbol in rule.identity_symbols %}
+{% if symbol != "principal" and symbol not in ns_id.symbols %}
+{% set _ = ns_id.symbols.append(symbol) %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% for symbol in ns_id.symbols %}
+    {{ symbol }} = principal
+{% endfor %}
+{% endmacro %}
+
 {# Emit pre-fetch authorization guards as inline compiled conditions. #}
 {# Rules whose `when` references `document` are deferred to post-fetch. #}
 {% macro pre_fetch_guard(route) %}
 {% if auth.enabled and route.needs_auth and route.access_rules %}
-{% set ns = namespace(has_doc_rule=false, identity_symbols=[]) %}
+{% set ns = namespace(has_doc_rule=false) %}
 {% for rule in route.access_rules %}
 {% if rule is needs_document_rule %}
 {% set ns.has_doc_rule = true %}
 {% endif %}
-{% for symbol in rule.identity_symbols %}
-{% if symbol not in ns.identity_symbols %}
-{% set _ = ns.identity_symbols.append(symbol) %}
-{% endif %}
-{% endfor %}
 {% endfor %}
 {% if not ns.has_doc_rule %}
+{{ identity_locals(route) }}
 {% set ns.first = true %}
 {% set ns.has_conditionals = false %}
 {% for rule in route.access_rules %}
@@ -152,6 +164,7 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 {% endfor %}
 {% endfor %}
 {% if ns.has_doc_rule %}
+{{ identity_locals(route) }}
 {% for symbol in ns.document_symbols %}
     {{ symbol }} = {{ doc_var }}
 {% endfor %}
