@@ -78,6 +78,7 @@ class ControllerDesugarer:
         service_name = entry["service"]
         base_access = entry.get("access", "public")
         ops_overrides = entry.get("operations", {})
+        route_overrides = entry.get("routes", {})
 
         matching_services = self._find_matching_services(
             service_name, expanded_services
@@ -91,12 +92,13 @@ class ControllerDesugarer:
             )
 
         routes = self._build_routes(
-            ctrl_name, matching_services, base_access, ops_overrides
+            ctrl_name, matching_services, base_access, ops_overrides, route_overrides
         )
 
         entry.pop("service", None)
         entry.pop("access", None)
         entry.pop("operations", None)
+        entry.pop("routes", None)
         entry["routes"] = routes
 
     def _find_matching_services(
@@ -122,19 +124,23 @@ class ControllerDesugarer:
         matching_services: dict[str, str],
         base_access: str,
         ops_overrides: dict[str, Any],
+        route_overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build routes dict from matching services and overrides."""
         routes: dict[str, Any] = {}
         errors: list[ConfigError] = []
+        effective_route_overrides = route_overrides or {}
 
         for op_name, svc_key in matching_services.items():
             op_override = ops_overrides.get(op_name)
             if op_override is False:
                 continue
 
+            route_override = effective_route_overrides.get(op_name)
+
             try:
                 route = self._build_single_route(
-                    ctrl_name, op_name, svc_key, base_access, op_override
+                    ctrl_name, op_name, svc_key, base_access, op_override, route_override
                 )
                 routes[op_name] = route
             except ConfigError as e:
@@ -152,6 +158,7 @@ class ControllerDesugarer:
         svc_key: str,
         base_access: str,
         op_override: Any,
+        route_override: Any = None,
     ) -> dict[str, Any]:
         """Build a single route definition."""
         if op_name in ALL_ROUTE_CONVENTIONS:
@@ -171,7 +178,9 @@ class ControllerDesugarer:
             path = op_override["path"]
 
         access = base_access
-        if isinstance(op_override, dict) and "access" in op_override:
+        if isinstance(route_override, dict) and "access" in route_override:
+            access = route_override["access"]
+        elif isinstance(op_override, dict) and "access" in op_override:
             access = op_override["access"]
 
         return {
