@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends{% if auth.enabled %}, HTTPException{% end
 
 {% if repo_op_routes and is_mongo %}
 from fastapi.encoders import jsonable_encoder
+from dependencies.bindings import resolve_filter
 {% endif %}
 {% for group in service_groups %}
 from dependencies.services import get_{{ group }}_service
@@ -278,6 +279,14 @@ async def {{ handler_name }}(request: Request) -> Any:
 
 @router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"])
 async def {{ handler_name }}(request: Request, repo=Depends(get_{{ collection_name }}_repository)) -> Any:
-    return jsonable_encoder(await repo.{{ route.operation }}({% for key, value in (query or {}).items() if key != "command" %}{{ key }}={{ value | py_literal }}{% if not loop.last %}, {% endif %}{% endfor %}))
+    _principal: dict[str, Any] = getattr(request.state, "principal", None) or {}
+    _body: dict[str, Any] = {}
+    try:
+        _body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        pass
+    _bindings = {"principal": _principal, "params": dict(request.path_params), "body": _body}
+    _resolved = resolve_filter({{ query | py_literal }}, _bindings)
+    return jsonable_encoder(await repo.{{ route.operation }}(**{k: v for k, v in _resolved.items() if k != "command"}))
 {% endfor %}
 {% endif %}

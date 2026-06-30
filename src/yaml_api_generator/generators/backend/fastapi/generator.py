@@ -377,6 +377,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
+        if any(context.repository_operations.values()):
+            (deps_dir / "bindings.py").write_text(
+                (_STATIC_DIR / "bindings.py").read_text()
+            )
 
         init_imports: list[str] = []
         auth_files = []
