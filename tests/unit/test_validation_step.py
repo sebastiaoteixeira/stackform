@@ -339,3 +339,30 @@ def test_validate_body_datetime_iso_string_from_json_mode_passes():
     ctx = _make_ctx(body={"starts_at": "2025-01-15T10:30:00"})
     result = step(ctx)
     assert result.body["starts_at"] == "2025-01-15T10:30:00"
+
+
+# --- Nullable non-required datetime regression (model_dump no exclude_unset) ---
+
+
+def test_validate_body_none_for_non_required_datetime_passes():
+    collection = _make_collection({"removedAt": {"type": "datetime", "required": False}})
+    step = ValidateBodyStep(collection, "create")
+    ctx = _make_ctx(body={"removedAt": None})
+    result = step(ctx)
+    assert result.body["removedAt"] is None
+
+
+def test_validate_body_none_for_required_field_rejected():
+    collection = _make_collection({"title": {"type": "string", "required": True}})
+    step = ValidateBodyStep(collection, "create")
+    ctx = _make_ctx(body={"title": None})
+    with pytest.raises(ValueError, match="required and cannot be null"):
+        step(ctx)
+
+
+def test_validate_body_valid_iso_datetime_still_passes():
+    collection = _make_collection({"createdAt": {"type": "datetime"}})
+    step = ValidateBodyStep(collection, "create")
+    ctx = _make_ctx(body={"createdAt": "2025-06-27T12:00:00"})
+    result = step(ctx)
+    assert result.body["createdAt"] == "2025-06-27T12:00:00"
