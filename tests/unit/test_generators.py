@@ -442,6 +442,18 @@ def test_generated_update_route_uses_json_mode_with_exclude_unset(tmp_path):
     assert 'svc.update(id, payload.model_dump(mode="json", exclude_unset=True))' in src
 
 
+def test_generated_repo_match_filter_mirrors_runtime_semantics(tmp_path):
+    ctx = _ctx_from_fixture("basic-crud.yaml")
+    FastAPIGenerator().generate(ctx, tmp_path)
+    ops_src = (tmp_path / "repositories" / "_ops.py").read_text()
+    assert "from bson import ObjectId" in ops_src
+    assert "from bson.errors import InvalidId" in ops_src
+    assert "$or" in ops_src
+    assert "ObjectId(document_id)" in ops_src
+    assert "InvalidId" in ops_src
+    assert "return {self.ID_FIELD: document_id}" not in ops_src
+
+
 def test_fastapi_emits_env_files(tmp_path):
     ctx_auth = _ctx_from_fixture("auth-password.yaml")
     gen = FastAPIGenerator()

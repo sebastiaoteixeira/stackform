@@ -2,6 +2,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -29,7 +31,14 @@ class RepositoryBase:
         self._generate_id = make_id_generator(self.ID_FORMAT)
 
     def _match_filter(self, document_id: str) -> dict[str, Any]:
-        return {self.ID_FIELD: document_id}
+        candidates: list[Any] = [document_id]
+        try:
+            candidates.append(ObjectId(document_id))
+        except InvalidId:
+            pass
+        conditions = [{"_id": value} for value in candidates]
+        conditions.append({self.ID_FIELD: document_id})
+        return {"$or": conditions}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
         if doc is None:
