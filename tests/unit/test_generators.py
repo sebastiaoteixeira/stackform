@@ -423,6 +423,25 @@ def test_build_settings_fields_skips_saml_provider_client_secret():
     assert not any("SAML" in name and "SECRET" in name for name in env_names)
 
 
+# --- BUG 1 + BUG 2: generated route model_dump modes ---
+
+
+def test_generated_create_route_uses_json_mode_without_exclude_unset(tmp_path):
+    ctx = _ctx_from_fixture("basic-crud.yaml")
+    FastAPIGenerator().generate(ctx, tmp_path)
+    src = (tmp_path / "routes" / "posts.py").read_text()
+    assert 'model_dump(mode="json")' in src
+    assert 'svc.create(payload.model_dump(mode="json"))' in src
+
+
+def test_generated_update_route_uses_json_mode_with_exclude_unset(tmp_path):
+    ctx = _ctx_from_fixture("basic-crud.yaml")
+    FastAPIGenerator().generate(ctx, tmp_path)
+    src = (tmp_path / "routes" / "posts.py").read_text()
+    assert 'model_dump(mode="json", exclude_unset=True)' in src
+    assert 'svc.update(id, payload.model_dump(mode="json", exclude_unset=True))' in src
+
+
 def test_fastapi_emits_env_files(tmp_path):
     ctx_auth = _ctx_from_fixture("auth-password.yaml")
     gen = FastAPIGenerator()

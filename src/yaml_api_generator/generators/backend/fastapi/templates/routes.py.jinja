@@ -216,33 +216,33 @@ async def get_{{ collection_name }}(id: str{{ extra_path_params(route) }}{{ requ
 {% elif route.operation == "create" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def create_{{ collection_name }}(payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
-{{ request_locals(route, "payload.model_dump(exclude_unset=True)") }}
+{{ request_locals(route, 'payload.model_dump(mode="json")') }}
 {{ pre_fetch_guard(route) }}
-    return await svc.create(payload.model_dump(exclude_unset=True))
+    return await svc.create(payload.model_dump(mode="json"))
 
 
 {% elif route.operation == "update" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def update_{{ collection_name }}(id: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
-{{ request_locals(route, "payload.model_dump(exclude_unset=True)") }}
+{{ request_locals(route, 'payload.model_dump(mode="json", exclude_unset=True)') }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
     existing = await svc.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await svc.update(id, payload.model_dump(exclude_unset=True))
+    return await svc.update(id, payload.model_dump(mode="json", exclude_unset=True))
 
 
 {% elif route.operation == "replace" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 async def replace_{{ collection_name }}(id: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
-{{ request_locals(route, "payload.model_dump(exclude_unset=True)") }}
+{{ request_locals(route, 'payload.model_dump(mode="json")') }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
     existing = await svc.get(id)
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await svc.replace(id, payload.model_dump(exclude_unset=True))
+    return await svc.replace(id, payload.model_dump(mode="json"))
 
 
 {% elif route.operation == "delete" %}

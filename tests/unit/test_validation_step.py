@@ -328,3 +328,14 @@ def test_validate_body_auth_field_skipped():
     ctx = _make_ctx(body={"title": "hello"})
     result = step(ctx)
     assert result.body["title"] == "hello"
+
+
+# --- BUG 2: ISO datetime string (from model_dump mode='json') passes validation ---
+
+
+def test_validate_body_datetime_iso_string_from_json_mode_passes():
+    collection = _make_collection({"starts_at": {"type": "datetime"}})
+    step = ValidateBodyStep(collection, "create")
+    ctx = _make_ctx(body={"starts_at": "2025-01-15T10:30:00"})
+    result = step(ctx)
+    assert result.body["starts_at"] == "2025-01-15T10:30:00"
