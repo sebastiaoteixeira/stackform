@@ -16,7 +16,7 @@ from yaml_api_generator.generators.backend.fastapi.access_filters import (
     role_hierarchies_py,
     rule_to_python,
 )
-from yaml_api_generator.ir.when import And, Equals, FieldRef, In, Not, NotIn, Or, StringLiteral
+from yaml_api_generator.ir.when import And, Equals, FieldRef, In, IsNotNull, IsNull, Not, NotIn, Or, StringLiteral
 
 
 def test_py_bool():
@@ -176,3 +176,20 @@ def test_needs_post_fetch_false_without_document_symbols():
 def test_needs_post_fetch_false_for_non_fetching_op():
     assert not needs_post_fetch(_route("create", document_symbols=["document"]))
     assert not needs_post_fetch(_route("list", document_symbols=["document"]))
+
+
+def test_rule_to_python_is_null():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=IsNull(operand=FieldRef("document", ("organizationId",))),
+    )
+    assert 'document.get("organizationId") is None' in rule_to_python(rule)
+
+
+def test_rule_to_python_is_not_null():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=IsNotNull(operand=FieldRef("principal", ("record", "role"))),
+    )
+    result = rule_to_python(rule)
+    assert "is not None" in result

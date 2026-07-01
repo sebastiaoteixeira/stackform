@@ -7,6 +7,8 @@ from yaml_api_generator.ir.when import (
     Equals,
     FieldRef,
     In,
+    IsNotNull,
+    IsNull,
     Not,
     NotEquals,
     NotIn,
@@ -48,6 +50,10 @@ def _evaluate(expr: WhenExpr, symbols: dict[str, dict | None]) -> bool:
         return any(values_equal(_resolve(expr.left, symbols), v) for v in expr.values)
     if isinstance(expr, NotIn):
         return not any(values_equal(_resolve(expr.left, symbols), v) for v in expr.values)
+    if isinstance(expr, IsNull):
+        return _resolve(expr.operand, symbols) is None
+    if isinstance(expr, IsNotNull):
+        return _resolve(expr.operand, symbols) is not None
     return False
 
 

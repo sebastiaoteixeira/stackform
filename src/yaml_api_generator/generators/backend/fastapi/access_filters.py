@@ -11,6 +11,8 @@ from yaml_api_generator.ir.when import (
     Equals,
     FieldRef,
     In,
+    IsNotNull,
+    IsNull,
     Not,
     NotEquals,
     NotIn,
@@ -86,6 +88,10 @@ def _when_to_python(
         return f"any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r})"
     if isinstance(expr, NotIn):
         return f"(not any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r}))"
+    if isinstance(expr, IsNull):
+        return f"({operand(expr.operand)} is None)"
+    if isinstance(expr, IsNotNull):
+        return f"({operand(expr.operand)} is not None)"
     return "False"
 
 
