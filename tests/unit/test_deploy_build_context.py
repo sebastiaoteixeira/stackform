@@ -67,6 +67,18 @@ def test_image_service_untouched(tmp_path):
     assert "image: redis:7" in compose
 
 
+def test_readme_documents_ansible_vault_hardening(tmp_path):
+    """The generated deploy README documents the opt-in ansible-vault path."""
+    out = tmp_path / "out"
+    DockerDeployGenerator().generate(_ctx(()), out, tmp_path)
+    readme = (out / "README.md").read_text()
+    assert "Hardening: encrypt secrets at rest with ansible-vault" in readme
+    assert "group_vars/all/secrets.yml" in readme
+    assert "ansible-vault encrypt group_vars/all/secrets.yml" in readme
+    assert "--ask-vault-pass" in readme
+    assert "--vault-password-file" in readme
+
+
 def test_required_secrets_are_added_to_env_vars(tmp_path):
     """JWT_SECRET and other backend secrets must surface in deploy env vars."""
     from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
