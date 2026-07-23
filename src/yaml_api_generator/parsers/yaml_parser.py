@@ -327,6 +327,7 @@ def _describe_error(error: ValidationError) -> str:
 _VERSION_SCHEMA_MAP: dict[str, str] = {
     "0.1": "yaml-spec-v0.1.schema.json",
     "0.2": "yaml-spec-v0.2.schema.json",
+    "0.3": "yaml-spec-v0.3.schema.json",
 }
 
 
@@ -365,7 +366,7 @@ def load_and_generate_ir(
     version = str(resolved.get("version", "0.1"))
     trust_warnings: tuple[ConfigError, ...] = ()
 
-    if version == "0.2":
+    if version in ("0.2", "0.3"):
         from .transformers.shape_validation import validate_spec_shape
         shape_errors = validate_spec_shape(resolved)
         if shape_errors:

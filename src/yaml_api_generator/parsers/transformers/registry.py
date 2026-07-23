@@ -3,10 +3,12 @@ from typing import Any
 from yaml_api_generator.ir import IRDocument
 from .v01 import V01Transformer
 from .v02 import V02Transformer
+from .v03 import V03Transformer
 
 _TRANSFORMERS: dict[str, Any] = {
     "0.1": V01Transformer,
     "0.2": V02Transformer,
+    "0.3": V03Transformer,
 }
 
 
