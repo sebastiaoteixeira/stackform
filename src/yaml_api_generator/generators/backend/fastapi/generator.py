@@ -251,7 +251,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         if context.auth.has_password_auth:
             (routes_dir / "login.py").write_text(
-                env.get_template("login_routes.py.jinja").render(auth=context.auth)
+                env.get_template("login_routes.py.jinja").render(
+                    auth=context.auth, ctx=context
+                )
             )
             auth_imports.append("from .login import router as login_router")
 
@@ -401,6 +403,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.auth.uses_jwt:
             auth_files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
+        if context.session.refresh:
+            auth_files.append(("refresh_store.py.jinja", "refresh_store.py"))
+            init_imports.append("from .refresh_store import issue, rotate, revoke_session")
 
         for template_name, filename in auth_files:
             (deps_dir / filename).write_text(

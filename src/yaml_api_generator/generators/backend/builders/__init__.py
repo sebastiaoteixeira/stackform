@@ -101,7 +101,11 @@ class ContextBuilder:
             routes=routes,
             auth=auth,
             collections=raw_collections,
-            session=SessionConfig(algorithm=document.session.algorithm),
+            session=SessionConfig(
+                algorithm=document.session.algorithm,
+                ttl=document.session.ttl,
+                refresh=document.session.refresh,
+            ),
             repository_operations=repository_operations,
             datastores=datastores,
             repository_abstract=repository_abstract,

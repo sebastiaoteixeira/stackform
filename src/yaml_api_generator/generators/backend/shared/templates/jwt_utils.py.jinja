@@ -41,7 +41,7 @@ def create_jwt_token(sub: str, identity_collection: str) -> str:
         "sub": sub,
         "identity_collection": identity_collection,
         "iat": int(now),
-        "exp": int(now + settings.JWT_EXPIRATION_HOURS * 3600),
+        "exp": int(now + {% if ctx.session.refresh %}settings.JWT_ACCESS_TTL_SECONDS{% else %}settings.JWT_EXPIRATION_HOURS * 3600{% endif %}),
     }
     private_pem, _, kid, _ = _signing_material()
     return jwt.encode(payload, private_pem, algorithm="RS256", headers={"kid": kid})
@@ -72,7 +72,7 @@ def create_jwt_token(sub: str, identity_collection: str) -> str:
         "sub": sub,
         "identity_collection": identity_collection,
         "iat": int(now),
-        "exp": int(now + settings.JWT_EXPIRATION_HOURS * 3600),
+        "exp": int(now + {% if ctx.session.refresh %}settings.JWT_ACCESS_TTL_SECONDS{% else %}settings.JWT_EXPIRATION_HOURS * 3600{% endif %}),
     }
     return jwt.encode(payload, settings.JWT_SECRET.get_secret_value(), algorithm="HS256")
 
@@ -82,4 +82,39 @@ def decode_jwt_token(token: str) -> dict | None:
         return jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
     except (jwt.InvalidTokenError, Exception):
         return None
+{% endif %}
+
+{% if ctx.session.refresh %}
+
+
+def create_refresh_token(sub: str, identity_collection: str, jti: str, sid: str) -> str:
+    now = time.time()
+    payload = {
+        "sub": sub,
+        "identity_collection": identity_collection,
+        "jti": jti,
+        "sid": sid,
+        "typ": "refresh",
+        "iat": int(now),
+        "exp": int(now + settings.JWT_REFRESH_TTL_SECONDS),
+    }
+{% if ctx.session.uses_asymmetric %}
+    private_pem, _, kid, _ = _signing_material()
+    return jwt.encode(payload, private_pem, algorithm="RS256", headers={"kid": kid})
+{% else %}
+    return jwt.encode(payload, settings.JWT_SECRET.get_secret_value(), algorithm="HS256")
+{% endif %}
+
+
+def decode_refresh_token(token: str) -> dict | None:
+    try:
+{% if ctx.session.uses_asymmetric %}
+        _, public_pem, _, _ = _signing_material()
+        claims = jwt.decode(token, public_pem, algorithms=["RS256"])
+{% else %}
+        claims = jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
+{% endif %}
+    except (jwt.InvalidTokenError, Exception):
+        return None
+    return claims if claims.get("typ") == "refresh" else None
 {% endif %}

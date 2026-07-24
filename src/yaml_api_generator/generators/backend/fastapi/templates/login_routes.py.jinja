@@ -5,10 +5,19 @@ from pydantic import BaseModel, Field
 
 from dependencies.auth import verify_password
 from dependencies.jwt_utils import create_jwt_token
+{% if ctx.session.refresh %}
+from dependencies.refresh_store import issue as issue_refresh_token, rotate as rotate_refresh_token
+{% endif %}
 from dependencies.mongodb import get_database
 
 router = APIRouter()
 
+{% if ctx.session.refresh %}
+
+class RefreshPayload(BaseModel):
+    refresh_token: str = Field(..., min_length=1)
+
+{% endif %}
 {% for identity in auth.identity_collections %}
 {% set pw_binding = identity.bindings | selectattr('provider', 'equalto', 'password') | first | default(none) %}
 {% if pw_binding %}
@@ -44,9 +53,25 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
             k: v for k, v in doc.items()
             if k not in ("password", "_id", "_auth")
         }
+{% if ctx.session.refresh %}
+        refresh_token = await issue_refresh_token(str(subject), "{{ identity.name }}")
+        return {"token": token, "refresh_token": refresh_token, "user": safe_user}
+{% else %}
         return {"token": token, "user": safe_user}
+{% endif %}
 
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
+{% if ctx.session.refresh %}
+
+@router.post("/{{ identity.name }}/refresh", tags=["{{ identity.name | capitalize_collection }}"])
+async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
+    rotated = await rotate_refresh_token(payload.refresh_token)
+    if rotated is None:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    token = create_jwt_token(rotated["sub"], rotated["identity_collection"])
+    return {"token": token, "refresh_token": rotated["refresh_token"]}
+
+{% endif %}
 {% endif %}
 {% endfor %}

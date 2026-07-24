@@ -151,7 +151,11 @@ class V02Transformer:
 
     @staticmethod
     def _build_session(session_data: dict[str, Any]) -> IRSession:
-        return IRSession(algorithm=session_data.get("algorithm", "HS256"))
+        return IRSession(
+            algorithm=session_data.get("algorithm", "HS256"),
+            ttl=session_data.get("ttl"),
+            refresh=session_data.get("refresh", False),
+        )
 
     def _expand_route_policies(
         self,
