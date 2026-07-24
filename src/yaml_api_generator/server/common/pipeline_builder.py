@@ -7,6 +7,7 @@ from .steps import (
     AuthorizeRouteStep,
     LoginStep,
     PostFetchAuthorizeStep,
+    ResolveAccessBindStep,
     RepositoryCreateStep,
     RepositoryDeleteStep,
     RepositoryGetStep,
@@ -36,6 +37,10 @@ def _has_implicit_document(route: RuntimeRouteDescriptor) -> bool:
         any(not binding.where for binding in rule.document_symbols.values())
         for rule in route.access_rules
     )
+
+
+def _has_access_bind(route: RuntimeRouteDescriptor) -> bool:
+    return bool(route.access_rules) and any(rule.bind for rule in route.access_rules)
 
 _CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
 
@@ -157,6 +162,9 @@ class PipelineBuilder:
 
         if not route.is_public:
             steps.append(AuthorizeRouteStep(route.access_rules, self._ctx.auth))
+
+        if not route.is_public and _has_access_bind(route):
+            steps.append(ResolveAccessBindStep(route.access_rules, self._ctx.auth))
 
         return steps
 

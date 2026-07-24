@@ -227,6 +227,7 @@ class IRAccessRule:
     filter: str | None = None
     write_fields: list[str] = field(default_factory=list)
     reason: str | None = None
+    bind: dict[str, WhereRhs] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

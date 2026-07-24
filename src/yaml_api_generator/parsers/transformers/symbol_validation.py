@@ -2,17 +2,20 @@
 
 A repository operation's query resolves ``$<symbol>`` references against the
 slugs of the routes that reach it; nothing else is ambient (there is no
-principal or request root). An access-rule ``where`` binding resolves its
-right-hand-side ``$<symbol>`` references against the route's declared slugs plus
-the symbols the same rule binds in ``given:``. Any other free symbol -- a typo,
-a service-supplied name not yet forwarded -- aborts generation with the single
-``UNDEFINED_SYMBOL`` error naming the symbol and the scope. ``when`` operands are
-enforced by the same scope model inside the access validator.
+principal or request root). An access-rule ``where`` binding and an access-rule
+``bind`` resolve their right-hand-side ``$<symbol>`` references against the
+route's declared slugs plus the symbols the same rule binds in ``given:`` -- so
+``$principal`` resolves only when the rule itself binds ``principal`` there, and
+request parts resolve only through a ``given:`` symbol. Any other free symbol --
+a typo, a service-supplied name not yet forwarded -- aborts generation with the
+single ``UNDEFINED_SYMBOL`` error naming the symbol and the scope. ``when``
+operands are enforced by the same scope model inside the access validator.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from yaml_api_generator.parsers.yaml_parser import ConfigError
@@ -28,6 +31,7 @@ def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
     errors: list[ConfigError] = []
     errors.extend(_validate_repository_filters(spec))
     errors.extend(_validate_where_bindings(spec))
+    errors.extend(_validate_access_bind(spec))
     errors.extend(_validate_service_with(spec))
     return errors
 
@@ -69,8 +73,9 @@ def _validate_repository_filters(spec: dict[str, Any]) -> list[ConfigError]:
     return errors
 
 
-def _validate_where_bindings(spec: dict[str, Any]) -> list[ConfigError]:
-    errors: list[ConfigError] = []
+def _iter_access_rules(
+    spec: dict[str, Any],
+) -> Iterator[tuple[str, str, int, dict[str, Any], frozenset[str]]]:
     for controller_name, controller in (spec.get("controllers") or {}).items():
         if not isinstance(controller, dict):
             continue
@@ -82,25 +87,60 @@ def _validate_where_bindings(spec: dict[str, Any]) -> list[ConfigError]:
             access = route.get("access")
             rules = access if isinstance(access, list) else [access]
             for index, rule in enumerate(rules):
-                if not isinstance(rule, dict) or not isinstance(rule.get("given"), dict):
-                    continue
-                given = rule["given"]
-                bound = slugs | frozenset(given.keys())
-                for name, value in given.items():
-                    if not isinstance(value, str) or WHERE_KEYWORD not in value:
-                        continue
-                    scope = SymbolScope(
-                        label=(
-                            f"controller '{controller_name}' route '{route_name}' "
-                            f"access[{index}] given '{name}' where"
-                        ),
-                        bound=bound,
-                    )
-                    path = (
-                        f"controllers.{controller_name}.routes.{route_name}"
-                        f".access[{index}].given.{name}"
-                    )
-                    errors.extend(scope.undefined(_where_rhs_symbols(value), path))
+                if isinstance(rule, dict):
+                    yield controller_name, route_name, index, rule, slugs
+
+
+def _rule_scope(slugs: frozenset[str], rule: dict[str, Any]) -> frozenset[str]:
+    given = rule.get("given")
+    given_keys = frozenset(given.keys()) if isinstance(given, dict) else frozenset()
+    return slugs | given_keys
+
+
+def _validate_where_bindings(spec: dict[str, Any]) -> list[ConfigError]:
+    errors: list[ConfigError] = []
+    for controller_name, route_name, index, rule, slugs in _iter_access_rules(spec):
+        given = rule.get("given")
+        if not isinstance(given, dict):
+            continue
+        bound = _rule_scope(slugs, rule)
+        for name, value in given.items():
+            if not isinstance(value, str) or WHERE_KEYWORD not in value:
+                continue
+            scope = SymbolScope(
+                label=(
+                    f"controller '{controller_name}' route '{route_name}' "
+                    f"access[{index}] given '{name}' where"
+                ),
+                bound=bound,
+            )
+            path = (
+                f"controllers.{controller_name}.routes.{route_name}"
+                f".access[{index}].given.{name}"
+            )
+            errors.extend(scope.undefined(_where_rhs_symbols(value), path))
+    return errors
+
+
+def _validate_access_bind(spec: dict[str, Any]) -> list[ConfigError]:
+    errors: list[ConfigError] = []
+    for controller_name, route_name, index, rule, slugs in _iter_access_rules(spec):
+        bind = rule.get("bind")
+        if not isinstance(bind, dict):
+            continue
+        scope = SymbolScope(
+            label=(
+                f"controller '{controller_name}' route '{route_name}' "
+                f"access[{index}] bind"
+            ),
+            bound=_rule_scope(slugs, rule),
+        )
+        for name, value in bind.items():
+            path = (
+                f"controllers.{controller_name}.routes.{route_name}"
+                f".access[{index}].bind.{name}"
+            )
+            errors.extend(scope.undefined(_where_rhs_symbols(str(value)), path))
     return errors
 
 

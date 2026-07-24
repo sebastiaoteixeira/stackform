@@ -248,6 +248,33 @@ def ResolveWhereBindingsStep(
     return step
 
 
+def ResolveAccessBindStep(
+    access_rules: list[RuntimeAccessRule] | None = None,
+    auth_config: RuntimeAuthConfig | None = None,
+) -> Step:
+    def step(ctx: RequestContext) -> RequestContext:
+        if not access_rules:
+            return ctx
+
+        for rule in access_rules:
+            if not rule.bind:
+                continue
+            if not _rule_matches_principal(rule, ctx.principal, auth_config):
+                continue
+            namespace = _where_namespace(rule, ctx)
+            bound = {name: _rhs_value(rhs, namespace) for name, rhs in rule.bind.items()}
+            ctx.service_inputs = {**(ctx.service_inputs or {}), **bound}
+            ctx.url_params = {
+                **ctx.url_params,
+                **{name: str(value) for name, value in bound.items() if value is not None},
+            }
+            return ctx
+
+        return ctx
+
+    return step
+
+
 def AuthorizeRouteStep(
     access_rules: list[RuntimeAccessRule] | None = None,
     auth_config: RuntimeAuthConfig | None = None,

@@ -6,6 +6,7 @@ from yaml_api_generator.ir import (
     IRIdentityBinding,
     IRProviderBinding,
     IRRequestBinding,
+    WhereRhs,
 )
 from yaml_api_generator.ir.api import IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
@@ -57,6 +58,7 @@ class RuntimeAccessRule:
     request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
+    bind: dict[str, WhereRhs] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
