@@ -20,6 +20,7 @@ from .steps import (
     ValidateBodyStep,
     ValidateIdentityCreateStep,
 )
+from .steps.repositories import record_locator
 
 
 def _has_where_binding(route: RuntimeRouteDescriptor) -> bool:
@@ -92,13 +93,15 @@ class PipelineBuilder:
         ):
             steps.append(
                 RepositoryGetStep(
-                    route.collection, self._ctx.collections[route.collection].id_field
+                    route.collection,
+                    self._ctx.collections[route.collection].id_field,
+                    self._locator(route),
                 )
             )
             steps.append(post_fetch_step)
-            steps.append(self._repository_step(route.operation, route.collection))
+            steps.append(self._repository_step(route))
         else:
-            steps.append(self._repository_step(route.operation, route.collection))
+            steps.append(self._repository_step(route))
             if post_fetch_step is not None:
                 steps.append(post_fetch_step)
 
@@ -170,7 +173,14 @@ class PipelineBuilder:
             return None
         return PostFetchAuthorizeStep(route.access_rules, self._ctx.auth)
 
-    def _repository_step(self, operation: str, collection_name: str) -> Step:
+    def _locator(self, route: RuntimeRouteDescriptor):
+        return record_locator(
+            route.path, self._ctx.collections[route.collection].id_field
+        )
+
+    def _repository_step(self, route: RuntimeRouteDescriptor) -> Step:
+        collection_name = route.collection
+        operation = route.operation
         collection = self._ctx.collections[collection_name]
         id_field = collection.id_field
         identity_collection = self._ctx.auth.identity_collections.get(collection_name)
@@ -181,7 +191,7 @@ class PipelineBuilder:
         if operation == "list":
             return RepositoryListStep(collection_name, id_field)
         if operation == "get":
-            return RepositoryGetStep(collection_name, id_field)
+            return RepositoryGetStep(collection_name, id_field, self._locator(route))
         if operation == "create":
             roles_config = identity_collection.roles if identity_collection is not None else None
             return RepositoryCreateStep(
@@ -192,11 +202,15 @@ class PipelineBuilder:
                 roles_config=roles_config,
             )
         if operation == "update":
-            return RepositoryUpdateStep(collection_name, id_field, uses_password)
+            return RepositoryUpdateStep(
+                collection_name, id_field, uses_password, self._locator(route)
+            )
         if operation == "replace":
-            return RepositoryReplaceStep(collection_name, id_field, uses_password)
+            return RepositoryReplaceStep(
+                collection_name, id_field, uses_password, self._locator(route)
+            )
         if operation == "delete":
-            return RepositoryDeleteStep(collection_name, id_field)
+            return RepositoryDeleteStep(collection_name, id_field, self._locator(route))
 
         descriptor = self._ctx.operations.get(collection_name, {}).get(operation)
         if descriptor is not None:
