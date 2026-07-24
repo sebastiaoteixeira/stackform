@@ -62,6 +62,17 @@ class SQLRepository(BaseRepository):
             )
             return self._one(result)
 
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        table = self._table(collection_name)
+        statement = sa.select(table)
+        for field, value in criteria.items():
+            statement = statement.where(table.c[field] == value)
+        async with await self._connection() as conn:
+            result = await conn.execute(statement)
+            return self._one(result)
+
     async def create(self, collection_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         table = self._table(collection_name)
         values = self._known_columns(collection_name, payload)

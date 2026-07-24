@@ -17,6 +17,16 @@ class BaseRepository(ABC):
             f"{type(self).__name__} does not support custom operations"
         )
 
+    async def find_one(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Fetch the first record matching an equality predicate."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support predicate fetch"
+        )
+
     @abstractmethod
     def connect(self) -> None:
         raise NotImplementedError

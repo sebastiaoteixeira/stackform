@@ -55,6 +55,12 @@ class MongoRepository(BaseRepository):
         )
         return self._normalize_document(document)
 
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        document = await self.collection(collection_name).find_one(dict(criteria))
+        return self._normalize_document(document)
+
     async def create(
         self, collection_name: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
