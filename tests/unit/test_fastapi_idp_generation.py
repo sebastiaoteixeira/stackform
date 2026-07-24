@@ -82,6 +82,11 @@ class TestIdpGeneration:
         assert "_jwks_cache" in src
         assert "yaml_api_generator" not in src
 
+    def test_vendored_idp_auth_verifies_rs256_and_es256(self, tmp_path, idp_ctx):
+        FastAPIGenerator().generate(idp_ctx, tmp_path)
+        src = (tmp_path / "dependencies" / "idp_auth.py").read_text()
+        assert '"RS256"' in src and '"ES256"' in src
+
     def test_idp_auth_not_emitted_for_app_trust(self, tmp_path):
         ctx = _ctx_from_fixture("auth-oidc.yaml")
         FastAPIGenerator().generate(ctx, tmp_path)

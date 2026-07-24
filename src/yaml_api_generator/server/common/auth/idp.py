@@ -15,6 +15,7 @@ from yaml_api_generator.ir.api import IROIDCProvider
 from .oidc import _discovery
 
 _jwks_cache: dict[str, jwt.PyJWKSet] = {}
+_ASYMMETRIC_ALGORITHMS = ["RS256", "ES256"]
 
 
 async def _fetch_jwks(jwks_uri: str) -> jwt.PyJWKSet:
@@ -72,7 +73,7 @@ async def verify_idp_token(token: str, provider: IROIDCProvider) -> dict | None:
         return jwt.decode(
             token,
             signing_key.key,
-            algorithms=["RS256"],
+            algorithms=_ASYMMETRIC_ALGORITHMS,
             audience=accepted_audiences,
             issuer=expected_issuer,
         )

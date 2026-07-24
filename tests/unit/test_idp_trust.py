@@ -2,7 +2,7 @@ import time
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.ir.api import IROIDCProvider
@@ -329,6 +329,56 @@ async def test_service_principal_returned_when_identifier_claim_absent(rsa_key):
     assert principal["record"] is None
     assert principal["identity_collection"] is None
     assert len(repo.docs) == 0
+
+
+async def test_es256_token_is_verified(monkeypatch):
+    """An ES256-signed token verifies against an EC signing key."""
+    ec_key = ec.generate_private_key(ec.SECP256R1())
+
+    async def fake_get_signing_key(_jwks_uri: str, _kid: str):
+        class _Key:
+            key = ec_key.public_key()
+        return _Key()
+
+    monkeypatch.setattr(idp, "_get_signing_key", fake_get_signing_key)
+    payload = {
+        "iss": _ISSUER, "aud": _CLIENT_ID, "exp": int(time.time()) + 300,
+        "sub": "kc-ec", "email": "ec@example.com",
+    }
+    token = jwt.encode(payload, ec_key, algorithm="ES256")
+    repo = _FakeRepo()
+
+    principal = await _resolve_idp_principal(
+        token, {"users": _identity()}, _COLLECTIONS,
+        {"keycloak": _provider_with_overrides()}, _registry(repo),
+    )
+
+    assert principal is not None
+    assert principal["record"]["email"] == "ec@example.com"
+
+
+async def test_expired_token_is_rejected(rsa_key):
+    from yaml_api_generator.server.common.steps.authorization import UnauthorizedError
+
+    token = _sign(rsa_key, sub="x", email="a@b.com", exp=int(time.time()) - 10)
+    with pytest.raises(UnauthorizedError):
+        await _resolve_idp_principal(
+            token, {"users": _identity()}, _COLLECTIONS,
+            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+        )
+
+
+async def test_hs256_token_is_rejected(rsa_key):
+    """A symmetric-signed token is never accepted: only asymmetric algorithms verify."""
+    from yaml_api_generator.server.common.steps.authorization import UnauthorizedError
+
+    payload = {"iss": _ISSUER, "aud": _CLIENT_ID, "exp": int(time.time()) + 300, "sub": "x", "email": "a@b.com"}
+    token = jwt.encode(payload, "shared-secret-of-sufficient-length-32b", algorithm="HS256")
+    with pytest.raises(UnauthorizedError):
+        await _resolve_idp_principal(
+            token, {"users": _identity()}, _COLLECTIONS,
+            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+        )
 
 
 async def test_service_principal_with_email_creates_user(rsa_key):

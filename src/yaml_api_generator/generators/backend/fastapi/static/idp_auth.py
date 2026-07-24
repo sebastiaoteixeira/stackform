@@ -18,6 +18,7 @@ import jwt
 
 _discovery_cache: dict[str, dict] = {}
 _jwks_cache: dict[str, jwt.PyJWKSet] = {}
+_ASYMMETRIC_ALGORITHMS = ["RS256", "ES256"]
 
 
 def unverified_issuer(token: str) -> str | None:
@@ -85,7 +86,7 @@ async def verify_idp_token(
         return jwt.decode(
             token,
             signing_key.key,
-            algorithms=["RS256"],
+            algorithms=_ASYMMETRIC_ALGORITHMS,
             audience=accepted_audiences,
             issuer=expected_issuer,
         )
