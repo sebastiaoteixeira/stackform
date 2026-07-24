@@ -346,6 +346,30 @@ def test_oidc_login_codes_stored_in_collection_datastore(tmp_path):
     assert "_SqlLoginCodes" not in store_src
 
 
+def test_oidc_pkce_off_by_default_is_byte_identical(tmp_path):
+    plain = tmp_path / "plain"
+    gen = FastAPIGenerator()
+    gen.generate(_ctx_from_fixture("auth-oidc.yaml"), plain)
+    oidc_src = (plain / "routes" / "oidc_routes.py").read_text()
+    assert "code_challenge" not in oidc_src
+    assert "code_verifier" not in oidc_src
+    assert "pkce_verifier" not in oidc_src
+    assert "import hashlib" not in oidc_src
+
+
+def test_oidc_pkce_emits_challenge_and_verifier(tmp_path):
+    gen = FastAPIGenerator()
+    gen.generate(_ctx_from_fixture("auth-oidc-pkce.yaml"), tmp_path)
+    oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    assert "import base64" in oidc_src and "import hashlib" in oidc_src
+    assert 'params["code_challenge_method"] = "S256"' in oidc_src
+    assert "hashlib.sha256(verifier.encode()).digest()" in oidc_src
+    assert 'response.set_cookie(\n        "users_keycloak_pkce_verifier"' in oidc_src
+    assert 'verifier = request.cookies.get("users_keycloak_pkce_verifier")' in oidc_src
+    assert '_token_data["code_verifier"] = verifier' in oidc_src
+    assert 'detail="Missing PKCE verifier"' in oidc_src
+
+
 def test_oidc_login_codes_use_sql_backend_for_sql_identity(tmp_path):
     ctx = _ctx_from_fixture("auth-oidc-sql.yaml")
     gen = FastAPIGenerator()

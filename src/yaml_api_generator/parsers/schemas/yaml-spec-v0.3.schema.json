@@ -312,7 +312,8 @@
         "client_secret": { "type": "string" },
         "discovery_url": { "type": "string", "description": "OIDC discovery document URL; issuer is derived from it automatically" },
         "issuer": { "type": "string" },
-        "audiences": { "type": "array", "items": { "type": "string" }, "description": "Accepted token audiences; defaults to [client_id] when omitted" }
+        "audiences": { "type": "array", "items": { "type": "string" }, "description": "Accepted token audiences; defaults to [client_id] when omitted" },
+        "pkce": { "type": "boolean", "default": false, "description": "Emit PKCE (S256 code_challenge on authorization, code_verifier on token exchange) for the OIDC client; enable to match a Keycloak client with Require PKCE" }
       },
       "if": {
         "properties": { "trust": { "const": "idp" } },
