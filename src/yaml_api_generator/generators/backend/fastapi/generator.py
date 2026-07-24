@@ -406,6 +406,11 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.session.refresh:
             auth_files.append(("refresh_store.py.jinja", "refresh_store.py"))
             init_imports.append("from .refresh_store import issue, rotate, revoke_session")
+        if context.session.uses_cookie:
+            auth_files.append(("session_cookie.py.jinja", "session_cookie.py"))
+            init_imports.append(
+                "from .session_cookie import csrf_valid, set_session_cookies, clear_session_cookies"
+            )
 
         for template_name, filename in auth_files:
             (deps_dir / filename).write_text(

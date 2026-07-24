@@ -113,6 +113,19 @@ class _IdpProvisioningMiddleware(_BaseHTTPMiddleware):
 app.add_middleware(_IdpProvisioningMiddleware)
 {% endif %}
 
+{% if ctx.session.uses_cookie %}
+from starlette.middleware.base import BaseHTTPMiddleware as _CsrfBase
+from dependencies.session_cookie import csrf_valid
+
+class _CsrfMiddleware(_CsrfBase):
+    async def dispatch(self, request: Request, call_next):
+        if not csrf_valid(request):
+            return JSONResponse(status_code=403, content={"detail": "CSRF token missing or invalid"})
+        return await call_next(request)
+
+app.add_middleware(_CsrfMiddleware)
+{% endif %}
+
 app.include_router(api_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
 {% if ctx.auth.uses_jwt and ctx.session.uses_asymmetric %}
 app.include_router(jwks_router)

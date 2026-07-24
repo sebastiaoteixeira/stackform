@@ -105,6 +105,7 @@ class ContextBuilder:
                 algorithm=document.session.algorithm,
                 ttl=document.session.ttl,
                 refresh=document.session.refresh,
+                delivery=document.session.delivery,
             ),
             repository_operations=repository_operations,
             datastores=datastores,

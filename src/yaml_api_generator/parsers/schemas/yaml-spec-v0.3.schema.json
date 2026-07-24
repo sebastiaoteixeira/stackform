@@ -141,7 +141,8 @@
       "properties": {
         "algorithm": { "type": "string", "enum": ["HS256", "RS256"], "default": "HS256" },
         "ttl": { "type": "integer", "minimum": 1 },
-        "refresh": { "type": "boolean", "default": false }
+        "refresh": { "type": "boolean", "default": false },
+        "delivery": { "type": "string", "enum": ["token-url", "code", "cookie"], "default": "token-url" }
       },
       "additionalProperties": false
     },

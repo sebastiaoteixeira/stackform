@@ -134,6 +134,7 @@ class IRSession:
     algorithm: str = "HS256"
     ttl: int | None = None
     refresh: bool = False
+    delivery: str = "token-url"
 
 
 @dataclass(frozen=True)
