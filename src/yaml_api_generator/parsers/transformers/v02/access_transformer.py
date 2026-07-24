@@ -109,6 +109,13 @@ class AccessTransformer:
         entity_to_collection: dict[str, str],
     ) -> tuple[IRAccessRule | None, list[ConfigError]]:
         errors: list[ConfigError] = []
+        if self._allow_where and "filter" in rule:
+            errors.append(ConfigError(
+                code="ACCESS_FILTER_REMOVED",
+                message="access-rule 'filter' key was removed in v0.3",
+                path=f"{path}.filter",
+                hint="Scope reads through a service input: with a where binding instead",
+            ))
         given = rule.get("given", {})
         effect = rule.get("then", "allow")
 

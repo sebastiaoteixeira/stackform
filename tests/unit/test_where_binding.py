@@ -162,6 +162,27 @@ def test_v02_given_where_is_plain_document_binding():
     assert binding.collection == "assetCategories where slug = $categorySlug"
 
 
+def _parse_rule(rule, allow_where):
+    transformer = AccessTransformer(allow_where=allow_where)
+    _, rules, errors = transformer.parse_access(
+        [rule], "controllers.c.routes.r.access", set(), {}
+    )
+    return rules, errors
+
+
+def test_v03_filter_key_aborts_with_coded_error():
+    rules, errors = _parse_rule({"given": {"category": "posts by postId"}, "filter": "x = 1"}, True)
+    assert rules is None
+    assert _codes(errors) == {"ACCESS_FILTER_REMOVED"}
+    assert errors[0].path == "controllers.c.routes.r.access[0].filter"
+
+
+def test_v02_filter_key_is_preserved():
+    rules, errors = _parse_rule({"given": {"category": "posts by postId"}, "filter": "x = 1"}, False)
+    assert errors == []
+    assert rules[0].filter == "x = 1"
+
+
 def test_v02_document_binding_keeps_implicit_fetch():
     rules, errors = _parse_given("posts by postId", False)
     assert errors == []
