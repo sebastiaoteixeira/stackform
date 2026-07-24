@@ -265,12 +265,13 @@ endpoint to render one SSO button per provider, alongside the password login for
 | `JWT_EXPIRATION_HOURS` | all login paths | Token lifetime in hours (default 24). |
 | `PASSWORD_HASH_ROUNDS` | password register/login | PBKDF2 iteration count (default 390000). |
 | `FRONTEND_URL` | OIDC callback | Base for the `.../auth/callback?code=` redirect. |
+| `<PROVIDER>_CLIENT_SECRET` | OIDC token exchange | Each confidential provider's client secret (e.g. `KEYCLOAK_CLIENT_SECRET`), a `SecretStr` setting read at run time. Emitted only when the provider declares a `client_secret`. |
 
-Provider `${VAR}` placeholders (such as `client_secret` and `discovery_url`) are
-interpolated from the environment at build time and baked into the output -- they are
-not deferred to runtime. A secret that must stay out of the artifact should not be
-placed in the spec at all; the deployed backend reads it from its own runtime
-environment instead. See [Environment variables](../configuration/environment-variables.md).
+Provider `${VAR}` placeholders are interpolated from the environment at build time
+and baked into the output -- except `client_secret`, which is deferred to runtime. A
+confidential provider's secret is read at run time from `<PROVIDER>_CLIENT_SECRET`
+(e.g. `KEYCLOAK_CLIENT_SECRET`) via a `SecretStr` setting, so the literal must never
+be placed in the spec. See [Environment variables](../configuration/environment-variables.md).
 
 `client_secret` is optional: omit it for a public client and the token exchange runs
 without one. See [OIDC provider](../providers/oidc.md#fields).

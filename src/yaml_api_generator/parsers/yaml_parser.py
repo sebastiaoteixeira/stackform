@@ -365,6 +365,7 @@ def load_and_generate_ir(
 
     version = str(resolved.get("version", "0.1"))
     trust_warnings: tuple[ConfigError, ...] = ()
+    access_warnings: tuple[ConfigError, ...] = ()
 
     if version in ("0.2", "0.3"):
         from .transformers.shape_validation import validate_spec_shape
@@ -392,10 +393,11 @@ def load_and_generate_ir(
         if policy_errors:
             raise ConfigErrors(policy_errors)
 
-        from .transformers.access_validation import validate_spec_access
+        from .transformers.access_validation import validate_spec_access, warn_public_routes
         access_errors = validate_spec_access(resolved)
         if access_errors:
             raise ConfigErrors(access_errors)
+        access_warnings = tuple(warn_public_routes(resolved))
 
         from .transformers.auth_validation import validate_spec_auth
         auth_errors = validate_spec_auth(resolved)
@@ -440,4 +442,4 @@ def load_and_generate_ir(
 
     from .transformers.registry import transform_config
 
-    return ParseResult(ir=transform_config(resolved), ui_block=ui_block, warnings=trust_warnings)
+    return ParseResult(ir=transform_config(resolved), ui_block=ui_block, warnings=trust_warnings + access_warnings)

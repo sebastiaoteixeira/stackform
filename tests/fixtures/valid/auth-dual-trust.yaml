@@ -27,7 +27,7 @@ entities:
     type: auth
     auth:
       identifier: email
-      bindings:
+      via:
         - provider: password
           identifier: email
         - provider: keycloak

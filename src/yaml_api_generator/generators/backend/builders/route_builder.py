@@ -29,7 +29,7 @@ def _base_prefix(document: IRDocument) -> str:
 
 def _request_descriptors(rule) -> list[RequestSymbolDescriptor]:
     return [
-        RequestSymbolDescriptor(name=name, part=binding.part, type_name=binding.type_name)
+        RequestSymbolDescriptor(name=name, part=binding.part, type_name=binding.type_name, raw=binding.raw)
         for name, binding in rule.request_symbols.items()
     ]
 

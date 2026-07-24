@@ -43,3 +43,27 @@ def test_load_reports_clean_schema_error(tmp_path, spec, path):
         load_and_generate_ir(str(yaml_file))
     errors = exc_info.value.errors
     assert any(e.code == "SCHEMA_VALIDATION_ERROR" and e.path == path for e in errors)
+
+
+def test_auth_bindings_key_rejected(tmp_path):
+    import yaml
+
+    spec = {
+        "version": "0.2",
+        "entities": {
+            "user": {
+                "type": "auth",
+                "auth": {
+                    "identifier": "email",
+                    "via": "password",
+                    "bindings": [{"provider": "keycloak"}],
+                },
+                "fields": {"id": {"type": "id"}, "email": {"type": "string"}},
+            }
+        },
+    }
+    yaml_file = tmp_path / "spec.yaml"
+    yaml_file.write_text(yaml.safe_dump(spec))
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(yaml_file))
+    assert any(e.code == "SCHEMA_VALIDATION_ERROR" for e in exc_info.value.errors)

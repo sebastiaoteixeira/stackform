@@ -44,17 +44,18 @@ class DockerDeployGenerator(DeployGenerator):
             self._render(env, "nginx.conf.jinja", ctx, output_dir / "nginx.conf")
             self._render(env, "Dockerfile.frontend.jinja", ctx, output_dir / "frontend" / "Dockerfile")
 
-        env_content = env.get_template("env.example.jinja").render(ctx=ctx)
-        (output_dir / ".env").write_text(env_content)
+        roles_app_tasks = output_dir / "roles" / "app" / "tasks"
+        roles_app_tasks.mkdir(parents=True, exist_ok=True)
+        self._render(env, "roles/app/tasks/main.yml.jinja", ctx, roles_app_tasks / "main.yml")
 
-        roles_app = output_dir / "roles" / "app" / "tasks"
-        roles_app.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/app/tasks/main.yml.jinja", ctx, roles_app / "main.yml")
+        roles_app_templates = output_dir / "roles" / "app" / "templates"
+        roles_app_templates.mkdir(parents=True, exist_ok=True)
+        self._render(env, "roles/app/templates/env.j2.jinja", ctx, roles_app_templates / "env.j2")
 
         if ctx.mongo_local:
-            roles_mongo = output_dir / "roles" / "mongodb" / "tasks"
-            roles_mongo.mkdir(parents=True, exist_ok=True)
-            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongo / "main.yml")
+            roles_mongodb_tasks = output_dir / "roles" / "mongodb" / "tasks"
+            roles_mongodb_tasks.mkdir(parents=True, exist_ok=True)
+            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongodb_tasks / "main.yml")
 
     def _stage_build_contexts(
         self,

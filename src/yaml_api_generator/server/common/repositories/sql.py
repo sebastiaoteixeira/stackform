@@ -69,6 +69,25 @@ class SQLRepository(BaseRepository):
             await conn.execute(sa.insert(table).values(**values))
         return values
 
+    async def upsert_by(
+        self, collection_name: str, key_field: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        if payload.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
+        table = self._table(collection_name)
+        values = self._known_columns(collection_name, payload)
+        statement = pg_insert(table).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[key_field],
+            set_={k: statement.excluded[k] for k in values if k != key_field},
+        ).returning(table)
+        async with await self._begin() as conn:
+            result = await conn.execute(statement)
+            row = self._one(result)
+        return row if row is not None else values
+
     async def update(
         self, collection_name: str, document_id: str, payload: dict[str, Any]
     ) -> dict[str, Any] | None:

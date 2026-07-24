@@ -2,6 +2,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -29,7 +31,14 @@ class RepositoryBase:
         self._generate_id = make_id_generator(self.ID_FORMAT)
 
     def _match_filter(self, document_id: str) -> dict[str, Any]:
-        return {self.ID_FIELD: document_id}
+        candidates: list[Any] = [document_id]
+        try:
+            candidates.append(ObjectId(document_id))
+        except InvalidId:
+            pass
+        conditions = [{"_id": value} for value in candidates]
+        conditions.append({self.ID_FIELD: document_id})
+        return {"$or": conditions}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
         if doc is None:
@@ -44,6 +53,18 @@ class RepositoryBase:
             data[self.ID_FIELD] = self._generate_id()
         await self._col.insert_one(data)
         return self._normalize(data)
+
+    async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
+        on_insert = {self.ID_FIELD: self._generate_id()} if self._generate_id is not None else {}
+        doc = await self._col.find_one_and_update(
+            {key_field: data.get(key_field)},
+            {"$set": data, "$setOnInsert": on_insert},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(doc)
 
 
 class ListOp:

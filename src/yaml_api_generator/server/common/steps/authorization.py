@@ -211,16 +211,18 @@ def PostFetchAuthorizeStep(
     auth_config: RuntimeAuthConfig | None = None,
 ) -> Step:
     def step(ctx: RequestContext) -> RequestContext:
-        if ctx.response is None:
-            return ctx
-
         document = ctx.response if isinstance(ctx.response, dict) else None
         for rule in access_rules:
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
-            doc = document if _rule_needs_document(rule) else None
-            matched = _evaluate_rule(rule, ctx.principal, doc, ctx)
+            if _rule_needs_document(rule):
+                if document is None:
+                    continue
+                matched = _evaluate_rule(rule, ctx.principal, document, ctx)
+            else:
+                matched = _evaluate_rule(rule, ctx.principal, None, ctx)
+
             if matched:
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")

@@ -113,7 +113,7 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
             "client_id": "{{ provider.client_id }}",
         }
         {% if provider.client_secret %}
-        _token_data["client_secret"] = {{ provider.client_secret | py_literal }}
+        _token_data["client_secret"] = settings.{{ provider_name | upper }}_CLIENT_SECRET.get_secret_value()
         {% endif %}
         token_resp = await client.post(token_endpoint, data=_token_data)
         if token_resp.status_code != 200:
@@ -167,24 +167,21 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
     _fk_fields: dict[str, Any] = {}
 {% endif %}
 
-    existing = await repo.find_by("{{ binding.identifier }}", user_fields.get("{{ binding.identifier }}"))
-
     frontend_url = settings.FRONTEND_URL or str(request.base_url).rstrip("/")
 
-    if existing is not None:
-{% if binding.relations %}
-        if _fk_fields:
-            await repo.update(existing.get("{{ col.id_field }}"), _fk_fields)
-{% endif %}
-        subject = existing.get("{{ col.id_field }}")
-    {% if binding.auto_provision %}
-    else:
-        created = await repo.insert({% if binding.relations %}{**user_fields, **_fk_fields}{% else %}user_fields{% endif %})
-        subject = created.get("{{ col.id_field }}")
-    {% else %}
-    else:
+{% if binding.auto_provision %}
+    record = await repo.upsert_by("{{ binding.identifier }}", {**user_fields, **_fk_fields})
+    subject = record.get("{{ col.id_field }}")
+{% else %}
+    existing = await repo.find_by("{{ binding.identifier }}", user_fields.get("{{ binding.identifier }}"))
+    if existing is None:
         raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
-    {% endif %}
+{% if binding.relations %}
+    if _fk_fields:
+        await repo.update(existing.get("{{ col.id_field }}"), _fk_fields)
+{% endif %}
+    subject = existing.get("{{ col.id_field }}")
+{% endif %}
 
     code = await issue_login_code(str(subject), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
     return RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")

@@ -271,6 +271,55 @@ def _check_access(
         )
 
 
+def _is_always_allow_rule(rule: Any) -> bool:
+    if not isinstance(rule, dict):
+        return False
+    given = rule.get("given")
+    when = rule.get("when")
+    return not given and when is None
+
+
+def _warn_access_rules(
+    access: Any, path: str, warnings: list[ConfigError]
+) -> None:
+    if not isinstance(access, list):
+        return
+    for index, rule in enumerate(access):
+        if _is_always_allow_rule(rule):
+            warnings.append(ConfigError(
+                code="PUBLIC_ROUTE",
+                message=f"Access rule at '{path}[{index}]' has no principal or condition",
+                path=f"{path}[{index}]",
+                hint="Add a 'given:' principal or 'when:' condition to restrict access",
+                severity="warning",
+            ))
+
+
+def warn_public_routes(spec: dict[str, Any]) -> list[ConfigError]:
+    """Return warnings for routes that admit any unauthenticated caller."""
+    warnings: list[ConfigError] = []
+    for controller_name, controller in (spec.get("controllers") or {}).items():
+        if not isinstance(controller, dict):
+            continue
+        base = f"controllers.{controller_name}"
+        for section in ("operations", "routes"):
+            for op_name, op in (controller.get(section) or {}).items():
+                if not isinstance(op, dict):
+                    continue
+                path = f"{base}.{section}.{op_name}"
+                if "access" not in op:
+                    warnings.append(ConfigError(
+                        code="PUBLIC_ROUTE",
+                        message=f"Route '{path}' has no access control",
+                        path=path,
+                        hint="Add an 'access:' block to restrict this route",
+                        severity="warning",
+                    ))
+                else:
+                    _warn_access_rules(op["access"], path, warnings)
+    return warnings
+
+
 def validate_spec_access(spec: dict[str, Any]) -> list[ConfigError]:
     """Validate access-rule coherence across every controller in the spec."""
     errors: list[ConfigError] = []

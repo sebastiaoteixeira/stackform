@@ -87,27 +87,7 @@ class IdentityTransformer:
                 for entry in via
                 if isinstance(entry, dict) or identifier
             ]
-            explicit_bindings = [
-                IRProviderBinding(
-                    provider=b["provider"],
-                    identifier=b.get("identifier", identifier or ""),
-                    claim_mapping=b.get("claim_mapping", {}),
-                    auto_provision=b.get("auto_provision", True),
-                    relations={
-                        fk: IRProviderRelation(
-                            collection=spec["collection"],
-                            match=spec.get("match", {}),
-                        )
-                        for fk, spec in (b.get("relations") or {}).items()
-                    },
-                )
-                for b in (auth_data.get("bindings") or [] if isinstance(auth_data, dict) else [])
-                if isinstance(b, dict) and "provider" in b
-            ]
-            via_providers = {b.provider for b in via_bindings}
-            bindings = tuple(
-                via_bindings + [b for b in explicit_bindings if b.provider not in via_providers]
-            )
+            bindings = tuple(via_bindings)
             identity_collections[repo_name] = IRIdentityCollection(
                 name=repo_name,
                 bindings=bindings,
