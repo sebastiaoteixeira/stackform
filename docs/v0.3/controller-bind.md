@@ -54,8 +54,38 @@ Any `$symbol` outside this scope aborts generation with the uniform
 (`controller '<c>' route '<r>' access[<i>] bind`). A `bind:` made entirely of
 literals and slugs needs no `given:`.
 
+## Covering the service's required inputs
+
+A rule that carries a `bind:` must supply every required input of the service
+its route reaches. An input is *required* by default; mark it optional with an
+explicit `required: false`. A required input is satisfied when it is an ambient
+route slug or a `bind:` key -- both statically known -- so a `bind:` that omits
+one aborts generation with `BIND_MISSING_REQUIRED_INPUT`:
+
+```yaml
+services:
+  archivePost:
+    repository: posts
+    operation: archive
+    input:
+      owner: string        # required
+controllers:
+  posts:
+    base_path: /posts
+    routes:
+      archive:
+        service: archivePost
+        method: POST
+        path: "/{postId}/archive"
+        access:
+          - then: allow
+            bind:
+              state: 'archived'   # omits the required 'owner' -> rejected
+```
+
 ## Error codes
 
 | Code | Raised when |
 | --- | --- |
 | `UNDEFINED_SYMBOL` | a `bind:` `$symbol` is neither a route slug nor a symbol the same rule binds in `given:` |
+| `BIND_MISSING_REQUIRED_INPUT` | a rule's `bind:` omits a required input of the service its route reaches (and no route slug supplies it) |

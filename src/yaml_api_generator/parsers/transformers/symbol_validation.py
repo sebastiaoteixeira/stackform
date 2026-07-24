@@ -10,6 +10,10 @@ request parts resolve only through a ``given:`` symbol. Any other free symbol --
 a typo, a service-supplied name not yet forwarded -- aborts generation with the
 single ``UNDEFINED_SYMBOL`` error naming the symbol and the scope. ``when``
 operands are enforced by the same scope model inside the access validator.
+
+A rule that carries a ``bind`` must also supply every required input of the
+service its route reaches: a required input satisfied by neither an ambient
+route slug nor a ``bind`` key aborts generation with ``BIND_MISSING_REQUIRED_INPUT``.
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
     errors.extend(_validate_repository_filters(spec))
     errors.extend(_validate_where_bindings(spec))
     errors.extend(_validate_access_bind(spec))
+    errors.extend(_validate_bind_required_inputs(spec))
     errors.extend(_validate_service_with(spec))
     return errors
 
@@ -75,7 +80,7 @@ def _validate_repository_filters(spec: dict[str, Any]) -> list[ConfigError]:
 
 def _iter_access_rules(
     spec: dict[str, Any],
-) -> Iterator[tuple[str, str, int, dict[str, Any], frozenset[str]]]:
+) -> Iterator[tuple[str, str, int, dict[str, Any], frozenset[str], dict[str, Any]]]:
     for controller_name, controller in (spec.get("controllers") or {}).items():
         if not isinstance(controller, dict):
             continue
@@ -88,7 +93,7 @@ def _iter_access_rules(
             rules = access if isinstance(access, list) else [access]
             for index, rule in enumerate(rules):
                 if isinstance(rule, dict):
-                    yield controller_name, route_name, index, rule, slugs
+                    yield controller_name, route_name, index, rule, slugs, route
 
 
 def _rule_scope(slugs: frozenset[str], rule: dict[str, Any]) -> frozenset[str]:
@@ -99,7 +104,7 @@ def _rule_scope(slugs: frozenset[str], rule: dict[str, Any]) -> frozenset[str]:
 
 def _validate_where_bindings(spec: dict[str, Any]) -> list[ConfigError]:
     errors: list[ConfigError] = []
-    for controller_name, route_name, index, rule, slugs in _iter_access_rules(spec):
+    for controller_name, route_name, index, rule, slugs, _ in _iter_access_rules(spec):
         given = rule.get("given")
         if not isinstance(given, dict):
             continue
@@ -124,7 +129,7 @@ def _validate_where_bindings(spec: dict[str, Any]) -> list[ConfigError]:
 
 def _validate_access_bind(spec: dict[str, Any]) -> list[ConfigError]:
     errors: list[ConfigError] = []
-    for controller_name, route_name, index, rule, slugs in _iter_access_rules(spec):
+    for controller_name, route_name, index, rule, slugs, _ in _iter_access_rules(spec):
         bind = rule.get("bind")
         if not isinstance(bind, dict):
             continue
@@ -141,6 +146,43 @@ def _validate_access_bind(spec: dict[str, Any]) -> list[ConfigError]:
                 f".access[{index}].bind.{name}"
             )
             errors.extend(scope.undefined(_where_rhs_symbols(str(value)), path))
+    return errors
+
+
+def _validate_bind_required_inputs(spec: dict[str, Any]) -> list[ConfigError]:
+    from yaml_api_generator.parsers.service_input_parser import parse_service_input
+
+    dtos = spec.get("dto") or {}
+    services = spec.get("services") or {}
+    errors: list[ConfigError] = []
+    for controller_name, route_name, index, rule, slugs, route in _iter_access_rules(spec):
+        bind = rule.get("bind")
+        if not isinstance(bind, dict):
+            continue
+        service = services.get(route.get("service"))
+        if not isinstance(service, dict) or service.get("input") is None:
+            continue
+        input_ir, _ = parse_service_input(service["input"], dtos, "")
+        if input_ir is None:
+            continue
+        supplied = slugs | frozenset(bind)
+        for name, config in input_ir.fields.items():
+            if not config.get("required", True) or name in supplied:
+                continue
+            errors.append(
+                ConfigError(
+                    code="BIND_MISSING_REQUIRED_INPUT",
+                    message=(
+                        f"bind omits required service input '{name}' in "
+                        f"controller '{controller_name}' route '{route_name}' "
+                        f"access[{index}]"
+                    ),
+                    path=(
+                        f"controllers.{controller_name}.routes.{route_name}"
+                        f".access[{index}].bind"
+                    ),
+                )
+            )
     return errors
 
 

@@ -104,6 +104,75 @@ def test_bind_literal_needs_no_scope():
     assert validate_spec_symbols(_spec({"then": "allow", "bind": {"kind": "'post'"}})) == []
 
 
+# --- bind covers required service inputs ----------------------------------
+
+
+def _spec_service(rule, service_input):
+    return {
+        "version": "0.3",
+        "services": {
+            "archive": {
+                "repository": "posts",
+                "operation": "archive",
+                "input": service_input,
+            }
+        },
+        "controllers": {
+            "posts": {
+                "base_path": "/posts",
+                "routes": {
+                    "archive": {
+                        "service": "archive",
+                        "method": "POST",
+                        "path": "/{postId}/archive",
+                        "access": [rule],
+                    }
+                },
+            }
+        },
+    }
+
+
+def test_bind_supplying_required_input_resolves():
+    spec = _spec_service(
+        {"given": {"principal": "identity:user"}, "bind": {"owner": "$principal.id"}},
+        {"owner": "string"},
+    )
+    assert validate_spec_symbols(spec) == []
+
+
+def test_bind_omitting_required_input_aborts():
+    spec = _spec_service(
+        {"then": "allow", "bind": {"kind": "'post'"}},
+        {"owner": "string"},
+    )
+    errors = validate_spec_symbols(spec)
+    assert _codes(errors) == {"BIND_MISSING_REQUIRED_INPUT"}
+    assert "owner" in errors[0].message
+    assert "posts' route 'archive' access[0]" in errors[0].message
+
+
+def test_bind_required_input_satisfied_by_ambient_slug():
+    spec = _spec_service(
+        {"then": "allow", "bind": {"kind": "'post'"}},
+        {"postId": "string"},
+    )
+    assert validate_spec_symbols(spec) == []
+
+
+def test_bind_need_not_supply_optional_input():
+    spec = _spec_service(
+        {"then": "allow", "bind": {"kind": "'post'"}},
+        {"cursor": {"type": "string", "required": False}},
+    )
+    assert validate_spec_symbols(spec) == []
+
+
+def test_required_input_check_skipped_without_bind():
+    spec = _spec_service({"then": "allow"}, {"owner": "string"})
+    assert validate_spec_symbols(spec) == []
+
+
 # --- end to end -----------------------------------------------------------
 
 
@@ -182,6 +251,15 @@ def test_unbound_bind_aborts_end_to_end(tmp_path):
     with pytest.raises(ConfigErrors) as exc_info:
         _load(tmp_path, broken)
     assert any(e.code == "UNDEFINED_SYMBOL" for e in exc_info.value.errors)
+
+
+def test_bind_missing_required_input_aborts_end_to_end(tmp_path):
+    broken = _SPEC.replace("owner: $principal.id", "id: $postId")
+    with pytest.raises(ConfigErrors) as exc_info:
+        _load(tmp_path, broken)
+    assert any(
+        e.code == "BIND_MISSING_REQUIRED_INPUT" for e in exc_info.value.errors
+    )
 
 
 # --- runtime step ---------------------------------------------------------
