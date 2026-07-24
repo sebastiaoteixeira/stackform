@@ -1,0 +1,648 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "yaml-spec-v0.3.schema.json",
+  "title": "YAML API Generator Structure Spec v0.3",
+  "$comment": "Superset of v0.2. Adds the where binding form (given: strings), service input:/with:, and controller/access-rule bind:. Everything v0.2 accepted stays valid. Reserved constructs are accepted syntactically; their semantics land in later v0.3 issues.",
+  "type": "object",
+  "required": ["version", "entities"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.3"
+    },
+    "input": {
+      "$ref": "#/$defs/InputConfig"
+    },
+    "api": {
+      "type": "object",
+      "properties": {
+        "basePath": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "operations": {
+          "type": "object",
+          "properties": {
+            "defaults": {
+              "$ref": "#/$defs/OperationFlags"
+            },
+            "auth": {
+              "$ref": "#/$defs/OperationFlags"
+            }
+          }
+        },
+        "cors": {
+          "type": "object",
+          "properties": {
+            "origins": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "methods": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "headers": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "credentials": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "imports": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "mongo": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string"
+        }
+      }
+    },
+    "datastores": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DatastoreConfig"
+      }
+    },
+    "entities": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/EntityConfig"
+      }
+    },
+    "repositories": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/RepositoryConfig"
+      }
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ServiceConfig"
+      }
+    },
+    "controllers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ControllerConfig"
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderConfig"
+      }
+    },
+    "dto": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DtoConfig"
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/PolicyConfig"
+      }
+    },
+    "ui": {
+      "type": "object"
+    },
+    "deploy": {
+      "$ref": "#/$defs/DeployConfig"
+    }
+  },
+  "$defs": {
+    "Symbol": {
+      "type": "string",
+      "pattern": "^\\$[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "v0.3 $-sigil slug: a symbolic reference resolved at build or call time (e.g. $userId). Resolution semantics land in a later v0.3 issue."
+    },
+    "WhereOperator": {
+      "type": "string",
+      "enum": ["=", "and", "!=", "<", "<=", ">", ">=", "in"],
+      "description": "v0.3 where-clause operators. Active in v0.3: '=' and 'and'. Reserved (accepted syntactically, not yet implemented): '!=', '<', '<=', '>', '>=', 'in'."
+    },
+    "WhereExpression": {
+      "type": "string",
+      "pattern": "^[\\w$][\\w$.'\"\\s=<>!,()-]*$",
+      "description": "v0.3 where binding form used as a given: value: a boolean expression over fields, $-sigil symbols, literals, and WhereOperator tokens. Only '=' and 'and' are active in v0.3; the remaining operators are reserved."
+    },
+    "SymbolBinding": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string" },
+      "description": "v0.3 map of names to $-sigil symbols or request/identity references. Backs controller/access-rule bind: and service with:. Forwarding semantics land in a later v0.3 issue."
+    },
+    "InputConfig": {
+      "description": "v0.3 declares the named inputs a service requires; supplied at build time via bind: or at call time via with:. Semantics land in a later v0.3 issue.",
+      "oneOf": [
+        { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        { "type": "object", "minProperties": 1 }
+      ]
+    },
+    "OperationFlags": {
+      "type": "object",
+      "properties": {
+        "list": { "type": "boolean" },
+        "get": { "type": "boolean" },
+        "create": { "type": "boolean" },
+        "update": { "type": "boolean" },
+        "replace": { "type": "boolean" },
+        "delete": { "type": "boolean" },
+        "register": { "type": "boolean" },
+        "login": { "type": "boolean" }
+      }
+    },
+    "EntityConfig": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["base", "auth"],
+          "default": "base"
+        },
+        "extends": {
+          "type": "string"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "pk": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/FieldConfig"
+          }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "identifier": { "type": "string" },
+            "via": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                { "type": "array", "items": { "$ref": "#/$defs/ProviderBinding" }, "minItems": 1 }
+              ]
+            },
+            "roles": { "type": "string" },
+            "bindings": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ProviderBinding" }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "not": { "required": ["extends"] }
+          },
+          "then": {
+            "required": ["fields"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "auth" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["auth"]
+          }
+        }
+
+      ]
+    },
+    "RolesConfig": {
+      "type": "object",
+      "required": ["values", "default"],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "default": { "type": "string" },
+        "hierarchy": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderBinding": {
+      "type": "object",
+      "required": ["provider"],
+      "properties": {
+        "provider": { "type": "string" },
+        "identifier": { "type": "string" },
+        "claim_mapping": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "auto_provision": { "type": "boolean" },
+        "relations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["collection", "match"],
+            "additionalProperties": false,
+            "properties": {
+              "collection": { "type": "string" },
+              "match": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderConfig": {
+      "oneOf": [
+        { "$ref": "#/$defs/OIDCProviderConfig" },
+        { "$ref": "#/$defs/SAMLProviderConfig" }
+      ]
+    },
+    "OIDCProviderConfig": {
+      "type": "object",
+      "required": ["type", "client_id"],
+      "properties": {
+        "type": { "type": "string", "const": "oidc" },
+        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
+        "client_id": { "type": "string" },
+        "client_secret": { "type": "string" },
+        "discovery_url": { "type": "string", "description": "OIDC discovery document URL; issuer is derived from it automatically" },
+        "issuer": { "type": "string" },
+        "audiences": { "type": "array", "items": { "type": "string" }, "description": "Accepted token audiences; defaults to [client_id] when omitted" }
+      },
+      "if": {
+        "properties": { "trust": { "const": "idp" } },
+        "required": ["trust"]
+      },
+      "then": { "required": ["discovery_url"] },
+      "else": { "required": ["discovery_url"] },
+      "additionalProperties": false
+    },
+    "SAMLProviderConfig": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "const": "saml" },
+        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
+        "idp_metadata_url": { "type": "string" },
+        "sp_entity_id": { "type": "string" },
+        "issuer": { "type": "string" },
+        "audience": { "type": "string" }
+      },
+      "if": {
+        "properties": { "trust": { "const": "idp" } },
+        "required": ["trust"]
+      },
+      "then": { "required": ["issuer", "audience"] },
+      "else": { "required": ["idp_metadata_url", "sp_entity_id"] },
+      "additionalProperties": false
+    },
+    "DtoConfig": {
+      "type": "object",
+      "required": ["fields"],
+      "properties": {
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PolicyConfig": {
+      "type": "object",
+      "required": ["when"],
+      "properties": {
+        "given": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "params": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "when": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "FieldConfig": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref", "id"]
+        },
+        "required": { "type": "boolean" },
+        "default": {},
+        "unique": { "type": "boolean" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "minLength": { "type": "integer" },
+        "maxLength": { "type": "integer" },
+        "format": {
+          "enum": ["email", "e164", "uri", "uuidv7", "uuidv4"]
+        },
+        "values": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "items": { "$ref": "#/$defs/FieldConfig" },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
+        },
+        "additionalProperties": { "type": "boolean" },
+        "ref": { "type": "string" },
+        "readonly": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "enum" } }, "required": ["type"] },
+          "then": { "required": ["values"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "array" } }, "required": ["type"] },
+          "then": { "required": ["items"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "ref" } }, "required": ["type"] },
+          "then": { "required": ["ref"] }
+        }
+      ]
+    },
+    "OperationConfig": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "object",
+          "properties": {
+            "command": { "type": "string" },
+            "collection": { "type": "string" },
+            "sql": { "type": "string" },
+            "params": { "type": "object" }
+          },
+          "additionalProperties": true
+        },
+        "handler": { "type": "string" }
+      }
+    },
+    "DatastoreConfig": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["mongodb", "mongo", "postgres", "postgresql"]
+        },
+        "uri": { "type": "string" },
+        "database": { "type": "string" },
+        "dsn": { "type": "string" },
+        "default": { "type": "boolean" }
+      }
+    },
+    "RepositoryConfig": {
+      "type": "object",
+      "properties": {
+        "abstract": { "type": "boolean" },
+        "extends": { "type": "string" },
+        "entity": {
+          "type": "string"
+        },
+        "datastore": {
+          "type": "string"
+        },
+        "crud": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["list", "get", "create", "update", "replace", "delete"]
+          }
+        },
+        "operations": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/OperationConfig"
+          }
+        }
+      }
+    },
+    "ServiceConfig": {
+      "type": "object",
+      "properties": {
+        "abstract": { "type": "boolean" },
+        "extends": { "type": "string" },
+        "repository": { "type": "string" },
+        "input": { "$ref": "#/$defs/InputConfig" },
+        "with": { "$ref": "#/$defs/SymbolBinding" },
+        "operations": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "boolean" },
+              {
+                "type": "object",
+                "properties": {
+                  "handler": { "type": "string" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ControllerConfig": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "base_path": {
+          "type": "string"
+        },
+        "access": {
+          "$ref": "#/$defs/AccessConfig"
+        },
+        "operations": {
+          "type": "object"
+        },
+        "routes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/RouteConfig"
+          }
+        }
+      }
+    },
+    "RouteConfig": {
+      "type": "object",
+      "required": ["service", "method", "path"],
+      "properties": {
+        "service": { "type": "string" },
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "path": { "type": "string" },
+        "access": {
+          "$ref": "#/$defs/AccessConfig"
+        }
+      }
+    },
+    "AccessConfig": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              { "$ref": "#/$defs/AccessRule" }
+            ]
+          }
+        }
+      ]
+    },
+    "DeployConfig": {
+      "type": "object",
+      "required": ["runtime"],
+      "properties": {
+        "name": { "type": "string" },
+        "port": { "type": "integer", "default": 8000 },
+        "runtime": { "type": "string", "enum": ["docker", "systemd"] },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "anyOf": [
+              { "required": ["image"] },
+              { "required": ["build"] }
+            ],
+            "properties": {
+              "image": { "type": "string" },
+              "build": { "oneOf": [
+                { "type": "string" },
+                { "type": "object", "properties": {
+                  "context": { "type": "string" },
+                  "dockerfile": { "type": "string" },
+                  "args": { "type": "object", "additionalProperties": { "type": "string" } }
+                } }
+              ]},
+              "ports": { "type": "array", "items": { "oneOf": [{"type": "integer"}, {"type": "string"}] } },
+              "environment": { "oneOf": [
+                { "type": "object", "additionalProperties": { "type": "string" } },
+                { "type": "array", "items": { "type": "string" } }
+              ]},
+              "volumes": { "type": "array", "items": { "type": "string" } },
+              "depends_on": { "oneOf": [
+                { "type": "array", "items": { "type": "string" } },
+                { "type": "object" }
+              ]},
+              "command": { "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}] }
+            }
+          }
+        },
+        "include": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "mongo": {
+          "type": "object",
+          "properties": {
+            "local": { "type": "boolean", "default": false }
+          }
+        },
+        "docker": {
+          "type": "object",
+          "properties": {
+            "image": { "type": "string" }
+          }
+        },
+        "systemd": {
+          "type": "object",
+          "properties": {
+            "user": { "type": "string" },
+            "restart": { "type": "string" }
+          }
+        }
+      }
+    },
+    "AccessRule": {
+      "type": "object",
+      "anyOf": [
+        { "required": ["given"] },
+        { "required": ["then"] },
+        { "required": ["when"] }
+      ],
+      "properties": {
+        "given": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "string", "enum": ["public", "authenticated"] },
+              { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" },
+              { "type": "string", "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$" },
+              { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$" },
+              { "$ref": "#/$defs/Symbol" },
+              { "$ref": "#/$defs/WhereExpression" }
+            ]
+          }
+        },
+        "when": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+          ]
+        },
+        "then": {
+          "type": "string",
+          "enum": ["allow", "deny"],
+          "default": "allow"
+        },
+        "filter": { "type": "string" },
+        "writeFields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reason": { "type": "string" },
+        "bind": { "$ref": "#/$defs/SymbolBinding" }
+      }
+    }
+  }
+}

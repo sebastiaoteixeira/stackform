@@ -4,7 +4,6 @@ import pytest
 
 from yaml_api_generator.parsers.yaml_parser import (
     ConfigErrors,
-    ParseResult,
     _resolve_interpolation,
     load_and_generate_ir,
 )
@@ -442,7 +441,7 @@ def test_version_01_uses_v01_transformer() -> None:
     assert "users" in result.ir.collections
 
 
-# --- Test 22: Version "0.3" → UNSUPPORTED_VERSION ---
+# --- Test 22: Version "9.9" → UNSUPPORTED_VERSION ---
 
 
 def test_version_unsupported_raises() -> None:

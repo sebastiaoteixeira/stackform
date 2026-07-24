@@ -59,7 +59,7 @@ def test_unsupported_version_error_code() -> None:
     codes = {e.code for e in exc_info.value.errors}
     assert "UNSUPPORTED_VERSION" in codes
     err = next(e for e in exc_info.value.errors if e.code == "UNSUPPORTED_VERSION")
-    assert "0.3" in err.message
+    assert "9.9" in err.message
 
 
 def test_schema_validation_error_code() -> None:
