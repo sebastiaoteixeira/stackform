@@ -159,9 +159,30 @@ class IRCollection:
 
 
 @dataclass(frozen=True)
+class IRSymbolRef:
+    root: str
+    path: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IRLiteralRef:
+    value: Any
+
+
+WhereRhs = IRSymbolRef | IRLiteralRef
+
+
+@dataclass(frozen=True)
+class IRWhereConjunct:
+    field: str
+    rhs: WhereRhs
+
+
+@dataclass(frozen=True)
 class IRDocumentBinding:
     collection: str
     id_param: str | None = None
+    where: tuple[IRWhereConjunct, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ from yaml_api_generator.parsers.when_parser import (
     parse_document_binding,
     parse_request_binding,
 )
+from yaml_api_generator.parsers.where_parser import WHERE_KEYWORD, parse_where_binding
 
 
 def _is_request(value: str) -> bool:
@@ -28,6 +29,7 @@ def classify_binding(
     value: Any,
     path: str,
     entity_to_collection: dict[str, str],
+    allow_where: bool = False,
 ) -> tuple[IRBinding | None, list[ConfigError]]:
     if not isinstance(value, str):
         return None, [ConfigError(
@@ -56,6 +58,13 @@ def classify_binding(
         return IRRequestBinding(
             part=parsed[0], type_name=parsed[1], raw=parsed[2]
         ), errors
+
+    if allow_where and WHERE_KEYWORD in value:
+        parsed_where, errors = parse_where_binding(value, path)
+        if parsed_where is None:
+            return None, errors
+        collection, conjuncts = parsed_where
+        return IRDocumentBinding(collection=collection, where=conjuncts), errors
 
     parsed_doc, errors = parse_document_binding(value, path)
     if parsed_doc is None:
