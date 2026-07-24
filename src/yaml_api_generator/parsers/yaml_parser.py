@@ -397,6 +397,12 @@ def load_and_generate_ir(
         if access_errors:
             raise ConfigErrors(access_errors)
 
+        if version == "0.3":
+            from .transformers.symbol_validation import validate_spec_symbols
+            symbol_errors = validate_spec_symbols(resolved)
+            if symbol_errors:
+                raise ConfigErrors(symbol_errors)
+
         from .transformers.auth_validation import validate_spec_auth
         auth_errors = validate_spec_auth(resolved)
         if auth_errors:

@@ -23,6 +23,8 @@ from yaml_api_generator.ir.when import collect_roots, needs_document
 from yaml_api_generator.parsers.when_parser import parse_request_binding, parse_when_list
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
+from .symbol_resolution import SymbolScope
+
 # Operations whose route is a POST create: pre-fetch authorization runs with no
 # document, so any document-dependent rule on them is short-circuited to allow.
 _CREATE_OPERATIONS = frozenset({"create", "register"})
@@ -123,26 +125,31 @@ def _check_role_declared(
 
 
 def _check_when(
-    rule: dict[str, Any], path: str, errors: list[ConfigError], is_create: bool
+    rule: dict[str, Any], path: str, errors: list[ConfigError], is_create: bool,
+    version: str = "0.2",
 ) -> Any | None:
     when_raw = rule.get("when")
     if when_raw is None:
         return None
 
     expr, when_errors = parse_when_list(when_raw, f"{path}.when")
-    if when_errors:
-        errors.extend(when_errors)
+    errors.extend(when_errors)
+    if expr is None:
         return None
 
-    bound = set((rule.get("given") or {}).keys())
-    for root in collect_roots(expr):
-        if root not in bound:
-            errors.append(ConfigError(
-                code="WHEN_UNBOUND_SYMBOL",
-                message=f"when references unbound symbol '{root}'",
-                path=f"{path}.when",
-                hint=f"Bind '{root}' in this rule's 'given'",
-            ))
+    bound = frozenset((rule.get("given") or {}).keys())
+    if version == "0.3":
+        scope = SymbolScope(label=f"{path} when", bound=bound)
+        errors.extend(scope.undefined(collect_roots(expr), f"{path}.when"))
+    else:
+        for root in collect_roots(expr):
+            if root not in bound:
+                errors.append(ConfigError(
+                    code="WHEN_UNBOUND_SYMBOL",
+                    message=f"when references unbound symbol '{root}'",
+                    path=f"{path}.when",
+                    hint=f"Bind '{root}' in this rule's 'given'",
+                ))
 
     if is_create and (needs_document(expr) or rule.get("document_symbols")):
         errors.append(_invalid(
@@ -198,6 +205,7 @@ def _check_rule_list(
     op_name: str | None,
     known_types: frozenset[str],
     errors: list[ConfigError],
+    version: str = "0.2",
 ) -> None:
     if access == []:
         errors.append(_invalid(
@@ -227,7 +235,8 @@ def _check_rule_list(
                 for value in given.values()
             )
             expr = _check_when(
-                {**item, "document_symbols": given_doc}, item_path, errors, is_create
+                {**item, "document_symbols": given_doc}, item_path, errors,
+                is_create, version,
             )
             effect = item.get("then", "allow")
             principal = next(
@@ -261,19 +270,21 @@ def _check_access(
     op_name: str | None,
     known_types: frozenset[str],
     errors: list[ConfigError],
+    version: str = "0.2",
 ) -> None:
     if isinstance(access, str):
         _check_role_string(access, path, declared_roles, auth_entities, errors)
     elif isinstance(access, list):
         _check_rule_list(
             access, path, declared_roles, auth_entities,
-            is_create, op_name, known_types, errors,
+            is_create, op_name, known_types, errors, version,
         )
 
 
 def validate_spec_access(spec: dict[str, Any]) -> list[ConfigError]:
     """Validate access-rule coherence across every controller in the spec."""
     errors: list[ConfigError] = []
+    version = str(spec.get("version", "0.2"))
     declared_roles = _declared_roles(spec)
     auth_entities = _auth_entities(spec)
     known_types = frozenset(
@@ -288,6 +299,7 @@ def validate_spec_access(spec: dict[str, Any]) -> list[ConfigError]:
             _check_access(
                 controller["access"], f"{base}.access",
                 declared_roles, auth_entities, False, None, known_types, errors,
+                version,
             )
         for section in ("operations", "routes"):
             for op_name, op in (controller.get(section) or {}).items():
@@ -297,5 +309,6 @@ def validate_spec_access(spec: dict[str, Any]) -> list[ConfigError]:
                     op["access"], f"{base}.{section}.{op_name}.access",
                     declared_roles, auth_entities,
                     op_name in _CREATE_OPERATIONS, op_name, known_types, errors,
+                    version,
                 )
     return errors
