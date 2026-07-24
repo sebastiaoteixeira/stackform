@@ -1,11 +1,13 @@
 {% set _app_oidc_cols = [] %}
 {% set _relation_target_cols = [] %}
 {% set _pkce = namespace(used=false) %}
+{% set _dpop = namespace(used=false) %}
 {% for col in auth.identity_collections %}
 {% for binding in col.bindings %}
 {% set _p = auth.providers.get(binding.provider) %}
 {% if _p and _p.type == "oidc" and not _p.is_idp %}
 {% if _p.pkce %}{% set _pkce.used = true %}{% endif %}
+{% if _p.dpop %}{% set _dpop.used = true %}{% endif %}
 {% if col.name not in _app_oidc_cols %}{% set _ = _app_oidc_cols.append(col.name) %}{% endif %}
 {% for rel in binding.relations %}
 {% if rel.collection not in _relation_target_cols %}{% set _ = _relation_target_cols.append(rel.collection) %}{% endif %}
@@ -14,10 +16,17 @@
 {% endfor %}
 {% endfor %}
 import time
-{% if _pkce.used %}
+{% if _pkce.used or _dpop.used %}
 import base64
 import hashlib
 import secrets
+{% endif %}
+{% if _dpop.used %}
+import json
+
+import jwt
+from cryptography.hazmat.primitives.asymmetric import ec
+from jwt.algorithms import ECAlgorithm
 {% endif %}
 from typing import Any
 from urllib.parse import urlencode
@@ -40,6 +49,30 @@ from settings import settings
 
 router = APIRouter()
 
+{% if _dpop.used %}
+_dpop_private_key = ec.generate_private_key(ec.SECP256R1())
+_dpop_jwk = json.loads(ECAlgorithm.to_jwk(_dpop_private_key.public_key()))
+
+
+def _dpop_proof(method: str, url: str, access_token: str | None = None) -> str:
+    payload: dict[str, Any] = {
+        "jti": secrets.token_urlsafe(16),
+        "htm": method,
+        "htu": url.split("?", 1)[0],
+        "iat": int(time.time()),
+    }
+    if access_token is not None:
+        payload["ath"] = base64.urlsafe_b64encode(
+            hashlib.sha256(access_token.encode()).digest()
+        ).rstrip(b"=").decode()
+    return jwt.encode(
+        payload,
+        _dpop_private_key,
+        algorithm="ES256",
+        headers={"typ": "dpop+jwt", "jwk": _dpop_jwk},
+    )
+
+{% endif %}
 
 @router.post("/auth/exchange")
 async def exchange_login_code(payload: dict[str, str]) -> dict[str, str]:
@@ -146,22 +179,46 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
             raise HTTPException(status_code=400, detail="Missing PKCE verifier")
         _token_data["code_verifier"] = verifier
         {% endif %}
+        {% if provider.dpop %}
+        token_resp = await client.post(token_endpoint, data=_token_data, headers={"DPoP": _dpop_proof("POST", token_endpoint)})
+        {% else %}
         token_resp = await client.post(token_endpoint, data=_token_data)
+        {% endif %}
         if token_resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Token exchange failed")
         token_data = token_resp.json()
 
         {% if provider_name == "github" %}
+        {% if provider.dpop %}
+        userinfo_resp = await client.get(
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"DPoP {token_data['access_token']}",
+                "DPoP": _dpop_proof("GET", "https://api.github.com/user", token_data["access_token"]),
+            },
+        )
+        {% else %}
         userinfo_resp = await client.get(
             "https://api.github.com/user",
             headers={"Authorization": f"Bearer {token_data['access_token']}"},
         )
+        {% endif %}
         {% else %}
         userinfo_endpoint = discovery.get("userinfo_endpoint", "")
+        {% if provider.dpop %}
+        userinfo_resp = await client.get(
+            userinfo_endpoint,
+            headers={
+                "Authorization": f"DPoP {token_data['access_token']}",
+                "DPoP": _dpop_proof("GET", userinfo_endpoint, token_data["access_token"]),
+            },
+        )
+        {% else %}
         userinfo_resp = await client.get(
             userinfo_endpoint,
             headers={"Authorization": f"Bearer {token_data['access_token']}"},
         )
+        {% endif %}
         {% endif %}
         if userinfo_resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Failed to fetch user info")

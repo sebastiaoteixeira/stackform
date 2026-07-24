@@ -370,6 +370,32 @@ def test_oidc_pkce_emits_challenge_and_verifier(tmp_path):
     assert 'detail="Missing PKCE verifier"' in oidc_src
 
 
+def test_oidc_dpop_off_by_default_is_byte_identical(tmp_path):
+    plain = tmp_path / "plain"
+    gen = FastAPIGenerator()
+    gen.generate(_ctx_from_fixture("auth-oidc.yaml"), plain)
+    oidc_src = (plain / "routes" / "oidc_routes.py").read_text()
+    assert "DPoP" not in oidc_src
+    assert "_dpop_proof" not in oidc_src
+    assert "dpop+jwt" not in oidc_src
+    assert "import jwt" not in oidc_src
+    assert 'headers={"Authorization": f"Bearer' in oidc_src
+
+
+def test_oidc_dpop_emits_proof_and_binds_token_and_userinfo(tmp_path):
+    gen = FastAPIGenerator()
+    gen.generate(_ctx_from_fixture("auth-oidc-dpop.yaml"), tmp_path)
+    oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    assert "from cryptography.hazmat.primitives.asymmetric import ec" in oidc_src
+    assert "from jwt.algorithms import ECAlgorithm" in oidc_src
+    assert "_dpop_private_key = ec.generate_private_key(ec.SECP256R1())" in oidc_src
+    assert 'headers={"typ": "dpop+jwt", "jwk": _dpop_jwk}' in oidc_src
+    assert 'headers={"DPoP": _dpop_proof("POST", token_endpoint)}' in oidc_src
+    assert 'f"DPoP {token_data[\'access_token\']}"' in oidc_src
+    assert '_dpop_proof("GET", userinfo_endpoint, token_data["access_token"])' in oidc_src
+    assert 'headers={"Authorization": f"Bearer' not in oidc_src
+
+
 def test_oidc_login_codes_use_sql_backend_for_sql_identity(tmp_path):
     ctx = _ctx_from_fixture("auth-oidc-sql.yaml")
     gen = FastAPIGenerator()
