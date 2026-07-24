@@ -88,6 +88,7 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                     request_symbols=rule.request_symbols,
                     when=rule.when,
                     effect=rule.effect,
+                    reason=rule.reason,
                 )
                 for rule in route.access_rules
             ]

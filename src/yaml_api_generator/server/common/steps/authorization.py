@@ -61,6 +61,10 @@ def ValidateIdentityCreateStep(
     return step
 
 
+def _deny(rule: RuntimeAccessRule) -> ForbiddenError:
+    return ForbiddenError(rule.reason or "Forbidden")
+
+
 def _rule_needs_document(rule: RuntimeAccessRule) -> bool:
     if rule.document_symbols:
         return True
@@ -198,7 +202,7 @@ def AuthorizeRouteStep(
             matched = _evaluate_rule(rule, ctx.principal, None, ctx)
             if matched:
                 if rule.effect == "deny":
-                    raise ForbiddenError("Forbidden")
+                    raise _deny(rule)
                 return ctx
 
         raise ForbiddenError("Forbidden")
@@ -225,7 +229,7 @@ def PostFetchAuthorizeStep(
 
             if matched:
                 if rule.effect == "deny":
-                    raise ForbiddenError("Forbidden")
+                    raise _deny(rule)
                 return ctx
 
         raise ForbiddenError("Forbidden")
