@@ -62,6 +62,7 @@ class SettingField:
     default: str | None  # None -> required field
     secret: bool = False
     generated: bool = False
+    secret_kind: str = "token"  # "token" | "rsa_private_key"
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,15 @@ class CorsConfig:
 
 
 @dataclass(frozen=True)
+class SessionConfig:
+    algorithm: str = "HS256"
+
+    @property
+    def uses_asymmetric(self) -> bool:
+        return self.algorithm == "RS256"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     base_path: str
     api_version: str | None
@@ -248,6 +258,7 @@ class CompileContext:
     routes: list[RouteDescriptor]
     auth: AuthConfig
     collections: dict[str, Any]
+    session: SessionConfig = field(default_factory=SessionConfig)
     repository_operations: dict[str, list[dict]] = field(default_factory=dict)
     datastores: dict[str, dict] = field(default_factory=dict)
     # Abstract base repositories (which declare operations) rendered as

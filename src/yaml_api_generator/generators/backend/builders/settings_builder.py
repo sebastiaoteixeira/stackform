@@ -1,5 +1,8 @@
 from secrets import token_urlsafe
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
 from ..compile_context import CompileContext, SettingField
 from ....ir.api import IROIDCProvider
 
@@ -35,7 +38,13 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
         add(SettingField("PASSWORD_HASH_ROUNDS", "int", "390000"))
 
         if ctx.auth.uses_jwt:
-            add(SettingField("JWT_SECRET", "str", None, secret=True, generated=True))
+            if ctx.session.uses_asymmetric:
+                add(SettingField(
+                    "JWT_PRIVATE_KEY", "str", None,
+                    secret=True, generated=True, secret_kind="rsa_private_key",
+                ))
+            else:
+                add(SettingField("JWT_SECRET", "str", None, secret=True, generated=True))
             add(SettingField("JWT_EXPIRATION_HOURS", "int", "24"))
 
         if ctx.auth.has_app_oidc_auth:
@@ -51,6 +60,26 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
     return fields
 
 
+def _rsa_private_key_env_value() -> str:
+    """A fresh RSA private key as a double-quoted single-line dotenv value.
+
+    PEM newlines are escaped as ``\\n`` inside double quotes so python-dotenv
+    restores the real newlines when the generated app loads its ``.env``.
+    """
+    pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    return '"' + pem.replace("\n", "\\n") + '"'
+
+
+def _generated_value(field: SettingField) -> str:
+    if field.secret_kind == "rsa_private_key":
+        return _rsa_private_key_env_value()
+    return token_urlsafe(32)
+
+
 def generated_secret_values(fields: list[SettingField]) -> dict[str, str]:
-    """Return a mapping of env_name -> token_urlsafe(32) for generated secrets."""
-    return {f.env_name: token_urlsafe(32) for f in fields if f.generated}
+    """Return a mapping of env_name -> generated value for generated secrets."""
+    return {f.env_name: _generated_value(f) for f in fields if f.generated}

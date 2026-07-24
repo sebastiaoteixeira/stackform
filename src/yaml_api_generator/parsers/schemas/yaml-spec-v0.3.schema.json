@@ -130,9 +130,19 @@
     },
     "deploy": {
       "$ref": "#/$defs/DeployConfig"
+    },
+    "session": {
+      "$ref": "#/$defs/SessionConfig"
     }
   },
   "$defs": {
+    "SessionConfig": {
+      "type": "object",
+      "properties": {
+        "algorithm": { "type": "string", "enum": ["HS256", "RS256"], "default": "HS256" }
+      },
+      "additionalProperties": false
+    },
     "Symbol": {
       "type": "string",
       "pattern": "^\\$[A-Za-z_][A-Za-z0-9_]*$",

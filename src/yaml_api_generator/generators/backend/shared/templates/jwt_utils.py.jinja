@@ -1,3 +1,64 @@
+{% if ctx.session.uses_asymmetric %}
+import json
+import time
+from base64 import urlsafe_b64encode
+from functools import lru_cache
+from hashlib import sha256
+
+import jwt
+from cryptography.hazmat.primitives import serialization
+from jwt.algorithms import RSAAlgorithm
+
+from settings import settings
+
+
+def _jwk_thumbprint(jwk: dict) -> str:
+    canonical = json.dumps(
+        {"e": jwk["e"], "kty": jwk["kty"], "n": jwk["n"]},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return urlsafe_b64encode(sha256(canonical.encode()).digest()).rstrip(b"=").decode()
+
+
+@lru_cache(maxsize=1)
+def _signing_material() -> tuple[str, str, str, dict]:
+    private_pem = settings.JWT_PRIVATE_KEY.get_secret_value()
+    private_key = serialization.load_pem_private_key(private_pem.encode(), password=None)
+    public_key = private_key.public_key()
+    public_pem = public_key.public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
+    kid = _jwk_thumbprint(jwk)
+    return private_pem, public_pem, kid, {**jwk, "kid": kid, "use": "sig", "alg": "RS256"}
+
+
+def create_jwt_token(sub: str, identity_collection: str) -> str:
+    now = time.time()
+    payload = {
+        "sub": sub,
+        "identity_collection": identity_collection,
+        "iat": int(now),
+        "exp": int(now + settings.JWT_EXPIRATION_HOURS * 3600),
+    }
+    private_pem, _, kid, _ = _signing_material()
+    return jwt.encode(payload, private_pem, algorithm="RS256", headers={"kid": kid})
+
+
+def decode_jwt_token(token: str) -> dict | None:
+    try:
+        _, public_pem, _, _ = _signing_material()
+        return jwt.decode(token, public_pem, algorithms=["RS256"])
+    except (jwt.InvalidTokenError, Exception):
+        return None
+
+
+def public_jwks() -> dict:
+    _, _, _, jwk = _signing_material()
+    return {"keys": [jwk]}
+{% else %}
 import time
 
 import jwt
@@ -21,3 +82,4 @@ def decode_jwt_token(token: str) -> dict | None:
         return jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
     except (jwt.InvalidTokenError, Exception):
         return None
+{% endif %}

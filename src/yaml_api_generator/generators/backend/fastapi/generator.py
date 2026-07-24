@@ -244,6 +244,11 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         auth_imports: list[str] = []
 
+        if context.auth.uses_jwt and context.session.uses_asymmetric:
+            (routes_dir / "jwks.py").write_text(
+                env.get_template("jwks_routes.py.jinja").render(auth=context.auth)
+            )
+
         if context.auth.has_password_auth:
             (routes_dir / "login.py").write_text(
                 env.get_template("login_routes.py.jinja").render(auth=context.auth)

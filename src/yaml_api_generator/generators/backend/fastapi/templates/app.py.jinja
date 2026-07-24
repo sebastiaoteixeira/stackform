@@ -34,6 +34,9 @@ from dependencies.mongodb import connect_db as connect_mongo, close_db as close_
 from dependencies.postgres import connect_db as connect_pg, close_db as close_pg
 {% endif %}
 from routes import api_router
+{% if ctx.auth.uses_jwt and ctx.session.uses_asymmetric %}
+from routes.jwks import router as jwks_router
+{% endif %}
 
 
 @asynccontextmanager
@@ -111,6 +114,9 @@ app.add_middleware(_IdpProvisioningMiddleware)
 {% endif %}
 
 app.include_router(api_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")
+{% if ctx.auth.uses_jwt and ctx.session.uses_asymmetric %}
+app.include_router(jwks_router)
+{% endif %}
 
 {% if ctx.auth.enabled %}
 
