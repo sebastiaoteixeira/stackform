@@ -133,8 +133,8 @@ def _check_when(
         return None
 
     expr, when_errors = parse_when_list(when_raw, f"{path}.when")
-    if when_errors:
-        errors.extend(when_errors)
+    errors.extend(when_errors)
+    if expr is None:
         return None
 
     bound = frozenset((rule.get("given") or {}).keys())

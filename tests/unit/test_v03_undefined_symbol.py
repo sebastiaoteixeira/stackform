@@ -63,6 +63,21 @@ def test_v02_unbound_when_keeps_legacy_code():
     assert _codes(_unbound_when("0.2")) == {"WHEN_UNBOUND_SYMBOL"}
 
 
+def test_v03_given_without_when_resolves():
+    controllers = {"c": {"operations": {"get": {"access": [{
+        "given": {"principal": "identity:user"},
+    }]}}}}
+    assert _access_errors(controllers, "0.3") == []
+
+
+def test_v03_empty_when_list_resolves():
+    controllers = {"c": {"operations": {"get": {"access": [{
+        "given": {"principal": "identity:user"},
+        "when": [],
+    }]}}}}
+    assert _access_errors(controllers, "0.3") == []
+
+
 def _filter_spec(query_filter, route_path):
     return {
         "repositories": {"orders": {"entity": "order", "operations": {
