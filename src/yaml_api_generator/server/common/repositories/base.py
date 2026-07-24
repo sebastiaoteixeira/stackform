@@ -2,6 +2,17 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 
+class ConflictError(Exception):
+    def __init__(self, field: str | None = None) -> None:
+        self.field = field
+        message = (
+            f"Duplicate value violates unique constraint on field '{field}'"
+            if field
+            else "Duplicate value violates a unique constraint"
+        )
+        super().__init__(message)
+
+
 class BaseRepository(ABC):
     def register_id_field(self, collection_name: str, id_field: str) -> None:
         pass
