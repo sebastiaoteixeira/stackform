@@ -147,6 +147,38 @@ def _validate_type(name: str, value: Any, schema: _FieldSchema) -> None:
             raise ValueError(f"Field '{name}' must be an object")
 
 
+def validate_field_values(
+    values: dict[str, Any], field_configs: dict[str, dict[str, Any]]
+) -> None:
+    """Validate a value map against declared field configs.
+
+    Declared fields are required by default; a missing or ill-typed value raises
+    ``ValueError`` (mapped to 422). Shares the type checks used for request bodies.
+    """
+    missing = [
+        name
+        for name, cfg in field_configs.items()
+        if cfg.get("required", True) and name not in values
+    ]
+    if missing:
+        raise ValueError(f"Missing required inputs: {', '.join(missing)}")
+
+    for name, cfg in field_configs.items():
+        if name not in values:
+            continue
+        schema = _FieldSchema(
+            name=name,
+            field_type=cfg.get("type", "string"),
+            required=bool(cfg.get("required", True)),
+            min=cfg.get("min"),
+            max=cfg.get("max"),
+            min_length=cfg.get("minLength"),
+            max_length=cfg.get("maxLength"),
+            enum_values=cfg.get("values"),
+        )
+        _validate_type(name, values[name], schema)
+
+
 def ValidateBodyStep(
     collection: RuntimeCollectionDescriptor,
     operation: str,

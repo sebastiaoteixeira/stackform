@@ -33,6 +33,7 @@ class RouteTransformer:
         services_data: dict[str, Any],
         repo_entity_map: dict[str, str],
         import_map: dict[str, str],
+        dtos_data: dict[str, Any] | None = None,
     ) -> dict[str, IRService]:
         """Transform service configurations to IR.
 
@@ -40,14 +41,21 @@ class RouteTransformer:
             services_data: Raw service configurations from YAML
             repo_entity_map: Repository name to entity name mapping
             import_map: Handler import path resolution
+            dtos_data: Raw DTO definitions, resolved by service ``input:`` refs
 
         Returns:
             Dictionary of service IR objects
+
+        Raises:
+            ConfigErrors: If a service ``input:`` / ``with:`` is malformed
         """
+        dtos_data = dtos_data or {}
         services: dict[str, IRService] = {}
+        errors: list[ConfigError] = []
         for svc_name, svc_cfg in services_data.items():
             if not isinstance(svc_cfg, dict):
                 continue
+            input_ir, forwarding = self._transform_input(svc_name, svc_cfg, dtos_data, errors)
             handler_ref = svc_cfg.get("handler")
             inherits = svc_cfg.get("_inherits")
             if handler_ref is not None:
@@ -55,6 +63,8 @@ class RouteTransformer:
                     name=svc_name,
                     handler=self._resolve_handler_path(handler_ref, import_map),
                     inherits=inherits,
+                    input=input_ir,
+                    forwarding=forwarding,
                 )
             else:
                 services[svc_name] = IRService(
@@ -62,8 +72,39 @@ class RouteTransformer:
                     repository=svc_cfg.get("repository"),
                     operation=svc_cfg.get("operation"),
                     inherits=inherits,
+                    input=input_ir,
+                    forwarding=forwarding,
                 )
+        if errors:
+            raise ConfigErrors(errors)
         return services
+
+    def _transform_input(
+        self,
+        svc_name: str,
+        svc_cfg: dict[str, Any],
+        dtos_data: dict[str, Any],
+        errors: list[ConfigError],
+    ) -> tuple[Any, dict[str, Any]]:
+        from yaml_api_generator.parsers.service_input_parser import (
+            parse_service_input,
+            parse_service_with,
+        )
+
+        input_ir = None
+        if "input" in svc_cfg:
+            input_ir, input_errors = parse_service_input(
+                svc_cfg["input"], dtos_data, f"services.{svc_name}.input"
+            )
+            errors.extend(input_errors)
+
+        forwarding: dict[str, Any] = {}
+        if isinstance(svc_cfg.get("with"), dict):
+            forwarding, with_errors = parse_service_with(
+                svc_cfg["with"], f"services.{svc_name}.with"
+            )
+            errors.extend(with_errors)
+        return input_ir, forwarding
 
     def transform_routes(
         self,

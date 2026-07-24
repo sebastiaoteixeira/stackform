@@ -230,6 +230,15 @@ class IRAccessRule:
 
 
 @dataclass(frozen=True)
+class IRServiceInput:
+    fields: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def names(self) -> frozenset[str]:
+        return frozenset(self.fields)
+
+
+@dataclass(frozen=True)
 class IRService:
     name: str
     repository: str | None = None
@@ -237,6 +246,8 @@ class IRService:
     handler: str | None = None
     abstract: bool = False
     inherits: str | None = None
+    input: IRServiceInput | None = None
+    forwarding: dict[str, WhereRhs] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

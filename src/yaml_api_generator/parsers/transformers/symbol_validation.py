@@ -28,6 +28,26 @@ def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
     errors: list[ConfigError] = []
     errors.extend(_validate_repository_filters(spec))
     errors.extend(_validate_where_bindings(spec))
+    errors.extend(_validate_service_with(spec))
+    return errors
+
+
+def _validate_service_with(spec: dict[str, Any]) -> list[ConfigError]:
+    from yaml_api_generator.parsers.service_input_parser import parse_service_input
+
+    dtos = spec.get("dto") or {}
+    errors: list[ConfigError] = []
+    for service_name, service in (spec.get("services") or {}).items():
+        if not isinstance(service, dict) or not isinstance(service.get("with"), dict):
+            continue
+        input_ir, _ = parse_service_input(service.get("input"), dtos, "")
+        bound = input_ir.names if input_ir is not None else frozenset()
+        for name, value in service["with"].items():
+            scope = SymbolScope(
+                label=f"service '{service_name}' with '{name}'", bound=bound
+            )
+            path = f"services.{service_name}.with.{name}"
+            errors.extend(scope.undefined(_where_rhs_symbols(str(value)), path))
     return errors
 
 

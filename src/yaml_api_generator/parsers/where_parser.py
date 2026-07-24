@@ -69,6 +69,11 @@ def _parse_conjunct(
     return IRWhereConjunct(field=field, rhs=rhs), []
 
 
+def parse_rhs_value(rhs_raw: str, path: str) -> tuple[WhereRhs | None, list[ConfigError]]:
+    """Parse a single right-hand-side value: a $symbol, quoted string, number, or bool."""
+    return _parse_rhs(rhs_raw, rhs_raw, path)
+
+
 def _parse_rhs(
     rhs_raw: str, raw: str, path: str
 ) -> tuple[WhereRhs | None, list[ConfigError]]:

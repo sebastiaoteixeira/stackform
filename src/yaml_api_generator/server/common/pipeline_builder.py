@@ -16,6 +16,7 @@ from .steps import (
     ResolvePrincipalStep,
     ResolveWhereBindingsStep,
     RepositoryUpdateStep,
+    ServiceInputStep,
     Step,
     ValidateBodyStep,
     ValidateIdentityCreateStep,
@@ -79,6 +80,9 @@ class PipelineBuilder:
             )
 
         steps = self._base_steps(route)
+        service_input_step = self._service_input_step(route)
+        if service_input_step is not None:
+            steps.append(service_input_step)
         identity_step = self._identity_step(route)
         if identity_step is not None:
             steps.append(identity_step)
@@ -118,6 +122,9 @@ class PipelineBuilder:
 
     def _build_handler_pipeline(self, route: RuntimeRouteDescriptor) -> Pipeline:
         steps: list[Step] = self._base_steps(route)
+        service_input_step = self._service_input_step(route)
+        if service_input_step is not None:
+            steps.append(service_input_step)
         handler_step = _import_handler(route.handler)
         steps.append(handler_step)
         return Pipeline(
@@ -157,6 +164,11 @@ class PipelineBuilder:
         collection = self._ctx.collections[route.collection]
         identity_collection = self._ctx.auth.identity_collections.get(route.collection)
         return ValidateBodyStep(collection, route.operation, identity_collection)
+
+    def _service_input_step(self, route: RuntimeRouteDescriptor) -> Step | None:
+        if route.service_input is None and not route.service_forwarding:
+            return None
+        return ServiceInputStep(route.service_input or {}, route.service_forwarding)
 
     def _identity_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         identity_collection = self._ctx.auth.identity_collections.get(route.collection)
