@@ -222,7 +222,9 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 {% if auth.has_idp_auth %}
     if bearer_token is not None:
         token_issuer = idp_auth.unverified_issuer(bearer_token)
-        if token_issuer is not None and await _find_idp_provider_for_issuer(token_issuer) is not None:
+        if token_issuer is not None:
+            if await _find_idp_provider_for_issuer(token_issuer) is None:
+                raise HTTPException(status_code=401, detail="Untrusted token issuer")
             return await _resolve_idp_principal(bearer_token, db)
 {% endif %}
 
