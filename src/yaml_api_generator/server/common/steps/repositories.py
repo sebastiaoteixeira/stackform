@@ -2,7 +2,8 @@ from typing import Any, cast
 
 from ..auth import hash_password
 from ..request_context import RequestContext
-from yaml_api_generator.ir.api import IRRolesConfig
+from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
+from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
 from ..utils.ids import generate_id as _generate_id
 from . import NotFoundError, Step
@@ -90,10 +91,24 @@ def _prepare_payload(
     return normalized
 
 
-def RepositoryListStep(collection_name: str, id_field: str) -> Step:
+def RepositoryListStep(
+    collection_name: str,
+    id_field: str,
+    pagination: IRPagination | None = None,
+) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        result = await _repository(ctx).list(collection_name)
-        ctx.response = _inject_canonical_id_list(result, id_field)
+        if pagination is None:
+            result = await _repository(ctx).list(collection_name)
+            ctx.response = _inject_canonical_id_list(result, id_field)
+            return ctx
+        query = ctx.query or {}
+        primitives = map_request(pagination, query)
+        page = await _repository(ctx).paginate(collection_name, primitives)
+        canonical = Page(
+            rows=_inject_canonical_id_list(page.rows, id_field),
+            total=page.total,
+        )
+        ctx.response = build_response(pagination, canonical, query)
         return ctx
 
     return step

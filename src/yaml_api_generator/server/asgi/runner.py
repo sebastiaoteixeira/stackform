@@ -1,6 +1,7 @@
 import json
 import re
 from typing import Any
+from urllib.parse import parse_qs
 
 from yaml_api_generator.ir import IRDocument
 from ..common.server_context import RuntimeContext, RuntimeRouteDescriptor
@@ -83,11 +84,14 @@ class ASGIApp:
             for k, v in scope.get("headers", [])
         }
 
+        query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+
         try:
             ctx = await pipeline.run(
                 headers=headers,
                 url_params=url_params,
                 body=body,
+                query=query,
             )
         except UnauthorizedError as exc:
             await self._send_json(send, 401, {"detail": str(exc)})

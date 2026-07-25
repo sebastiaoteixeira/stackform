@@ -86,6 +86,29 @@ class IRDeploy:
 
 
 @dataclass(frozen=True)
+class IRSortKey:
+    field: str
+    dir: str = "asc"
+
+
+@dataclass(frozen=True)
+class IRPageSize:
+    default: int
+    max: int
+
+
+@dataclass(frozen=True)
+class IRPagination:
+    strategy: str
+    size: IRPageSize
+    count: str = "none"
+    on_overflow: str = "clamp"
+    envelope: bool = False
+    sort: tuple[IRSortKey, ...] = ()
+    on: str | None = None
+
+
+@dataclass(frozen=True)
 class IROperation:
     name: str
     query: dict | None = None
@@ -235,6 +258,7 @@ class IRRoute:
     is_public: bool = True
     access_rules: list[IRAccessRule] | None = None
     handler: str | None = None
+    pagination: IRPagination | None = None
 
 
 @dataclass(frozen=True)

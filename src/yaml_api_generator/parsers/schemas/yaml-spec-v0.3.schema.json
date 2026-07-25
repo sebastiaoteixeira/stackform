@@ -542,6 +542,51 @@
         "path": { "type": "string" },
         "access": {
           "$ref": "#/$defs/AccessConfig"
+        },
+        "pagination": {
+          "$ref": "#/$defs/PaginationConfig"
+        }
+      }
+    },
+    "PaginationConfig": {
+      "description": "v0.3 controller pagination. offset and keyset are implemented; cursor, range and count: estimated are reserved (accepted and validated, no runtime yet).",
+      "type": "object",
+      "required": ["strategy", "size"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["offset", "keyset", "cursor", "range"]
+        },
+        "size": {
+          "type": "object",
+          "required": ["default", "max"],
+          "properties": {
+            "default": { "type": "integer", "minimum": 0 },
+            "max": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "count": {
+          "type": "string",
+          "enum": ["none", "exact", "estimated"],
+          "default": "none"
+        },
+        "onOverflow": {
+          "type": "string",
+          "enum": ["clamp", "reject"],
+          "default": "clamp"
+        },
+        "envelope": { "type": "boolean", "default": false },
+        "on": { "type": "string" },
+        "sort": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field"],
+            "properties": {
+              "field": { "type": "string" },
+              "dir": { "type": "string", "enum": ["asc", "desc"], "default": "asc" }
+            }
+          }
         }
       }
     },

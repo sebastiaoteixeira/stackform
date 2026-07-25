@@ -7,7 +7,7 @@ from yaml_api_generator.ir import (
     IRProviderBinding,
     IRRequestBinding,
 )
-from yaml_api_generator.ir.api import IRRolesConfig
+from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
 
 
@@ -68,6 +68,7 @@ class RuntimeRouteDescriptor:
     is_public: bool
     handler: str | None = None
     access_rules: list[RuntimeAccessRule] | None = None
+    pagination: IRPagination | None = None
 
 
 @dataclass(frozen=True)

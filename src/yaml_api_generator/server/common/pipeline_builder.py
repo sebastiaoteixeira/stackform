@@ -81,9 +81,9 @@ class PipelineBuilder:
                 )
             )
             steps.append(post_fetch_step)
-            steps.append(self._repository_step(route.operation, route.collection))
+            steps.append(self._repository_step(route.operation, route.collection, route.pagination))
         else:
-            steps.append(self._repository_step(route.operation, route.collection))
+            steps.append(self._repository_step(route.operation, route.collection, route.pagination))
             if post_fetch_step is not None:
                 steps.append(post_fetch_step)
 
@@ -153,7 +153,7 @@ class PipelineBuilder:
             return None
         return PostFetchAuthorizeStep(route.access_rules, self._ctx.auth)
 
-    def _repository_step(self, operation: str, collection_name: str) -> Step:
+    def _repository_step(self, operation: str, collection_name: str, pagination=None) -> Step:
         collection = self._ctx.collections[collection_name]
         id_field = collection.id_field
         identity_collection = self._ctx.auth.identity_collections.get(collection_name)
@@ -162,7 +162,7 @@ class PipelineBuilder:
         )
 
         if operation == "list":
-            return RepositoryListStep(collection_name, id_field)
+            return RepositoryListStep(collection_name, id_field, pagination)
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field)
         if operation == "create":

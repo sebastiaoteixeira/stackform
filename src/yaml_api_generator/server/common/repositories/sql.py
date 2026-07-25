@@ -6,6 +6,7 @@ pool binds to the serving event loop, not the build-time loop.
 """
 
 import asyncio
+import operator
 from collections.abc import Iterable
 from typing import Any
 
@@ -16,6 +17,15 @@ from yaml_api_generator.ir import IRCollection
 from .base import BaseRepository
 from .bindings import resolve
 from .sql_schema import table_from_collection
+from ..pagination import Page, Primitives, expand_bound
+
+
+_SQL_COMPARATORS = {
+    "gt": operator.gt,
+    "gte": operator.ge,
+    "lt": operator.lt,
+    "lte": operator.le,
+}
 
 
 class SQLRepository(BaseRepository):
@@ -53,6 +63,42 @@ class SQLRepository(BaseRepository):
         async with await self._connection() as conn:
             result = await conn.execute(sa.select(table))
             return [dict(row._mapping) for row in result]
+
+    async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
+        table = self._table(collection_name)
+        scoping = [table.c[field] == value for field, value in primitives.filter.items()]
+        bound_clauses = self._bounds_clauses(table, primitives.bounds)
+        where = sa.and_(*scoping, *bound_clauses) if (scoping or bound_clauses) else None
+        stmt = sa.select(table)
+        if where is not None:
+            stmt = stmt.where(where)
+        for key in primitives.sort:
+            column = table.c[key.field]
+            stmt = stmt.order_by(column.desc() if key.descending else column.asc())
+        if primitives.skip:
+            stmt = stmt.offset(primitives.skip)
+        if primitives.limit is not None:
+            stmt = stmt.limit(primitives.limit)
+        async with await self._connection() as conn:
+            rows = [dict(row._mapping) for row in await conn.execute(stmt)]
+            total = None
+            if primitives.count == "exact":
+                count_stmt = sa.select(sa.func.count()).select_from(table)
+                if scoping:
+                    count_stmt = count_stmt.where(sa.and_(*scoping))
+                total = (await conn.execute(count_stmt)).scalar()
+        return Page(rows=rows, total=total)
+
+    def _bounds_clauses(self, table: sa.Table, bounds) -> "list[Any]":
+        clauses = []
+        for bound in bounds:
+            disjuncts = []
+            for equalities, key in expand_bound(bound):
+                terms = [table.c[field] == value for field, value in equalities]
+                terms.append(_SQL_COMPARATORS[key.op](table.c[key.field], key.value))
+                disjuncts.append(sa.and_(*terms))
+            clauses.append(sa.or_(*disjuncts))
+        return clauses
 
     async def get(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
         table = self._table(collection_name)

@@ -100,6 +100,7 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                 is_public=route.is_public,
                 handler=route.handler,
                 access_rules=access_rules,
+                pagination=route.pagination,
             )
         )
     return routes
