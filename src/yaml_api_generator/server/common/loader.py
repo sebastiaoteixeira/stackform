@@ -28,9 +28,26 @@ def create_repositories(yaml_file: str, schema_file: str | Path | None = None):
         Tuple of (IRDocument, RepositoryRegistry)
     """
     ir = load_and_generate_ir(yaml_file, schema_file).ir
-    manage_schema = not (Path(yaml_file).resolve().parent / "migrations").exists()
-    registry = build_registry(ir, create_schema=manage_schema)
+    registry = build_registry(ir, create_schema=not has_managed_migrations(yaml_file))
     return ir, registry
+
+
+def has_managed_migrations(yaml_file: str) -> bool:
+    """A spec graduates from create-on-connect once a migrations tree exists."""
+    spec_dir = Path(yaml_file).resolve().parent
+    return (spec_dir / "migrations").exists() or (spec_dir / "mongo_migrations").exists()
+
+
+def mongo_connection_params(ir: IRDocument, name: str) -> tuple[str, str]:
+    datastore = ir.datastores[name]
+    is_default = name == ir.default_datastore
+    uri = os.environ.get("YAML_API_MONGO_URI", datastore.uri) if is_default else datastore.uri
+    database = (
+        os.environ.get("YAML_API_MONGO_DB", datastore.database)
+        if is_default
+        else datastore.database
+    )
+    return uri, database
 
 
 async def initialize_indexes(ir: IRDocument, registry: RepositoryRegistry) -> None:
@@ -41,7 +58,7 @@ async def initialize_indexes(ir: IRDocument, registry: RepositoryRegistry) -> No
     """
     for col_name, collection in ir.collections.items():
         repo = registry.for_collection(col_name)
-        if not isinstance(repo, MongoRepository):
+        if not isinstance(repo, MongoRepository) or not repo.manage_indexes:
             continue
         for field_name, cfg in collection.fields.items():
             if isinstance(cfg, dict) and cfg.get("unique"):
@@ -66,14 +83,11 @@ def _build_repository(
     name: str, datastore, ir: IRDocument, create_schema: bool = True
 ) -> BaseRepository:
     if isinstance(datastore, IRMongo):
-        is_default = name == ir.default_datastore
-        uri = os.environ.get("YAML_API_MONGO_URI", datastore.uri) if is_default else datastore.uri
-        database = (
-            os.environ.get("YAML_API_MONGO_DB", datastore.database)
-            if is_default
-            else datastore.database
+        uri, database = mongo_connection_params(ir, name)
+        return MongoRepository(
+            MongoRepositoryConfig(uri=uri, database=database),
+            manage_indexes=create_schema,
         )
-        return MongoRepository(MongoRepositoryConfig(uri=uri, database=database))
 
     if isinstance(datastore, IRPostgres):
         from .repositories.sql import SQLRepository

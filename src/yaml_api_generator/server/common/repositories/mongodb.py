@@ -29,6 +29,10 @@ _NON_NULL_BSON_TYPES = [
 ]
 
 
+def unique_index_partial_filter(field_name: str) -> dict[str, Any]:
+    return {field_name: {"$type": _NON_NULL_BSON_TYPES}}
+
+
 @dataclass(frozen=True)
 class MongoRepositoryConfig:
     uri: str
@@ -36,11 +40,12 @@ class MongoRepositoryConfig:
 
 
 class MongoRepository(BaseRepository):
-    def __init__(self, config: MongoRepositoryConfig):
+    def __init__(self, config: MongoRepositoryConfig, manage_indexes: bool = True):
         self._config = config
         self._client: Any | None = None
         self._db: Any | None = None
         self._id_fields: dict[str, str] = {}
+        self.manage_indexes = manage_indexes
 
     def register_id_field(self, collection_name: str, id_field: str) -> None:
         self._id_fields[collection_name] = id_field
@@ -66,7 +71,7 @@ class MongoRepository(BaseRepository):
         await self.collection(collection_name).create_index(
             field_name,
             unique=True,
-            partialFilterExpression={field_name: {"$type": _NON_NULL_BSON_TYPES}},
+            partialFilterExpression=unique_index_partial_filter(field_name),
         )
 
     async def list(self, collection_name: str) -> list[dict[str, Any]]:
