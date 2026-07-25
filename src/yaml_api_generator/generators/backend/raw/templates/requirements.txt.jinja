@@ -2,3 +2,6 @@ pymongo
 pyjwt
 uvicorn
 pydantic-settings
+{% for req in ctx.vendored_requirements %}
+{{ req }}
+{% endfor %}

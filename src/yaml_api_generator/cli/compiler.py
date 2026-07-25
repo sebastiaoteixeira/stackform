@@ -49,6 +49,10 @@ def compile_project(
     generator = generator_cls()
     generator.generate(context, out / "backend")
 
+    if result.ir.vendored_imports:
+        from yaml_api_generator.generators.backend.vendoring import vendor_packages
+        vendor_packages(result.ir.vendored_imports, Path(yaml_file).parent, out / "backend")
+
     if result.ui_block is not None:
         from yaml_api_generator.parsers.ui_parser import build_generator_context
 

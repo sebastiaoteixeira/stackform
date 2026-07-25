@@ -63,7 +63,30 @@
     "imports": {
       "type": "object",
       "additionalProperties": {
-        "type": "string"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": ["path", "package"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "package": {
+                "type": "string"
+              },
+              "requires": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "mongo": {

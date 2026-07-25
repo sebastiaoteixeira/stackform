@@ -195,6 +195,13 @@ class IRDto:
 
 
 @dataclass(frozen=True)
+class IRVendoredImport:
+    package: str
+    path: str
+    requires: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class IRAccessRule:
     principal: str
     required_role: str | None = None
@@ -330,6 +337,8 @@ class IRDocument:
     repositories: dict[str, IRRepository] = field(default_factory=dict)
     policies: dict[str, IRPolicy] = field(default_factory=dict)
     ui_config: dict[str, Any] | None = None
+    vendored_imports: tuple[IRVendoredImport, ...] = ()
+    vendored_requirements: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -107,6 +107,7 @@ class ContextBuilder:
             repository_inherits=repository_inherits,
             services=dict(document.services),
             dto_models=dto_models,
+            vendored_requirements=document.vendored_requirements,
         )
 
 

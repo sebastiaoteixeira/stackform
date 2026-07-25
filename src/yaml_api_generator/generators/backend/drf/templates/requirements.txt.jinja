@@ -5,3 +5,6 @@ gunicorn
 pymongo
 pyjwt
 pydantic-settings
+{% for req in ctx.vendored_requirements %}
+{{ req }}
+{% endfor %}
