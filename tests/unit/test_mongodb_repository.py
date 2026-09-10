@@ -1,6 +1,7 @@
 from typing import Any
 
 import pytest
+from bson import ObjectId
 
 from yaml_api_generator.server.common.repositories.mongodb import (
     MongoRepository,
@@ -15,10 +16,11 @@ class FakeCollection:
         self._docs: list[dict[str, Any]] = []
 
     def _matches(self, doc: dict[str, Any], match_filter: dict[str, Any]) -> bool:
-        conditions = match_filter["$or"]
-        return any(
-            all(doc.get(key) == value for key, value in condition.items())
-            for condition in conditions
+        return all(
+            any(self._matches(doc, branch) for branch in value)
+            if key == "$or"
+            else doc.get(key) == value
+            for key, value in match_filter.items()
         )
 
     class _Insert:
@@ -67,3 +69,32 @@ async def test_replace_preserves_id(repository: MongoRepository) -> None:
     assert fetched is not None
     assert fetched["id"] == "abc"
     assert fetched["title"] == "new"
+
+
+@pytest.mark.asyncio
+async def test_find_one_matches_equality_criteria(repository: MongoRepository) -> None:
+    await repository.create("items", {"id": "a", "slug": "books", "tenant": "t1"})
+    await repository.create("items", {"id": "b", "slug": "books", "tenant": "t2"})
+
+    found = await repository.find_one("items", {"slug": "books", "tenant": "t2"})
+
+    assert found is not None
+    assert found["id"] == "b"
+
+
+@pytest.mark.asyncio
+async def test_find_one_no_match_is_none(repository: MongoRepository) -> None:
+    await repository.create("items", {"id": "a", "slug": "books"})
+
+    assert await repository.find_one("items", {"slug": "missing"}) is None
+
+
+@pytest.mark.asyncio
+async def test_find_one_normalizes_object_id(repository: MongoRepository) -> None:
+    object_id = ObjectId()
+    await repository.collection("items").insert_one({"_id": object_id, "slug": "books"})
+
+    found = await repository.find_one("items", {"slug": "books"})
+
+    assert found is not None
+    assert found["_id"] == str(object_id)

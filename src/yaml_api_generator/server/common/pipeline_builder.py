@@ -1,5 +1,7 @@
 import importlib
+from collections.abc import Iterator
 
+from yaml_api_generator.ir import IRDocumentBinding
 from .server_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
@@ -13,27 +15,22 @@ from .steps import (
     RepositoryListStep,
     RepositoryOperationStep,
     RepositoryReplaceStep,
+    RepositoryUpdateStep,
     ResolvePrincipalStep,
     ResolveWhereBindingsStep,
-    RepositoryUpdateStep,
     Step,
     ValidateBodyStep,
     ValidateIdentityCreateStep,
 )
 
 
-def _has_where_binding(route: RuntimeRouteDescriptor) -> bool:
-    return bool(route.access_rules) and any(
-        any(binding.where for binding in rule.document_symbols.values())
-        for rule in route.access_rules
+def _document_bindings(route: RuntimeRouteDescriptor) -> Iterator[IRDocumentBinding]:
+    return (
+        binding
+        for rule in route.access_rules or ()
+        for binding in rule.document_symbols.values()
     )
 
-
-def _has_implicit_document(route: RuntimeRouteDescriptor) -> bool:
-    return bool(route.access_rules) and any(
-        any(not binding.where for binding in rule.document_symbols.values())
-        for rule in route.access_rules
-    )
 
 _CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
 
@@ -142,7 +139,7 @@ class PipelineBuilder:
                 )
             )
 
-        if not route.is_public and _has_where_binding(route):
+        if not route.is_public and any(binding.where for binding in _document_bindings(route)):
             steps.append(ResolveWhereBindingsStep(route.access_rules))
 
         if not route.is_public:
@@ -164,7 +161,7 @@ class PipelineBuilder:
     def _post_fetch_authorize_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         if route.is_public or not route.access_rules:
             return None
-        if not _has_implicit_document(route):
+        if all(binding.where for binding in _document_bindings(route)):
             return None
         if route.operation not in ("get", "update", "replace", "delete"):
             return None

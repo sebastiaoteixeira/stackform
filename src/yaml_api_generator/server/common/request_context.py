@@ -30,7 +30,7 @@ class RequestContext:
     repositories: Any | None = None
     query: dict[str, str | list[str]] | None = None
     cookies: dict[str, str] | None = None
-    where_documents: dict[str, Any] | None = None
+    where_documents: list[dict[str, Any]] | None = None
 
     def repository_for(self, collection: str | None) -> Any:
         """Resolve the repository backing a collection (cross-store access)."""
