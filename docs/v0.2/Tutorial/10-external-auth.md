@@ -318,8 +318,8 @@ returns 403.
 
 ## Environment variables
 
-Provider secrets should use `${VAR}` interpolation. Never hardcode credentials in the
-spec:
+Provider secrets should use `${VAR}` placeholders in the spec. Never hardcode
+credentials in the spec:
 
 ```bash
 export GOOGLE_CLIENT_ID=your-client-id
@@ -328,9 +328,13 @@ export FRONTEND_URL=http://localhost:5173
 yaml-api run myapp.yaml
 ```
 
-`${VAR}` interpolation happens during spec loading; an unset required variable aborts
-generation. `FRONTEND_URL` controls where the OIDC callback redirects after a
-successful login.
+`GOOGLE_CLIENT_ID` is interpolated into the spec during loading (`${VAR}` is a
+build-time macro; an unset required variable aborts generation). `GOOGLE_CLIENT_SECRET`
+is different: the generated backend reads it at **run time** via a `SecretStr`
+setting (the `<PROVIDER>_CLIENT_SECRET` pattern), so it must also be present in the
+environment when you `run`, `build`-and-launch, or deploy -- not only at build time.
+Keep the literal secret out of the YAML in every case. `FRONTEND_URL` controls where
+the OIDC callback redirects after a successful login.
 
 **Note:** Testing OIDC locally requires a real OAuth app registered with the
 provider. For Google, create one at

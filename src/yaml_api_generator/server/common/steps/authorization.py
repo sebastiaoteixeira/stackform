@@ -287,16 +287,17 @@ def PostFetchAuthorizeStep(
     auth_config: RuntimeAuthConfig | None = None,
 ) -> Step:
     def step(ctx: RequestContext) -> RequestContext:
-        if ctx.response is None:
-            return ctx
-
         document = ctx.response if isinstance(ctx.response, dict) else None
         for rule, where_documents in _rules_with_where_documents(access_rules, ctx):
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
-            doc = document if _rule_needs_postfetch(rule) else None
-            if _evaluate_rule(rule, doc, where_documents, ctx):
+            if _rule_needs_postfetch(rule):
+                if document is None:
+                    continue
+
+            rule_document = document if _rule_needs_postfetch(rule) else None
+            if _evaluate_rule(rule, rule_document, where_documents, ctx):
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
                 return ctx

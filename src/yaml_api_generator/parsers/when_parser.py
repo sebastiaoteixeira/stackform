@@ -8,6 +8,8 @@ from ..ir import (
     Equals,
     FieldRef,
     In,
+    IsNotNull,
+    IsNull,
     Not,
     NotEquals,
     NotIn,
@@ -21,13 +23,15 @@ from .yaml_parser import ConfigError
 
 # Tokenizer: multi-word operators must be listed before their prefixes
 _TOKEN_PATTERNS = [
-    ("NOT_EQUALS", r"not\s+equals"),
-    ("NOT_IN",     r"not\s+in"),
-    ("EQUALS",     r"equals"),
-    ("IN",         r"in"),
-    ("AND",        r"and"),
-    ("OR",         r"or"),
-    ("NOT",        r"not"),
+    ("NOT_EQUALS",  r"not\s+equals"),
+    ("NOT_IN",      r"not\s+in"),
+    ("IS_NOT_NULL", r"is\s+not\s+null"),
+    ("IS_NULL",     r"is\s+null"),
+    ("EQUALS",      r"equals"),
+    ("IN",          r"in"),
+    ("AND",         r"and"),
+    ("OR",          r"or"),
+    ("NOT",         r"not"),
     ("LBRACKET",   r"\["),
     ("RBRACKET",   r"\]"),
     ("LPAREN",     r"\("),
@@ -183,6 +187,14 @@ class _Parser:
             if values is None:
                 return None
             return NotIn(left=lhs, values=tuple(values))
+
+        if tok[0] == "IS_NULL":
+            self._consume()
+            return IsNull(operand=lhs)
+
+        if tok[0] == "IS_NOT_NULL":
+            self._consume()
+            return IsNotNull(operand=lhs)
 
         return lhs
 

@@ -1,7 +1,7 @@
 import base64
 from typing import Any
 
-from yaml_api_generator.ir.api import IROIDCProvider
+from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from ..auth import idp, oidc, verify_password
 from ..auth.jwt import decode_jwt_token
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
@@ -61,7 +61,7 @@ async def _resolve_idp_principal(
 
             identifier_claim_path = binding.claim_mapping.get(binding.identifier, binding.identifier)
             if resolve_claim_path(claims, identifier_claim_path) is None:
-                return _build_service_principal(claims, identity)
+                return _build_service_principal(claims, identity, binding)
 
             collection = collections[collection_name]
             record = await oidc.resolve_record(
@@ -77,17 +77,34 @@ async def _resolve_idp_principal(
                 id_field=collection.id_field,
                 identity_collection=collection_name,
                 identity=identity,
+                roles=_roles_from_claims(claims, identity, binding),
             )
     return None
+
+
+def _roles_from_claims(
+    claims: dict[str, Any],
+    identity: RuntimeIdentityDescriptor | None,
+    binding: IRProviderBinding | None,
+) -> Any:
+    roles_field = identity.roles_field if identity is not None else None
+    if roles_field is None:
+        return claims.get("roles") or claims.get("role")
+    claim_path = (
+        binding.claim_mapping.get(roles_field, roles_field)
+        if binding is not None
+        else roles_field
+    )
+    return resolve_claim_path(claims, claim_path)
 
 
 def _build_service_principal(
     claims: dict[str, Any],
     identity: RuntimeIdentityDescriptor,
+    binding: IRProviderBinding | None = None,
 ) -> dict[str, Any]:
     sub = str(claims["sub"])
-    roles_field = identity.roles_field if identity is not None else None
-    roles = claims.get(roles_field) if roles_field else (claims.get("roles") or claims.get("role"))
+    roles = _roles_from_claims(claims, identity, binding)
     roles_list: list[str] = []
     if isinstance(roles, list):
         roles_list = [str(r) for r in roles]
@@ -293,6 +310,7 @@ def _build_principal(
     id_field: str,
     identity_collection: str,
     identity: RuntimeIdentityDescriptor | None = None,
+    roles: Any = None,
 ) -> dict[str, Any]:
     subject = document.get(id_field)
     if subject is None:
@@ -309,11 +327,12 @@ def _build_principal(
         "record": record,
     }
 
-    roles_field = identity.roles_field if identity is not None else None
-    if roles_field is not None:
-        roles = document.get(roles_field)
-    else:
-        roles = document.get("roles") or document.get("role")
+    if roles is None:
+        roles_field = identity.roles_field if identity is not None else None
+        if roles_field is not None:
+            roles = document.get(roles_field)
+        else:
+            roles = document.get("roles") or document.get("role")
 
     if isinstance(roles, list):
         principal["roles"] = [str(role) for role in roles]

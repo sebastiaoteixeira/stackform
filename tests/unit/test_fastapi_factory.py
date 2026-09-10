@@ -437,3 +437,42 @@ def test_password_auth_includes_basic_and_bearer_schemes():
     reqs = _security_requirements(route, auth)
     assert {"BasicAuth": []} in reqs
     assert {"BearerAuth": []} in reqs
+
+
+# --- BUG 1: field defaults materialized on create ---
+
+
+def test_create_model_dump_includes_defaults_when_field_absent():
+    col = _make_collection("posts", {"published": {"type": "boolean", "default": False}})
+    model = create_pydantic_model(col, "create")
+    instance = model()
+    dumped = instance.model_dump(mode="json")
+    assert "published" in dumped
+    assert dumped["published"] is False
+
+
+# --- BUG 1: update keeps exclude_unset so unset fields are not clobbered ---
+
+
+def test_update_model_dump_exclude_unset_does_not_include_defaults():
+    col = _make_collection("posts", {
+        "title": {"type": "string", "required": True},
+        "published": {"type": "boolean", "default": False},
+    })
+    model = create_pydantic_model(col, "update")
+    instance = model(title="hello")
+    dumped = instance.model_dump(mode="json", exclude_unset=True)
+    assert "title" in dumped
+    assert "published" not in dumped
+
+
+# --- BUG 2: datetime model_dump with mode='json' produces ISO string ---
+
+
+def test_create_model_dump_json_mode_serializes_datetime_to_iso_string():
+    col = _make_collection("events", {"starts_at": {"type": "datetime"}})
+    model = create_pydantic_model(col, "create")
+    instance = model(starts_at=datetime(2025, 1, 15, 10, 30, 0))
+    dumped = instance.model_dump(mode="json")
+    assert isinstance(dumped["starts_at"], str)
+    assert dumped["starts_at"].startswith("2025-01-15")

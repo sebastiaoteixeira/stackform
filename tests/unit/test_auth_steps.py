@@ -757,6 +757,31 @@ class TestPostFetchAuthorizeStep:
         result = step(ctx)
         assert result is ctx
 
+    def test_234b_missing_document_with_doc_rule_forbidden(self):
+        when = Equals(
+            FieldRef("document", ("authorId",)),
+            FieldRef("principal", ("sub",)),
+        )
+        rules = [
+            RuntimeAccessRule(
+                principal="identity:users",
+                when=when,
+                identity_symbols={"principal": IRIdentityBinding(entity_name="users", collection_name="users")},
+                document_symbols={"document": IRDocumentBinding(collection="posts")},
+            )
+        ]
+        step = PostFetchAuthorizeStep(access_rules=rules)
+        ctx = _make_ctx(
+            principal={
+                "sub": "u1",
+                "identity_collection": "users",
+                "record": {},
+            },
+            response=None,
+        )
+        with pytest.raises(ForbiddenError):
+            step(ctx)
+
     def test_235_deny_rule_with_document(self):
         when = Equals(
             FieldRef("document", ("authorId",)),
