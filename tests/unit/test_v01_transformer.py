@@ -5,7 +5,7 @@ import pytest
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 from tests.conftest import INVALID_DIR, VALID_DIR
 
-EXAMPLES_DIR = pathlib.Path(__file__).parent.parent.parent / "examples"
+EXAMPLES_DIR = pathlib.Path(__file__).parent.parent.parent / "examples" / "valid"
 
 
 # --- Test 125: Collection-based spec parsed correctly ---
