@@ -18,7 +18,14 @@ from yaml_api_generator.parsers.transformers.v02.binding_classifier import class
 
 
 class AccessTransformer:
-    """Parses access control rules with symbol resolution."""
+    """Parses access control rules with symbol resolution.
+
+    ``allow_where`` enables the v0.3 ``where`` binding form for ``given:``
+    values; v0.2 leaves it off so document bindings keep their implicit fetch.
+    """
+
+    def __init__(self, allow_where: bool = False) -> None:
+        self._allow_where = allow_where
 
     def parse_access(
         self,
@@ -112,7 +119,8 @@ class AccessTransformer:
                 if not isinstance(symbol_value, str):
                     continue
                 binding, binding_errors = classify_binding(
-                    symbol_value, f"{path}.given.{symbol_name}", entity_to_collection
+                    symbol_value, f"{path}.given.{symbol_name}", entity_to_collection,
+                    allow_where=self._allow_where,
                 )
                 errors.extend(binding_errors)
                 if isinstance(binding, IRIdentityBinding):

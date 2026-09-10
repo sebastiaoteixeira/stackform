@@ -36,6 +36,12 @@ class BaseRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def create(
         self, collection_name: str, payload: dict[str, Any]
     ) -> dict[str, Any]:

@@ -15,6 +15,7 @@ from .authorization import (
     ForbiddenError,
     IdentityStep,
     PostFetchAuthorizeStep,
+    ResolveWhereBindingsStep,
     UnauthorizedError,
     ValidateIdentityCreateStep,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "ResolvePrincipalStep",
     "AuthorizeRouteStep",
     "PostFetchAuthorizeStep",
+    "ResolveWhereBindingsStep",
     "ValidateIdentityCreateStep",
     "IdentityStep",
     "UnauthorizedError",

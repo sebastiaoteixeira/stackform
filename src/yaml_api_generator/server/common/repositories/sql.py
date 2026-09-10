@@ -62,6 +62,17 @@ class SQLRepository(BaseRepository):
             )
             return self._one(result)
 
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        predicate = (
+            self._column(collection_name, field) == value
+            for field, value in criteria.items()
+        )
+        statement = sa.select(self._table(collection_name)).where(*predicate).limit(1)
+        async with await self._connection() as conn:
+            return self._one(await conn.execute(statement))
+
     async def create(self, collection_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         table = self._table(collection_name)
         values = self._known_columns(collection_name, payload)
@@ -150,8 +161,11 @@ class SQLRepository(BaseRepository):
     def _table(self, collection_name: str) -> sa.Table:
         return self._tables[collection_name]
 
+    def _column(self, collection_name: str, field: str) -> sa.Column:
+        return self._table(collection_name).c[field]
+
     def _id_column(self, collection_name: str) -> sa.Column:
-        return self._tables[collection_name].c[self._id_fields[collection_name]]
+        return self._column(collection_name, self._id_fields[collection_name])
 
     def _known_columns(
         self, collection_name: str, payload: dict[str, Any], drop_id: bool = False
