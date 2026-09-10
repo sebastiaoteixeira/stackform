@@ -1,9 +1,11 @@
-"""v0.3 undefined-symbol enforcement for repository query scopes.
+"""v0.3 undefined-symbol enforcement for repository query and where-binding scopes.
 
 A repository operation's query resolves ``$<symbol>`` references against the
 slugs of the routes that reach it; nothing else is ambient (there is no
-principal or request root). Any other free symbol -- ``$principal``, a typo, a
-service-supplied name not yet forwarded -- aborts generation with the single
+principal or request root). An access-rule ``where`` binding resolves its
+right-hand-side ``$<symbol>`` references against the route's declared slugs plus
+the symbols the same rule binds in ``given:``. Any other free symbol -- a typo,
+a service-supplied name not yet forwarded -- aborts generation with the single
 ``UNDEFINED_SYMBOL`` error naming the symbol and the scope. ``when`` operands are
 enforced by the same scope model inside the access validator.
 """
@@ -14,13 +16,22 @@ import re
 from typing import Any
 
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+from yaml_api_generator.parsers.where_parser import WHERE_KEYWORD
 
 from .symbol_resolution import SymbolScope
 
 _SLUG = re.compile(r"\{(\w+)\}")
+_RHS_SYMBOL = re.compile(r"\$(\w+)")
 
 
 def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
+    errors: list[ConfigError] = []
+    errors.extend(_validate_repository_filters(spec))
+    errors.extend(_validate_where_bindings(spec))
+    return errors
+
+
+def _validate_repository_filters(spec: dict[str, Any]) -> list[ConfigError]:
     slugs = _slugs_by_operation(spec)
     errors: list[ConfigError] = []
     for repo_name, repo in (spec.get("repositories") or {}).items():
@@ -36,6 +47,45 @@ def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
             path = f"repositories.{repo_name}.operations.{op_name}.query"
             errors.extend(scope.undefined(_free_symbols(op["query"]), path))
     return errors
+
+
+def _validate_where_bindings(spec: dict[str, Any]) -> list[ConfigError]:
+    errors: list[ConfigError] = []
+    for controller_name, controller in (spec.get("controllers") or {}).items():
+        if not isinstance(controller, dict):
+            continue
+        base = str(controller.get("base_path", ""))
+        for route_name, route in (controller.get("routes") or {}).items():
+            if not isinstance(route, dict):
+                continue
+            slugs = frozenset(_SLUG.findall(base + str(route.get("path", ""))))
+            access = route.get("access")
+            rules = access if isinstance(access, list) else [access]
+            for index, rule in enumerate(rules):
+                if not isinstance(rule, dict) or not isinstance(rule.get("given"), dict):
+                    continue
+                given = rule["given"]
+                bound = slugs | frozenset(given.keys())
+                for name, value in given.items():
+                    if not isinstance(value, str) or WHERE_KEYWORD not in value:
+                        continue
+                    scope = SymbolScope(
+                        label=(
+                            f"controller '{controller_name}' route '{route_name}' "
+                            f"access[{index}] given '{name}' where"
+                        ),
+                        bound=bound,
+                    )
+                    path = (
+                        f"controllers.{controller_name}.routes.{route_name}"
+                        f".access[{index}].given.{name}"
+                    )
+                    errors.extend(scope.undefined(_where_rhs_symbols(value), path))
+    return errors
+
+
+def _where_rhs_symbols(value: str) -> set[str]:
+    return {match.group(1) for match in _RHS_SYMBOL.finditer(value)}
 
 
 def _free_symbols(value: Any) -> set[str]:

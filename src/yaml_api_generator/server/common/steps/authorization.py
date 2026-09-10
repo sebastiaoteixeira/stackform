@@ -1,6 +1,6 @@
 """Authorization pipeline steps for role-based and condition-based access control."""
 
-from . import Step
+from . import NotFoundError, Step
 
 from ..request_context import RequestContext
 
@@ -10,7 +10,11 @@ from ..server_context import (
     RuntimeIdentityDescriptor,
 )
 from ..when_eval import evaluate_when_with_symbols
+from ..utils.field_access import get_nested_field
+from yaml_api_generator.ir.api import IRLiteralRef, IRSymbolRef, IRWhereConjunct
 from yaml_api_generator.ir.when import needs_document as _when_needs_document
+
+_RECORD_NOT_FOUND = "Resource not found"
 
 
 class UnauthorizedError(ValueError):
@@ -61,8 +65,8 @@ def ValidateIdentityCreateStep(
     return step
 
 
-def _rule_needs_document(rule: RuntimeAccessRule) -> bool:
-    if rule.document_symbols:
+def _rule_needs_postfetch(rule: RuntimeAccessRule) -> bool:
+    if any(not binding.where for binding in rule.document_symbols.values()):
         return True
     if rule.when and _when_needs_document(rule.when):
         return True
@@ -125,10 +129,13 @@ def _resolve_identity_symbols(
 def _resolve_document_symbols(
     rule: RuntimeAccessRule,
     document: dict | None,
+    where_documents: dict[str, object | None],
 ) -> dict[str, dict | None]:
     symbols: dict[str, dict | None] = {}
-    for symbol_name in rule.document_symbols:
-        symbols[symbol_name] = document
+    for symbol_name, binding in rule.document_symbols.items():
+        symbols[symbol_name] = (
+            where_documents.get(symbol_name) if binding.where else document
+        )
     return symbols
 
 
@@ -171,10 +178,74 @@ def _evaluate_rule(
 
     symbols: dict[str, object | None] = {
         **_resolve_identity_symbols(rule, principal),
-        **_resolve_document_symbols(rule, document),
+        **_resolve_document_symbols(rule, document, ctx.where_documents or {}),
         **_resolve_request_symbols(rule, ctx),
     }
     return evaluate_when_with_symbols(rule.when, symbols)
+
+
+def _where_namespace(
+    rule: RuntimeAccessRule,
+    ctx: RequestContext,
+) -> dict[str, object | None]:
+    namespace: dict[str, object | None] = dict(ctx.url_params)
+    for symbol_name in rule.identity_symbols:
+        namespace[symbol_name] = ctx.principal
+    request_object = _request_object(ctx)
+    for symbol_name, binding in rule.request_symbols.items():
+        namespace[symbol_name] = (
+            request_object.get(binding.part)
+            if binding.part in _REQUEST_PARTS
+            else request_object
+        )
+    return namespace
+
+
+def _rhs_value(
+    rhs: IRSymbolRef | IRLiteralRef,
+    namespace: dict[str, object | None],
+) -> object | None:
+    if isinstance(rhs, IRLiteralRef):
+        return rhs.value
+    base = namespace.get(rhs.root)
+    if not rhs.path:
+        return base
+    if not isinstance(base, dict):
+        return None
+    return get_nested_field(base, ".".join(rhs.path))
+
+
+def _where_criteria(
+    conjuncts: tuple[IRWhereConjunct, ...],
+    namespace: dict[str, object | None],
+) -> dict[str, object | None]:
+    return {conjunct.field: _rhs_value(conjunct.rhs, namespace) for conjunct in conjuncts}
+
+
+def ResolveWhereBindingsStep(
+    access_rules: list[RuntimeAccessRule] | None = None,
+) -> Step:
+    async def step(ctx: RequestContext) -> RequestContext:
+        if ctx.principal is None or not access_rules:
+            return ctx
+
+        where_documents: dict[str, object | None] = dict(ctx.where_documents or {})
+        for rule in access_rules:
+            namespace = _where_namespace(rule, ctx)
+            for symbol_name, binding in rule.document_symbols.items():
+                if not binding.where:
+                    continue
+                criteria = _where_criteria(binding.where, namespace)
+                repository = ctx.repository_for(binding.collection)
+                record = await repository.find_one(binding.collection, criteria)
+                if record is None:
+                    raise NotFoundError(_RECORD_NOT_FOUND)
+                where_documents[symbol_name] = record
+
+        ctx.where_documents = where_documents
+        return ctx
+
+    return step
 
 
 def AuthorizeRouteStep(
@@ -189,7 +260,7 @@ def AuthorizeRouteStep(
             return ctx
 
         for rule in access_rules:
-            if _rule_needs_document(rule):
+            if _rule_needs_postfetch(rule):
                 return ctx
 
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
@@ -219,7 +290,7 @@ def PostFetchAuthorizeStep(
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
-            doc = document if _rule_needs_document(rule) else None
+            doc = document if _rule_needs_postfetch(rule) else None
             matched = _evaluate_rule(rule, ctx.principal, doc, ctx)
             if matched:
                 if rule.effect == "deny":

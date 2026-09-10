@@ -14,11 +14,26 @@ from .steps import (
     RepositoryOperationStep,
     RepositoryReplaceStep,
     ResolvePrincipalStep,
+    ResolveWhereBindingsStep,
     RepositoryUpdateStep,
     Step,
     ValidateBodyStep,
     ValidateIdentityCreateStep,
 )
+
+
+def _has_where_binding(route: RuntimeRouteDescriptor) -> bool:
+    return bool(route.access_rules) and any(
+        any(binding.where for binding in rule.document_symbols.values())
+        for rule in route.access_rules
+    )
+
+
+def _has_implicit_document(route: RuntimeRouteDescriptor) -> bool:
+    return bool(route.access_rules) and any(
+        any(not binding.where for binding in rule.document_symbols.values())
+        for rule in route.access_rules
+    )
 
 _CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
 
@@ -127,6 +142,9 @@ class PipelineBuilder:
                 )
             )
 
+        if not route.is_public and _has_where_binding(route):
+            steps.append(ResolveWhereBindingsStep(route.access_rules))
+
         if not route.is_public:
             steps.append(AuthorizeRouteStep(route.access_rules, self._ctx.auth))
 
@@ -146,8 +164,7 @@ class PipelineBuilder:
     def _post_fetch_authorize_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         if route.is_public or not route.access_rules:
             return None
-        has_doc_rules = any(bool(r.document_symbols) for r in route.access_rules)
-        if not has_doc_rules:
+        if not _has_implicit_document(route):
             return None
         if route.operation not in ("get", "update", "replace", "delete"):
             return None
