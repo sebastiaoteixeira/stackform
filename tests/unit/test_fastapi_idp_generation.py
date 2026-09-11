@@ -1,15 +1,76 @@
-"""Generator tests for trust: idp provider support."""
+"""Generator tests for trust: idp provider support.
 
+The vendored verifier and the generated ``resolve_principal`` are imported from
+the generated tree and executed, so the assertions describe behaviour rather
+than the shape of the emitted source.
+"""
+
+import asyncio
+import importlib.util
+import json
+import subprocess
+import sys
+import textwrap
+import time
+
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
 from yaml_api_generator.generators.backend.context_builder import build_context
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 from tests.conftest import VALID_DIR
 
+_DISCOVERY_URL = "https://idp.test/.well-known/openid-configuration"
+_ISSUER = "https://idp.test"
+_JWKS_URI = "https://idp.test/jwks"
+_AUDIENCE = "my-app"
+_SUBJECT = "idp-subject"
+_RSA_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_EC_KEY = ec.generate_private_key(ec.SECP256R1())
+
 
 def _ctx_from_fixture(name: str):
     return build_context(load_and_generate_ir(str(VALID_DIR / name)).ir)
+
+
+def _public_jwk(private_key, algorithm: str, kid: str) -> dict:
+    algorithms = jwt.algorithms.get_default_algorithms()
+    key = json.loads(algorithms[algorithm].to_jwk(private_key.public_key()))
+    return {**key, "kid": kid, "alg": algorithm, "use": "sig"}
+
+
+def _sign(key, algorithm: str, kid: str) -> str:
+    return jwt.encode(
+        {
+            "iss": _ISSUER,
+            "aud": _AUDIENCE,
+            "sub": _SUBJECT,
+            "exp": int(time.time()) + 300,
+        },
+        key,
+        algorithm=algorithm,
+        headers={"kid": kid},
+    )
+
+
+def _load_vendored_idp_auth(generated_root):
+    spec = importlib.util.spec_from_file_location(
+        "vendored_idp_auth", generated_root / "dependencies" / "idp_auth.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module._discovery_cache[_DISCOVERY_URL] = {"issuer": _ISSUER, "jwks_uri": _JWKS_URI}
+    module._jwks_cache[_JWKS_URI] = jwt.PyJWKSet.from_dict(
+        {
+            "keys": [
+                _public_jwk(_RSA_KEY, "RS256", "rsa-1"),
+                _public_jwk(_EC_KEY, "ES256", "ec-1"),
+            ]
+        }
+    )
+    return module
 
 
 @pytest.fixture
@@ -211,7 +272,7 @@ class TestDualTrustGeneration:
         FastAPIGenerator().generate(dual_ctx, tmp_path)
         src = (tmp_path / "dependencies" / "auth.py").read_text()
         resolve_principal_body = src[src.index("async def resolve_principal"):]
-        idp_pos = resolve_principal_body.index("_find_idp_provider_for_issuer")
+        idp_pos = resolve_principal_body.index("_resolve_idp_principal")
         jwt_pos = resolve_principal_body.index("decode_jwt_token")
         assert idp_pos < jwt_pos
 
@@ -219,12 +280,213 @@ class TestDualTrustGeneration:
         """A bearer JWT whose iss matches no trusted issuer is rejected, never retried."""
         FastAPIGenerator().generate(dual_ctx, tmp_path)
         src = (tmp_path / "dependencies" / "auth.py").read_text()
-        resolve_principal_body = src[src.index("async def resolve_principal"):]
-        reject_pos = resolve_principal_body.index("Untrusted token issuer")
-        jwt_pos = resolve_principal_body.index("decode_jwt_token")
-        assert reject_pos < jwt_pos
+        idp_body = src[
+            src.index("async def _resolve_idp_principal"):src.index("async def resolve_principal")
+        ]
+        assert idp_body.count('detail="Untrusted token issuer"') == 2
+        assert "return None" not in idp_body
 
     def test_pure_idp_rejects_untrusted_issuer(self, tmp_path, idp_ctx):
         FastAPIGenerator().generate(idp_ctx, tmp_path)
         src = (tmp_path / "dependencies" / "auth.py").read_text()
         assert "Untrusted token issuer" in src
+
+
+class TestVendoredIdpAuthVerification:
+    """The vendored verifier is loaded from the generated tree and executed."""
+
+    @pytest.fixture
+    def idp_auth(self, tmp_path, idp_ctx):
+        FastAPIGenerator().generate(idp_ctx, tmp_path)
+        return _load_vendored_idp_auth(tmp_path)
+
+    @staticmethod
+    def _verify(module, token):
+        return asyncio.run(
+            module.verify_idp_token(
+                token, discovery_url=_DISCOVERY_URL, client_id=_AUDIENCE
+            )
+        )
+
+    def test_verifies_rs256_token(self, idp_auth):
+        claims = self._verify(idp_auth, _sign(_RSA_KEY, "RS256", "rsa-1"))
+        assert claims["sub"] == _SUBJECT
+
+    def test_verifies_es256_token(self, idp_auth):
+        claims = self._verify(idp_auth, _sign(_EC_KEY, "ES256", "ec-1"))
+        assert claims["sub"] == _SUBJECT
+
+    def test_rejects_hs256_token_signed_for_a_jwks_key_id(self, idp_auth):
+        forged = _sign("symmetric-secret-long-enough-for-sha256", "HS256", "rsa-1")
+        assert self._verify(idp_auth, forged) is None
+
+
+_BEHAVIOUR_SPEC = """
+version: "0.2"
+api:
+  basePath: /api
+  version: v1
+providers:
+  keycloak:
+    type: oidc
+    trust: idp
+    client_id: my-app
+    discovery_url: "http://keycloak.test/.well-known/openid-configuration"
+    audiences: ["my-app"]
+  okta:
+    type: oidc
+    trust: idp
+    client_id: other-app
+    discovery_url: "http://okta.test/.well-known/openid-configuration"
+    audiences: ["other-app"]
+mongo:
+  uri: mongodb://localhost:27017
+  database: testdb
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via:
+        - provider: keycloak
+          identifier: email
+          claim_mapping:
+            email: profile.email
+          auto_provision: false
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      name: { type: string }
+repositories:
+  users:
+    entity: user
+services:
+  users:
+    repository: users
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+"""
+
+_BEHAVIOUR_HARNESS = '''
+import asyncio
+import json
+import sys
+
+sys.path.insert(0, ".")
+
+from fastapi import HTTPException
+
+from dependencies import auth, idp_auth
+
+ISSUER_BY_DISCOVERY_URL = {
+    "http://keycloak.test/.well-known/openid-configuration": "https://keycloak.test",
+    "http://okta.test/.well-known/openid-configuration": "https://okta.test",
+}
+NESTED_CLAIMS = {"sub": "user-1", "profile": {"email": "nested@example.com"}}
+RECORD = {"id": "user-1", "email": "nested@example.com", "name": "Nested"}
+
+
+class Cursor:
+    def __init__(self, documents):
+        self._documents = documents
+
+    async def to_list(self, length=None):
+        return self._documents
+
+
+class Collection:
+    def __init__(self, documents):
+        self._documents = documents
+
+    def find(self, query):
+        return Cursor(self._documents)
+
+    async def find_one(self, query):
+        return None
+
+
+class Request:
+    def __init__(self):
+        self.state = type("State", (), {})()
+        self.headers = {"authorization": "Bearer opaque-idp-token"}
+
+
+async def fetch_issuer(discovery_url):
+    return ISSUER_BY_DISCOVERY_URL[discovery_url]
+
+
+async def resolve(issuer, documents):
+    idp_auth.unverified_issuer = lambda token: issuer
+    idp_auth.fetch_issuer = fetch_issuer
+
+    async def verify_idp_token(token, **kwargs):
+        return NESTED_CLAIMS
+
+    idp_auth.verify_idp_token = verify_idp_token
+    try:
+        return {"principal": await auth.resolve_principal(Request(), {"users": Collection(documents)})}
+    except HTTPException as error:
+        return {"status": error.status_code, "detail": error.detail}
+
+
+async def main():
+    print(json.dumps({
+        "issuer_without_binding": await resolve("https://okta.test", []),
+        "unknown_subject": await resolve("https://keycloak.test", []),
+        "nested_identifier": await resolve("https://keycloak.test", [RECORD]),
+    }))
+
+
+asyncio.run(main())
+'''
+
+
+@pytest.fixture(scope="module")
+def resolved_principals(tmp_path_factory):
+    """Run the generated resolve_principal against a stubbed IdP and Mongo."""
+    tmp_path = tmp_path_factory.mktemp("idp-behaviour")
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(textwrap.dedent(_BEHAVIOUR_SPEC))
+    output = tmp_path / "generated"
+    FastAPIGenerator().generate(build_context(load_and_generate_ir(str(spec)).ir), output)
+    result = subprocess.run(
+        [sys.executable, "-c", _BEHAVIOUR_HARNESS],
+        cwd=output,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+class TestGeneratedPrincipalResolution:
+    def test_issuer_without_binding_is_rejected(self, resolved_principals):
+        """An IdP issuer no binding claims must never downgrade to anonymous."""
+        assert resolved_principals["issuer_without_binding"] == {
+            "status": 401,
+            "detail": "Untrusted token issuer",
+        }
+
+    def test_unknown_subject_without_auto_provisioning_is_unauthorized(
+        self, resolved_principals
+    ):
+        assert resolved_principals["unknown_subject"] == {
+            "status": 401,
+            "detail": "User not found and auto-provisioning is disabled",
+        }
+
+    def test_nested_identifier_claim_resolves_the_identity_record(
+        self, resolved_principals
+    ):
+        principal = resolved_principals["nested_identifier"]["principal"]
+        assert principal["sub"] == "user-1"
+        assert principal["identity_collection"] == "users"
+        assert principal["record"]["email"] == "nested@example.com"
+
+    def test_nested_identifier_claim_is_not_treated_as_a_service_token(
+        self, resolved_principals
+    ):
+        assert "is_service" not in resolved_principals["nested_identifier"]["principal"]
