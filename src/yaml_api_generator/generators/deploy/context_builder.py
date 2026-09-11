@@ -1,5 +1,4 @@
 from collections import Counter
-from secrets import token_urlsafe
 
 from sqlalchemy.engine import make_url
 
@@ -22,9 +21,8 @@ def build_deploy_context(
     name = deploy.name or "app"
     mongo_db = ir.mongo.database
     secret_fields = [f for f in build_settings_fields(build_context(ir)) if f.secret]
-    dev_defaults = {f.env_name: token_urlsafe(32) for f in secret_fields if f.generated}
     env_vars = {
-        var: dev_defaults.get(var, "")
+        var: ""
         for var in dict.fromkeys([*deploy.env_vars, *(f.env_name for f in secret_fields)])
     }
     datastores = _build_datastores(ir)
@@ -46,6 +44,7 @@ def build_deploy_context(
 
     if deploy.runtime == "docker":
         image = deploy.docker.image if deploy.docker else None
+        secret_env_names = tuple(f.env_name for f in secret_fields)
         app_environment = tuple(
             f"{key}=${{{key}:-{value}}}"
             for ds in datastores
@@ -54,7 +53,7 @@ def build_deploy_context(
             f"PORT=${{PORT:-{deploy.port}}}",
             "FRONTEND_URL=${FRONTEND_URL:-http://localhost}",
         ) + tuple(
-            f"{f.env_name}=${{{f.env_name}:-{dev_defaults.get(f.env_name, '')}}}"
+            f"{f.env_name}=${{{f.env_name}}}"
             for f in secret_fields
         )
         return DockerDeployContext(
@@ -63,6 +62,7 @@ def build_deploy_context(
             extra_services=deploy.extra_services,
             include=deploy.include,
             app_environment=app_environment,
+            secret_env_names=secret_env_names,
         )
 
     if deploy.runtime == "systemd":

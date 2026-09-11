@@ -1,5 +1,6 @@
 from yaml_api_generator.parsers.transformers.access_validation import (
     validate_spec_access,
+    warn_public_routes,
 )
 
 
@@ -124,3 +125,42 @@ def test_same_effect_duplicate_accepted():
             "when": "principal.role equals 'admin'", "then": "allow"}
     controllers = {"c": {"operations": {"get": {"access": [rule, dict(rule)]}}}}
     assert _codes(controllers) == set()
+
+
+# ---- PUBLIC_ROUTE warnings ----
+
+def _warning_codes(controllers: dict) -> set[str]:
+    spec = {"entities": _ENTITIES, "controllers": controllers}
+    return {w.code for w in warn_public_routes(spec)}
+
+
+def test_no_access_block_warns():
+    controllers = {"c": {"operations": {"list": {}}}}
+    assert "PUBLIC_ROUTE" in _warning_codes(controllers)
+
+
+def test_always_allow_dict_rule_warns():
+    controllers = {"c": {"operations": {"list": {"access": [{}]}}}}
+    assert "PUBLIC_ROUTE" in _warning_codes(controllers)
+
+
+def test_always_allow_dict_with_then_warns():
+    controllers = {"c": {"operations": {"list": {"access": [{"then": "allow"}]}}}}
+    assert "PUBLIC_ROUTE" in _warning_codes(controllers)
+
+
+def test_rule_with_when_no_given_does_not_warn():
+    controllers = {"c": {"routes": {"/probe": {"access": [
+        {"when": "principal.role equals 'admin'"}
+    ]}}}}
+    assert "PUBLIC_ROUTE" not in _warning_codes(controllers)
+
+
+def test_rule_with_given_does_not_warn():
+    controllers = {"c": {"operations": {"get": {"access": [_ownership_rule()]}}}}
+    assert "PUBLIC_ROUTE" not in _warning_codes(controllers)
+
+
+def test_string_role_access_does_not_warn():
+    controllers = {"c": {"operations": {"list": {"access": "user:admin"}}}}
+    assert "PUBLIC_ROUTE" not in _warning_codes(controllers)

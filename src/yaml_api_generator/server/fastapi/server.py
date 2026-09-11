@@ -1,5 +1,6 @@
 """FastAPI server builder."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ..common.context_builder import build_runtime_context
-from ..common.loader import create_repositories, ensure_spec_dir_importable
+from ..common.loader import create_repositories, ensure_spec_dir_importable, initialize_indexes
 from ..common.server_context import RuntimeContext
 from ..common.repositories import RepositoryRegistry
 from .factory import register_fastapi_routes
@@ -68,7 +69,12 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
     ir, registry = create_repositories(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
 
-    app = FastAPI()
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        await initialize_indexes(ir, registry)
+        yield
+
+    app = FastAPI(lifespan=lifespan)
 
     if ir.api.cors:
         from fastapi.middleware.cors import CORSMiddleware

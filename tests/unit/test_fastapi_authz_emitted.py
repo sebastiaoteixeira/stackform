@@ -96,7 +96,7 @@ def test_rule_to_python_when_equals():
         principal="identity:users",
         when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("created_by",))),
     )
-    assert 'principal.get("sub") == document.get("created_by")' in access_filters.rule_to_python(rule)
+    assert '_values_equal(principal.get("sub"), document.get("created_by"))' in access_filters.rule_to_python(rule)
 
 
 def test_is_unconditional_true():

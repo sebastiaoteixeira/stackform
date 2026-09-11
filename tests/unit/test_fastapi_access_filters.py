@@ -16,7 +16,7 @@ from yaml_api_generator.generators.backend.fastapi.access_filters import (
     role_hierarchies_py,
     rule_to_python,
 )
-from yaml_api_generator.ir.when import And, Equals, FieldRef, In, Not, NotIn, Or, StringLiteral
+from yaml_api_generator.ir.when import And, Equals, FieldRef, In, IsNotNull, IsNull, Not, NotIn, Or, StringLiteral
 
 
 def test_py_bool():
@@ -42,7 +42,7 @@ def test_rule_to_python_when_equals():
         when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("created_by",))),
     )
     result = rule_to_python(rule)
-    assert 'principal.get("sub") == document.get("created_by")' in result
+    assert '_values_equal(principal.get("sub"), document.get("created_by"))' in result
 
 
 def test_rule_to_python_role_and_when():
@@ -53,7 +53,7 @@ def test_rule_to_python_role_and_when():
     )
     result = rule_to_python(rule)
     assert result.startswith('_principal_has_role(principal, "admin") and ')
-    assert 'principal.get("sub") == document.get("id")' in result
+    assert '_values_equal(principal.get("sub"), document.get("id"))' in result
 
 
 def test_rule_to_python_in():
@@ -61,7 +61,7 @@ def test_rule_to_python_in():
         principal="identity:users",
         when=In(FieldRef("principal", ("role",)), ("admin", "moderator")),
     )
-    assert "in ('admin', 'moderator')" in rule_to_python(rule)
+    assert "any(_values_equal(principal.get(\"role\"), _v) for _v in ('admin', 'moderator'))" in rule_to_python(rule)
 
 
 def test_rule_to_python_not_in():
@@ -69,7 +69,7 @@ def test_rule_to_python_not_in():
         principal="identity:users",
         when=NotIn(FieldRef("principal", ("role",)), ("guest",)),
     )
-    assert "not in ('guest',)" in rule_to_python(rule)
+    assert "not any(_values_equal(principal.get(\"role\"), _v) for _v in ('guest',))" in rule_to_python(rule)
 
 
 def test_rule_to_python_nested_record_path():
@@ -176,3 +176,20 @@ def test_needs_post_fetch_false_without_document_symbols():
 def test_needs_post_fetch_false_for_non_fetching_op():
     assert not needs_post_fetch(_route("create", document_symbols=["document"]))
     assert not needs_post_fetch(_route("list", document_symbols=["document"]))
+
+
+def test_rule_to_python_is_null():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=IsNull(operand=FieldRef("document", ("organizationId",))),
+    )
+    assert 'document.get("organizationId") is None' in rule_to_python(rule)
+
+
+def test_rule_to_python_is_not_null():
+    rule = AccessRuleDescriptor(
+        principal="identity:users",
+        when=IsNotNull(operand=FieldRef("principal", ("record", "role"))),
+    )
+    result = rule_to_python(rule)
+    assert "is not None" in result

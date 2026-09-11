@@ -18,8 +18,18 @@ from fastapi.openapi.utils import get_openapi
 {% set uses_sql = (col_types | select("in", ["postgres", "postgresql"]) | list | length) > 0 %}
 {% set uses_mongo = ((col_types | select("in", ["mongodb", "mongo"]) | list | length) > 0) or not uses_sql %}
 {% if uses_mongo %}
-from dependencies.mongodb import connect_db as connect_mongo, close_db as close_mongo
+from dependencies.mongodb import connect_db as connect_mongo, close_db as close_mongo, initialize_indexes as initialize_mongo_indexes
 {% endif %}
+{% set mongo_unique_indexes = {} %}
+{% for col_name, col in ctx.collections.items() %}
+{% if col.datastore_type in ["mongodb", "mongo"] %}
+{% set _unique = [] %}
+{% for field_name, field_cfg in col.fields.items() if field_cfg is mapping and field_cfg.get("unique") %}
+{% set _ = _unique.append(field_name) %}
+{% endfor %}
+{% if _unique %}{% set _ = mongo_unique_indexes.update({col_name: _unique}) %}{% endif %}
+{% endif %}
+{% endfor %}
 {% if uses_sql %}
 from dependencies.postgres import connect_db as connect_pg, close_db as close_pg
 {% endif %}
@@ -30,6 +40,9 @@ from routes import api_router
 async def lifespan(app: FastAPI):
 {% if uses_mongo %}
     connect_mongo()
+{% if mongo_unique_indexes %}
+    await initialize_mongo_indexes({{ mongo_unique_indexes | tojson }})
+{% endif %}
 {% endif %}
 {% if uses_sql %}
     await connect_pg()

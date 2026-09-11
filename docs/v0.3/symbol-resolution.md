@@ -26,11 +26,17 @@ symbol $principal is not bound in scope repository 'orders' operation 'byOwner' 
 ```
 
 The same rule and the same error apply at every site where symbols resolve: a
-`when:` operand, a repository query filter, and &mdash; as later v0.3 issues add
-them &mdash; a `where` right-hand side, a service `with:` forward, and a
-controller / access-rule `bind:`. Each site builds a scope carrying its bound
-names and a label, then defers to the shared resolver, so the rule is enforced
-identically everywhere.
+`when:` operand, a repository query filter, a
+[`where` right-hand side](./given-where.md#symbol-scope), and &mdash; as later
+v0.3 issues add them &mdash; a service `with:` forward and a controller /
+access-rule `bind:`. Each site builds a scope carrying its bound names and a
+label, then defers to the shared resolver, so the rule is enforced identically
+everywhere.
+
+A `where` binding's scope is the route's slugs plus the `identity:` / `request`
+names its rule binds; document bindings of the same rule are not in scope. Its
+left-hand-side field is checked separately and reports `WHERE_FIELD_UNKNOWN`,
+not `UNDEFINED_SYMBOL`.
 
 ## `$principal` is not ambient in v0.3
 

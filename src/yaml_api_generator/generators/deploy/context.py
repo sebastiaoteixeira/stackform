@@ -35,6 +35,7 @@ class DockerDeployContext(DeployContext):
     extra_services: tuple[tuple[str, dict], ...] = field(default_factory=tuple)
     include: tuple[str, ...] = field(default_factory=tuple)
     app_environment: tuple[str, ...] = field(default_factory=tuple)
+    secret_env_names: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

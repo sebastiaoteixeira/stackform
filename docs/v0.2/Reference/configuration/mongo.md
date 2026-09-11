@@ -90,6 +90,11 @@ The generated compose file sets `MONGO_DB` to `mongo.database` by default
 (overridable through the environment), and the bundled MongoDB has no
 authentication, so keep it on the internal Docker network.
 
+The deploy bundle bakes nothing secret. Backend secrets (`JWT_SECRET`, each
+`<PROVIDER>_CLIENT_SECRET`) are referenced as bare `${VAR}` and generated at deploy
+time by Ansible; see [Secrets in the generated
+deploy](./environment-variables.md#secrets-in-the-generated-deploy).
+
 ## Example
 
 ```yaml
