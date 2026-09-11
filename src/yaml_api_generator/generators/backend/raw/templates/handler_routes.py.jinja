@@ -52,7 +52,7 @@ async def handle_custom_{{ loop.index }}(
 {% else %}
     principal = None
 {% endif %}
-{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+{% if route.access_rules %}
     _request_body = body or {}
     _request_path = url_params
     _request_query = query or {}
@@ -79,7 +79,7 @@ async def handle_custom_{{ loop.index }}(
 {% if not ns.terminal %}
 {% if rule is unconditional %}
 {% if rule.effect == "deny" %}
-    return 403, {"detail": "Forbidden"}
+    return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
 {% else %}
     access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
@@ -88,7 +88,7 @@ async def handle_custom_{{ loop.index }}(
 {% set keyword = "if" if ns.first else "elif" %}
     {{ keyword }} {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-        return 403, {"detail": "Forbidden"}
+        return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
 {% else %}
         access_bindings = {{ rule.bind | py_literal }}
 {% endif %}

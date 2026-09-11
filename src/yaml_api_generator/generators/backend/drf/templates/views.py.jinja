@@ -96,7 +96,7 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% if rule.effect == "allow" %}
         _access_bindings = {{ rule.bind | py_literal }}
 {% else %}
-        return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% endif %}
 {% set ns.first = false %}
 {% set ns.terminal = true %}
@@ -105,14 +105,14 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% if ns.first %}
         if {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
             _access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
 {% else %}
         elif {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
             pass
 {% endif %}
@@ -156,7 +156,7 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% set keyword = "if" if ns.first else "elif" %}
             {{ keyword }} {% if doc_guard %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+                return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
                 pass
 {% endif %}
