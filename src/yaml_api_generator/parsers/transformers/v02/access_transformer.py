@@ -108,12 +108,26 @@ class AccessTransformer:
         entity_to_collection: dict[str, str],
     ) -> tuple[IRAccessRule | None, list[ConfigError]]:
         errors: list[ConfigError] = []
+        if not self._allow_where and "bind" in rule:
+            errors.append(ConfigError(
+                code="BIND_UNSUPPORTED",
+                message="access-rule 'bind' requires spec version 0.3",
+                path=f"{path}.bind",
+                hint='Set version to "0.3"',
+            ))
         if self._allow_where and "filter" in rule:
             errors.append(ConfigError(
                 code="ACCESS_FILTER_REMOVED",
                 message="access-rule 'filter' key was removed in v0.3",
                 path=f"{path}.filter",
                 hint="Bind the record in given: with '<collection> where <field> = <value>'",
+            ))
+        if self._allow_where and "writeFields" in rule:
+            errors.append(ConfigError(
+                code="ACCESS_WRITE_FIELDS_REMOVED",
+                message="access-rule 'writeFields' is not supported in v0.3",
+                path=f"{path}.writeFields",
+                hint="Restrict write input with a service input contract or custom handler",
             ))
         given = rule.get("given", {})
         effect = rule.get("then", "allow")

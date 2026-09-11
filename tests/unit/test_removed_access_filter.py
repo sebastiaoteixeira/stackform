@@ -28,6 +28,14 @@ def test_v03_filter_key_reports_dedicated_error():
     assert errors[0].path == "controllers.posts.routes.list.access[0].filter"
 
 
+def test_v03_write_fields_key_reports_dedicated_error():
+    rules, errors = _parse_rule({"then": "allow", "writeFields": ["title"]}, True)
+
+    assert rules is None
+    assert [error.code for error in errors] == ["ACCESS_WRITE_FIELDS_REMOVED"]
+    assert errors[0].path == "controllers.posts.routes.list.access[0].writeFields"
+
+
 def test_v02_filter_key_remains_in_ir():
     rules, errors = _parse_rule({"then": "allow", "filter": "owner = principal.sub"}, False)
 
@@ -41,6 +49,8 @@ def test_filter_is_removed_only_from_v03_schema():
 
     assert "filter" in v02["$defs"]["AccessRule"]["properties"]
     assert "filter" not in v03["$defs"]["AccessRule"]["properties"]
+    assert "writeFields" in v02["$defs"]["AccessRule"]["properties"]
+    assert "writeFields" not in v03["$defs"]["AccessRule"]["properties"]
 
 
 def test_v03_filter_aborts_full_spec_load(tmp_path):
@@ -82,3 +92,41 @@ def test_v03_filter_aborts_full_spec_load(tmp_path):
         load_and_generate_ir(str(spec))
 
     assert "ACCESS_FILTER_REMOVED" in {error.code for error in raised.value.errors}
+
+
+def test_v03_write_fields_aborts_full_spec_load(tmp_path):
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        textwrap.dedent(
+            """
+            version: "0.3"
+            api: { basePath: /api }
+            entities:
+              post:
+                fields:
+                  id: { type: id }
+            repositories:
+              posts: { entity: post }
+            services:
+              posts: { repository: posts }
+            controllers:
+              posts:
+                base_path: /posts
+                routes:
+                  update:
+                    service: posts
+                    method: PATCH
+                    path: /{id}
+                    access:
+                      - then: allow
+                        writeFields: [title]
+            """
+        )
+    )
+
+    with pytest.raises(ConfigErrors) as raised:
+        load_and_generate_ir(str(spec))
+
+    assert {error.code for error in raised.value.errors} == {
+        "ACCESS_WRITE_FIELDS_REMOVED"
+    }

@@ -18,9 +18,9 @@ version (for example `"9.9"`) is rejected with the `UNSUPPORTED_VERSION` error.
 
 ## Compatibility with v0.2
 
-Most v0.2 specs remain valid under v0.3. The exception is the dead access-rule
-`filter` key: it was never enforced and is rejected in v0.3 to prevent a false
-sense of authorization. The v0.3 schema lives at
+Most v0.2 specs remain valid under v0.3. The exceptions are the dead access-rule
+`filter` and `writeFields` keys: neither was enforced, and both are rejected in
+v0.3 to prevent a false sense of authorization. The v0.3 schema lives at
 `parsers/schemas/yaml-spec-v0.3.schema.json` and derives from v0.2 with these
 changes:
 
@@ -37,6 +37,9 @@ changes:
   build or call time.
 - **[removed access-rule `filter`](./removed-filter-key.md)** &mdash; v0.3 rejects
   this unenforced legacy key with `ACCESS_FILTER_REMOVED`.
+- **[removed access-rule `writeFields`](./removed-write-fields-key.md)** &mdash;
+  v0.3 rejects this unenforced legacy rule key with
+  `ACCESS_WRITE_FIELDS_REMOVED`.
 
 Service `input:` / `with:`, controller `bind:`, and explainable denial reasons
 are implemented in the runtime server and generated backends. A construct is

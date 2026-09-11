@@ -111,4 +111,11 @@ def classify_binding(
             message=f"binding value must be a string, got {type(value).__name__}",
             path=path,
         )]
+    if value in {"authenticated", "public"}:
+        return None, [ConfigError(
+            code="ACCESS_RULE_INVALID",
+            message=f"'{value}' is an access value, not a given binding",
+            path=path,
+            hint='Use access: public or access: "*" outside the given map',
+        )]
     return _PARSERS[binding_kind(value, allow_where)](value, path, entity_to_collection)
