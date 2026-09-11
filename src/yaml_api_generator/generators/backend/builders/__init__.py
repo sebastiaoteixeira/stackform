@@ -6,6 +6,7 @@ Orchestrates specialized builders to convert IR into compilation context.
 from typing import Any
 
 from yaml_api_generator.ir import IRDocument, IRPostgres
+from yaml_api_generator.server.common.loader import SchemaManagement
 from ..compile_context import AppConfig, CompileContext, CorsConfig
 
 from .auth_builder import AuthBuilder
@@ -23,11 +24,14 @@ class ContextBuilder:
         self._auth = AuthBuilder()
         self._repository = RepositoryBuilder()
 
-    def build_context(self, document: IRDocument) -> CompileContext:
+    def build_context(
+        self, document: IRDocument, managed: SchemaManagement = SchemaManagement()
+    ) -> CompileContext:
         """Build compilation context from IR document.
 
         Args:
             document: Complete IR document
+            managed: Datastore families whose schema flows through migrations
 
         Returns:
             Compilation context for code generation
@@ -107,17 +111,21 @@ class ContextBuilder:
             repository_inherits=repository_inherits,
             services=dict(document.services),
             dto_models=dto_models,
+            mongo_schema_managed=managed.mongo,
         )
 
 
-def build_context(document: IRDocument) -> CompileContext:
+def build_context(
+    document: IRDocument, managed: SchemaManagement = SchemaManagement()
+) -> CompileContext:
     """Build compilation context from IR document (functional interface).
 
     Args:
         document: Complete IR document
+        managed: Datastore families whose schema flows through migrations
 
     Returns:
         Compilation context for code generation
     """
     builder = ContextBuilder()
-    return builder.build_context(document)
+    return builder.build_context(document, managed)
