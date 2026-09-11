@@ -20,7 +20,7 @@ from yaml_api_generator.server.common.steps.authorization import _principal_has_
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.ir.api import IROIDCProvider
 from yaml_api_generator.server.common.auth import idp
-from yaml_api_generator.server.common.repositories import BaseRepository, RepositoryRegistry
+from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.server_context import (
     RuntimeCollectionDescriptor,
     RuntimeIdentityDescriptor,
@@ -28,6 +28,7 @@ from yaml_api_generator.server.common.server_context import (
 from yaml_api_generator.server.common.steps.authentication import _resolve_idp_principal
 from yaml_api_generator.server.common.utils.field_access import resolve_claim_path
 from yaml_api_generator.utils.strings import to_py_identifier
+from tests.unit.support.repositories import InMemoryRepository
 
 _ISSUER = "https://kc.example.com/realms/main"
 _CLIENT_ID = "my-app"
@@ -65,41 +66,6 @@ def _sign(rsa_key, **claims):
     return jwt.encode(payload, rsa_key, algorithm="RS256")
 
 
-class _Repo(BaseRepository):
-    def __init__(self, docs):
-        self.docs = docs
-        self._id_fields = {}
-
-    def register_id_field(self, collection, id_field):
-        self._id_fields[collection] = id_field
-
-    def connect(self):
-        pass
-
-    async def close(self):
-        pass
-
-    async def list(self, _collection):
-        return list(self.docs)
-
-    async def get(self, collection, document_id):
-        field = self._id_fields.get(collection, "id")
-        return next((d for d in self.docs if str(d.get(field, "")) == document_id), None)
-
-    async def create(self, _collection, payload):
-        self.docs.append(payload)
-        return payload
-
-    async def update(self, _collection, document_id, payload):
-        return None
-
-    async def replace(self, _collection, document_id, payload):
-        return None
-
-    async def delete(self, _collection, document_id):
-        return None
-
-
 def _provider():
     return IROIDCProvider(
         name="keycloak",
@@ -127,7 +93,9 @@ class TestDevRolesFromClaims:
         collection = RuntimeCollectionDescriptor(
             name="users", type="auth", id_field="id", id_format="uuidv7", fields={}
         )
-        repo = _Repo([{"id": "kc-sub", "email": "a@x.com", _LOCAL_ROLES_FIELD: "stale"}])
+        repo = InMemoryRepository({
+            "users": [{"id": "kc-sub", "email": "a@x.com", _LOCAL_ROLES_FIELD: "stale"}]
+        })
         repo.register_id_field("users", "id")
         registry = RepositoryRegistry(
             repositories={"m": repo}, bindings={"users": "m"}, default="m"

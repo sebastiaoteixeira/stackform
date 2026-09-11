@@ -9,7 +9,7 @@ from yaml_api_generator.parsers.yaml_parser import (
 )
 from tests.conftest import VALID_DIR, INVALID_DIR
 
-EXAMPLES_DIR = __import__("pathlib").Path(__file__).parent.parent.parent / "examples"
+EXAMPLES_DIR = __import__("pathlib").Path(__file__).parent.parent.parent / "examples" / "valid"
 
 
 # --- Existing tests (1: valid YAML loads) ---

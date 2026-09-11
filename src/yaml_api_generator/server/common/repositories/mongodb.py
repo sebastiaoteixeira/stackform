@@ -1,12 +1,49 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo import AsyncMongoClient, ReturnDocument
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
-from .base import BaseRepository
+from .base import BaseRepository, ConflictError
 from .bindings import resolve
+
+
+@contextmanager
+def _as_conflict() -> Iterator[None]:
+    try:
+        yield
+    except (BulkWriteError, DuplicateKeyError) as error:
+        details = _duplicate_details(error)
+        if details is None:
+            raise
+        raise ConflictError(_conflict_field(details)) from error
+
+
+def _duplicate_details(
+    error: BulkWriteError | DuplicateKeyError,
+) -> dict[str, Any] | None:
+    details = error.details or {}
+    if isinstance(error, DuplicateKeyError):
+        return details
+    return next(
+        (
+            write_error
+            for write_error in details.get("writeErrors", [])
+            if write_error.get("code") == 11000
+        ),
+        None,
+    )
+
+
+def _conflict_field(details: dict[str, Any]) -> str | None:
+    for key in ("keyPattern", "keyValue"):
+        fields = details.get(key)
+        if fields:
+            return next(iter(fields))
+    return None
 
 
 _NON_NULL_BSON_TYPES = [
@@ -87,10 +124,53 @@ class MongoRepository(BaseRepository):
         )
         return self._normalize_document(document)
 
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        document = await self.collection(collection_name).find_one(dict(criteria))
+        return self._normalize_document(document)
+
+    async def update_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        changes = {field: value for field, value in payload.items() if field not in criteria}
+        if not changes:
+            return await self.find_one(collection_name, criteria)
+        with _as_conflict():
+            document = await self.collection(collection_name).find_one_and_update(
+                dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+            )
+        return self._normalize_document(document)
+
+    async def replace_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        replacement = {**payload, **criteria}
+        with _as_conflict():
+            document = await self.collection(collection_name).find_one_and_replace(
+                dict(criteria), replacement, return_document=ReturnDocument.AFTER
+            )
+        return self._normalize_document(document)
+
+    async def delete_by(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        document = await self.collection(collection_name).find_one_and_delete(
+            dict(criteria)
+        )
+        return self._normalize_document(document)
+
     async def create(
         self, collection_name: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        inserted = await self.collection(collection_name).insert_one(payload)
+        with _as_conflict():
+            inserted = await self.collection(collection_name).insert_one(payload)
         created = dict(payload)
         created.setdefault("_id", str(inserted.inserted_id))
         return self._normalize_document_required(created)
@@ -103,12 +183,13 @@ class MongoRepository(BaseRepository):
         id_field = self._id_fields.get(collection_name, "id")
         on_insert = {id_field: payload[id_field]} if id_field in payload else {}
         update_fields = {k: v for k, v in payload.items() if k != id_field}
-        document = await self.collection(collection_name).find_one_and_update(
-            {key_field: payload.get(key_field)},
-            {"$set": update_fields, "$setOnInsert": on_insert},
-            upsert=True,
-            return_document=ReturnDocument.AFTER,
-        )
+        with _as_conflict():
+            document = await self.collection(collection_name).find_one_and_update(
+                {key_field: payload.get(key_field)},
+                {"$set": update_fields, "$setOnInsert": on_insert},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
         return self._normalize_document_required(document)
 
     async def update(
@@ -117,11 +198,12 @@ class MongoRepository(BaseRepository):
         document_id: str,
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
-        document = await self.collection(collection_name).find_one_and_update(
-            self._match_filter(document_id, collection_name),
-            {"$set": payload},
-            return_document=ReturnDocument.AFTER,
-        )
+        with _as_conflict():
+            document = await self.collection(collection_name).find_one_and_update(
+                self._match_filter(document_id, collection_name),
+                {"$set": payload},
+                return_document=ReturnDocument.AFTER,
+            )
         return self._normalize_document(document)
 
     async def replace(
@@ -131,11 +213,12 @@ class MongoRepository(BaseRepository):
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
         payload[self._id_fields.get(collection_name, "id")] = document_id
-        document = await self.collection(collection_name).find_one_and_replace(
-            self._match_filter(document_id, collection_name),
-            payload,
-            return_document=ReturnDocument.AFTER,
-        )
+        with _as_conflict():
+            document = await self.collection(collection_name).find_one_and_replace(
+                self._match_filter(document_id, collection_name),
+                payload,
+                return_document=ReturnDocument.AFTER,
+            )
         return self._normalize_document(document)
 
     async def delete(
@@ -147,6 +230,15 @@ class MongoRepository(BaseRepository):
         return self._normalize_document(document)
 
     async def run_operation(
+        self,
+        collection_name: str,
+        query: dict[str, Any],
+        bindings: dict[str, Any],
+    ) -> Any:
+        with _as_conflict():
+            return await self._run_operation(collection_name, query, bindings)
+
+    async def _run_operation(
         self,
         collection_name: str,
         query: dict[str, Any],

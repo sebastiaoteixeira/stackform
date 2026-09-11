@@ -37,9 +37,28 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["path_to_regex"] = _path_to_regex
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["rule_to_python"] = access_filters.rule_to_python
+        env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
+        env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
+        env.tests["unconditional"] = access_filters.is_unconditional
+        env.tests["needs_document_rule"] = access_filters.needs_document_rule
+        env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.filters["int"] = int
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "conflicts.py").write_text(
+            env.get_template("conflicts.py.jinja").render()
+        )
+
+        self._render_single_file(
+            env,
+            context,
+            output_dir,
+            SingleFileRenderConfig(
+                template_name="service_inputs.py.jinja",
+                output_path="service_inputs.py",
+            ),
+        )
 
         collections_by_name = group_by_collection(context)
 
@@ -157,6 +176,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
+                    "conflict_import": "conflicts",
                 },
             )
         )
@@ -187,8 +207,22 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     op["name"]: op["query"]
                     for op in context.repository_operations.get(col_name, [])
                 },
+                auth=context.auth,
             )
             (routes_dir / f"{col_name}.py").write_text(content)
+
+        handler_routes = [
+            route
+            for route in context.routes
+            if route.collection is None and route.handler is not None
+        ]
+        if handler_routes:
+            content = env.get_template("handler_routes.py.jinja").render(
+                routes=handler_routes,
+                needs_auth=any(route.needs_auth for route in handler_routes),
+                auth=context.auth,
+            )
+            (routes_dir / "handlers.py").write_text(content)
 
     def _render_login_routes(
         self, env: Environment, context: CompileContext, output_dir: Path
