@@ -77,6 +77,7 @@ Invalid specs fail at build time:
 
 | Code | Raised when |
 | --- | --- |
+| `BIND_UNSUPPORTED` | an access rule uses `bind:` before v0.3 |
 | `UNDEFINED_SYMBOL` | a referenced root is not a route parameter or an identity/request symbol declared by the same rule |
 | `BIND_TARGET_UNKNOWN` | a bind key is absent from the service `input:` contract |
 | `BIND_MISSING_REQUIRED_INPUT` | a required service input is supplied by neither the rule nor a route path parameter |

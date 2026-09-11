@@ -136,12 +136,12 @@
     "Symbol": {
       "type": "string",
       "pattern": "^\\$[A-Za-z_][A-Za-z0-9_]*$",
-      "description": "v0.3 $-sigil slug: a symbolic reference resolved at build or call time (e.g. $userId). Resolution semantics land in a later v0.3 issue."
+      "description": "v0.3 $-sigil slug: a symbolic reference resolved against the explicit scope of its where, bind, with, or repository-query site (e.g. $userId)."
     },
     "WhereOperator": {
       "type": "string",
       "enum": ["=", "and", "!=", "<", "<=", ">", ">=", "in"],
-      "description": "v0.3 where-clause operators. Active in v0.3: '=' and 'and'. Reserved (accepted syntactically, not yet implemented): '!=', '<', '<=', '>', '>=', 'in'."
+      "description": "v0.3 where-clause operators. '=' and 'and' are active. Reserved tokens '!=', '<', '<=', '>', '>=', and 'in' are rejected by the where parser with WHERE_OPERATOR_UNSUPPORTED."
     },
     "WhereExpression": {
       "type": "string",
@@ -626,11 +626,9 @@
           "minProperties": 1,
           "additionalProperties": {
             "anyOf": [
-              { "type": "string", "enum": ["public", "authenticated"] },
               { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" },
               { "type": "string", "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$" },
               { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$" },
-              { "$ref": "#/$defs/Symbol" },
               { "$ref": "#/$defs/WhereExpression" }
             ]
           }
@@ -645,10 +643,6 @@
           "type": "string",
           "enum": ["allow", "deny"],
           "default": "allow"
-        },
-        "writeFields": {
-          "type": "array",
-          "items": { "type": "string" }
         },
         "reason": { "type": "string" },
         "bind": { "$ref": "#/$defs/SymbolBinding" }

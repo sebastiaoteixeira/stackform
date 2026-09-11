@@ -68,10 +68,10 @@ def test_bind_symbol_and_literal_reach_ir():
     }
 
 
-def test_bind_ignored_without_where_flag():
+def test_bind_rejected_without_v03_feature_gate():
     rule, errors = _parse({"then": "allow", "bind": {"userId": "$principal.sub"}}, allow_where=False)
-    assert errors == []
-    assert rule.bind == {}
+    assert rule is None
+    assert [error.code for error in errors] == ["BIND_UNSUPPORTED"]
 
 
 # --- build-time symbol resolution -----------------------------------------
@@ -257,6 +257,42 @@ def test_unbound_bind_aborts_end_to_end(tmp_path):
     with pytest.raises(ConfigErrors) as exc_info:
         _load(tmp_path, broken)
     assert any(e.code == "UNDEFINED_SYMBOL" for e in exc_info.value.errors)
+
+
+def test_v02_bind_aborts_end_to_end(tmp_path):
+    spec = tmp_path / "v02-bind.yaml"
+    spec.write_text(
+        textwrap.dedent(
+            """
+            version: "0.2"
+            api: { basePath: /api }
+            entities:
+              post:
+                fields:
+                  id: { type: id }
+            repositories:
+              posts: { entity: post }
+            services:
+              posts: { repository: posts }
+            controllers:
+              posts:
+                base_path: /posts
+                routes:
+                  create:
+                    service: posts
+                    method: POST
+                    path: ""
+                    access:
+                      - then: allow
+                        bind: { actor: "$principal.sub" }
+            """
+        )
+    )
+
+    with pytest.raises(ConfigErrors) as exc_info:
+        load_and_generate_ir(str(spec))
+
+    assert {error.code for error in exc_info.value.errors} == {"BIND_UNSUPPORTED"}
 
 
 @pytest.mark.parametrize(

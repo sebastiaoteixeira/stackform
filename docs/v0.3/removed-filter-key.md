@@ -18,6 +18,9 @@ access:
     filter: "ownerId = principal.sub"   # ACCESS_FILTER_REMOVED
 ```
 
+The formerly inert `writeFields` key is rejected for the same fail-safe reason;
+see [The removed access-rule `writeFields` key](removed-write-fields-key.md).
+
 ## Scope reads through `where` instead
 
 Restricting which records a principal may reach is the job of the `where`
