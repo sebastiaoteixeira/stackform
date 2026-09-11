@@ -68,6 +68,8 @@ class RuntimeRouteDescriptor:
     is_public: bool
     handler: str | None = None
     access_rules: list[RuntimeAccessRule] | None = None
+    service_input: dict[str, Any] | None = None
+    service_forwarding: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

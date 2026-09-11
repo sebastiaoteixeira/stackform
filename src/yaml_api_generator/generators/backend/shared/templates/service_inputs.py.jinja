@@ -1,0 +1,129 @@
+from datetime import datetime
+from types import SimpleNamespace
+from typing import Any
+
+
+class RawRequest:
+    def __init__(
+        self,
+        path_params: dict[str, str],
+        body: dict[str, Any] | None,
+        headers: dict[str, str],
+        principal: dict[str, Any] | None,
+        service_inputs: dict[str, Any],
+    ) -> None:
+        self.path_params = path_params
+        self.body = body
+        self.headers = headers
+        self.query_params: dict[str, str] = {}
+        self.state = SimpleNamespace(
+            principal=principal,
+            service_inputs=service_inputs,
+        )
+
+    async def json(self) -> dict[str, Any]:
+        return self.body or {}
+
+
+def prepare_service_inputs(
+    path_values: dict[str, Any],
+    body: dict[str, Any] | None,
+    field_configs: dict[str, dict[str, Any]],
+    forwarding: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    values = {**(body if isinstance(body, dict) else {}), **path_values}
+    _validate(values, field_configs)
+    return {
+        name: _resolve(binding, values)
+        for name, binding in forwarding.items()
+    }
+
+
+def resolve_bindings(value: Any, bindings: dict[str, Any]) -> Any:
+    if isinstance(value, str) and value.startswith("$"):
+        return _resolve_path(value[1:].split("."), bindings)
+    if isinstance(value, dict):
+        return {key: resolve_bindings(item, bindings) for key, item in value.items()}
+    if isinstance(value, list):
+        return [resolve_bindings(item, bindings) for item in value]
+    return value
+
+
+def _resolve(binding: dict[str, Any], values: dict[str, Any]) -> Any:
+    if "symbol" in binding:
+        return _resolve_path(binding["symbol"], values)
+    return binding.get("literal")
+
+
+def _resolve_path(path: list[str], values: dict[str, Any]) -> Any:
+    current: Any = values
+    for segment in path:
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current[segment]
+    return current
+
+
+def _validate(
+    values: dict[str, Any], field_configs: dict[str, dict[str, Any]]
+) -> None:
+    missing = [
+        name
+        for name, config in field_configs.items()
+        if config.get("required", True) and name not in values
+    ]
+    if missing:
+        raise ValueError(f"Missing required inputs: {', '.join(missing)}")
+    for name, config in field_configs.items():
+        if name not in values or (
+            values[name] is None and not config.get("required", True)
+        ):
+            continue
+        _validate_value(name, values[name], config)
+
+
+def _validate_value(name: str, value: Any, config: dict[str, Any]) -> None:
+    field_type = config.get("type", "string")
+    if field_type in ("string", "ref"):
+        if not isinstance(value, str):
+            raise ValueError(f"Field '{name}' must be a string")
+        _validate_length(name, value, config)
+    elif field_type == "number":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"Field '{name}' must be a number")
+        _validate_range(name, value, config)
+    elif field_type == "boolean" and not isinstance(value, bool):
+        raise ValueError(f"Field '{name}' must be a boolean")
+    elif field_type == "datetime":
+        if not isinstance(value, str):
+            raise ValueError(f"Field '{name}' must be a datetime string")
+        try:
+            datetime.fromisoformat(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Field '{name}' is not a valid ISO datetime") from exc
+    elif field_type == "enum" and config.get("values") is not None:
+        if value not in config["values"]:
+            choices = ", ".join(str(item) for item in config["values"])
+            raise ValueError(f"Field '{name}' must be one of: {choices}")
+    elif field_type == "array" and not isinstance(value, list):
+        raise ValueError(f"Field '{name}' must be an array")
+    elif field_type == "object" and not isinstance(value, dict):
+        raise ValueError(f"Field '{name}' must be an object")
+
+
+def _validate_length(name: str, value: str, config: dict[str, Any]) -> None:
+    minimum = config.get("minLength")
+    maximum = config.get("maxLength")
+    if minimum is not None and len(value) < minimum:
+        raise ValueError(f"Field '{name}' must have at least {minimum} characters")
+    if maximum is not None and len(value) > maximum:
+        raise ValueError(f"Field '{name}' must have at most {maximum} characters")
+
+
+def _validate_range(name: str, value: float, config: dict[str, Any]) -> None:
+    minimum = config.get("min")
+    maximum = config.get("max")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"Field '{name}' must be >= {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"Field '{name}' must be <= {maximum}")

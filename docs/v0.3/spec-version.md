@@ -26,16 +26,17 @@ of the v0.2 schema extended permissively with:
 - **[`where` binding form](./given-where.md)** &mdash; access-rule `given:`
   values may bind a record by predicate over fields, `$`-sigil symbols, and
   literals (for example `orders where ownerId = $userId and orgId = $orgId`).
-- **service `input:` / `with:`** &mdash; a service declares the named inputs it
-  requires (`input:`) and forwards values into a called service (`with:`).
+- **[service `input:` / `with:`](./service-input.md)** &mdash; a service declares,
+  validates, and forwards request values to a repository operation or handler.
 - **controller / access-rule `bind:`** &mdash; supplies values for a service's
   declared inputs.
 - **`$`-sigil slugs** &mdash; symbolic references such as `$userId`, resolved at
   build or call time.
 
-The `where` binding form is fully implemented. The remaining constructs are
-accepted **syntactically** in v0.3; their runtime semantics are delivered by
-later v0.3 issues.
+The `where` binding and service `input:` / `with:` forms are implemented in the
+runtime server and generated backends. A construct is not listed as implemented
+until its parser, runtime behavior, generated output, tests, and reference docs
+are present.
 
 ## `where` operators: active vs reserved
 

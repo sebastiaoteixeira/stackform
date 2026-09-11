@@ -166,6 +166,12 @@ class _Parser:
             raise self._invalid("'and' or end of binding")
         return WhereBinding(collection, tuple(conjuncts))
 
+    def parse_rhs(self) -> WhereRhs:
+        rhs = self._rhs()
+        if self._current.kind is not TokenKind.END:
+            raise self._invalid("end of value")
+        return rhs
+
     def _conjunct(self) -> IRWhereConjunct:
         field = self._expect(TokenKind.IDENTIFIER, "a field name").lexeme
         operator = self._expect(TokenKind.OPERATOR, f"'{ACTIVE_OPERATOR}'")
@@ -212,5 +218,12 @@ def parse_where_binding(
 ) -> tuple[WhereBinding | None, list[ConfigError]]:
     try:
         return _Parser(raw, path).parse(), []
+    except ConfigError as error:
+        return None, [error]
+
+
+def parse_rhs_value(raw: str, path: str) -> tuple[WhereRhs | None, list[ConfigError]]:
+    try:
+        return _Parser(raw, path).parse_rhs(), []
     except ConfigError as error:
         return None, [error]

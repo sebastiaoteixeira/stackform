@@ -152,6 +152,8 @@ class RouteDescriptor:
     record_id_param: str | None = None
     record_parent_params: list[str] = field(default_factory=list)
     id_field: str | None = None
+    service_input: dict[str, Any] = field(default_factory=dict)
+    service_forwarding: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:

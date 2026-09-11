@@ -1,0 +1,38 @@
+from importlib import import_module
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from dependencies.service_inputs import prepare_service_inputs
+{% if routes | selectattr("needs_auth") | list %}
+from dependencies.auth import require_principal
+{% endif %}
+
+
+router = APIRouter(tags=["Handlers"])
+
+{% for route in routes %}
+@router.{{ route.method | lower }}("{{ route.relative_path }}")
+async def {{ route.operation | py_identifier }}_{{ loop.index }}(
+    request: Request{% if route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}
+) -> Any:
+    body: dict[str, Any] = {}
+    try:
+        body = await request.json()
+    except (UnicodeDecodeError, ValueError):
+        pass
+    try:
+        service_inputs = prepare_service_inputs(
+            dict(request.path_params),
+            body,
+            {{ route.service_input | py_literal }},
+            {{ route.service_forwarding | py_literal }},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    request.state.service_inputs = service_inputs
+    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
+    return await getattr(import_module(module_path), function_name)(request)
+
+
+{% endfor %}

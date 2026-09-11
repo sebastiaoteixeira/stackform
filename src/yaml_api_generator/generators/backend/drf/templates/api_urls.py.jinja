@@ -1,11 +1,17 @@
 from django.urls import path
 
+{% set handler_routes = routes | selectattr("handler") | rejectattr("collection") | list %}
+{% if handler_routes %}
+from api.views._handlers import {% for route in handler_routes %}Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete"] %}
 {% for col_name in collections %}
 {% set collection_routes = routes | selectattr("collection", "equalto", col_name) | selectattr("operation", "in", crud_op_names) | list %}
+{% set custom_routes = routes | selectattr("collection", "equalto", col_name) | rejectattr("operation", "in", crud_op_names) | rejectattr("operation", "equalto", "login") | list %}
 {% set list_routes = collection_routes | selectattr("has_id_param", "false") | list %}
 {% set detail_routes = collection_routes | selectattr("has_id_param") | list %}
-from api.views.{{ col_name }} import {% if list_routes %}{{ col_name | capitalize_collection }}ListView{% if detail_routes %}, {% endif %}{% endif %}{% if detail_routes %}{{ col_name | capitalize_collection }}DetailView{% endif %}
+from api.views.{{ col_name }} import {% if list_routes %}{{ col_name | capitalize_collection }}ListView{% if detail_routes or custom_routes %}, {% endif %}{% endif %}{% if detail_routes %}{{ col_name | capitalize_collection }}DetailView{% if custom_routes %}, {% endif %}{% endif %}{% for route in custom_routes %}{{ col_name | capitalize_collection }}{{ route.operation | capitalize_collection }}View{% if not loop.last %}, {% endif %}{% endfor %}
 {% endfor %}
 {% if auth and auth.has_password_auth %}
 {% for identity in auth.identity_collections %}
@@ -16,6 +22,9 @@ from api.views.login import {{ identity.name | capitalize_collection }}LoginView
 {% endif %}
 
 urlpatterns = [
+{% for route in handler_routes %}
+    path("{{ route.django_path }}", Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View.as_view(), name="handler-{{ route.operation }}-{{ loop.index }}"),
+{% endfor %}
 {% if auth and auth.has_password_auth %}
 {% for identity in auth.identity_collections %}
 {% if "password" in identity.via and identity.identifier %}
@@ -29,5 +38,8 @@ urlpatterns = [
 {% set _ = seen_paths.append(route.django_path) %}
     path("{{ route.django_path }}", {{ route.collection | capitalize_collection }}{% if route.has_id_param %}Detail{% else %}List{% endif %}View.as_view(), name="{{ route.collection }}-{{ route.operation }}"),
 {% endif %}
+{% endfor %}
+{% for route in routes if route.collection and route.operation not in crud_op_names and route.operation != "login" %}
+    path("{{ route.django_path }}", {{ route.collection | capitalize_collection }}{{ route.operation | capitalize_collection }}View.as_view(), name="{{ route.collection }}-{{ route.operation }}"),
 {% endfor %}
 ]

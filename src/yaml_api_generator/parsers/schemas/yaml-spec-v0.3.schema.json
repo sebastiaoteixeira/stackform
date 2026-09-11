@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "yaml-spec-v0.3.schema.json",
   "title": "YAML API Generator Structure Spec v0.3",
-  "$comment": "Superset of v0.2. Adds the where binding form (given: strings), service input:/with:, and controller/access-rule bind:. Everything v0.2 accepted stays valid. Reserved constructs are accepted syntactically; their semantics land in later v0.3 issues.",
+  "$comment": "Superset of v0.2. Adds the where binding form (given: strings), service input:/with:, and controller/access-rule bind:. Everything v0.2 accepted stays valid.",
   "type": "object",
   "required": ["version", "entities"],
   "properties": {
@@ -151,14 +151,25 @@
     "SymbolBinding": {
       "type": "object",
       "minProperties": 1,
-      "additionalProperties": { "type": "string" },
-      "description": "v0.3 map of names to $-sigil symbols or request/identity references. Backs controller/access-rule bind: and service with:. Forwarding semantics land in a later v0.3 issue."
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      },
+      "description": "v0.3 map of names to $-sigil symbols or scalar literals. Backs controller/access-rule bind: and service with:."
     },
     "InputConfig": {
-      "description": "v0.3 declares the named inputs a service requires; supplied at build time via bind: or at call time via with:. Semantics land in a later v0.3 issue.",
+      "description": "v0.3 declares the named inputs a service requires.",
       "oneOf": [
         { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-        { "type": "object", "minProperties": 1 }
+        {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string", "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref"] },
+              { "$ref": "#/$defs/FieldConfig" }
+            ]
+          }
+        }
       ]
     },
     "OperationFlags": {

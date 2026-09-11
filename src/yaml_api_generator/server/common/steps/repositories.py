@@ -266,9 +266,11 @@ def RepositoryOperationStep(
     id_field: str,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
+        params = {**ctx.url_params, **(ctx.service_inputs or {})}
         bindings = {
+            **params,
             "principal": ctx.principal or {},
-            "params": ctx.url_params,
+            "params": params,
             "body": ctx.body or {},
         }
         result = await _repository(ctx).run_operation(collection_name, query, bindings)
