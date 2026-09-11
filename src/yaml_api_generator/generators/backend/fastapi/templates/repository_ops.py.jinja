@@ -1,11 +1,51 @@
 import uuid
 from collections.abc import Callable
+from functools import wraps
 from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.errors import BulkWriteError, DuplicateKeyError
+
+from conflicts import ConflictError
+
+
+def _duplicate_details(error: BulkWriteError | DuplicateKeyError) -> dict[str, Any] | None:
+    details = error.details or {}
+    if isinstance(error, DuplicateKeyError):
+        return details
+    return next(
+        (
+            write_error
+            for write_error in details.get("writeErrors", [])
+            if write_error.get("code") == 11000
+        ),
+        None,
+    )
+
+
+def _conflict_field(details: dict[str, Any]) -> str | None:
+    for key in ("keyPattern", "keyValue"):
+        fields = details.get(key)
+        if fields:
+            return next(iter(fields))
+    return None
+
+
+def _translate_conflict(operation):
+    @wraps(operation)
+    async def translated(*args, **kwargs):
+        try:
+            return await operation(*args, **kwargs)
+        except (BulkWriteError, DuplicateKeyError) as error:
+            details = _duplicate_details(error)
+            if details is None:
+                raise
+            raise ConflictError(_conflict_field(details)) from error
+
+    return translated
 
 
 def make_id_generator(id_format: str) -> Callable[[], str] | None:
@@ -51,6 +91,7 @@ class RepositoryBase:
     async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
         return self._normalize(await self._col.find_one(dict(criteria)))
 
+    @_translate_conflict
     async def update_by(
         self, criteria: dict[str, Any], data: dict[str, Any]
     ) -> dict[str, Any] | None:
@@ -62,6 +103,7 @@ class RepositoryBase:
         )
         return self._normalize(doc)
 
+    @_translate_conflict
     async def replace_by(
         self, criteria: dict[str, Any], data: dict[str, Any]
     ) -> dict[str, Any] | None:
@@ -74,12 +116,14 @@ class RepositoryBase:
     async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
         return self._normalize(await self._col.find_one_and_delete(dict(criteria)))
 
+    @_translate_conflict
     async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
         if self._generate_id is not None:
             data[self.ID_FIELD] = self._generate_id()
         await self._col.insert_one(data)
         return self._normalize(data)
 
+    @_translate_conflict
     async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
         if data.get(key_field) is None:
             raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
@@ -112,6 +156,7 @@ class CreateOp:
 
 
 class UpdateOp:
+    @_translate_conflict
     async def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         doc = await self._col.find_one_and_update(
             self._match_filter(document_id),
@@ -122,6 +167,7 @@ class UpdateOp:
 
 
 class ReplaceOp:
+    @_translate_conflict
     async def replace(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         data[self.ID_FIELD] = document_id
         doc = await self._col.find_one_and_replace(

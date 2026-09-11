@@ -9,6 +9,7 @@ class NotFoundError(ValueError):
     pass
 
 
+from ..repositories.base import ConflictError
 from .authentication import ResolvePrincipalStep
 from .authorization import (
     AuthorizeRouteStep,
@@ -37,6 +38,7 @@ __all__ = [
     "ServiceInputStep",
     "Step",
     "NotFoundError",
+    "ConflictError",
     "ResolvePrincipalStep",
     "AuthorizeRouteStep",
     "PostFetchAuthorizeStep",

@@ -55,6 +55,11 @@ class DRFGenerator(TemplateBasedGenerator):
         env.tests["unconditional"] = _is_unconditional
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        api_dir = output_dir / self.dir_prefix
+        api_dir.mkdir(parents=True, exist_ok=True)
+        (api_dir / "conflicts.py").write_text(
+            env.get_template("conflicts.py.jinja").render()
+        )
 
         collections_by_name = group_by_collection(context)
 
@@ -236,6 +241,7 @@ class DRFGenerator(TemplateBasedGenerator):
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
+                    "conflict_import": "api.conflicts",
                 },
             )
         )

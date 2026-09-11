@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.conflicts import ConflictError
 from api.service_inputs import prepare_service_inputs, resolve_access_bind
 {% if routes | selectattr("needs_auth") | list %}
 from api.authentication.auth import _principal_has_role, resolve_principal
@@ -93,7 +94,10 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
         module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
-        result = await getattr(import_module(module_path), function_name)(request)
+        try:
+            result = await getattr(import_module(module_path), function_name)(request)
+        except ConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return result if isinstance(result, Response) else Response(result)
 
 

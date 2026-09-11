@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
+from api.conflicts import ConflictError
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete"] %}
 {% set crud_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("operation", "in", crud_op_names) | list %}
 {% set ns = namespace(needs_models=false, model_imports=[]) %}
@@ -200,6 +201,8 @@ class {{ class_name }}ListView(APIView):
 {% endif %}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except (ValidationError, ValueError) as exc:
             detail = exc.message if isinstance(exc, ValidationError) else str(exc)
             return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
@@ -240,6 +243,8 @@ class {{ custom_class }}(APIView):
 {% endif %}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except (ValidationError, ValueError) as exc:
             detail = exc.message if isinstance(exc, ValidationError) else str(exc)
             return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
@@ -327,6 +332,8 @@ class {{ class_name }}DetailView(APIView):
 {% endif %}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except (ValidationError, ValueError) as exc:
             detail = exc.message if isinstance(exc, ValidationError) else str(exc)
             return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)

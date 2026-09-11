@@ -4,6 +4,7 @@ from http.cookies import SimpleCookie
 from typing import Any
 from urllib.parse import parse_qs
 
+from conflicts import ConflictError
 from settings import settings
 
 from dependencies.mongodb import connect_db, close_db, get_database
@@ -102,6 +103,9 @@ class ASGIApp:
             status, data = await handler(
                 url_params, body, headers, db, query=query, cookies=cookies
             )
+        except ConflictError as exc:
+            await self._send_json(send, 409, {"detail": str(exc)})
+            return
         except ValueError as exc:
             await self._send_json(send, 422, {"detail": str(exc)})
             return
