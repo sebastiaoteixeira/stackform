@@ -28,12 +28,15 @@ def test_py_bool():
 
 def test_rule_to_python_unconditional():
     rule = AccessRuleDescriptor(principal="identity:admins")
-    assert rule_to_python(rule) == "True"
+    assert rule_to_python(rule) == 'principal.get("identity_collection") == "admins"'
 
 
 def test_rule_to_python_role_only():
     rule = AccessRuleDescriptor(principal="identity:admins", required_role="admin")
-    assert rule_to_python(rule) == '_principal_has_role(principal, "admin")'
+    assert rule_to_python(rule) == (
+        'principal.get("identity_collection") == "admins" and '
+        '_principal_has_role(principal, "admin")'
+    )
 
 
 def test_rule_to_python_when_equals():
@@ -52,7 +55,10 @@ def test_rule_to_python_role_and_when():
         when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("id",))),
     )
     result = rule_to_python(rule)
-    assert result.startswith('_principal_has_role(principal, "admin") and ')
+    assert result.startswith(
+        'principal.get("identity_collection") == "users" and '
+        '_principal_has_role(principal, "admin") and '
+    )
     assert '_values_equal(principal.get("sub"), document.get("id"))' in result
 
 
@@ -98,8 +104,13 @@ def test_rule_to_python_and_or():
 
 
 def test_is_unconditional_true():
-    rule = AccessRuleDescriptor(principal="identity:admins")
+    rule = AccessRuleDescriptor(principal="")
     assert is_unconditional(rule) is True
+
+
+def test_is_unconditional_false_when_identity_is_scoped():
+    rule = AccessRuleDescriptor(principal="identity:admins")
+    assert is_unconditional(rule) is False
 
 
 def test_is_unconditional_false_when_role():

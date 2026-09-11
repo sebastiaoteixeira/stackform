@@ -37,7 +37,7 @@ def ServiceInputStep(
 
 def _request_namespace(ctx: RequestContext) -> dict[str, Any]:
     body = ctx.body if isinstance(ctx.body, dict) else {}
-    return {**body, **ctx.url_params}
+    return {**body, **ctx.url_params, **(ctx.bound_inputs or {})}
 
 
 def _resolve(rhs: WhereRhs, inputs: dict[str, Any]) -> Any:

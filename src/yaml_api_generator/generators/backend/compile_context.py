@@ -127,6 +127,7 @@ class AccessRuleDescriptor:
     request_symbols: list[RequestSymbolDescriptor] = field(default_factory=list)
     when: WhenExpr | None = None
     effect: str = "allow"
+    bind: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

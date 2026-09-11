@@ -161,7 +161,7 @@ class PipelineBuilder:
             steps.append(AuthorizeRouteStep(route.access_rules, self._ctx.auth))
 
         if not route.is_public and _has_access_bind(route):
-            steps.append(ResolveAccessBindStep(route.access_rules, self._ctx.auth))
+            steps.append(ResolveAccessBindStep(route.access_rules))
 
         return steps
 

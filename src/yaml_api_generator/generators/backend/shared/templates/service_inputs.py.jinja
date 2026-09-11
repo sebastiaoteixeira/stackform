@@ -11,11 +11,14 @@ class RawRequest:
         headers: dict[str, str],
         principal: dict[str, Any] | None,
         service_inputs: dict[str, Any],
+        query_params: dict[str, Any] | None = None,
+        cookies: dict[str, str] | None = None,
     ) -> None:
         self.path_params = path_params
         self.body = body
         self.headers = headers
-        self.query_params: dict[str, str] = {}
+        self.query_params = query_params or {}
+        self.cookies = cookies or {}
         self.state = SimpleNamespace(
             principal=principal,
             service_inputs=service_inputs,
@@ -30,13 +33,25 @@ def prepare_service_inputs(
     body: dict[str, Any] | None,
     field_configs: dict[str, dict[str, Any]],
     forwarding: dict[str, dict[str, Any]],
+    bound_inputs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    values = {**(body if isinstance(body, dict) else {}), **path_values}
+    values = {
+        **(body if isinstance(body, dict) else {}),
+        **path_values,
+        **(bound_inputs or {}),
+    }
     _validate(values, field_configs)
     return {
         name: _resolve(binding, values)
         for name, binding in forwarding.items()
     }
+
+
+def resolve_access_bind(
+    bindings: dict[str, dict[str, Any]],
+    namespace: dict[str, Any],
+) -> dict[str, Any]:
+    return {name: _resolve(binding, namespace) for name, binding in bindings.items()}
 
 
 def resolve_bindings(value: Any, bindings: dict[str, Any]) -> Any:

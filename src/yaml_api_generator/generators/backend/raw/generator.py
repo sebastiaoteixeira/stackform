@@ -37,6 +37,10 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["path_to_regex"] = _path_to_regex
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["rule_to_python"] = access_filters.rule_to_python
+        env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
+        env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
+        env.tests["unconditional"] = access_filters.is_unconditional
         env.filters["int"] = int
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -197,6 +201,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     op["name"]: op["query"]
                     for op in context.repository_operations.get(col_name, [])
                 },
+                auth=context.auth,
             )
             (routes_dir / f"{col_name}.py").write_text(content)
 
@@ -209,6 +214,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             content = env.get_template("handler_routes.py.jinja").render(
                 routes=handler_routes,
                 needs_auth=any(route.needs_auth for route in handler_routes),
+                auth=context.auth,
             )
             (routes_dir / "handlers.py").write_text(content)
 

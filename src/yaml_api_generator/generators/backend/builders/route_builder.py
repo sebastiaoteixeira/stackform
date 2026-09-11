@@ -45,14 +45,16 @@ def _service_config(document: IRDocument, service_name: str | None) -> tuple[
         else {}
     )
     forwarding = {
-        name: (
-            {"symbol": [rhs.root, *rhs.path]}
-            if isinstance(rhs, IRSymbolRef)
-            else {"literal": rhs.value}
-        )
+        name: _rhs_config(rhs)
         for name, rhs in (service.forwarding.items() if service is not None else ())
     }
     return input_fields, forwarding
+
+
+def _rhs_config(rhs) -> dict[str, object]:
+    if isinstance(rhs, IRSymbolRef):
+        return {"symbol": [rhs.root, *rhs.path]}
+    return {"literal": rhs.value}
 
 
 class RouteBuilder:
@@ -90,6 +92,7 @@ class RouteBuilder:
                         request_symbols=_request_descriptors(rule),
                         when=rule.when,
                         effect=rule.effect,
+                        bind={name: _rhs_config(rhs) for name, rhs in rule.bind.items()},
                     )
                     for rule in ir_route.access_rules
                 ]
