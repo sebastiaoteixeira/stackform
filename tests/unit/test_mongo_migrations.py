@@ -10,8 +10,9 @@ builds yield to the event loop, so two upgrades can race deterministically.
 
 import asyncio
 import json
+import sys
 import textwrap
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 from uuid import uuid4
 
@@ -123,26 +124,41 @@ def _reset_handler_calls():
     HANDLER_CALLS.clear()
 
 
-def _write_spec(tmp_path) -> Any:
-    spec = tmp_path / "spec.yaml"
-    spec.write_text(textwrap.dedent("""
-        version: "0.2"
-        api: { basePath: /api }
-        datastores:
-          store: { type: mongodb, uri: "mongodb://localhost:27017", database: test, default: true }
-        entities:
-          user:
-            fields:
-              id: { type: id }
-              email: { type: string, required: true, unique: true }
-        repositories: { users: { entity: user } }
-        services: { users: { repository: users } }
-        controllers:
-          users:
-            base_path: /users
-            routes: { list: { service: users, method: GET, path: "", access: public } }
-    """))
+_SPEC = """
+    version: "0.2"
+    api: { basePath: /api }
+    datastores:
+      store: { type: mongodb, uri: "mongodb://localhost:27017", database: test, default: true }
+    entities:
+      user:
+        fields:
+          id: { type: id }
+          email: { type: string, required: true, unique: true }
+    repositories: { REPOSITORY: { entity: user } }
+    services: { REPOSITORY: { repository: REPOSITORY } }
+    controllers:
+      REPOSITORY:
+        base_path: /REPOSITORY
+        routes: { list: { service: REPOSITORY, method: GET, path: "", access: public } }
+"""
+
+
+def _write_spec(tmp_path, repository: str = "users") -> Any:
+    spec = tmp_path / f"{repository}.yaml"
+    spec.write_text(textwrap.dedent(_SPEC).replace("REPOSITORY", repository))
     return spec
+
+
+@contextmanager
+def _clean_import_state():
+    """Undo the sys.path entry and imports a spec-local handler leaves behind."""
+    path, modules = list(sys.path), set(sys.modules)
+    try:
+        yield
+    finally:
+        sys.path[:] = path
+        for name in set(sys.modules) - modules:
+            del sys.modules[name]
 
 
 def _config_on(spec, db: FakeDB) -> mongo_support.MongoMigrationConfig:
@@ -283,8 +299,8 @@ def test_concurrent_upgrades_apply_each_revision_once(tmp_path):
 
     async def race():
         await asyncio.gather(
-            mongo_support._upgrade(config, "head"),
-            mongo_support._upgrade(config, "head"),
+            mongo_support._migrate(config, mongo_support._UP, "head"),
+            mongo_support._migrate(config, mongo_support._UP, "head"),
         )
 
     asyncio.run(race())
@@ -566,3 +582,163 @@ def test_resolve_driver_returns_driver_and_parsed_config(tmp_path):
     driver, config = resolve_driver(str(relational), None)
     assert driver is alembic_support
     assert config.attributes["datastore"] == "store"
+
+
+_MIXED_SPEC = """
+    version: "0.2"
+    api: { basePath: /api }
+    datastores:
+      warehouse: { type: postgres, dsn: "sqlite+aiosqlite:///w.db", default: true }
+      documents: { type: mongodb, uri: "mongodb://localhost:27017", database: docs }
+    entities:
+      task: { fields: { id: { type: id }, title: { type: string, required: true } } }
+      note: { fields: { id: { type: id }, slug: { type: string, unique: true } } }
+    repositories:
+      tasks: { entity: task }
+      notes: { entity: note, datastore: documents }
+    services:
+      tasks: { repository: tasks }
+      notes: { repository: notes }
+    controllers:
+      tasks:
+        base_path: /tasks
+        routes: { list: { service: tasks, method: GET, path: "", access: public } }
+      notes:
+        base_path: /notes
+        routes: { list: { service: notes, method: GET, path: "", access: public } }
+"""
+
+
+def _write_mixed_spec(tmp_path) -> Any:
+    spec = tmp_path / "mixed.yaml"
+    spec.write_text(textwrap.dedent(_MIXED_SPEC))
+    return spec
+
+
+def _cli_failure(*arguments: str) -> Any:
+    result = CliRunner().invoke(cli, list(arguments))
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    return result.output
+
+
+def test_explicit_datastore_selects_the_driver_of_its_kind(tmp_path):
+    spec = _write_mixed_spec(tmp_path)
+
+    mongo_driver, mongo_config = resolve_driver(str(spec), "documents")
+    relational_driver, relational_config = resolve_driver(str(spec), "warehouse")
+
+    assert mongo_driver is mongo_support and mongo_config.datastore == "documents"
+    assert relational_driver is alembic_support
+    assert relational_config.attributes["datastore"] == "warehouse"
+    assert resolve_driver(str(spec), None)[0] is alembic_support
+
+
+def test_unknown_datastore_is_reported_without_a_traceback(tmp_path):
+    spec = _write_spec(tmp_path)
+
+    assert "Unknown datastore 'nope'" in _cli_failure(
+        "migrate", "status", str(spec), "--datastore", "nope"
+    )
+
+
+def test_a_collection_named_like_the_ledger_is_refused(tmp_path):
+    spec = _write_spec(tmp_path, STORE_COLLECTION)
+
+    with pytest.raises(MigrationError, match=f"'{STORE_COLLECTION}' collection"):
+        make_config(str(spec))
+    assert STORE_COLLECTION in _cli_failure("migrate", "new", str(spec), "-m", "init")
+
+
+def test_an_unreadable_revision_file_names_the_file(tmp_path):
+    spec = _write_spec(tmp_path)
+    config = _config_on(spec, FakeDB())
+    mongo_support.new_revision(config, "init")
+    (config.directory / "0002_broken.json").write_text("{ not json")
+
+    assert "'0002_broken.json' is not a revision file" in _cli_failure(
+        "migrate", "status", str(spec)
+    )
+
+
+def test_a_revision_file_with_unknown_keys_names_the_file(tmp_path):
+    spec = _write_spec(tmp_path)
+    config = _config_on(spec, FakeDB())
+    config.directory.mkdir(parents=True, exist_ok=True)
+    (config.directory / "0001_extra.json").write_text(
+        json.dumps(
+            {
+                "revision": "a",
+                "down_revision": None,
+                "message": "m",
+                "operations": [],
+                "surprise": 1,
+            }
+        )
+    )
+
+    assert "'0001_extra.json' is not a revision file" in _cli_failure(
+        "migrate", "status", str(spec)
+    )
+
+
+def test_a_handler_module_beside_the_spec_is_importable(tmp_path):
+    spec = _write_spec(tmp_path)
+    db = FakeDB()
+    config = _config_on(spec, db)
+    (tmp_path / "spec_handlers.py").write_text(
+        textwrap.dedent("""
+            async def seed(db):
+                await db["users"].insert_one({"_id": "beside", "email": "b@x.io"})
+        """)
+    )
+    _handler_revision(config, "seed", "spec_handlers.seed")
+
+    with _clean_import_state():
+        mongo_support.upgrade(config, "head")
+
+    assert "beside" in db["users"].docs
+
+
+def test_a_missing_handler_module_names_the_revision(tmp_path):
+    spec = _write_spec(tmp_path)
+    config = _config_on(spec, FakeDB())
+    revision = _handler_revision(config, "gone", "no_such_module.handler")
+
+    with pytest.raises(
+        MigrationError, match=f"{revision.revision}.*cannot import 'no_such_module'"
+    ):
+        mongo_support.upgrade(config, "head")
+
+
+@pytest.mark.parametrize(
+    "operation, expected",
+    [
+        ({"op": "rename_collection"}, "unknown operation 'rename_collection'"),
+        ({}, "unknown operation None"),
+        ({"op": "create_index", "field": "email"}, "create_index needs collection"),
+        ({"op": "drop_index", "collection": "users"}, "drop_index needs field"),
+    ],
+)
+def test_hand_edited_operations_are_refused_before_anything_is_applied(
+    tmp_path, operation, expected
+):
+    spec = _write_spec(tmp_path)
+    db = FakeDB()
+    config = _config_on(spec, db)
+    config.directory.mkdir(parents=True, exist_ok=True)
+    (config.directory / "0001_hand_written.json").write_text(
+        json.dumps(
+            {
+                "revision": "a",
+                "down_revision": None,
+                "message": "hand written",
+                "operations": [operation],
+            }
+        )
+    )
+
+    with pytest.raises(MigrationError, match=expected):
+        mongo_support.upgrade(config, "head")
+    assert _ledger(db) == {}

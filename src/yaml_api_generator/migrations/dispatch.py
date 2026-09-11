@@ -16,6 +16,7 @@ from yaml_api_generator.ir import IRDatastore, IRMongo, IRPostgres
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 
 from . import alembic_support, mongo_support
+from .errors import MigrationError
 
 
 def resolve_driver(
@@ -32,7 +33,7 @@ def _driver_for(
     if datastore is not None:
         target = datastores.get(datastore)
         if target is None:
-            raise ValueError(f"Unknown datastore '{datastore}'")
+            raise MigrationError(f"Unknown datastore '{datastore}'")
         return mongo_support if isinstance(target, IRMongo) else alembic_support
     if any(isinstance(ds, IRPostgres) for ds in datastores.values()):
         return alembic_support
@@ -40,5 +41,7 @@ def _driver_for(
     if len(mongos) == 1:
         return mongo_support
     if not mongos:
-        raise ValueError("No datastore declared in this spec")
-    raise ValueError("Multiple MongoDB datastores; pass --datastore to choose one")
+        raise MigrationError("No datastore declared in this spec")
+    raise MigrationError(
+        "Multiple MongoDB datastores; pass --datastore to choose one"
+    )

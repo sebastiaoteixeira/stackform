@@ -17,6 +17,8 @@ from yaml_api_generator.ir import IRDocument, IRPostgres
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 from yaml_api_generator.server.common.repositories.sql_schema import table_from_collection
 
+from .errors import MigrationError
+
 
 def build_metadata(ir: IRDocument, datastore: str) -> sa.MetaData:
     metadata = sa.MetaData()
@@ -32,13 +34,13 @@ def resolve_relational(ir: IRDocument, datastore: str | None) -> tuple[str, str]
         name: ds for name, ds in ir.datastores.items() if isinstance(ds, IRPostgres)
     }
     if not relational:
-        raise ValueError("No relational datastore declared in this spec")
+        raise MigrationError("No relational datastore declared in this spec")
     if datastore is not None:
         if datastore not in relational:
-            raise ValueError(f"'{datastore}' is not a relational datastore")
+            raise MigrationError(f"'{datastore}' is not a relational datastore")
         return datastore, relational[datastore].dsn
     if len(relational) > 1:
-        raise ValueError(
+        raise MigrationError(
             "Multiple relational datastores; pass --datastore to choose one"
         )
     name, ds = next(iter(relational.items()))

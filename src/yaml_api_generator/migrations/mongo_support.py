@@ -37,19 +37,20 @@ from pymongo.errors import DuplicateKeyError
 
 from yaml_api_generator.ir import IRDocument, IRMongo
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
-from yaml_api_generator.server.common.loader import mongo_connection_params
+from yaml_api_generator.server.common.loader import (
+    ensure_spec_dir_importable,
+    mongo_connection_params,
+)
 from yaml_api_generator.server.common.repositories.mongodb import (
     unique_index_partial_filter,
 )
+
+from .errors import MigrationError
 
 STORE_COLLECTION = "migrations"
 
 _RELATIVE_TARGET = re.compile(r"([+-])(\d+)")
 _SLUG_SEPARATOR = re.compile(r"[^a-z0-9]+")
-
-
-class MigrationError(click.ClickException):
-    """A migration cannot proceed; the message is addressed to the operator."""
 
 
 class RevisionState(StrEnum):
@@ -88,13 +89,15 @@ def mongo_migrations_dir(spec_path: str, datastore: str) -> Path:
 def resolve_mongo(ir: IRDocument, datastore: str | None) -> str:
     mongos = {n: d for n, d in ir.datastores.items() if isinstance(d, IRMongo)}
     if not mongos:
-        raise ValueError("No MongoDB datastore declared in this spec")
+        raise MigrationError("No MongoDB datastore declared in this spec")
     if datastore is not None:
         if datastore not in mongos:
-            raise ValueError(f"'{datastore}' is not a MongoDB datastore")
+            raise MigrationError(f"'{datastore}' is not a MongoDB datastore")
         return datastore
     if len(mongos) > 1:
-        raise ValueError("Multiple MongoDB datastores; pass --datastore to choose one")
+        raise MigrationError(
+            "Multiple MongoDB datastores; pass --datastore to choose one"
+        )
     return next(iter(mongos))
 
 
@@ -102,6 +105,12 @@ def config_from_ir(
     ir: IRDocument, spec_path: str, datastore: str | None = None
 ) -> MongoMigrationConfig:
     name = resolve_mongo(ir, datastore)
+    if STORE_COLLECTION in _collections_for(ir, name):
+        raise MigrationError(
+            f"Datastore '{name}' already stores a '{STORE_COLLECTION}' collection, "
+            "which is where the applied-revision history lives. Rename that "
+            "repository, or move it to another datastore, before migrating."
+        )
     uri, database = mongo_connection_params(ir, name)
 
     @asynccontextmanager
@@ -127,9 +136,29 @@ def make_config(spec_path: str, datastore: str | None = None) -> MongoMigrationC
 
 def load_revisions(directory: Path) -> list[Revision]:
     """Revisions in ``down_revision`` order, whatever their filenames say."""
-    return _chain(
-        [Revision(**json.loads(path.read_text())) for path in directory.glob("*.json")]
-    )
+    return _chain([_read_revision(path) for path in directory.glob("*.json")])
+
+
+def _read_revision(path: Path) -> Revision:
+    try:
+        revision = Revision(**json.loads(path.read_text()))
+    except (json.JSONDecodeError, TypeError) as error:
+        raise MigrationError(f"'{path.name}' is not a revision file: {error}") from error
+    for operation in revision.operations:
+        _validate_operation(path, operation)
+    return revision
+
+
+def _validate_operation(path: Path, operation: dict[str, Any]) -> None:
+    """Reject a hand-edited operation here, before any of the chain is applied."""
+    kind = operation.get("op")
+    if kind == "run_handler":
+        return
+    if kind not in ("create_index", "drop_index"):
+        raise MigrationError(f"'{path.name}' declares an unknown operation {kind!r}")
+    missing = [key for key in ("collection", "field") if not operation.get(key)]
+    if missing:
+        raise MigrationError(f"'{path.name}': {kind} needs {' and '.join(missing)}")
 
 
 def _chain(revisions: list[Revision]) -> list[Revision]:
@@ -202,18 +231,9 @@ def autogenerate(
     return ops
 
 
-def _revision_path(directory: Path, sequence: int, revision: Revision) -> Path:
+def _write_revision(directory: Path, sequence: int, revision: Revision) -> Path:
     slug = _SLUG_SEPARATOR.sub("_", revision.message.lower()).strip("_")[:40]
     path = directory / f"{sequence:04d}_{slug}_{revision.revision}.json"
-    if path.resolve().parent != directory.resolve():
-        raise MigrationError(
-            f"Revision message escapes {directory}: {revision.message!r}"
-        )
-    return path
-
-
-def _write_revision(directory: Path, sequence: int, revision: Revision) -> Path:
-    path = _revision_path(directory, sequence, revision)
     path.write_text(json.dumps(asdict(revision), indent=2))
     return path
 
@@ -248,7 +268,13 @@ def _load_handler(revision: Revision, dotted: str) -> Callable[[Any], Awaitable[
         raise MigrationError(
             f"Revision '{revision.revision}': '{dotted}' is not a dotted handler path"
         )
-    handler = getattr(importlib.import_module(module_path), attribute, None)
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as error:
+        raise MigrationError(
+            f"Revision '{revision.revision}': cannot import '{module_path}' ({error})"
+        ) from error
+    handler = getattr(module, attribute, None)
     if not callable(handler):
         raise MigrationError(
             f"Revision '{revision.revision}': '{dotted}' is not a callable handler"
@@ -322,6 +348,24 @@ class _Direction:
             f"'{self.sign}N', or the id of an existing revision"
         )
 
+    async def prepare(
+        self,
+        config: "MongoMigrationConfig",
+        db: Any,
+        ledger: "Ledger",
+        status: "Status",
+    ) -> "Status":
+        return status
+
+    def candidates(self, status: "Status") -> list[Revision]:
+        raise NotImplementedError
+
+    async def claim(self, ledger: "Ledger", revision: Revision) -> bool:
+        raise NotImplementedError
+
+    async def settle(self, ledger: "Ledger", revision: Revision) -> None:
+        raise NotImplementedError
+
     async def run(self, db: Any, revision: Revision) -> None:
         for operation in self._operations(revision):
             await self._apply(db, revision, operation)
@@ -357,6 +401,30 @@ class _Upgrade(_Direction):
     forward = True
     boundary = _Through
 
+    async def prepare(
+        self,
+        config: "MongoMigrationConfig",
+        db: Any,
+        ledger: "Ledger",
+        status: "Status",
+    ) -> "Status":
+        if status.entries or not status.chain:
+            return status
+        if not await _schema_present(config, db):
+            return status
+        if await ledger.claim(status.chain[0]):
+            await ledger.confirm(status.chain[0])
+        return Status(status.chain, await ledger.entries())
+
+    def candidates(self, status: "Status") -> list[Revision]:
+        return status.pending
+
+    async def claim(self, ledger: "Ledger", revision: Revision) -> bool:
+        return await ledger.claim(revision)
+
+    async def settle(self, ledger: "Ledger", revision: Revision) -> None:
+        await ledger.confirm(revision)
+
 
 class _Downgrade(_Direction):
     terminal = "base"
@@ -364,6 +432,15 @@ class _Downgrade(_Direction):
     handler = "down"
     forward = False
     boundary = _Before
+
+    def candidates(self, status: "Status") -> list[Revision]:
+        return list(reversed(status.applied))
+
+    async def claim(self, ledger: "Ledger", revision: Revision) -> bool:
+        return await ledger.claim_revert(revision)
+
+    async def settle(self, ledger: "Ledger", revision: Revision) -> None:
+        await ledger.forget(revision)
 
 
 _UP = _Upgrade()
@@ -491,13 +568,6 @@ async def _schema_present(config: MongoMigrationConfig, db: Any) -> bool:
     return True
 
 
-async def _stamp_baseline(
-    config: MongoMigrationConfig, db: Any, ledger: Ledger, chain: list[Revision]
-) -> None:
-    if chain and await _schema_present(config, db) and await ledger.claim(chain[0]):
-        await ledger.confirm(chain[0])
-
-
 def new_revision(config: MongoMigrationConfig, message: str) -> None:
     config.directory.mkdir(parents=True, exist_ok=True)
     chain = load_revisions(config.directory)
@@ -511,35 +581,25 @@ def new_revision(config: MongoMigrationConfig, message: str) -> None:
     click.echo(f"Created revision {revision.revision} at {path}")
 
 
-async def _upgrade(config: MongoMigrationConfig, target: str) -> None:
+async def _migrate(
+    config: MongoMigrationConfig, direction: _Direction, target: str
+) -> None:
     chain = load_revisions(config.directory)
-    plan = _UP.target(target, chain)
+    plan = direction.target(target, chain)
+    ensure_spec_dir_importable(config.spec_path)
     async with config.connect() as db:
         ledger = Ledger(db)
         status = Status(chain, await ledger.entries())
         status.reject_interrupted()
-        if not status.entries:
-            await _stamp_baseline(config, db, ledger, chain)
-            status = Status(chain, await ledger.entries())
-        for revision in plan.cut(status.pending):
-            if not await ledger.claim(revision):
+        status = await direction.prepare(config, db, ledger, status)
+        for revision in plan.cut(direction.candidates(status)):
+            if not await direction.claim(ledger, revision):
+                click.echo(
+                    f"Revision {revision.revision} is claimed by another run; stopping."
+                )
                 return
-            await _UP.run(db, revision)
-            await ledger.confirm(revision)
-
-
-async def _downgrade(config: MongoMigrationConfig, target: str) -> None:
-    chain = load_revisions(config.directory)
-    plan = _DOWN.target(target, chain)
-    async with config.connect() as db:
-        ledger = Ledger(db)
-        status = Status(chain, await ledger.entries())
-        status.reject_interrupted()
-        for revision in plan.cut(list(reversed(status.applied))):
-            if not await ledger.claim_revert(revision):
-                return
-            await _DOWN.run(db, revision)
-            await ledger.forget(revision)
+            await direction.run(db, revision)
+            await direction.settle(ledger, revision)
 
 
 async def _read_status(config: MongoMigrationConfig) -> Status:
@@ -576,11 +636,11 @@ def _names(items: Iterable[Revision | LedgerEntry]) -> str:
 
 
 def upgrade(config: MongoMigrationConfig, target: str = "head") -> None:
-    asyncio.run(_upgrade(config, target))
+    asyncio.run(_migrate(config, _UP, target))
 
 
 def downgrade(config: MongoMigrationConfig, target: str = "-1") -> None:
-    asyncio.run(_downgrade(config, target))
+    asyncio.run(_migrate(config, _DOWN, target))
 
 
 def status(config: MongoMigrationConfig) -> None:

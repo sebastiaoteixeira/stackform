@@ -70,10 +70,22 @@ A revision is a list of operations applied in order on `up` and in reverse on
   a `down` that reaches a revision with no `down` handler fails rather than
   silently skipping the step.
 
+  The dotted path resolves against the installed environment and against the
+  directory holding the spec, the way `yaml-api run` resolves service handlers,
+  so a `handlers.py` next to the spec is named `handlers.backfill`. A path that
+  cannot be imported, or that names something which is not callable, stops the
+  run and names the revision.
+
   The runner imports the dotted path and calls it, so a revision file is
   executable code by reference. Revision files and the modules they name are
   trusted source: review them as you review application code, and never apply a
   revision tree you would not run as a program.
+
+The whole tree is read and checked before any revision is applied: a file that is
+not JSON, that carries keys this format does not define, that declares an
+operation other than the three above, or that declares an index operation
+without its `collection` and `field`, is reported by name and the datastore is
+left untouched.
 
 ## Targets
 
@@ -95,6 +107,11 @@ The applied revisions are persisted in the datastore itself, in a `migrations`
 collection — the document-store analogue of Alembic's version table. Each
 document is keyed by the revision id and carries a state: `running` while its
 operations are in flight, `applied` once they have all succeeded.
+
+That name is therefore reserved: a spec whose MongoDB datastore already holds a
+repository named `migrations` is refused by every `migrate` subcommand, rather
+than having its documents read as revision history. Rename the repository or
+move it to another datastore.
 
 A revision is claimed by inserting that document before any operation runs, so
 the unique `_id` makes the claim atomic: two `migrate up` processes racing on the
