@@ -8,7 +8,8 @@ from yaml_api_generator.server.common.repositories.base import BaseRepository
 from yaml_api_generator.server.common.server_context import RuntimeIdentityDescriptor
 from yaml_api_generator.server.common.steps.authorization import UnauthorizedError
 from yaml_api_generator.server.common.steps.login import LoginStep
-from .test_repository_steps import InMemoryRepository, _make_ctx
+from tests.unit.support.repositories import InMemoryRepository
+from .test_repository_steps import _make_ctx
 
 
 def _make_identity() -> RuntimeIdentityDescriptor:
@@ -27,7 +28,7 @@ def _seed_user(repo: InMemoryRepository, email="a@b.com", password="secret123") 
         "displayName": "Test",
         "_auth": {"passwordHash": hashed},
     }
-    repo._data.setdefault("users", {})["user-1"] = user
+    repo.documents("users").append(user)
     return user
 
 
@@ -119,7 +120,7 @@ async def test_login_user_missing_id_field():
     repo.register_id_field("users", "id")
     hashed = hash_password("secret123")
     user = {"email": "a@b.com", "_auth": {"passwordHash": hashed}}
-    repo._data.setdefault("users", {})["no-id"] = user
+    repo.documents("users").append(user)
     identity = _make_identity()
     step = LoginStep(identity, "id", repo)
     ctx = _make_ctx(

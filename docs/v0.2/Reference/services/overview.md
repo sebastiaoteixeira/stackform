@@ -103,7 +103,9 @@ With `api: { basePath: /api, version: v1 }` this exposes `POST /api/v1/my-collec
 
 ### Handler contract
 
-The handler is a Python function referenced by `importKey.functionName`. In the generated FastAPI and `raw` backends it receives the raw request:
+The handler is a Python function referenced by `importKey.functionName`. Generated
+backends pass their request object (the raw-ASGI target supplies a compatible
+request facade):
 
 ```python
 async def publish(request):

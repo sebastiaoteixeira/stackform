@@ -85,9 +85,9 @@ With `basePath: /api` and `version: v1`, the notes routes live under
 - `readonly: true` -- the field is dropped from create/update/replace request models
   entirely. Clients cannot set it; it is populated server-side or left unset. Good
   for audit columns like `createdAt`.
-- `unique: true` -- declarative metadata only. It is recorded for documentation and
-  consumed by the generated UI, but the backend creates no MongoDB index and does
-  NOT reject duplicate values on write. Do not rely on it for integrity.
+- `unique: true` -- creates a SQL unique constraint or MongoDB unique partial
+  index. A duplicate write is rejected with `409 Conflict`; the response names
+  the field when the datastore supplies it without exposing the conflicting value.
 
 ## Validation constraints
 
@@ -102,12 +102,11 @@ document is stored):
 | `maxLength` | `string` (and `ref`) | string length must be `<= maxLength` |
 | `values` | `enum` | value must be one of the listed values |
 
-The following are accepted in the schema but are metadata-only -- declarative,
-surfaced to the UI, never enforced on write:
+The following is accepted in the schema but is metadata-only -- declarative,
+surfaced to the UI, and never enforced on write:
 
 - `format: email | uri | e164` on a string -- a hint, not a validator. The generated
   backend does not check the value matches the format.
-- `unique: true` -- see the note above.
 
 The lifecycle below shows where a single field value is checked, accepted as
 metadata, or stripped during a create request:
@@ -120,8 +119,10 @@ flowchart TD
   C -- No --> R2[Reject: validation error]
   C -- Yes --> D{Required and missing?}
   D -- Yes --> R3[Reject: Missing required fields]
-  D -- No --> E[format and unique: accepted, not enforced]
-  E --> F{Value sent by client?}
+  D -- No --> E[format: accepted metadata]
+  E --> U{unique constraint satisfied?}
+  U -- No --> R4[Reject: 409 Conflict]
+  U -- Yes --> F{Value sent by client?}
   F -- Yes --> S1[Stored]
   F -- No, has default --> S2[Stripped by exclude_unset: default not persisted]
   F -- No, type id --> S3[Server-generated id]

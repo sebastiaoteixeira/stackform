@@ -20,6 +20,8 @@ _CLIENT_ID = "my-app"
 _JWKS_URI = "https://kc.test/jwks"
 _DISCOVERY_URL = "https://kc.test/.well-known/openid-configuration"
 
+_UNPATCHED_GET_SIGNING_KEY = idp._get_signing_key
+
 
 class _FakeRepo:
     def __init__(self):
@@ -369,11 +371,62 @@ async def test_expired_token_is_rejected(rsa_key):
 
 
 async def test_hs256_token_is_rejected(rsa_key):
-    """A symmetric-signed token is never accepted: only asymmetric algorithms verify."""
+    """A symmetric-signed token is rejected for its algorithm, not for a missing key."""
     from yaml_api_generator.server.common.steps.authorization import UnauthorizedError
 
     payload = {"iss": _ISSUER, "aud": _CLIENT_ID, "exp": int(time.time()) + 300, "sub": "x", "email": "a@b.com"}
     token = jwt.encode(payload, "shared-secret-of-sufficient-length-32b", algorithm="HS256")
+
+    signing_key = await idp._get_signing_key(_JWKS_URI, "any-kid")
+    assert signing_key is not None
+
+    with pytest.raises(jwt.InvalidAlgorithmError):
+        jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=idp._ASYMMETRIC_ALGORITHMS,
+            audience=[_CLIENT_ID],
+            issuer=_ISSUER,
+            options={"require": idp.REQUIRED_CLAIMS},
+        )
+
+    assert await idp.verify_idp_token(token, _provider_with_overrides()) is None
+    with pytest.raises(UnauthorizedError):
+        await _resolve_idp_principal(
+            token, {"users": _identity()}, _COLLECTIONS,
+            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+        )
+
+
+async def test_token_without_exp_is_rejected(rsa_key):
+    """A token that never expires must not verify: exp is a required claim."""
+    from yaml_api_generator.server.common.steps.authorization import UnauthorizedError
+
+    payload = {"iss": _ISSUER, "aud": _CLIENT_ID, "sub": "x", "email": "a@b.com"}
+    token = jwt.encode(payload, rsa_key, algorithm="RS256")
+
+    assert await idp.verify_idp_token(token, _provider_with_overrides()) is None
+    with pytest.raises(UnauthorizedError):
+        await _resolve_idp_principal(
+            token, {"users": _identity()}, _COLLECTIONS,
+            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+        )
+
+
+async def test_token_without_kid_header_is_rejected(rsa_key, monkeypatch):
+    """No kid means no JWKS entry can be matched, so no signing key is trusted."""
+    from yaml_api_generator.server.common.steps.authorization import UnauthorizedError
+
+    async def unreachable_jwks(_jwks_uri):
+        raise AssertionError("a token without kid must not trigger a JWKS fetch")
+
+    monkeypatch.setattr(idp, "_get_signing_key", _UNPATCHED_GET_SIGNING_KEY)
+    monkeypatch.setattr(idp, "_fetch_jwks", unreachable_jwks)
+
+    token = _sign(rsa_key, sub="x", email="a@b.com")
+    assert jwt.get_unverified_header(token).get("kid") is None
+
+    assert await idp.verify_idp_token(token, _provider_with_overrides()) is None
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,

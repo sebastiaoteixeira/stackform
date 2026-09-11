@@ -64,7 +64,7 @@ Generates a Django REST Framework project under `<output>/backend` (Django setti
 
 ### `raw`
 
-Generates a runnable raw-ASGI project under `<output>/backend` (its own `app.py`, `requirements.txt`, routes, repositories, and services) without the FastAPI or Django dependency. Note that custom-operation handler routes are emitted only by the `fastapi` target.
+Generates a runnable raw-ASGI project under `<output>/backend` (its own `app.py`, `requirements.txt`, routes, repositories, and services) without the FastAPI or Django dependency. Custom-operation handler routes are emitted with a request-compatible object carrying path parameters, body, headers, and state.
 
 ## The frontend subtarget
 

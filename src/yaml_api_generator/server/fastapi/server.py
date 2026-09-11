@@ -13,6 +13,7 @@ from ..common.context_builder import build_runtime_context
 from ..common.loader import create_repositories, ensure_spec_dir_importable, initialize_indexes
 from ..common.server_context import RuntimeContext
 from ..common.repositories import RepositoryRegistry
+from ..common.vendored_packages import install_vendored_packages
 from .factory import register_fastapi_routes
 
 
@@ -67,6 +68,7 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
     """
     ensure_spec_dir_importable(yaml_file)
     ir, registry = create_repositories(yaml_file, schema_file)
+    install_vendored_packages(ir.vendored_imports)
     ctx = build_runtime_context(ir)
 
     @asynccontextmanager

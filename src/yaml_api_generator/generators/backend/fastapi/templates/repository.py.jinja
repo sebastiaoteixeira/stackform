@@ -11,7 +11,7 @@ from pymongo import ReturnDocument
 from {{ generated_base.module }} import {{ generated_base.class_name }}
 {% endif %}
 {% if not is_abstract %}
-from ._ops import RepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
+from ._ops import RepositoryBase, _translate_conflict{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
 {% endif %}
 {% set ns = namespace(bases=[]) %}
 {% if not is_abstract %}{% for op in operations %}{% set _ = ns.bases.append((op | capitalize) ~ "Op") %}{% endfor %}{% endif %}
@@ -60,25 +60,30 @@ class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){%
         return await {{ col_expr }}.distinct(key, filter)
 {% elif cmd == "insertOne" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, document: dict[str, Any]) -> dict[str, Any]:
         await {{ col_expr }}.insert_one(document)
         return self._normalize(document)
 {% elif cmd == "insertMany" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         await {{ col_expr }}.insert_many(documents)
         return [self._normalize(d) for d in documents]
 {% elif cmd == "updateOne" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
 {% elif cmd == "updateMany" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> Any:
         return await {{ col_expr }}.update_many(filter, update)
 {% elif cmd == "replaceOne" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
@@ -93,11 +98,13 @@ class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){%
         return await {{ col_expr }}.delete_many(filter)
 {% elif cmd == "findOneAndUpdate" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
 {% elif cmd == "findOneAndReplace" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
@@ -108,6 +115,7 @@ class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){%
         return self._normalize(doc)
 {% elif cmd == "bulkWrite" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, requests: list) -> Any:
         return await {{ col_expr }}.bulk_write(requests)
 {% endif %}

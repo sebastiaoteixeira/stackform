@@ -58,6 +58,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.globals["needs_any_import"] = type_mapper.needs_any_import
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "conflicts.py").write_text(
+            env.get_template("conflicts.py.jinja").render()
+        )
 
         collections_by_name = group_by_collection(context)
 
@@ -67,6 +70,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_models(env, context, collections_by_name, output_dir)
         self._render_dtos(env, context, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
+        self._render_service_inputs(env, context, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_dependencies(env, context, output_dir)
@@ -76,6 +80,19 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 template_name="requirements.txt.jinja",
                 output_path="requirements.txt",
             )
+        )
+
+    def _render_service_inputs(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        self._render_single_file(
+            env,
+            context,
+            output_dir,
+            SingleFileRenderConfig(
+                template_name="service_inputs.py.jinja",
+                output_path="dependencies/service_inputs.py",
+            ),
         )
 
     def _render_settings(
@@ -248,6 +265,20 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (routes_dir / "jwks.py").write_text(
                 env.get_template("jwks_routes.py.jinja").render(auth=context.auth)
             )
+
+        handler_routes = [
+            route
+            for route in context.routes
+            if route.collection is None and route.handler is not None
+        ]
+        if handler_routes:
+            (routes_dir / "_handlers.py").write_text(
+                env.get_template("handler_routes.py.jinja").render(
+                    routes=handler_routes,
+                    auth=context.auth,
+                )
+            )
+            auth_imports.append("from ._handlers import router as handlers_router")
 
         if context.auth.has_password_auth:
             (routes_dir / "login.py").write_text(
@@ -453,4 +484,3 @@ class FastAPIGenerator(TemplateBasedGenerator):
         (deps_dir / "__init__.py").write_text(
             "\n".join(init_imports) + "\n" if init_imports else ""
         )
-
