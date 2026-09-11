@@ -5,7 +5,7 @@ from typing import Any, Iterator
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo import AsyncMongoClient, ReturnDocument
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from .base import BaseRepository, ConflictError
 from .bindings import resolve
@@ -15,14 +15,34 @@ from .bindings import resolve
 def _as_conflict() -> Iterator[None]:
     try:
         yield
-    except DuplicateKeyError as error:
-        raise ConflictError(_conflict_field(error)) from error
+    except (BulkWriteError, DuplicateKeyError) as error:
+        details = _duplicate_details(error)
+        if details is None:
+            raise
+        raise ConflictError(_conflict_field(details)) from error
 
 
-def _conflict_field(error: DuplicateKeyError) -> str | None:
-    key_pattern = (error.details or {}).get("keyPattern") if error.details else None
-    if key_pattern:
-        return next(iter(key_pattern))
+def _duplicate_details(
+    error: BulkWriteError | DuplicateKeyError,
+) -> dict[str, Any] | None:
+    details = error.details or {}
+    if isinstance(error, DuplicateKeyError):
+        return details
+    return next(
+        (
+            write_error
+            for write_error in details.get("writeErrors", [])
+            if write_error.get("code") == 11000
+        ),
+        None,
+    )
+
+
+def _conflict_field(details: dict[str, Any]) -> str | None:
+    for key in ("keyPattern", "keyValue"):
+        fields = details.get(key)
+        if fields:
+            return next(iter(fields))
     return None
 
 
@@ -99,6 +119,48 @@ class MongoRepository(BaseRepository):
         )
         return self._normalize_document(document)
 
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        document = await self.collection(collection_name).find_one(dict(criteria))
+        return self._normalize_document(document)
+
+    async def update_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        changes = {field: value for field, value in payload.items() if field not in criteria}
+        if not changes:
+            return await self.find_one(collection_name, criteria)
+        with _as_conflict():
+            document = await self.collection(collection_name).find_one_and_update(
+                dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+            )
+        return self._normalize_document(document)
+
+    async def replace_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        replacement = {**payload, **criteria}
+        with _as_conflict():
+            document = await self.collection(collection_name).find_one_and_replace(
+                dict(criteria), replacement, return_document=ReturnDocument.AFTER
+            )
+        return self._normalize_document(document)
+
+    async def delete_by(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        document = await self.collection(collection_name).find_one_and_delete(
+            dict(criteria)
+        )
+        return self._normalize_document(document)
+
     async def create(
         self, collection_name: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
@@ -163,6 +225,15 @@ class MongoRepository(BaseRepository):
         return self._normalize_document(document)
 
     async def run_operation(
+        self,
+        collection_name: str,
+        query: dict[str, Any],
+        bindings: dict[str, Any],
+    ) -> Any:
+        with _as_conflict():
+            return await self._run_operation(collection_name, query, bindings)
+
+    async def _run_operation(
         self,
         collection_name: str,
         query: dict[str, Any],

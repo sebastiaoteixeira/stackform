@@ -211,14 +211,13 @@ controllers:
   `publish: { handler: blog.publish_post }` and wired to a route by the controller
   (`method` and `path` are required for a custom op). At runtime the handler is
   your own module: provide a `blog.py` next to the spec exposing
-  `async def publish_post(request)`. Note that custom-handler routes are emitted by
-  the `yaml-api run` dev server; the generated FastAPI backend (the default `build`
-  target) does not yet emit a route for a custom service handler, so use `run` for
-  the `publish` endpoint until that lands.
+  `async def publish_post(request)`. The FastAPI, DRF, and raw-ASGI build targets
+  all emit the custom route; `yaml-api run` invokes the same declaration through
+  its `RequestContext` handler contract.
 
-- Declarative-only fields. `unique: true` on `email` documents intent and drives
-  the UI, but it is not enforced: no MongoDB index is created and duplicate emails
-  are not rejected on write. Enforce uniqueness in your own handler if you need it.
+- Unique fields. `unique: true` on `email` drives the UI and creates a MongoDB
+  unique partial index. Duplicate emails are rejected with `409 Conflict` without
+  exposing the conflicting value.
 
 - Environment interpolation. `${MONGO_URI:-mongodb://localhost:27017}` and
   `${MONGO_DB:-blog}` are resolved per string scalar before validation. The

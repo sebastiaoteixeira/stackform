@@ -25,7 +25,10 @@ Field names must start with a letter and contain only letters, numbers, or under
 Not every option you can declare is checked at runtime. Keep this distinction in mind:
 
 - **Enforced on write** (HTTP 422 on violation): `type`, `required`, `min`, `max`, `minLength`, `maxLength`, enum membership, and ISO-8601 parsing for `datetime`.
-- **Metadata only** (declared but NOT enforced): `format` (email/uri/e164) is a documentation/OpenAPI hint, and `unique` is consumed by the UI generator only. Neither rejects a request and `unique` creates no MongoDB index.
+- **Datastore-enforced** (`409 Conflict` on collision): `unique` creates a SQL
+  unique constraint or MongoDB unique partial index.
+- **Metadata only** (declared but NOT enforced): `format` (email/uri/e164) is a
+  documentation/OpenAPI hint and does not reject a request.
 
 ## Common Options
 
@@ -251,13 +254,16 @@ flowchart TD
     F -- no --> G[Field omitted from document]
     E -- yes --> H{type + min/max/length + enum OK?}
     H -- no --> R3[Rejected 422]
-    H -- yes --> I{format / unique}
-    I --> J[Accepted: metadata only, not enforced]
-    J --> K[Value stored]
+    H -- yes --> I[format accepted as metadata]
+    I --> J{unique constraint satisfied?}
+    J -- no --> R4[Rejected: 409 Conflict]
+    J -- yes --> K[Value stored]
     G2[type: id field] --> L[Server-generated uuid, not client-set]
 ```
 
-Two things the diagram makes concrete: a declared `default` is NOT persisted when the field is omitted (the field is simply absent), and `format`/`unique` never reject a request.
+Two things the diagram makes concrete: a declared `default` is NOT persisted when
+the field is omitted, and `format` remains metadata while `unique` is enforced by
+the datastore.
 
 ## Edge Cases
 

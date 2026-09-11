@@ -1,0 +1,104 @@
+from importlib import import_module
+
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from api.conflicts import ConflictError
+from api.service_inputs import prepare_service_inputs, resolve_access_bind
+{% if routes | selectattr("needs_auth") | list %}
+from api.authentication.auth import _principal_has_role, resolve_principal
+from api.authentication.mongodb import get_database
+{% endif %}
+
+
+{% for route in routes %}
+class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(APIView):
+    async def {{ route.method | lower }}(self, request, **path_params):
+{% if route.needs_auth %}
+        principal = resolve_principal(request, get_database())
+        if principal is None:
+            return Response(
+                {"detail": "Unauthorized"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+{% else %}
+        principal = None
+{% endif %}
+        body = request.data if isinstance(request.data, dict) else {}
+{% if route.access_rules %}
+        _resolved_principal = principal
+        _request_body = body
+        _request_path = path_params
+        _request_query = dict(request.query_params)
+        _request_header = dict(request.headers)
+        _request_cookie = dict(request.COOKIES)
+{% set ns_symbols = namespace(identity=[], request=[]) %}
+{% for rule in route.access_rules %}
+{% for symbol in rule.identity_symbols %}
+{% if symbol not in ns_symbols.identity %}{% set _ = ns_symbols.identity.append(symbol) %}{% endif %}
+{% endfor %}
+{% for symbol in rule.request_symbols %}
+{% if symbol.name not in (ns_symbols.request | map(attribute="name") | list) %}{% set _ = ns_symbols.request.append(symbol) %}{% endif %}
+{% endfor %}
+{% endfor %}
+{% for symbol in ns_symbols.identity %}
+        {{ symbol }} = principal
+{% endfor %}
+{% for symbol in ns_symbols.request %}
+        {{ symbol | request_symbol_binding }}
+{% endfor %}
+        access_bindings = {}
+{% set ns = namespace(first=true, terminal=false, conditional=false) %}
+{% for rule in route.access_rules %}
+{% if not ns.terminal %}
+{% if rule is unconditional %}
+{% if rule.effect == "deny" %}
+        return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
+{% else %}
+        access_bindings = {{ rule.bind | py_literal }}
+{% endif %}
+{% set ns.terminal = true %}
+{% else %}
+{% set keyword = "if" if ns.first else "elif" %}
+        {{ keyword }} {{ rule | rule_to_python }}:
+{% if rule.effect == "deny" %}
+            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
+{% else %}
+            access_bindings = {{ rule.bind | py_literal }}
+{% endif %}
+{% set ns.first = false %}
+{% set ns.conditional = true %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if ns.conditional and not ns.terminal %}
+        else:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+{% endif %}
+        bound_inputs = resolve_access_bind(access_bindings, locals())
+{% else %}
+        bound_inputs = {}
+{% endif %}
+        try:
+            request.service_inputs = prepare_service_inputs(
+                path_params,
+                body,
+                {{ route.service_input | py_literal }},
+                {{ route.service_forwarding | py_literal }},
+                bound_inputs,
+            )
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
+        try:
+            result = await getattr(import_module(module_path), function_name)(request)
+        except ConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return result if isinstance(result, Response) else Response(result)
+
+
+{% endfor %}
