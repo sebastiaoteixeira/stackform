@@ -92,6 +92,7 @@ class RouteBuilder:
                         request_symbols=_request_descriptors(rule),
                         when=rule.when,
                         effect=rule.effect,
+                        reason=rule.reason if document.version == "0.3" else None,
                         bind={name: _rhs_config(rhs) for name, rhs in rule.bind.items()},
                     )
                     for rule in ir_route.access_rules

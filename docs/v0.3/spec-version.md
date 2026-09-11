@@ -31,15 +31,17 @@ changes:
   validates, and forwards request values to a repository operation or handler.
 - **[controller / access-rule `bind:`](./controller-bind.md)** &mdash; the matched
   authorization rule supplies trusted values for a service's declared inputs.
+- **[access-rule `reason:`](./access-reason.md)** &mdash; an explicit matching deny
+  may return a safe, rule-specific explanation in the 403 response.
 - **`$`-sigil slugs** &mdash; symbolic references such as `$userId`, resolved at
   build or call time.
 - **[removed access-rule `filter`](./removed-filter-key.md)** &mdash; v0.3 rejects
   this unenforced legacy key with `ACCESS_FILTER_REMOVED`.
 
-Service `input:` / `with:` and controller `bind:` are implemented in the runtime
-server and generated backends. A construct is not listed as implemented until
-its parser, runtime behavior, generated output, tests, and reference docs are
-present.
+Service `input:` / `with:`, controller `bind:`, and explainable denial reasons
+are implemented in the runtime server and generated backends. A construct is
+not listed as implemented until its parser, runtime behavior, generated output,
+tests, and reference docs are present.
 
 ## `where` operators: active vs reserved
 

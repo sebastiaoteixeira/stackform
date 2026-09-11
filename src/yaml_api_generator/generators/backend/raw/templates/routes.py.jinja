@@ -42,7 +42,7 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
 {% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": url_params["{{ param }}"]{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% macro authorize_bind(route) %}
-{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+{% if route.access_rules %}
     _request_body = body or {}
     _request_path = url_params
     _request_query = query or {}
@@ -64,12 +64,17 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
     {{ symbol | request_symbol_binding }}
 {% endfor %}
     access_bindings = {}
+{% set document = namespace(required=false) %}
+{% for rule in route.access_rules %}
+{% if rule is needs_document_rule %}{% set document.required = true %}{% endif %}
+{% endfor %}
+{% if not document.required %}
 {% set ns = namespace(first=true, terminal=false, conditional=false) %}
 {% for rule in route.access_rules %}
 {% if not ns.terminal %}
 {% if rule is unconditional %}
 {% if rule.effect == "deny" %}
-    return 403, {"detail": "Forbidden"}
+    return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
 {% else %}
     access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
@@ -78,7 +83,7 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% set keyword = "if" if ns.first else "elif" %}
     {{ keyword }} {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-        return 403, {"detail": "Forbidden"}
+        return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
 {% else %}
         access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
@@ -91,9 +96,41 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
     else:
         return 403, {"detail": "Forbidden"}
 {% endif %}
+{% endif %}
     bound_inputs = resolve_access_bind(access_bindings, locals())
 {% else %}
     bound_inputs = {}
+{% endif %}
+{% endmacro %}
+{% macro post_fetch_authorize(route, doc_var) %}
+{% if route.needs_auth and route.access_rules %}
+{% set document = namespace(required=false, symbols=[]) %}
+{% for rule in route.access_rules %}
+{% if rule is needs_document_rule %}{% set document.required = true %}{% endif %}
+{% for symbol in rule.document_symbols %}
+{% if symbol not in document.symbols %}{% set _ = document.symbols.append(symbol) %}{% endif %}
+{% endfor %}
+{% endfor %}
+{% if document.required %}
+{% for symbol in document.symbols %}
+        {{ symbol }} = {{ doc_var }}
+{% endfor %}
+{% set ns = namespace(first=true) %}
+{% for rule in route.access_rules %}
+{% set keyword = "if" if ns.first else "elif" %}
+        {{ keyword }} {% if rule is needs_document_rule %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
+{% if rule.effect == "deny" %}
+            return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
+{% else %}
+            pass
+{% endif %}
+{% set ns.first = false %}
+{% endfor %}
+{% if not ns.first %}
+        else:
+            return 403, {"detail": "Forbidden"}
+{% endif %}
+{% endif %}
 {% endif %}
 {% endmacro %}
 {% for route in routes %}
@@ -142,6 +179,7 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% else %}
         document = await service.get(url_params["{{ route.record_id_param }}"])
 {% endif %}
+{{ post_fetch_authorize(route, "document") }}
         return 200, document
 {% elif route.operation == "create" %}
         if body is None:
@@ -153,6 +191,14 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
         if body is None:
             return 422, {"detail": "Request body is required"}
         data = validation.validate_{{ collection_name }}_update(body)
+{% if route is needs_post_fetch %}
+{% if route.record_parent_params %}
+        existing = await service.get_by({{ record_criteria(route) }})
+{% else %}
+        existing = await service.get(url_params["{{ route.record_id_param }}"])
+{% endif %}
+{{ post_fetch_authorize(route, "existing") }}
+{% endif %}
 {% if route.record_parent_params %}
         document = await service.update_by({{ record_criteria(route) }}, data)
 {% else %}
@@ -163,6 +209,14 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
         if body is None:
             return 422, {"detail": "Request body is required"}
         data = validation.validate_{{ collection_name }}_replace(body)
+{% if route is needs_post_fetch %}
+{% if route.record_parent_params %}
+        existing = await service.get_by({{ record_criteria(route) }})
+{% else %}
+        existing = await service.get(url_params["{{ route.record_id_param }}"])
+{% endif %}
+{{ post_fetch_authorize(route, "existing") }}
+{% endif %}
 {% if route.record_parent_params %}
         document = await service.replace_by({{ record_criteria(route) }}, data)
 {% else %}
@@ -170,6 +224,14 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% endif %}
         return 200, document
 {% elif route.operation == "delete" %}
+{% if route is needs_post_fetch %}
+{% if route.record_parent_params %}
+        existing = await service.get_by({{ record_criteria(route) }})
+{% else %}
+        existing = await service.get(url_params["{{ route.record_id_param }}"])
+{% endif %}
+{{ post_fetch_authorize(route, "existing") }}
+{% endif %}
 {% if route.record_parent_params %}
         document = await service.delete_by({{ record_criteria(route) }})
 {% else %}

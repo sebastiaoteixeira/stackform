@@ -24,7 +24,7 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
         body = await request.json()
     except (UnicodeDecodeError, ValueError):
         pass
-{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+{% if route.access_rules %}
     _request_body = body
     _request_path = dict(request.path_params)
     _request_query = dict(request.query_params)
@@ -51,7 +51,7 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
 {% if not ns.terminal %}
 {% if rule is unconditional %}
 {% if rule.effect == "deny" %}
-    raise HTTPException(status_code=403, detail="Forbidden")
+    raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
 {% else %}
     _access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
@@ -60,7 +60,7 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
 {% set keyword = "if" if ns.first else "elif" %}
     {{ keyword }} {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
 {% else %}
         _access_bindings = {{ rule.bind | py_literal }}
 {% endif %}

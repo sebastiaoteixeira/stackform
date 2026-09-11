@@ -68,6 +68,10 @@ def ValidateIdentityCreateStep(
     return step
 
 
+def _deny(rule: RuntimeAccessRule) -> ForbiddenError:
+    return ForbiddenError(rule.reason or "Forbidden")
+
+
 def _rule_needs_postfetch(rule: RuntimeAccessRule) -> bool:
     return any(not binding.where for binding in rule.document_symbols.values()) or (
         rule.when is not None and _when_needs_document(rule.when)
@@ -294,7 +298,7 @@ def AuthorizeRouteStep(
 
             if _evaluate_rule(rule, None, where_documents, ctx):
                 if rule.effect == "deny":
-                    raise ForbiddenError("Forbidden")
+                    raise _deny(rule)
                 ctx.authorized_rule_index = index
                 return ctx
 
@@ -322,7 +326,7 @@ def PostFetchAuthorizeStep(
             rule_document = document if _rule_needs_postfetch(rule) else None
             if _evaluate_rule(rule, rule_document, where_documents, ctx):
                 if rule.effect == "deny":
-                    raise ForbiddenError("Forbidden")
+                    raise _deny(rule)
                 ctx.authorized_rule_index = index
                 return ctx
 

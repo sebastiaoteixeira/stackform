@@ -25,7 +25,7 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
         principal = None
 {% endif %}
         body = request.data if isinstance(request.data, dict) else {}
-{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+{% if route.access_rules %}
         _resolved_principal = principal
         _request_body = body
         _request_path = path_params
@@ -53,7 +53,7 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
 {% if not ns.terminal %}
 {% if rule is unconditional %}
 {% if rule.effect == "deny" %}
-        return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
         access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
@@ -62,7 +62,7 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
 {% set keyword = "if" if ns.first else "elif" %}
         {{ keyword }} {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
             access_bindings = {{ rule.bind | py_literal }}
 {% endif %}

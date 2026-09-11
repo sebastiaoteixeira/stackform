@@ -58,6 +58,7 @@ class RuntimeAccessRule:
     request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
+    reason: str | None = None
     bind: dict[str, WhereRhs] = field(default_factory=dict)
 
 

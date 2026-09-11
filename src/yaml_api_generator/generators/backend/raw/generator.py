@@ -41,6 +41,8 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.tests["unconditional"] = access_filters.is_unconditional
+        env.tests["needs_document_rule"] = access_filters.needs_document_rule
+        env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.filters["int"] = int
 
         output_dir.mkdir(parents=True, exist_ok=True)

@@ -83,6 +83,32 @@ def test_missing_path_param_denies_without_error():
         step(_ctx(url_params={}))
 
 
+def _deny_rule(reason: str | None = None) -> RuntimeAccessRule:
+    return RuntimeAccessRule(
+        principal="identity:users",
+        effect="deny",
+        reason=reason,
+    )
+
+
+def test_matched_deny_surfaces_reason():
+    step = AuthorizeRouteStep(access_rules=[_deny_rule("Only owners may act")])
+    with pytest.raises(ForbiddenError, match="Only owners may act"):
+        step(_ctx())
+
+
+def test_matched_deny_without_reason_stays_generic():
+    step = AuthorizeRouteStep(access_rules=[_deny_rule()])
+    with pytest.raises(ForbiddenError, match="^Forbidden$"):
+        step(_ctx())
+
+
+def test_unmatched_fallthrough_stays_generic():
+    step = AuthorizeRouteStep(access_rules=[_body_rule()])
+    with pytest.raises(ForbiddenError, match="^Forbidden$"):
+        step(_ctx(body={"role": "viewer"}))
+
+
 def test_part_bound_symbol_resolves_to_part():
     rule = RuntimeAccessRule(
         principal="identity:users",
