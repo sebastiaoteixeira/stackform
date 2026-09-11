@@ -327,6 +327,8 @@ def _build_endpoint(
 
         return endpoint_no_body
 
+    exclude_unset = route.operation == "update"
+
     if has_id_param:
 
         async def endpoint_with_body_and_id(
@@ -337,7 +339,7 @@ def _build_endpoint(
             return await _run_pipeline(
                 pipeline=pipeline,
                 request=request,
-                body=payload.model_dump(exclude_unset=True),
+                body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
                 url_params={"id": id},
             )
 
@@ -348,7 +350,7 @@ def _build_endpoint(
         return await _run_pipeline(
             pipeline=pipeline,
             request=request,
-            body=payload.model_dump(exclude_unset=True),
+            body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
             url_params={},
         )
 

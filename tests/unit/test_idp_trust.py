@@ -32,6 +32,21 @@ class _FakeRepo:
         self.docs.append(payload)
         return payload
 
+    async def update(self, _collection, document_id, payload):
+        for doc in self.docs:
+            if str(doc.get("id", "")) == str(document_id):
+                doc.update(payload)
+                return doc
+        return None
+
+    async def upsert_by(self, _collection, key_field, payload):
+        for doc in self.docs:
+            if str(doc.get(key_field)) == str(payload.get(key_field)):
+                doc.update(payload)
+                return doc
+        self.docs.append(payload)
+        return payload
+
 
 @pytest.fixture
 def rsa_key():

@@ -234,8 +234,16 @@ class DRFGenerator(TemplateBasedGenerator):
         api_dir.mkdir(parents=True, exist_ok=True)
 
         template = env.get_template("api_urls.py.jinja")
-        collections_with_routes = {route.collection for route in context.routes if route.collection}
-        (api_dir / "urls.py").write_text(template.render(collections=collections_with_routes, auth=context.auth))
+        collections_with_routes = sorted(
+            {route.collection for route in context.routes if route.collection}
+        )
+        (api_dir / "urls.py").write_text(
+            template.render(
+                collections=collections_with_routes,
+                routes=context.routes,
+                auth=context.auth,
+            )
+        )
 
         (api_dir / "__init__.py").write_text("")
 

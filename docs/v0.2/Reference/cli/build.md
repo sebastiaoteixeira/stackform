@@ -55,6 +55,8 @@ The default. Generates a standalone FastAPI project under `<output>/backend`:
 - `repositories/` -- MongoDB repository implementations
 - `services/` -- service layer
 - `dependencies/` -- auth and database dependency injection
+- `.env` -- runtime settings with real values (secret-typed settings such as `JWT_SECRET` and each `<PROVIDER>_CLIENT_SECRET` get a generated value), so the bundle runs as-is
+- `.env.example` -- the same keys with placeholders for secrets, ready to commit
 
 ### `drf`
 
@@ -116,5 +118,7 @@ export MONGO_URI=mongodb://localhost:27017
 export MONGO_DB=myapp
 yaml-api build myapp.yaml
 ```
+
+Secrets are the exception to build-time baking: a confidential OIDC `client_secret` and `JWT_SECRET` are runtime `SecretStr` settings read from `<PROVIDER>_CLIENT_SECRET` / `JWT_SECRET` env vars, never baked as literals. The backend build also emits `.env` (real generated values) and `.env.example` (placeholders); a `deploy` build never bakes a secret into the bundle and instead generates secrets at deploy time via Ansible.
 
 See [Environment variables](../configuration/environment-variables.md) for the full set and which component reads each one.

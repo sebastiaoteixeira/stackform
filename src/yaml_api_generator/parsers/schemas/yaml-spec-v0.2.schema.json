@@ -176,12 +176,9 @@
                 { "type": "array", "items": { "$ref": "#/$defs/ProviderBinding" }, "minItems": 1 }
               ]
             },
-            "roles": { "type": "string" },
-            "bindings": {
-              "type": "array",
-              "items": { "$ref": "#/$defs/ProviderBinding" }
-            }
-          }
+            "roles": { "type": "string" }
+          },
+          "additionalProperties": false
         }
       },
       "allOf": [

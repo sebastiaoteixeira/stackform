@@ -65,13 +65,71 @@ class SQLRepository(BaseRepository):
     async def find_one(
         self, collection_name: str, criteria: dict[str, Any]
     ) -> dict[str, Any] | None:
-        table = self._table(collection_name)
-        statement = sa.select(table)
-        for field, value in criteria.items():
-            statement = statement.where(table.c[field] == value)
+        statement = (
+            sa.select(self._table(collection_name))
+            .where(*self._criteria(collection_name, criteria))
+            .limit(1)
+        )
         async with await self._connection() as conn:
-            result = await conn.execute(statement)
-            return self._one(result)
+            return self._one(await conn.execute(statement))
+
+    async def update_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        table = self._table(collection_name)
+        values = self._known_columns(
+            collection_name,
+            {field: value for field, value in payload.items() if field not in criteria},
+            drop_id=True,
+        )
+        if not values:
+            return await self.find_one(collection_name, criteria)
+        statement = (
+            sa.update(table)
+            .where(*self._criteria(collection_name, criteria))
+            .values(**values)
+            .returning(table)
+        )
+        async with await self._begin() as conn:
+            return self._one(await conn.execute(statement))
+
+    async def replace_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        table = self._table(collection_name)
+        replacement = {**payload, **criteria}
+        id_field = self._id_fields[collection_name]
+        values = {
+            column.name: replacement.get(column.name)
+            for column in table.columns
+            if column.name != id_field
+        }
+        statement = (
+            sa.update(table)
+            .where(*self._criteria(collection_name, criteria))
+            .values(**values)
+            .returning(table)
+        )
+        async with await self._begin() as conn:
+            return self._one(await conn.execute(statement))
+
+    async def delete_by(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        table = self._table(collection_name)
+        statement = (
+            sa.delete(table)
+            .where(*self._criteria(collection_name, criteria))
+            .returning(table)
+        )
+        async with await self._begin() as conn:
+            return self._one(await conn.execute(statement))
 
     async def create(self, collection_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         table = self._table(collection_name)
@@ -79,6 +137,25 @@ class SQLRepository(BaseRepository):
         async with await self._begin() as conn:
             await conn.execute(sa.insert(table).values(**values))
         return values
+
+    async def upsert_by(
+        self, collection_name: str, key_field: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        if payload.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
+        table = self._table(collection_name)
+        values = self._known_columns(collection_name, payload)
+        statement = pg_insert(table).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[key_field],
+            set_={k: statement.excluded[k] for k in values if k != key_field},
+        ).returning(table)
+        async with await self._begin() as conn:
+            result = await conn.execute(statement)
+            row = self._one(result)
+        return row if row is not None else values
 
     async def update(
         self, collection_name: str, document_id: str, payload: dict[str, Any]
@@ -142,8 +219,19 @@ class SQLRepository(BaseRepository):
     def _table(self, collection_name: str) -> sa.Table:
         return self._tables[collection_name]
 
+    def _column(self, collection_name: str, field: str) -> sa.Column:
+        return self._table(collection_name).c[field]
+
     def _id_column(self, collection_name: str) -> sa.Column:
-        return self._tables[collection_name].c[self._id_fields[collection_name]]
+        return self._column(collection_name, self._id_fields[collection_name])
+
+    def _criteria(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> tuple[sa.ColumnElement[bool], ...]:
+        return tuple(
+            self._column(collection_name, field) == value
+            for field, value in criteria.items()
+        )
 
     def _known_columns(
         self, collection_name: str, payload: dict[str, Any], drop_id: bool = False

@@ -145,8 +145,8 @@
     },
     "WhereExpression": {
       "type": "string",
-      "pattern": "^[\\w$][\\w$.'\"\\s=<>!,()-]*$",
-      "description": "v0.3 where binding form used as a given: value: a boolean expression over fields, $-sigil symbols, literals, and WhereOperator tokens. Only '=' and 'and' are active in v0.3; the remaining operators are reserved."
+      "pattern": "^[\\w$][\\w$.'\"\\s=<>!,()+\\\\-]*$",
+      "description": "v0.3 where binding form used as a given: value: '<collection> where <field> = <rhs> [and <field> = <rhs>]*'. The where parser is the authority on the grammar; this pattern only bounds the character set. Only '=' and 'and' are active in v0.3; the remaining WhereOperator tokens are reserved."
     },
     "SymbolBinding": {
       "type": "object",

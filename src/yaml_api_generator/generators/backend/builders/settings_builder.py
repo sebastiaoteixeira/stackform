@@ -1,9 +1,7 @@
-"""Aggregates framework settings fields into a deduplicated SettingField list.
-
-Framework fields are conditionally included based on enabled features.
-"""
+from secrets import token_urlsafe
 
 from ..compile_context import CompileContext, SettingField
+from ....ir.api import IROIDCProvider
 
 
 def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
@@ -42,8 +40,17 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
 
         if ctx.auth.has_app_oidc_auth:
             add(SettingField("FRONTEND_URL", "str", ""))
+            for provider_name, provider in ctx.auth.providers.items():
+                if isinstance(provider, IROIDCProvider) and provider.client_secret is not None:
+                    env_name = f"{provider_name.upper()}_CLIENT_SECRET"
+                    add(SettingField(env_name, "str", None, secret=True, generated=False))
 
     add(SettingField("HOST", "str", "127.0.0.1"))
     add(SettingField("PORT", "int", str(ctx.app.port)))
 
     return fields
+
+
+def generated_secret_values(fields: list[SettingField]) -> dict[str, str]:
+    """Return a mapping of env_name -> token_urlsafe(32) for generated secrets."""
+    return {f.env_name: token_urlsafe(32) for f in fields if f.generated}

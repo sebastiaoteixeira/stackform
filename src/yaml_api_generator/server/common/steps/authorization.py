@@ -1,6 +1,9 @@
 """Authorization pipeline steps for role-based and condition-based access control."""
 
-from . import NotFoundError, Step
+from collections.abc import Iterable
+from itertools import repeat
+
+from . import Step
 
 from ..request_context import RequestContext
 
@@ -14,7 +17,7 @@ from ..utils.field_access import get_nested_field
 from yaml_api_generator.ir.api import IRLiteralRef, IRSymbolRef, IRWhereConjunct
 from yaml_api_generator.ir.when import needs_document as _when_needs_document
 
-_RECORD_NOT_FOUND = "Resource not found"
+WhereDocuments = dict[str, dict | None]
 
 
 class UnauthorizedError(ValueError):
@@ -66,11 +69,9 @@ def ValidateIdentityCreateStep(
 
 
 def _rule_needs_postfetch(rule: RuntimeAccessRule) -> bool:
-    if any(not binding.where for binding in rule.document_symbols.values()):
-        return True
-    if rule.when and _when_needs_document(rule.when):
-        return True
-    return False
+    return any(not binding.where for binding in rule.document_symbols.values()) or (
+        rule.when is not None and _when_needs_document(rule.when)
+    )
 
 
 def _principal_has_role(
@@ -120,23 +121,18 @@ def _resolve_identity_symbols(
     rule: RuntimeAccessRule,
     principal: dict | None,
 ) -> dict[str, dict | None]:
-    symbols: dict[str, dict | None] = {}
-    for symbol_name in rule.identity_symbols:
-        symbols[symbol_name] = principal
-    return symbols
+    return {symbol_name: principal for symbol_name in rule.identity_symbols}
 
 
 def _resolve_document_symbols(
     rule: RuntimeAccessRule,
     document: dict | None,
-    where_documents: dict[str, object | None],
+    where_documents: WhereDocuments,
 ) -> dict[str, dict | None]:
-    symbols: dict[str, dict | None] = {}
-    for symbol_name, binding in rule.document_symbols.items():
-        symbols[symbol_name] = (
-            where_documents.get(symbol_name) if binding.where else document
-        )
-    return symbols
+    return {
+        symbol_name: where_documents.get(symbol_name) if binding.where else document
+        for symbol_name, binding in rule.document_symbols.items()
+    }
 
 
 _REQUEST_PARTS = ("body", "path", "query", "header", "cookie")
@@ -157,48 +153,62 @@ def _resolve_request_symbols(
     ctx: RequestContext,
 ) -> dict[str, object | None]:
     request_object = _request_object(ctx)
-    symbols: dict[str, object | None] = {}
-    for symbol_name, binding in rule.request_symbols.items():
-        symbols[symbol_name] = (
+    return {
+        symbol_name: (
             request_object.get(binding.part)
             if binding.part in _REQUEST_PARTS
             else request_object
         )
-    return symbols
+        for symbol_name, binding in rule.request_symbols.items()
+    }
+
+
+def _where_documents_found(
+    rule: RuntimeAccessRule,
+    where_documents: WhereDocuments,
+) -> bool:
+    return all(
+        where_documents.get(symbol_name) is not None
+        for symbol_name, binding in rule.document_symbols.items()
+        if binding.where
+    )
 
 
 def _evaluate_rule(
     rule: RuntimeAccessRule,
-    principal: dict | None,
     document: dict | None,
+    where_documents: WhereDocuments,
     ctx: RequestContext,
 ) -> bool:
+    if not _where_documents_found(rule, where_documents):
+        return False
     if rule.when is None:
         return True
 
     symbols: dict[str, object | None] = {
-        **_resolve_identity_symbols(rule, principal),
-        **_resolve_document_symbols(rule, document, ctx.where_documents or {}),
+        **_resolve_identity_symbols(rule, ctx.principal),
+        **_resolve_document_symbols(rule, document, where_documents),
         **_resolve_request_symbols(rule, ctx),
     }
     return evaluate_when_with_symbols(rule.when, symbols)
+
+
+def _rules_with_where_documents(
+    access_rules: list[RuntimeAccessRule],
+    ctx: RequestContext,
+) -> Iterable[tuple[RuntimeAccessRule, WhereDocuments]]:
+    return zip(access_rules, ctx.where_documents or repeat({}))
 
 
 def _where_namespace(
     rule: RuntimeAccessRule,
     ctx: RequestContext,
 ) -> dict[str, object | None]:
-    namespace: dict[str, object | None] = dict(ctx.url_params)
-    for symbol_name in rule.identity_symbols:
-        namespace[symbol_name] = ctx.principal
-    request_object = _request_object(ctx)
-    for symbol_name, binding in rule.request_symbols.items():
-        namespace[symbol_name] = (
-            request_object.get(binding.part)
-            if binding.part in _REQUEST_PARTS
-            else request_object
-        )
-    return namespace
+    return {
+        **ctx.url_params,
+        **_resolve_identity_symbols(rule, ctx.principal),
+        **_resolve_request_symbols(rule, ctx),
+    }
 
 
 def _rhs_value(
@@ -222,27 +232,23 @@ def _where_criteria(
     return {conjunct.field: _rhs_value(conjunct.rhs, namespace) for conjunct in conjuncts}
 
 
-def ResolveWhereBindingsStep(
-    access_rules: list[RuntimeAccessRule] | None = None,
-) -> Step:
+async def _where_documents(rule: RuntimeAccessRule, ctx: RequestContext) -> WhereDocuments:
+    namespace = _where_namespace(rule, ctx)
+    return {
+        symbol_name: await ctx.repository_for(binding.collection).find_one(
+            binding.collection, _where_criteria(binding.where, namespace)
+        )
+        for symbol_name, binding in rule.document_symbols.items()
+        if binding.where
+    }
+
+
+def ResolveWhereBindingsStep(access_rules: list[RuntimeAccessRule]) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        if ctx.principal is None or not access_rules:
+        if ctx.principal is None:
             return ctx
 
-        where_documents: dict[str, object | None] = dict(ctx.where_documents or {})
-        for rule in access_rules:
-            namespace = _where_namespace(rule, ctx)
-            for symbol_name, binding in rule.document_symbols.items():
-                if not binding.where:
-                    continue
-                criteria = _where_criteria(binding.where, namespace)
-                repository = ctx.repository_for(binding.collection)
-                record = await repository.find_one(binding.collection, criteria)
-                if record is None:
-                    raise NotFoundError(_RECORD_NOT_FOUND)
-                where_documents[symbol_name] = record
-
-        ctx.where_documents = where_documents
+        ctx.where_documents = [await _where_documents(rule, ctx) for rule in access_rules]
         return ctx
 
     return step
@@ -259,15 +265,14 @@ def AuthorizeRouteStep(
         if not access_rules:
             return ctx
 
-        for rule in access_rules:
+        for rule, where_documents in _rules_with_where_documents(access_rules, ctx):
             if _rule_needs_postfetch(rule):
                 return ctx
 
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
-            matched = _evaluate_rule(rule, ctx.principal, None, ctx)
-            if matched:
+            if _evaluate_rule(rule, None, where_documents, ctx):
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
                 return ctx
@@ -282,17 +287,17 @@ def PostFetchAuthorizeStep(
     auth_config: RuntimeAuthConfig | None = None,
 ) -> Step:
     def step(ctx: RequestContext) -> RequestContext:
-        if ctx.response is None:
-            return ctx
-
         document = ctx.response if isinstance(ctx.response, dict) else None
-        for rule in access_rules:
+        for rule, where_documents in _rules_with_where_documents(access_rules, ctx):
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
-            doc = document if _rule_needs_postfetch(rule) else None
-            matched = _evaluate_rule(rule, ctx.principal, doc, ctx)
-            if matched:
+            if _rule_needs_postfetch(rule):
+                if document is None:
+                    continue
+
+            rule_document = document if _rule_needs_postfetch(rule) else None
+            if _evaluate_rule(rule, rule_document, where_documents, ctx):
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
                 return ctx

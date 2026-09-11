@@ -102,6 +102,40 @@ Make sure to:
 2. Configure SSH keys for authentication
 3. Set production environment variables
 
+## Hardening: encrypt secrets at rest with ansible-vault
+
+By default, secrets are generated during the build and written to the local
+`.env` file in plaintext, and `docker-compose.yml` reads them as `${VAR}`. This
+is convenient but leaves secrets unencrypted on the control node and unsafe to
+commit. When you need secrets encrypted at rest in source control, `ansible-vault`
+is the opt-in upgrade path.
+
+1. Move the sensitive entries from `.env` into `group_vars/all/secrets.yml`
+   (Ansible auto-loads this file for every host):
+
+   ```yaml
+{% for name in ctx.env_vars %}
+   {{ name }}: "your_secret_value"
+{% endfor %}
+   ```
+
+2. Encrypt the file so it is safe to commit:
+
+   ```bash
+   ansible-vault encrypt group_vars/all/secrets.yml
+   ```
+
+3. Supply the vault password when running the playbook:
+
+   ```bash
+   ansible-playbook -i inventory.yml playbook.yml --ask-vault-pass
+   # unattended runs can read the password from a file instead:
+   ansible-playbook -i inventory.yml playbook.yml --vault-password-file .vault-pass
+   ```
+
+Deploy-time generation remains the default; enable vault only when you need
+secrets encrypted at rest.
+
 ## Stopping Services
 
 ```bash

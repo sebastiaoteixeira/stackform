@@ -73,19 +73,6 @@ async def _fetch_record(
     return await _repository(ctx).get(collection_name, locator.document_id(ctx.url_params))
 
 
-async def _target_id(
-    ctx: RequestContext, collection_name: str, locator: RecordLocator
-) -> str | None:
-    document_id = locator.document_id(ctx.url_params)
-    if locator.is_scoped:
-        scoped = await _repository(ctx).find_one(
-            collection_name, locator.criteria(ctx.url_params)
-        )
-        if scoped is None:
-            return None
-    return document_id
-
-
 def _payload(ctx: RequestContext) -> dict[str, Any]:
     if not isinstance(ctx.body, dict):
         raise ValueError(_REQUEST_BODY_MESSAGE)
@@ -208,14 +195,15 @@ def RepositoryUpdateStep(
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        document_id = await _target_id(ctx, collection_name, locator)
-        if document_id is None:
-            raise NotFoundError(_NOT_FOUND_MESSAGE)
-        result = await _repository(ctx).update(
-            collection_name,
-            document_id,
-            _prepare_payload(_payload(ctx), password_via=password_via),
-        )
+        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        if locator.is_scoped:
+            result = await _repository(ctx).update_by(
+                collection_name, locator.criteria(ctx.url_params), payload
+            )
+        else:
+            result = await _repository(ctx).update(
+                collection_name, locator.document_id(ctx.url_params), payload
+            )
         if result is None:
             raise NotFoundError(_NOT_FOUND_MESSAGE)
         ctx.response = _inject_canonical_id(result, id_field)
@@ -233,14 +221,15 @@ def RepositoryReplaceStep(
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        document_id = await _target_id(ctx, collection_name, locator)
-        if document_id is None:
-            raise NotFoundError(_NOT_FOUND_MESSAGE)
-        result = await _repository(ctx).replace(
-            collection_name,
-            document_id,
-            _prepare_payload(_payload(ctx), password_via=password_via),
-        )
+        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        if locator.is_scoped:
+            result = await _repository(ctx).replace_by(
+                collection_name, locator.criteria(ctx.url_params), payload
+            )
+        else:
+            result = await _repository(ctx).replace(
+                collection_name, locator.document_id(ctx.url_params), payload
+            )
         if result is None:
             raise NotFoundError(_NOT_FOUND_MESSAGE)
         ctx.response = _inject_canonical_id(result, id_field)
@@ -255,10 +244,14 @@ def RepositoryDeleteStep(
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        document_id = await _target_id(ctx, collection_name, locator)
-        if document_id is None:
-            raise NotFoundError(_NOT_FOUND_MESSAGE)
-        result = await _repository(ctx).delete(collection_name, document_id)
+        if locator.is_scoped:
+            result = await _repository(ctx).delete_by(
+                collection_name, locator.criteria(ctx.url_params)
+            )
+        else:
+            result = await _repository(ctx).delete(
+                collection_name, locator.document_id(ctx.url_params)
+            )
         if result is None:
             raise NotFoundError(_NOT_FOUND_MESSAGE)
         ctx.response = _inject_canonical_id(result, id_field)

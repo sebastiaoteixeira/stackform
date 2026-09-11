@@ -91,9 +91,13 @@ MongoDB is not reachable. Fix it depending on how you are running the app:
 - `yaml-api run` (dev server): start MongoDB yourself, then re-run. The dev server reads
   `YAML_API_MONGO_URI` (default `mongodb://localhost:27017`) and `YAML_API_MONGO_DB`
   (default `yaml_api`).
-- Generated Docker deploy: `docker compose up -d` from the generated `deploy/`
-  directory. Mongo runs as the `mongodb` service; the backend reads `MONGO_URI` /
-  `MONGO_DB` from the compose environment.
+- Generated deploy: run the Ansible playbook from the generated `deploy/`
+  (`ansible-playbook -i inventory.yml playbook.yml`), which renders the remote `.env`
+  (including secrets) and brings up compose on the target. A bare `docker compose up
+  -d` from the bundle skips secret provisioning, since the compose file references
+  bare `${VAR}` with no defaults and loads them from `.env`. Mongo runs as the
+  `mongodb` service; the backend reads `MONGO_URI` / `MONGO_DB` from the compose
+  environment.
 - Generated backend run directly: set `MONGO_URI` / `MONGO_DB` and point them at a
   running MongoDB.
 
@@ -216,9 +220,11 @@ Check the access rules on the controller for that operation.
 
 ## JWT_SECRET warning
 
-In production, always set the `JWT_SECRET` environment variable to a strong random value.
-The default (`yaml-api-dev-secret-change-me`) is insecure and only suitable for
-development. Related auth env vars: `JWT_EXPIRATION_HOURS` (default 24) and
+The `yaml-api run` dev server falls back to an insecure default
+(`yaml-api-dev-secret-change-me`) when `JWT_SECRET` is unset. A generated backend
+bundle instead ships a `.env` with a unique generated value, so it runs as-is -- but
+that value is for development only. In production, always set `JWT_SECRET` to a strong
+random value. Related auth env vars: `JWT_EXPIRATION_HOURS` (default 24) and
 `PASSWORD_HASH_ROUNDS` (default 390000).
 
 ```bash
@@ -242,8 +248,11 @@ External providers are attached through `auth.bindings` and need a reachable pro
 Common callback failures (status from `GET /api/v1/{collection}/auth/{provider}/callback`):
 
 - `401 {"detail": "Token exchange failed"}` -- the authorization code could not be
-  exchanged. Check `client_id`, `client_secret`, and the redirect URI registered with the
-  provider; the callback URI is derived from your `basePath`/`version`.
+  exchanged. Check `client_id` and the redirect URI registered with the provider (the
+  callback URI is derived from your `basePath`/`version`), and confirm the client
+  secret is set in the runtime environment as `<PROVIDER>_CLIENT_SECRET` (e.g.
+  `KEYCLOAK_CLIENT_SECRET`) -- it is read at run time via a `SecretStr` setting, not
+  from the spec.
 - `401 {"detail": "Failed to fetch user info"}` -- the access token was rejected by the
   provider's userinfo endpoint, or the token expired.
 - `403 {"detail": "User not found and auto-provisioning is disabled"}` -- no matching

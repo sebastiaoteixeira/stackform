@@ -1,7 +1,11 @@
 from django.urls import path
 
+{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete"] %}
 {% for col_name in collections %}
-from api.views.{{ col_name }} import {{ col_name | capitalize_collection }}ListView, {{ col_name | capitalize_collection }}DetailView
+{% set collection_routes = routes | selectattr("collection", "equalto", col_name) | selectattr("operation", "in", crud_op_names) | list %}
+{% set list_routes = collection_routes | selectattr("has_id_param", "false") | list %}
+{% set detail_routes = collection_routes | selectattr("has_id_param") | list %}
+from api.views.{{ col_name }} import {% if list_routes %}{{ col_name | capitalize_collection }}ListView{% if detail_routes %}, {% endif %}{% endif %}{% if detail_routes %}{{ col_name | capitalize_collection }}DetailView{% endif %}
 {% endfor %}
 {% if auth and auth.has_password_auth %}
 {% for identity in auth.identity_collections %}
@@ -19,8 +23,11 @@ urlpatterns = [
 {% endif %}
 {% endfor %}
 {% endif %}
-{% for col_name in collections %}
-    path("{{ col_name }}", {{ col_name | capitalize_collection }}ListView.as_view(), name="{{ col_name }}-list"),
-    path("{{ col_name }}/<str:pk>", {{ col_name | capitalize_collection }}DetailView.as_view(), name="{{ col_name }}-detail"),
+{% set seen_paths = [] %}
+{% for route in routes if route.collection and route.operation in crud_op_names %}
+{% if route.django_path not in seen_paths %}
+{% set _ = seen_paths.append(route.django_path) %}
+    path("{{ route.django_path }}", {{ route.collection | capitalize_collection }}{% if route.has_id_param %}Detail{% else %}List{% endif %}View.as_view(), name="{{ route.collection }}-{{ route.operation }}"),
+{% endif %}
 {% endfor %}
 ]

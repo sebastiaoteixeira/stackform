@@ -125,6 +125,8 @@ target/
     services/         # per-operation service layer
     models/           # Pydantic models
     requirements.txt
+    .env              # runtime settings; JWT_SECRET pre-generated, so the bundle runs as-is
+    .env.example      # same keys with placeholders for secrets
 ```
 
 A `frontend/` directory is generated only when the spec contains a `ui:` block (it goes in `target/frontend/` for an `all`/`frontend` build). Likewise, deploy artifacts are produced only when a `deploy:` block is present.

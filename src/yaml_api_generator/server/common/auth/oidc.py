@@ -190,7 +190,7 @@ async def resolve_record(
         if not binding.auto_provision:
             return None
         payload = {**user_fields, **fk_fields, collection.id_field: sub}
-        return await repo.create(collection.name, payload)
+        return await repo.upsert_by(collection.name, collection.id_field, payload)
 
     identifier_value = user_fields.get(binding.identifier)
     existing = next(
@@ -207,5 +207,5 @@ async def resolve_record(
         return existing
     if binding.auto_provision:
         payload = {**user_fields, **fk_fields, collection.id_field: generate_id(collection.id_format)}
-        return await repo.create(collection.name, payload)
+        return await repo.upsert_by(collection.name, binding.identifier, payload)
     return None
