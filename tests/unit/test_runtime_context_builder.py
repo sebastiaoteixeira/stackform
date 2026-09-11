@@ -16,7 +16,7 @@ from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.ir import flatten_role_hierarchy
 from yaml_api_generator.server.common.context_builder import build_runtime_context
 from yaml_api_generator.server.common.steps import ForbiddenError, UnauthorizedError
-from .test_repository_steps import InMemoryRepository
+from tests.unit.support.repositories import InMemoryRepository
 
 
 def _make_ir(
@@ -130,11 +130,10 @@ async def test_password_auth_collection_enables_login():
         ],
     )
     rc = build_runtime_context(ir)
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({
+        "users": [{"id": "u1", "email": "a@b.com", "_auth": {"passwordHash": hash_password("secret")}}]
+    })
     repo.register_id_field("users", "id")
-    repo._data["users"] = {
-        "u1": {"id": "u1", "email": "a@b.com", "_auth": {"passwordHash": hash_password("secret")}}
-    }
     route = rc.routes[0]
     pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(body={"email": "a@b.com", "password": "secret"})
@@ -188,9 +187,8 @@ async def test_role_based_access_rule_from_ir_is_enforced():
         ],
     )
     rc = build_runtime_context(ir)
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({"items": [{"id": "item-1", "name": "Test"}]})
     repo.register_id_field("items", "id")
-    repo._data["items"] = {"item-1": {"id": "item-1", "name": "Test"}}
     route = rc.routes[0]
     pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
 

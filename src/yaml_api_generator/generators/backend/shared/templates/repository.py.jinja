@@ -6,10 +6,50 @@ try:
 except ImportError:
     from uuid_utils import uuid7
 {% endif %}
+from functools import wraps
 from typing import Any
 
 from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.errors import BulkWriteError, DuplicateKeyError
+
+from {{ conflict_import }} import ConflictError
+
+
+def _duplicate_details(error: BulkWriteError | DuplicateKeyError) -> dict[str, Any] | None:
+    details = error.details or {}
+    if isinstance(error, DuplicateKeyError):
+        return details
+    return next(
+        (
+            write_error
+            for write_error in details.get("writeErrors", [])
+            if write_error.get("code") == 11000
+        ),
+        None,
+    )
+
+
+def _conflict_field(details: dict[str, Any]) -> str | None:
+    for key in ("keyPattern", "keyValue"):
+        fields = details.get(key)
+        if fields:
+            return next(iter(fields))
+    return None
+
+
+def _translate_conflict(operation):
+    @wraps(operation)
+    async def translated(*args, **kwargs):
+        try:
+            return await operation(*args, **kwargs)
+        except (BulkWriteError, DuplicateKeyError) as error:
+            details = _duplicate_details(error)
+            if details is None:
+                raise
+            raise ConflictError(_conflict_field(details)) from error
+
+    return translated
 
 {% set class_name = collection_name | capitalize_collection %}
 
@@ -38,6 +78,35 @@ class {{ class_name }}Repository:
         doc = await self._col.find_one(self._match_filter(document_id))
         return self._normalize(doc)
 
+    async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        return self._normalize(await self._col.find_one(dict(criteria)))
+
+    @_translate_conflict
+    async def update_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        changes = {field: value for field, value in data.items() if field not in criteria}
+        if not changes:
+            return await self.find_one(criteria)
+        doc = await self._col.find_one_and_update(
+            dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize(doc)
+
+    @_translate_conflict
+    async def replace_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        replacement = {**data, **criteria}
+        doc = await self._col.find_one_and_replace(
+            dict(criteria), replacement, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize(doc)
+
+    async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        return self._normalize(await self._col.find_one_and_delete(dict(criteria)))
+
+    @_translate_conflict
     async def create(self, data: dict[str, Any]) -> dict[str, Any]:
 {% if id_field_format == "natural" %}
         pass  # natural key - no auto-generation
@@ -49,6 +118,7 @@ class {{ class_name }}Repository:
         await self._col.insert_one(data)
         return self._normalize(data)
 
+    @_translate_conflict
     async def update(
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
@@ -59,6 +129,7 @@ class {{ class_name }}Repository:
         )
         return self._normalize(doc)
 
+    @_translate_conflict
     async def replace(
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
@@ -107,25 +178,30 @@ class {{ class_name }}Repository:
         return await {{ col_expr }}.distinct(key, filter)
 {% elif cmd == "insertOne" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, document: dict[str, Any]) -> dict[str, Any]:
         await {{ col_expr }}.insert_one(document)
         return self._normalize(document)
 {% elif cmd == "insertMany" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         await {{ col_expr }}.insert_many(documents)
         return [self._normalize(d) for d in documents]
 {% elif cmd == "updateOne" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
 {% elif cmd == "updateMany" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> Any:
         return await {{ col_expr }}.update_many(filter, update)
 {% elif cmd == "replaceOne" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
@@ -140,11 +216,13 @@ class {{ class_name }}Repository:
         return await {{ col_expr }}.delete_many(filter)
 {% elif cmd == "findOneAndUpdate" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
 {% elif cmd == "findOneAndReplace" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
         doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
         return self._normalize(doc)
@@ -155,6 +233,7 @@ class {{ class_name }}Repository:
         return self._normalize(doc)
 {% elif cmd == "bulkWrite" %}
 
+    @_translate_conflict
     async def {{ op.name }}(self, requests: list) -> Any:
         return await {{ col_expr }}.bulk_write(requests)
 {% endif %}
