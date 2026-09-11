@@ -93,8 +93,8 @@ The provider is configured under the entity's `auth:` block.
 | `bindings` | no | list | External identity providers (OIDC/SAML). See [Login, SSO, and the token flow](./login-and-sso.md) and [Claim mapping](./claim-mapping.md). |
 
 The `identifier` field should declare `unique: true` so two accounts cannot share a
-login value. Note that `unique` is declarative metadata only -- it is not enforced
-with a MongoDB index, so uniqueness is not guaranteed at write time.
+login value. The datastore enforces that declaration with a SQL unique constraint
+or MongoDB unique partial index; a duplicate registration returns `409 Conflict`.
 
 Declaring a `password` or `passwordHash` field in `fields:` is rejected at parse
 time -- both are implicit (see Errors below).

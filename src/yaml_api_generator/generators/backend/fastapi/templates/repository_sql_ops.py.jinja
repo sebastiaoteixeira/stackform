@@ -1,8 +1,58 @@
+import sqlite3
 import uuid
 from collections.abc import Callable
+from functools import wraps
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
+
+from conflicts import ConflictError
+
+
+def _is_unique_violation(error: IntegrityError) -> bool:
+    original = getattr(error, "orig", error)
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    sqlite_code = getattr(original, "sqlite_errorcode", None)
+    message = str(original).lower()
+    return (
+        sqlstate == "23505"
+        or sqlite_code in {
+            sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY,
+            sqlite3.SQLITE_CONSTRAINT_UNIQUE,
+        }
+        or "unique constraint failed" in message
+        or "duplicate key value violates unique constraint" in message
+    )
+
+
+def _conflict_field(error: IntegrityError) -> str | None:
+    original = getattr(error, "orig", error)
+    diagnostics = getattr(original, "diag", None)
+    column = getattr(diagnostics, "column_name", None)
+    if column:
+        return column
+    detail = getattr(diagnostics, "message_detail", None) or getattr(original, "detail", None)
+    if detail and "Key (" in detail:
+        return detail.split("Key (", 1)[1].split(")", 1)[0]
+    message = str(original)
+    if "UNIQUE constraint failed:" in message:
+        first = message.split("UNIQUE constraint failed:", 1)[1].split(",")[0]
+        return first.strip().split(".")[-1]
+    return None
+
+
+def _translate_conflict(operation):
+    @wraps(operation)
+    async def translated(*args, **kwargs):
+        try:
+            return await operation(*args, **kwargs)
+        except IntegrityError as error:
+            if not _is_unique_violation(error):
+                raise
+            raise ConflictError(_conflict_field(error)) from error
+
+    return translated
 
 
 def make_id_generator(id_format: str) -> Callable[[], str] | None:
@@ -59,6 +109,7 @@ class SQLRepositoryBase:
             )
             return self._one(result)
 
+    @_translate_conflict
     async def update_by(
         self, criteria: dict[str, Any], data: dict[str, Any]
     ) -> dict[str, Any] | None:
@@ -74,6 +125,7 @@ class SQLRepositoryBase:
             )
             return self._one(result)
 
+    @_translate_conflict
     async def replace_by(
         self, criteria: dict[str, Any], data: dict[str, Any]
     ) -> dict[str, Any] | None:
@@ -101,6 +153,7 @@ class SQLRepositoryBase:
             )
             return self._one(result)
 
+    @_translate_conflict
     async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
         if self._generate_id is not None:
             data[self.ID_FIELD] = self._generate_id()
@@ -109,6 +162,7 @@ class SQLRepositoryBase:
             await conn.execute(sa.insert(self.TABLE).values(**values))
         return values
 
+    @_translate_conflict
     async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -149,6 +203,7 @@ class CreateOp:
 
 
 class UpdateOp:
+    @_translate_conflict
     async def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         values = self._known(data, drop_id=True)
         async with self._engine.begin() as conn:
@@ -162,6 +217,7 @@ class UpdateOp:
 
 
 class ReplaceOp:
+    @_translate_conflict
     async def replace(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         values = {
             column.name: data.get(column.name)

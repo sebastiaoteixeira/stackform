@@ -46,6 +46,9 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["int"] = int
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "conflicts.py").write_text(
+            env.get_template("conflicts.py.jinja").render()
+        )
 
         self._render_single_file(
             env,
@@ -173,6 +176,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
+                    "conflict_import": "conflicts",
                 },
             )
         )

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from conflicts import ConflictError
 from services.exceptions import NotFoundError, ValidationError
 from settings import settings
 {% if ctx.auth.enabled %}
@@ -67,6 +68,11 @@ async def _not_found_handler(_: Request, __: NotFoundError) -> JSONResponse:
 @app.exception_handler(ValidationError)
 async def _validation_handler(_: Request, exc: ValidationError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": exc.message})
+
+
+@app.exception_handler(ConflictError)
+async def _conflict_handler(_: Request, exc: ConflictError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
 {% if ctx.app.cors %}

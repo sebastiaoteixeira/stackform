@@ -58,6 +58,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.globals["needs_any_import"] = type_mapper.needs_any_import
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "conflicts.py").write_text(
+            env.get_template("conflicts.py.jinja").render()
+        )
 
         collections_by_name = group_by_collection(context)
 

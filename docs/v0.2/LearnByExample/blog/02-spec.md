@@ -215,9 +215,9 @@ controllers:
   all emit the custom route; `yaml-api run` invokes the same declaration through
   its `RequestContext` handler contract.
 
-- Declarative-only fields. `unique: true` on `email` documents intent and drives
-  the UI, but it is not enforced: no MongoDB index is created and duplicate emails
-  are not rejected on write. Enforce uniqueness in your own handler if you need it.
+- Unique fields. `unique: true` on `email` drives the UI and creates a MongoDB
+  unique partial index. Duplicate emails are rejected with `409 Conflict` without
+  exposing the conflicting value.
 
 - Environment interpolation. `${MONGO_URI:-mongodb://localhost:27017}` and
   `${MONGO_DB:-blog}` are resolved per string scalar before validation. The
