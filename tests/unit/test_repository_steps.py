@@ -1,10 +1,9 @@
 import uuid
-from typing import Any
 
 import pytest
 
+from tests.unit.support.repositories import InMemoryRepository
 from yaml_api_generator.server.common.request_context import RequestContext
-from yaml_api_generator.server.common.repositories.base import BaseRepository
 from yaml_api_generator.server.common.steps import NotFoundError
 from yaml_api_generator.server.common.steps.repositories import (
     RepositoryCreateStep,
@@ -17,86 +16,6 @@ from yaml_api_generator.server.common.steps.repositories import (
     _inject_canonical_id,
     _prepare_payload,
 )
-
-
-class InMemoryRepository(BaseRepository):
-    def __init__(self):
-        self._data: dict[str, dict[str, dict[str, Any]]] = {}
-        self._id_fields: dict[str, str] = {}
-
-    def register_id_field(self, collection_name: str, id_field: str) -> None:
-        self._id_fields[collection_name] = id_field
-
-    def connect(self):
-        pass
-
-    async def close(self):
-        pass
-
-    def _collection(self, name: str) -> dict[str, dict[str, Any]]:
-        if name not in self._data:
-            self._data[name] = {}
-        return self._data[name]
-
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
-        return list(self._collection(collection_name).values())
-
-    async def get(
-        self, collection_name: str, document_id: str
-    ) -> dict[str, Any] | None:
-        id_field = self._id_fields.get(collection_name, "id")
-        for doc in self._collection(collection_name).values():
-            if str(doc.get(id_field, "")) == document_id:
-                return dict(doc)
-        return None
-
-    async def create(
-        self, collection_name: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        id_field = self._id_fields.get(collection_name, "id")
-        doc_id = payload.get(id_field)
-        self._collection(collection_name)[str(doc_id)] = dict(payload)
-        return dict(payload)
-
-    async def update(
-        self,
-        collection_name: str,
-        document_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        id_field = self._id_fields.get(collection_name, "id")
-        col = self._collection(collection_name)
-        for key, doc in col.items():
-            if str(doc.get(id_field, "")) == document_id:
-                merged = {**doc, **payload}
-                col[key] = merged
-                return dict(merged)
-        return None
-
-    async def replace(
-        self,
-        collection_name: str,
-        document_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        id_field = self._id_fields.get(collection_name, "id")
-        col = self._collection(collection_name)
-        for key, doc in col.items():
-            if str(doc.get(id_field, "")) == document_id:
-                col[key] = dict(payload)
-                return dict(payload)
-        return None
-
-    async def delete(
-        self, collection_name: str, document_id: str
-    ) -> dict[str, Any] | None:
-        id_field = self._id_fields.get(collection_name, "id")
-        col = self._collection(collection_name)
-        for key, doc in list(col.items()):
-            if str(doc.get(id_field, "")) == document_id:
-                removed = col.pop(key)
-                return dict(removed)
-        return None
 
 
 def _make_ctx(**overrides) -> RequestContext:
@@ -217,12 +136,10 @@ def test_inject_canonical_id_none_returns_none():
 
 @pytest.mark.asyncio
 async def test_repository_list_step():
-    repo = InMemoryRepository()
+    repo = InMemoryRepository(
+        {"items": [{"id": "1", "title": "a"}, {"id": "2", "title": "b"}]}
+    )
     repo.register_id_field("items", "id")
-    repo._data["items"] = {
-        "1": {"id": "1", "title": "a"},
-        "2": {"id": "2", "title": "b"},
-    }
     ctx = _make_ctx(repository=repo, operation="list", method="GET")
     step = RepositoryListStep("items", "id")
     result = await step(ctx)
@@ -232,9 +149,8 @@ async def test_repository_list_step():
 
 @pytest.mark.asyncio
 async def test_repository_get_step():
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({"items": [{"id": "abc", "title": "found"}]})
     repo.register_id_field("items", "id")
-    repo._data["items"] = {"abc": {"id": "abc", "title": "found"}}
     ctx = _make_ctx(
         repository=repo, operation="get", method="GET", url_params={"id": "abc"}
     )
@@ -283,9 +199,8 @@ async def test_repository_create_step_natural_pk_no_id_generated():
 
 @pytest.mark.asyncio
 async def test_repository_update_step():
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({"items": [{"id": "abc", "title": "old"}]})
     repo.register_id_field("items", "id")
-    repo._data["items"] = {"abc": {"id": "abc", "title": "old"}}
     ctx = _make_ctx(
         repository=repo,
         operation="update",
@@ -316,9 +231,10 @@ async def test_repository_update_step_not_found():
 
 @pytest.mark.asyncio
 async def test_repository_replace_step():
-    repo = InMemoryRepository()
+    repo = InMemoryRepository(
+        {"items": [{"id": "abc", "title": "old", "extra": "gone"}]}
+    )
     repo.register_id_field("items", "id")
-    repo._data["items"] = {"abc": {"id": "abc", "title": "old", "extra": "gone"}}
     ctx = _make_ctx(
         repository=repo,
         operation="replace",
@@ -333,9 +249,8 @@ async def test_repository_replace_step():
 
 @pytest.mark.asyncio
 async def test_repository_delete_step():
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({"items": [{"id": "abc", "title": "gone"}]})
     repo.register_id_field("items", "id")
-    repo._data["items"] = {"abc": {"id": "abc", "title": "gone"}}
     ctx = _make_ctx(
         repository=repo, operation="delete", method="DELETE", url_params={"id": "abc"}
     )

@@ -1,10 +1,11 @@
 ---
 title: "Handler Context"
-description: Custom operation handlers run under two contracts. Generated backends pass a FastAPI Request; the yaml-api run dev server passes a RequestContext pipeline object. This page documents both.
+description: Custom operation handlers run under two contracts. Generated backends pass a target request object; the yaml-api run dev server passes a RequestContext pipeline object. This page documents both.
 ---
 
 A custom operation runs different code depending on how you execute your spec. The
-generated FastAPI (and `raw`) backend invokes your handler with a FastAPI `Request`.
+generated backends invoke your handler with their target request object. The
+raw-ASGI target supplies a compatible request facade.
 The `yaml-api run` dev server invokes your handler as a pipeline step that receives a
 `RequestContext` and returns it. Write your handler for the target you intend to run;
 the two contracts are not interchangeable.
@@ -13,9 +14,9 @@ Both kinds are wired through `services.<name>.operations.<op>.handler` plus an
 `imports:` mapping, and both are exposed as routes through a controller operation that
 sets `method:` and `path:` (see [Custom operations](./custom-operations.md)).
 
-## Generated backend handler (`build`, target `fastapi` or `raw`)
+## Generated backend handler (`build`)
 
-The generated route calls your function with the raw request object:
+The generated route calls your function with the target request object:
 
 ```python
 from fastapi import Request
