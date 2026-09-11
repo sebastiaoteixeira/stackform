@@ -25,8 +25,13 @@ from .access_transformer import AccessTransformer
 class RouteTransformer:
     """Builds routes from controllers and services."""
 
-    def __init__(self, access_transformer: AccessTransformer):
+    def __init__(
+        self,
+        access_transformer: AccessTransformer,
+        allow_service_inputs: bool = False,
+    ):
         self._access_transformer = access_transformer
+        self._allow_service_inputs = allow_service_inputs
 
     def transform_services(
         self,
@@ -92,6 +97,16 @@ class RouteTransformer:
         )
 
         input_ir = None
+        if not self._allow_service_inputs and ({"input", "with"} & svc_cfg.keys()):
+            errors.append(
+                ConfigError(
+                    code="SERVICE_INPUT_UNSUPPORTED",
+                    message="service input and with forwarding require spec version 0.3",
+                    path=f"services.{svc_name}",
+                    hint='Set version to "0.3"',
+                )
+            )
+            return None, {}
         if "input" in svc_cfg:
             input_ir, input_errors = parse_service_input(
                 svc_cfg["input"], dtos_data, f"services.{svc_name}.input"

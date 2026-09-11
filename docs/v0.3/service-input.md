@@ -1,14 +1,15 @@
 # Service `input:` and `with:` forwarding
 
-A v0.3 service is an orchestration layer: it declares the inputs it needs, has
-them validated before it runs, and forwards them to whatever backs it -- a
-repository operation or a handler. Both constructs are v0.3-only; a v0.2 spec
-never carries them and behaves byte-identically.
+In v0.3, a service declares the request values it requires with `input:` and
+maps those validated values to its repository operation or custom handler with
+`with:`. Both the in-process server and generated FastAPI, DRF, and raw-ASGI
+backends enforce the same contract. A v0.2 spec using either key is rejected
+with `SERVICE_INPUT_UNSUPPORTED`.
 
-## `input:` -- declaring and validating inputs
+## Declaring inputs
 
-`input:` names the fields a service requires. It is either an inline field map
-or a list of named DTOs whose fields are merged:
+`input:` is an inline field map or a non-empty list of DTO names. DTO fields are
+merged into one input contract.
 
 ```yaml
 services:
@@ -16,32 +17,29 @@ services:
     repository: posts
     operation: archive
     input:
-      postId: string        # inline: field name -> type
-  publishPost:
-    handler: app.handlers.publish
-    input: [PublishRequest]  # merge the fields of a named DTO
-```
-
-Inputs are drawn from the request -- path parameters and the JSON body -- and
-type-checked against their declarations using the same rules as request-body
-validation. A missing or ill-typed input aborts the request with **422** and the
-service never runs; nothing downstream (repository or handler) executes.
-
-Declared inputs are required by default. Mark one optional with an explicit
-field config:
-
-```yaml
-    input:
-      cursor:
+      postId: string
+      reason:
         type: string
         required: false
+  publishPost:
+    handler: app.handlers.publish
+    input: [PublishRequest]
 ```
 
-## `with:` -- forwarding inputs
+The supported field types are `string`, `number`, `boolean`, `datetime`,
+`enum`, `array`, `object`, and `ref`. The normal `min`, `max`, `minLength`,
+`maxLength`, and `values` constraints apply. Fields are required unless their
+configuration sets `required: false`.
 
-`with:` maps a downstream name to a value taken from the validated inputs. Each
-right-hand side is a `$symbol` naming an input field, or a literal (a quoted
-string, a number, or `true`/`false`):
+Values come from JSON body fields and route path parameters. A path parameter
+wins when the body contains the same name, so a body cannot spoof a route
+identity. Missing or invalid inputs return 422 before the repository operation
+or handler runs. An optional input may be absent or `null`.
+
+## Forwarding values
+
+`with:` maps a downstream name to a declared `$input` or to a YAML scalar
+literal. Strings are ordinary YAML strings; no nested quoting is required.
 
 ```yaml
 services:
@@ -51,28 +49,51 @@ services:
     input:
       postId: string
     with:
-      id: $postId          # populate the repository operation's $id free-symbol
-      state: 'archived'    # a literal forwarded verbatim
+      lookup: $postId
+      state: archived
+      audit: true
+      retries: 3
 ```
 
-For a service backed by a **repository operation**, the forwarded values
-populate the operation's free-symbols (the `$`-symbols in its `query:` filter).
-For a service backed by a **handler**, the resolved values are available on the
-request context as `ctx.service_inputs`.
+Dotted references such as `$payload.owner.id` traverse object inputs. A symbol
+may reference only a field declared by the same service's `input:`. An unbound
+name aborts the build with `UNDEFINED_SYMBOL`.
 
-## Symbol scope
+For a repository-backed service, each `with:` key is a root symbol available to
+the operation query. Every query symbol must be supplied on every route that
+reaches the operation, either by a route slug or by `with:`.
 
-A `with:` right-hand-side `$symbol` resolves against the **input field names**
-only -- there is no ambient `$principal` or request root at this site. A
-reference to a name the service did not declare as an input aborts generation
-with the uniform `UNDEFINED_SYMBOL` error, naming the symbol and the scope
-(`service '<name>' with '<key>'`). A `with:` made entirely of literals needs no
-`input:`.
+```yaml
+repositories:
+  posts:
+    operations:
+      archive:
+        query:
+          command: findOne
+          filter:
+            id: $lookup
+            state: $state
+```
+
+A forwarding key that the repository query does not reference is rejected with
+`SERVICE_WITH_TARGET_UNKNOWN`. This catches misspelled targets rather than
+silently discarding a value.
+
+For custom handlers, resolved values are exposed without changing the handler
+signature:
+
+- `yaml-api run`: `context.service_inputs`
+- generated FastAPI and raw-ASGI: `request.state.service_inputs`
+- generated DRF: `request.service_inputs`
 
 ## Error codes
 
 | Code | Raised when |
 | --- | --- |
-| `SERVICE_INPUT_INVALID` | `input:` is neither a field map nor a list of DTO names |
-| `SERVICE_INPUT_DTO_NOT_FOUND` | `input:` lists a DTO that is not defined |
-| `UNDEFINED_SYMBOL` | a `with:` `$symbol` is not a declared input field |
+| `SERVICE_INPUT_UNSUPPORTED` | `input:` or `with:` is used before v0.3 |
+| `SERVICE_INPUT_INVALID` | `input:` is neither a non-empty field map nor a non-empty DTO list |
+| `SERVICE_INPUT_FIELD_INVALID` | an input field type or `required` flag is invalid |
+| `SERVICE_INPUT_DTO_NOT_FOUND` | an input lists a DTO that does not exist |
+| `SERVICE_WITH_VALUE_INVALID` | a forwarded value is not a `$symbol` or scalar literal |
+| `SERVICE_WITH_TARGET_UNKNOWN` | a repository forwarding key is unused by its operation query |
+| `UNDEFINED_SYMBOL` | a `with:` symbol is not declared by the service input |

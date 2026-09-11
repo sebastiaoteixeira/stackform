@@ -61,6 +61,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_project_scaffold(env, context, output_dir)
         self._render_serializers(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
+        self._render_service_inputs(env, context, output_dir)
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
@@ -71,6 +72,19 @@ class DRFGenerator(TemplateBasedGenerator):
                 template_name="requirements.txt.jinja",
                 output_path="requirements.txt",
             )
+        )
+
+    def _render_service_inputs(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        self._render_single_file(
+            env,
+            context,
+            output_dir,
+            SingleFileRenderConfig(
+                template_name="service_inputs.py.jinja",
+                output_path=f"{self.dir_prefix}/service_inputs.py",
+            ),
         )
 
     def _render_settings(
@@ -172,6 +186,10 @@ class DRFGenerator(TemplateBasedGenerator):
                     "collection_name": col_name,
                     "routes": col_data["routes"],
                     "model_index": {m.name: m for m in col_data["models"]},
+                    "repo_queries": {
+                        op["name"]: op["query"]
+                        for op in ctx.repository_operations.get(col_name, [])
+                    },
                     "auth": ctx.auth,
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
@@ -183,6 +201,21 @@ class DRFGenerator(TemplateBasedGenerator):
             login_template = env.get_template("login_views.py.jinja")
             login_content = login_template.render(auth=context.auth)
             (views_dir / "login.py").write_text(login_content)
+
+        handler_routes = [
+            route
+            for route in context.routes
+            if route.collection is None and route.handler is not None
+        ]
+        if handler_routes:
+            views_dir = output_dir / self.dir_prefix / "views"
+            views_dir.mkdir(parents=True, exist_ok=True)
+            (views_dir / "_handlers.py").write_text(
+                env.get_template("handler_views.py.jinja").render(
+                    routes=handler_routes,
+                    auth=context.auth,
+                )
+            )
 
     def _render_repositories(
         self,

@@ -41,6 +41,16 @@ class RawASGIGenerator(TemplateBasedGenerator):
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        self._render_single_file(
+            env,
+            context,
+            output_dir,
+            SingleFileRenderConfig(
+                template_name="service_inputs.py.jinja",
+                output_path="service_inputs.py",
+            ),
+        )
+
         collections_by_name = group_by_collection(context)
 
         self._render_settings(env, context, output_dir)
@@ -189,6 +199,18 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 },
             )
             (routes_dir / f"{col_name}.py").write_text(content)
+
+        handler_routes = [
+            route
+            for route in context.routes
+            if route.collection is None and route.handler is not None
+        ]
+        if handler_routes:
+            content = env.get_template("handler_routes.py.jinja").render(
+                routes=handler_routes,
+                needs_auth=any(route.needs_auth for route in handler_routes),
+            )
+            (routes_dir / "handlers.py").write_text(content)
 
     def _render_login_routes(
         self, env: Environment, context: CompileContext, output_dir: Path

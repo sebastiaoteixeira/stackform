@@ -5,7 +5,7 @@ Converts IR routes into route descriptors with access control and model referenc
 
 import re
 
-from yaml_api_generator.ir import IRDocument, IRDto
+from yaml_api_generator.ir import IRDocument, IRDto, IRSymbolRef
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..compile_context import (
     AccessRuleDescriptor,
@@ -35,6 +35,26 @@ def _request_descriptors(rule) -> list[RequestSymbolDescriptor]:
     ]
 
 
+def _service_config(document: IRDocument, service_name: str | None) -> tuple[
+    dict[str, object], dict[str, dict[str, object]]
+]:
+    service = document.services.get(service_name) if service_name is not None else None
+    input_fields = (
+        dict(service.input.fields)
+        if service is not None and service.input is not None
+        else {}
+    )
+    forwarding = {
+        name: (
+            {"symbol": [rhs.root, *rhs.path]}
+            if isinstance(rhs, IRSymbolRef)
+            else {"literal": rhs.value}
+        )
+        for name, rhs in (service.forwarding.items() if service is not None else ())
+    }
+    return input_fields, forwarding
+
+
 class RouteBuilder:
     """Builds route descriptors from IR routes."""
 
@@ -54,6 +74,9 @@ class RouteBuilder:
             path_params = _PATH_TOKEN.findall(ir_route.path)
             record_id_param, record_parent_params = self._record_params(
                 document.version, ir_route.operation, path_params
+            )
+            service_input, service_forwarding = _service_config(
+                document, ir_route.service
             )
 
             access_rules = None
@@ -96,6 +119,8 @@ class RouteBuilder:
                         service=ir_route.service,
                         record_id_param=record_id_param,
                         record_parent_params=record_parent_params,
+                        service_input=service_input,
+                        service_forwarding=service_forwarding,
                     )
                 )
                 continue
@@ -131,6 +156,8 @@ class RouteBuilder:
                     record_id_param=record_id_param,
                     record_parent_params=record_parent_params,
                     id_field=document.collections[ir_route.collection].idField,
+                    service_input=service_input,
+                    service_forwarding=service_forwarding,
                 )
             )
 

@@ -23,11 +23,7 @@ from typing import Any
 
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 from yaml_api_generator.ir import IRSymbolRef
-from yaml_api_generator.parsers.where_parser import (
-    WhereBinding,
-    parse_rhs_value,
-    parse_where_binding,
-)
+from yaml_api_generator.parsers.where_parser import WhereBinding, parse_where_binding
 
 from .auth_validation import _resolved_fields
 from .symbol_resolution import SymbolScope
@@ -51,24 +47,63 @@ def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
 
 
 def _validate_service_with(spec: dict[str, Any]) -> list[ConfigError]:
-    from yaml_api_generator.parsers.service_input_parser import parse_service_input
+    if str(spec.get("version")) != "0.3":
+        return []
+
+    from yaml_api_generator.parsers.service_input_parser import (
+        parse_service_input,
+        parse_service_with,
+    )
 
     dtos = spec.get("dto") or {}
+    repositories = spec.get("repositories") or {}
     errors: list[ConfigError] = []
     for service_name, service in (spec.get("services") or {}).items():
         if not isinstance(service, dict) or not isinstance(service.get("with"), dict):
             continue
-        input_ir, _ = parse_service_input(service.get("input"), dtos, "")
+        input_ir = None
+        if "input" in service:
+            input_ir, input_errors = parse_service_input(
+                service["input"], dtos, f"services.{service_name}.input"
+            )
+            errors.extend(input_errors)
         bound = input_ir.names if input_ir is not None else frozenset()
-        for name, value in service["with"].items():
+        forwarding, forwarding_errors = parse_service_with(
+            service["with"], f"services.{service_name}.with"
+        )
+        errors.extend(forwarding_errors)
+        for name, rhs in forwarding.items():
             scope = SymbolScope(
                 label=f"service '{service_name}' with '{name}'", bound=bound
             )
             path = f"services.{service_name}.with.{name}"
-            rhs, rhs_errors = parse_rhs_value(str(value), path)
-            errors.extend(rhs_errors)
             symbols = {rhs.root} if isinstance(rhs, IRSymbolRef) else set()
             errors.extend(scope.undefined(symbols, path))
+        repository = repositories.get(service.get("repository"))
+        operation = service.get("operation")
+        operation_config = (
+            (repository.get("operations") or {}).get(operation)
+            if isinstance(repository, dict) and operation is not None
+            else None
+        )
+        if not isinstance(operation_config, dict) or not isinstance(
+            operation_config.get("query"), dict
+        ):
+            continue
+        referenced = _free_symbols(operation_config["query"])
+        errors.extend(
+            ConfigError(
+                code="SERVICE_WITH_TARGET_UNKNOWN",
+                message=(
+                    f"service '{service_name}' forwards '{name}', but repository "
+                    f"operation '{operation}' does not reference '${name}'"
+                ),
+                path=f"services.{service_name}.with.{name}",
+                hint="Remove the forwarding or reference the name in the operation query",
+            )
+            for name in forwarding
+            if name not in referenced
+        )
     return errors
 
 
@@ -113,7 +148,7 @@ def _validate_record_locators(spec: dict[str, Any]) -> list[ConfigError]:
 
 
 def _validate_repository_filters(spec: dict[str, Any]) -> list[ConfigError]:
-    slugs = _slugs_by_operation(spec)
+    sites = _repository_filter_sites(spec)
     errors: list[ConfigError] = []
     for repo_name, repo in (spec.get("repositories") or {}).items():
         if not isinstance(repo, dict):
@@ -121,13 +156,46 @@ def _validate_repository_filters(spec: dict[str, Any]) -> list[ConfigError]:
         for op_name, op in (repo.get("operations") or {}).items():
             if not isinstance(op, dict) or not isinstance(op.get("query"), dict):
                 continue
-            scope = SymbolScope(
-                label=f"repository '{repo_name}' operation '{op_name}' filter",
-                bound=slugs.get((repo_name, op_name), frozenset()),
-            )
             path = f"repositories.{repo_name}.operations.{op_name}.query"
-            errors.extend(scope.undefined(_free_symbols(op["query"]), path))
+            operation_sites = sites.get((repo_name, op_name)) or [
+                (f"repository '{repo_name}' operation '{op_name}' filter", frozenset())
+            ]
+            for label, bound in operation_sites:
+                scope = SymbolScope(label=label, bound=bound)
+                errors.extend(scope.undefined(_free_symbols(op["query"]), path))
     return errors
+
+
+def _repository_filter_sites(
+    spec: dict[str, Any],
+) -> dict[tuple[str, str], list[tuple[str, frozenset[str]]]]:
+    services = spec.get("services") or {}
+    sites: dict[tuple[str, str], list[tuple[str, frozenset[str]]]] = {}
+    for controller_name, controller in (spec.get("controllers") or {}).items():
+        if not isinstance(controller, dict):
+            continue
+        base = str(controller.get("base_path", ""))
+        for route_name, route in (controller.get("routes") or {}).items():
+            if not isinstance(route, dict):
+                continue
+            service = services.get(route.get("service"))
+            if not isinstance(service, dict):
+                continue
+            repository = service.get("repository")
+            operation = service.get("operation") or route_name
+            if repository is None:
+                continue
+            slugs = frozenset(_SLUG.findall(base + str(route.get("path", ""))))
+            forwarding = service.get("with")
+            supplied = slugs | (
+                frozenset(forwarding) if isinstance(forwarding, dict) else frozenset()
+            )
+            label = (
+                f"repository '{repository}' operation '{operation}' filter for "
+                f"controller '{controller_name}' route '{route_name}'"
+            )
+            sites.setdefault((repository, operation), []).append((label, supplied))
+    return sites
 
 
 @dataclass(frozen=True)
@@ -248,24 +316,3 @@ def _free_symbols(value: Any) -> set[str]:
     if isinstance(value, list):
         return set().union(*(_free_symbols(v) for v in value), set())
     return set()
-
-
-def _slugs_by_operation(spec: dict[str, Any]) -> dict[tuple[str, str], frozenset[str]]:
-    services = spec.get("services") or {}
-    reached: dict[tuple[str, str], set[str]] = {}
-    for controller in (spec.get("controllers") or {}).values():
-        if not isinstance(controller, dict):
-            continue
-        base = str(controller.get("base_path", ""))
-        for route in (controller.get("routes") or {}).values():
-            if not isinstance(route, dict):
-                continue
-            service = services.get(route.get("service"))
-            if not isinstance(service, dict):
-                continue
-            repository, operation = service.get("repository"), service.get("operation")
-            if repository is None or operation is None:
-                continue
-            route_slugs = set(_SLUG.findall(base + str(route.get("path", ""))))
-            reached.setdefault((repository, operation), set()).update(route_slugs)
-    return {key: frozenset(names) for key, names in reached.items()}

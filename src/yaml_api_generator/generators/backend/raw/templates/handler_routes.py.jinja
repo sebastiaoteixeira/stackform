@@ -1,0 +1,42 @@
+from importlib import import_module
+from typing import Any
+
+from service_inputs import RawRequest, prepare_service_inputs
+{% if needs_auth %}
+from dependencies.auth import resolve_principal
+{% endif %}
+
+
+{% for route in routes %}
+async def handle_custom_{{ loop.index }}(
+    url_params: dict[str, str],
+    body: dict[str, Any] | None,
+    headers: dict[str, str],
+    db: Any,
+) -> tuple[int, Any]:
+{% if route.needs_auth %}
+    principal = await resolve_principal(headers, db)
+    if principal is None:
+        return 401, {"detail": "Unauthorized"}
+{% else %}
+    principal = None
+{% endif %}
+    service_inputs = prepare_service_inputs(
+        url_params,
+        body,
+        {{ route.service_input | py_literal }},
+        {{ route.service_forwarding | py_literal }},
+    )
+    request = RawRequest(
+        url_params,
+        body,
+        headers,
+        principal,
+        service_inputs,
+    )
+    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
+    result = await getattr(import_module(module_path), function_name)(request)
+    return 200, result
+
+
+{% endfor %}

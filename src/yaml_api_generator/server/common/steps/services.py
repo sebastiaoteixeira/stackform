@@ -30,7 +30,6 @@ def ServiceInputStep(
             name: _resolve(rhs, inputs) for name, rhs in forwarding.items()
         }
         ctx.service_inputs = forwarded
-        ctx.url_params = {**ctx.url_params, **_as_params(forwarded)}
         return ctx
 
     return step
@@ -38,7 +37,7 @@ def ServiceInputStep(
 
 def _request_namespace(ctx: RequestContext) -> dict[str, Any]:
     body = ctx.body if isinstance(ctx.body, dict) else {}
-    return {**ctx.url_params, **body}
+    return {**body, **ctx.url_params}
 
 
 def _resolve(rhs: WhereRhs, inputs: dict[str, Any]) -> Any:
@@ -50,7 +49,3 @@ def _resolve(rhs: WhereRhs, inputs: dict[str, Any]) -> Any:
             value = value.get(segment)
         return value
     return rhs.value
-
-
-def _as_params(forwarded: dict[str, Any]) -> dict[str, str]:
-    return {name: str(value) for name, value in forwarded.items() if value is not None}

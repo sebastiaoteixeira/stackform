@@ -166,6 +166,8 @@ def validate_field_values(
     for name, cfg in field_configs.items():
         if name not in values:
             continue
+        if values[name] is None and not cfg.get("required", True):
+            continue
         schema = _FieldSchema(
             name=name,
             field_type=cfg.get("type", "string"),
