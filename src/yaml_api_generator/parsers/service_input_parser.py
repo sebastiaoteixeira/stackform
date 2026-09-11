@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from yaml_api_generator.ir import IRServiceInput, WhereRhs
+from yaml_api_generator.ir import IRLiteralRef, IRServiceInput, WhereRhs
 
 from .where_parser import parse_rhs_value
 from .yaml_parser import ConfigError
@@ -22,14 +22,16 @@ from .yaml_parser import ConfigError
 def parse_service_input(
     config: Any, dtos: dict[str, Any], path: str
 ) -> tuple[IRServiceInput | None, list[ConfigError]]:
-    if isinstance(config, list):
+    if isinstance(config, list) and config:
         return _merge_dtos(config, dtos, path)
-    if isinstance(config, dict):
-        return IRServiceInput(fields=_normalize_inline(config)), []
+    if isinstance(config, dict) and config:
+        fields = _normalize_inline(config)
+        errors = _validate_fields(fields, path)
+        return (None, errors) if errors else (IRServiceInput(fields=fields), [])
     return None, [
         ConfigError(
             code="SERVICE_INPUT_INVALID",
-            message="service input must be a list of DTO names or a field map",
+            message="service input must be a non-empty DTO list or field map",
             path=path,
         )
     ]
@@ -41,11 +43,22 @@ def parse_service_with(
     bindings: dict[str, WhereRhs] = {}
     errors: list[ConfigError] = []
     for name, raw in config.items():
-        rhs, rhs_errors = parse_rhs_value(str(raw), f"{path}.{name}")
-        if rhs is None:
+        value_path = f"{path}.{name}"
+        if isinstance(raw, str) and raw.startswith("$"):
+            rhs, rhs_errors = parse_rhs_value(raw, value_path)
             errors.extend(rhs_errors)
-            continue
-        bindings[name] = rhs
+            if rhs is not None:
+                bindings[name] = rhs
+        elif isinstance(raw, (str, int, float, bool)):
+            bindings[name] = IRLiteralRef(raw)
+        else:
+            errors.append(
+                ConfigError(
+                    code="SERVICE_WITH_VALUE_INVALID",
+                    message="service with value must be a $symbol or scalar literal",
+                    path=value_path,
+                )
+            )
     return bindings, errors
 
 
@@ -68,7 +81,8 @@ def _merge_dtos(
         fields.update(_normalize_inline(dto.get("fields", {})))
     if errors:
         return None, errors
-    return IRServiceInput(fields=fields), []
+    field_errors = _validate_fields(fields, path)
+    return (None, field_errors) if field_errors else (IRServiceInput(fields=fields), [])
 
 
 def _normalize_inline(config: dict[str, Any]) -> dict[str, Any]:
@@ -76,3 +90,33 @@ def _normalize_inline(config: dict[str, Any]) -> dict[str, Any]:
         name: spec if isinstance(spec, dict) else {"type": spec}
         for name, spec in config.items()
     }
+
+
+_FIELD_TYPES = frozenset(
+    {"string", "number", "boolean", "datetime", "enum", "array", "object", "ref"}
+)
+
+
+def _validate_fields(fields: dict[str, Any], path: str) -> list[ConfigError]:
+    errors: list[ConfigError] = []
+    for name, config in fields.items():
+        field_path = f"{path}.{name}"
+        field_type = config.get("type", "string") if isinstance(config, dict) else None
+        if field_type not in _FIELD_TYPES:
+            errors.append(
+                ConfigError(
+                    code="SERVICE_INPUT_FIELD_INVALID",
+                    message=f"service input '{name}' has invalid type '{field_type}'",
+                    path=field_path,
+                    hint=f"Use one of: {', '.join(sorted(_FIELD_TYPES))}",
+                )
+            )
+        if isinstance(config, dict) and not isinstance(config.get("required", True), bool):
+            errors.append(
+                ConfigError(
+                    code="SERVICE_INPUT_FIELD_INVALID",
+                    message=f"service input '{name}' required flag must be boolean",
+                    path=field_path,
+                )
+            )
+    return errors

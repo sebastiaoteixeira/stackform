@@ -1,8 +1,8 @@
 import base64
-from typing import Any
 
 import pytest
 
+from tests.unit.support.repositories import InMemoryRepository
 from yaml_api_generator.ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
 from yaml_api_generator.server.common.request_context import RequestContext
 from yaml_api_generator.server.common.server_context import (
@@ -31,50 +31,6 @@ from yaml_api_generator.ir.when import (
     StringLiteral,
 )
 from yaml_api_generator.server.common.auth.password import hash_password
-from yaml_api_generator.server.common.repositories.base import BaseRepository
-
-
-class InMemoryRepository(BaseRepository):
-    def __init__(self, data: dict[str, list[dict[str, Any]]] | None = None):
-        self._data: dict[str, list[dict[str, Any]]] = data or {}
-
-    def connect(self):
-        pass
-
-    async def close(self):
-        pass
-
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
-        return list(self._data.get(collection_name, []))
-
-    async def get(
-        self, collection_name: str, document_id: str
-    ) -> dict[str, Any] | None:
-        for doc in self._data.get(collection_name, []):
-            if doc.get("id") == document_id:
-                return doc
-        return None
-
-    async def create(
-        self, collection_name: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        self._data.setdefault(collection_name, []).append(payload)
-        return payload
-
-    async def update(
-        self, collection_name: str, document_id: str, payload: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        return None
-
-    async def replace(
-        self, collection_name: str, document_id: str, payload: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        return None
-
-    async def delete(
-        self, collection_name: str, document_id: str
-    ) -> dict[str, Any] | None:
-        return None
 
 
 def _make_ctx(**overrides) -> RequestContext:
@@ -800,6 +756,31 @@ class TestPostFetchAuthorizeStep:
         )
         result = step(ctx)
         assert result is ctx
+
+    def test_234b_missing_document_with_doc_rule_forbidden(self):
+        when = Equals(
+            FieldRef("document", ("authorId",)),
+            FieldRef("principal", ("sub",)),
+        )
+        rules = [
+            RuntimeAccessRule(
+                principal="identity:users",
+                when=when,
+                identity_symbols={"principal": IRIdentityBinding(entity_name="users", collection_name="users")},
+                document_symbols={"document": IRDocumentBinding(collection="posts")},
+            )
+        ]
+        step = PostFetchAuthorizeStep(access_rules=rules)
+        ctx = _make_ctx(
+            principal={
+                "sub": "u1",
+                "identity_collection": "users",
+                "record": {},
+            },
+            response=None,
+        )
+        with pytest.raises(ForbiddenError):
+            step(ctx)
 
     def test_235_deny_rule_with_document(self):
         when = Equals(

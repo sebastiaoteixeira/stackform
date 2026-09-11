@@ -64,6 +64,16 @@ class NotIn(WhenExpr):
 
 
 @dataclass(frozen=True)
+class IsNull(WhenExpr):
+    operand: WhenExpr
+
+
+@dataclass(frozen=True)
+class IsNotNull(WhenExpr):
+    operand: WhenExpr
+
+
+@dataclass(frozen=True)
 class PolicyRef(WhenExpr):
     name: str
     args: tuple[str, ...] = ()
@@ -79,7 +89,7 @@ def needs_document(expr: WhenExpr) -> bool:
         return needs_document(expr.left) or needs_document(expr.right)
     if isinstance(expr, (In, NotIn)):
         return needs_document(expr.left)
-    if isinstance(expr, Not):
+    if isinstance(expr, (Not, IsNull, IsNotNull)):
         return needs_document(expr.operand)
     return False
 
@@ -93,6 +103,6 @@ def collect_roots(expr: WhenExpr) -> set[str]:
         return collect_roots(expr.left) | collect_roots(expr.right)
     if isinstance(expr, (In, NotIn)):
         return collect_roots(expr.left)
-    if isinstance(expr, Not):
+    if isinstance(expr, (Not, IsNull, IsNotNull)):
         return collect_roots(expr.operand)
     return set()

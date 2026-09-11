@@ -37,6 +37,9 @@ class SQLRepositoryBase:
             if key in self.TABLE.columns and not (drop_id and key == self.ID_FIELD)
         }
 
+    def _criteria(self, criteria: dict[str, Any]) -> tuple[sa.ColumnElement[bool], ...]:
+        return tuple(self.TABLE.c[field] == value for field, value in criteria.items())
+
     @staticmethod
     def _one(result: sa.Result) -> dict[str, Any] | None:
         row = result.first()
@@ -49,6 +52,55 @@ class SQLRepositoryBase:
             )
             return self._one(result)
 
+    async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        async with self._engine.connect() as conn:
+            result = await conn.execute(
+                sa.select(self.TABLE).where(*self._criteria(criteria)).limit(1)
+            )
+            return self._one(result)
+
+    async def update_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        changes = {field: value for field, value in data.items() if field not in criteria}
+        if not changes:
+            return await self.find_one(criteria)
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                sa.update(self.TABLE)
+                .where(*self._criteria(criteria))
+                .values(**self._known(changes, drop_id=True))
+                .returning(self.TABLE)
+            )
+            return self._one(result)
+
+    async def replace_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        replacement = {**data, **criteria}
+        values = {
+            column.name: replacement.get(column.name)
+            for column in self.TABLE.columns
+            if column.name != self.ID_FIELD
+        }
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                sa.update(self.TABLE)
+                .where(*self._criteria(criteria))
+                .values(**values)
+                .returning(self.TABLE)
+            )
+            return self._one(result)
+
+    async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                sa.delete(self.TABLE)
+                .where(*self._criteria(criteria))
+                .returning(self.TABLE)
+            )
+            return self._one(result)
+
     async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
         if self._generate_id is not None:
             data[self.ID_FIELD] = self._generate_id()
@@ -56,6 +108,23 @@ class SQLRepositoryBase:
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(self.TABLE).values(**values))
         return values
+
+    async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        if data.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
+        values = dict(self._known(data))
+        if self._generate_id is not None:
+            values.setdefault(self.ID_FIELD, self._generate_id())
+        statement = pg_insert(self.TABLE).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[key_field],
+            set_={k: statement.excluded[k] for k in values if k != key_field},
+        ).returning(self.TABLE)
+        async with self._engine.begin() as conn:
+            result = await conn.execute(statement)
+            return self._one(result)
 
 
 class ListOp:

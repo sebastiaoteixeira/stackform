@@ -11,7 +11,7 @@ current scope**. A symbol is defined only if something bound it:
 - an access rule's `given:` binding,
 - a service `input:` declaration,
 - a slug declared in a route template (for example `{orderId}` in `/orders/{orderId}`),
-- and, in later releases, a service `with:` forward or a controller / access-rule `bind:`.
+- a service `with:` forwarding key.
 
 There are **no built-in or ambient roots** except route-declared slugs. A
 reference that nothing bound in its scope aborts generation.
@@ -25,12 +25,15 @@ A symbol that is not bound in its scope produces one coded error,
 symbol $principal is not bound in scope repository 'orders' operation 'byOwner' filter
 ```
 
-The same rule and the same error apply at every site where symbols resolve: a
-`when:` operand, a repository query filter, and &mdash; as later v0.3 issues add
-them &mdash; a `where` right-hand side, a service `with:` forward, and a
-controller / access-rule `bind:`. Each site builds a scope carrying its bound
-names and a label, then defers to the shared resolver, so the rule is enforced
-identically everywhere.
+The same rule and error apply to a `when:` operand, repository query filter,
+[`where` right-hand side](./given-where.md#symbol-scope), and service `with:`
+forward. Each site builds an explicit scope and delegates to the shared
+resolver.
+
+A `where` binding's scope is the route's slugs plus the `identity:` / `request`
+names its rule binds; document bindings of the same rule are not in scope. Its
+left-hand-side field is checked separately and reports `WHERE_FIELD_UNKNOWN`,
+not `UNDEFINED_SYMBOL`.
 
 ## `$principal` is not ambient in v0.3
 
@@ -68,9 +71,10 @@ controllers:
       byId: { service: byId, method: GET, path: "/{orderId}", access: public }
 ```
 
-Service-supplied free symbols (for example `$organizationId` bound through a
-service `input:` / `with:`) resolve the same way once those constructs are
-active.
+Service forwarding keys are also bound roots. A repository query may reference
+`$organizationId` when the route's service supplies an `organizationId` key in
+`with:`. Validation is per route, so one correctly bound route cannot hide a
+missing binding on another route to the same operation.
 
 ## v0.2 is unchanged
 

@@ -23,23 +23,25 @@ about existing constructs; it only unlocks the additional v0.3 constructs below.
 The v0.3 schema lives at `parsers/schemas/yaml-spec-v0.3.schema.json` and is a copy
 of the v0.2 schema extended permissively with:
 
-- **`where` binding form** &mdash; access-rule `given:` values may be `where`
-  expressions over fields, `$`-sigil symbols, and literals (for example
-  `ownerId = $userId and orgId = $orgId`).
-- **service `input:` / `with:`** &mdash; a service declares the named inputs it
-  requires (`input:`) and forwards values into a called service (`with:`).
+- **[`where` binding form](./given-where.md)** &mdash; access-rule `given:`
+  values may bind a record by predicate over fields, `$`-sigil symbols, and
+  literals (for example `orders where ownerId = $userId and orgId = $orgId`).
+- **[service `input:` / `with:`](./service-input.md)** &mdash; a service declares,
+  validates, and forwards request values to a repository operation or handler.
 - **controller / access-rule `bind:`** &mdash; supplies values for a service's
   declared inputs.
 - **`$`-sigil slugs** &mdash; symbolic references such as `$userId`, resolved at
   build or call time.
 
-These constructs are accepted **syntactically** in v0.3; their runtime semantics
-are delivered by later v0.3 issues.
+The `where` binding and service `input:` / `with:` forms are implemented in the
+runtime server and generated backends. A construct is not listed as implemented
+until its parser, runtime behavior, generated output, tests, and reference docs
+are present.
 
 ## `where` operators: active vs reserved
 
-The `where` operator set is reserved in the schema so that specs written against
-future v0.3 releases validate today. Only a subset is active:
+The `where` operator set is reserved so that specs written against future v0.3
+releases stay within the schema's character set today. Only a subset is active:
 
 | Operator | Status |
 | --- | --- |
@@ -52,5 +54,6 @@ future v0.3 releases validate today. Only a subset is active:
 | `>=` | Reserved (not yet implemented) |
 | `in` | Reserved (not yet implemented) |
 
-Reserved operators are recognized by the schema but carry no runtime behavior yet.
-Use only `=` and `and` in expressions you expect to run.
+Reserved operators pass the schema but are rejected by the where parser with
+`WHERE_OPERATOR_UNSUPPORTED`, so a spec using one does not build. Use only `=`
+and `and`.

@@ -2,6 +2,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -29,7 +31,14 @@ class RepositoryBase:
         self._generate_id = make_id_generator(self.ID_FORMAT)
 
     def _match_filter(self, document_id: str) -> dict[str, Any]:
-        return {self.ID_FIELD: document_id}
+        candidates: list[Any] = [document_id]
+        try:
+            candidates.append(ObjectId(document_id))
+        except InvalidId:
+            pass
+        conditions = [{"_id": value} for value in candidates]
+        conditions.append({self.ID_FIELD: document_id})
+        return {"$or": conditions}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
         if doc is None:
@@ -39,11 +48,49 @@ class RepositoryBase:
     async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
         return self._normalize(await self._col.find_one({field: value}))
 
+    async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        return self._normalize(await self._col.find_one(dict(criteria)))
+
+    async def update_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        changes = {field: value for field, value in data.items() if field not in criteria}
+        if not changes:
+            return await self.find_one(criteria)
+        doc = await self._col.find_one_and_update(
+            dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize(doc)
+
+    async def replace_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        replacement = {**data, **criteria}
+        doc = await self._col.find_one_and_replace(
+            dict(criteria), replacement, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize(doc)
+
+    async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        return self._normalize(await self._col.find_one_and_delete(dict(criteria)))
+
     async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
         if self._generate_id is not None:
             data[self.ID_FIELD] = self._generate_id()
         await self._col.insert_one(data)
         return self._normalize(data)
+
+    async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get(key_field) is None:
+            raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
+        on_insert = {self.ID_FIELD: self._generate_id()} if self._generate_id is not None else {}
+        doc = await self._col.find_one_and_update(
+            {key_field: data.get(key_field)},
+            {"$set": data, "$setOnInsert": on_insert},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(doc)
 
 
 class ListOp:

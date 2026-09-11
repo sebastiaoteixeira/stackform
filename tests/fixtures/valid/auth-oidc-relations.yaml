@@ -41,7 +41,7 @@ entities:
     type: auth
     auth:
       identifier: email
-      bindings:
+      via:
         - provider: keycloak
           identifier: email
           claim_mapping:

@@ -19,6 +19,12 @@ class {{ collection_name | capitalize_collection }}Service:
             raise NotFoundError("{{ collection_name }}", resource_id)
         return document
 
+    async def get_by(self, criteria: dict) -> dict:
+        document = await self._repo.find_one(criteria)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", criteria)
+        return document
+
     async def create(self, data: dict) -> dict:
 {% if is_identity_collection %}
         self._validate_identity_fields(data)
@@ -37,6 +43,15 @@ class {{ collection_name | capitalize_collection }}Service:
             raise NotFoundError("{{ collection_name }}", resource_id)
         return document
 
+    async def update_by(self, criteria: dict, data: dict) -> dict:
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        document = await self._repo.update_by(criteria, data)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", criteria)
+        return document
+
     async def replace(self, resource_id: str, data: dict) -> dict:
 {% if password_via %}
         self._process_password(data)
@@ -46,10 +61,25 @@ class {{ collection_name | capitalize_collection }}Service:
             raise NotFoundError("{{ collection_name }}", resource_id)
         return document
 
+    async def replace_by(self, criteria: dict, data: dict) -> dict:
+{% if password_via %}
+        self._process_password(data)
+{% endif %}
+        document = await self._repo.replace_by(criteria, data)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", criteria)
+        return document
+
     async def delete(self, resource_id: str) -> dict:
         document = await self._repo.delete(resource_id)
         if document is None:
             raise NotFoundError("{{ collection_name }}", resource_id)
+        return document
+
+    async def delete_by(self, criteria: dict) -> dict:
+        document = await self._repo.delete_by(criteria)
+        if document is None:
+            raise NotFoundError("{{ collection_name }}", criteria)
         return document
 {% else %}
     def list(self) -> list[dict]:

@@ -154,6 +154,51 @@ class TestParentheses:
         assert errors and errors[0].code == "WHEN_EXPR_INVALID"
 
 
+class TestIsNullOperators:
+    def test_is_null_parses_to_is_null_node(self):
+        from yaml_api_generator.ir.when import FieldRef, IsNull
+        expr, errors = parse_when_expr("document.organizationId is null", _PATH)
+        assert not errors
+        assert isinstance(expr, IsNull)
+        assert expr.operand == FieldRef(root="document", path=("organizationId",))
+
+    def test_is_not_null_parses_to_is_not_null_node(self):
+        from yaml_api_generator.ir.when import FieldRef, IsNotNull
+        expr, errors = parse_when_expr("principal.record.role is not null", _PATH)
+        assert not errors
+        assert isinstance(expr, IsNotNull)
+        assert expr.operand == FieldRef(root="principal", path=("record", "role"))
+
+    def test_is_null_evaluates_true_for_none_field(self):
+        assert _eval("document.organizationId is null", document={"organizationId": None}) is True
+
+    def test_is_null_evaluates_false_for_present_field(self):
+        assert _eval("document.organizationId is null", document={"organizationId": "org-1"}) is False
+
+    def test_is_not_null_evaluates_true_for_present_field(self):
+        assert _eval("document.organizationId is not null", document={"organizationId": "org-1"}) is True
+
+    def test_is_not_null_evaluates_false_for_none_field(self):
+        assert _eval("document.organizationId is not null", document={"organizationId": None}) is False
+
+    def test_is_null_evaluates_true_for_missing_field(self):
+        assert _eval("document.organizationId is null", document={}) is True
+
+    def test_is_null_combined_with_and(self):
+        assert _eval(
+            "document.organizationId is null and principal.sub equals 'u1'",
+            principal={"sub": "u1"},
+            document={},
+        ) is True
+
+    def test_is_not_null_combined_with_and(self):
+        assert _eval(
+            "principal.record.role is not null and document.id equals 'doc-1'",
+            principal={"record": {"role": "admin"}},
+            document={"id": "doc-1"},
+        ) is True
+
+
 class TestParseDocumentBinding:
     def test_149_collection_only(self):
         result, errors = parse_document_binding("collection", _PATH)

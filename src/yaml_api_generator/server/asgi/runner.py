@@ -2,7 +2,9 @@ import json
 import re
 from typing import Any
 
+from yaml_api_generator.ir import IRDocument
 from ..common.server_context import RuntimeContext, RuntimeRouteDescriptor
+from ..common.loader import initialize_indexes
 from ..common.pipeline import Pipeline
 from ..common.pipeline_builder import PipelineBuilder
 from ..common.repositories import RepositoryRegistry
@@ -18,8 +20,9 @@ def _compile_path(path: str) -> re.Pattern[str]:
 
 
 class ASGIApp:
-    def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
+    def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry, ir: IRDocument | None = None) -> None:
         self._registry = registry
+        self._ir = ir
         self._routes: dict[str, list[_RouteEntry]] = {}
         builder = PipelineBuilder(ctx=ctx, registry=registry)
 
@@ -49,6 +52,8 @@ class ASGIApp:
         while True:
             message = await receive()
             if message["type"] == "lifespan.startup":
+                if self._ir is not None:
+                    await initialize_indexes(self._ir, self._registry)
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
                 for repository in self._registry.all():

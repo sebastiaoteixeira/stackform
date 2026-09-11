@@ -21,4 +21,4 @@ def build_raw_app(yaml_file: str, schema_file: str | Path | None = None) -> ASGI
     ir, registry = create_repositories(yaml_file, schema_file)
     ctx = build_runtime_context(ir)
 
-    return ASGIApp(ctx, registry)
+    return ASGIApp(ctx, registry, ir)

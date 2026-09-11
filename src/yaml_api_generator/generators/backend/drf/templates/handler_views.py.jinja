@@ -1,0 +1,43 @@
+from importlib import import_module
+
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from api.service_inputs import prepare_service_inputs
+{% if routes | selectattr("needs_auth") | list %}
+from api.authentication.auth import resolve_principal
+from api.authentication.mongodb import get_database
+{% endif %}
+
+
+{% for route in routes %}
+class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(APIView):
+    async def {{ route.method | lower }}(self, request, **path_params):
+{% if route.needs_auth %}
+        principal = resolve_principal(request, get_database())
+        if principal is None:
+            return Response(
+                {"detail": "Unauthorized"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+{% endif %}
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            request.service_inputs = prepare_service_inputs(
+                path_params,
+                body,
+                {{ route.service_input | py_literal }},
+                {{ route.service_forwarding | py_literal }},
+            )
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
+        result = await getattr(import_module(module_path), function_name)(request)
+        return result if isinstance(result, Response) else Response(result)
+
+
+{% endfor %}

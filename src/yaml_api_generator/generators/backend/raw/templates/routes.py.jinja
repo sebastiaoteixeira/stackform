@@ -3,6 +3,7 @@ from typing import Any
 from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from services.exceptions import NotFoundError, ValidationError
+from service_inputs import RawRequest, prepare_service_inputs, resolve_bindings
 {% if needs_auth %}
 from dependencies.auth import resolve_principal
 {% endif %}
@@ -10,20 +11,38 @@ import validation
 
 
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
+{% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": url_params["{{ param }}"]{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% for route in routes %}
 {% if route.operation != "login" %}
 {% set handler_name = "handle_" ~ route.operation ~ "_" ~ collection_name %}
 async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any) -> tuple[int, Any]:
     repo = {{ collection_name | capitalize_collection }}Repository(db)
     service = {{ collection_name | capitalize_collection }}Service(repo)
+    service_inputs = prepare_service_inputs(url_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }})
+    params = {**url_params, **service_inputs}
+    principal = None
 {% if route.needs_auth %}
     principal = await resolve_principal(headers, db)
     if principal is None:
         return 401, {"detail": "Unauthorized"}
 {% endif %}
-{% if route.operation not in crud_op_names %}
+{% if route.handler %}
+    from importlib import import_module
+    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
+    request = RawRequest(
+        url_params,
+        body,
+        headers,
+        principal,
+        service_inputs,
+    )
+    result = await getattr(import_module(module_path), function_name)(request)
+    return 200, result
+{% elif route.operation not in crud_op_names %}
 {% set query = repo_queries[route.operation] %}
-    result = await repo.{{ route.operation }}({% for key, value in (query or {}).items() if key != "command" %}{{ key }}={{ value | py_literal }}{% if not loop.last %}, {% endif %}{% endfor %})
+    bindings = {**params, "params": params, "body": body or {}}
+    resolved = resolve_bindings({{ query | py_literal }}, bindings)
+    result = await repo.{{ route.operation }}(**{key: value for key, value in resolved.items() if key not in ("command", "collection")})
     return 200, result
 {% else %}
     try:
@@ -31,7 +50,11 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
         documents = await service.list()
         return 200, documents
 {% elif route.operation == "get" %}
-        document = await service.get(url_params["id"])
+{% if route.record_parent_params %}
+        document = await service.get_by({{ record_criteria(route) }})
+{% else %}
+        document = await service.get(url_params["{{ route.record_id_param }}"])
+{% endif %}
         return 200, document
 {% elif route.operation == "create" %}
         if body is None:
@@ -43,16 +66,28 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
         if body is None:
             return 422, {"detail": "Request body is required"}
         data = validation.validate_{{ collection_name }}_update(body)
-        document = await service.update(url_params["id"], data)
+{% if route.record_parent_params %}
+        document = await service.update_by({{ record_criteria(route) }}, data)
+{% else %}
+        document = await service.update(url_params["{{ route.record_id_param }}"], data)
+{% endif %}
         return 200, document
 {% elif route.operation == "replace" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
         data = validation.validate_{{ collection_name }}_replace(body)
-        document = await service.replace(url_params["id"], data)
+{% if route.record_parent_params %}
+        document = await service.replace_by({{ record_criteria(route) }}, data)
+{% else %}
+        document = await service.replace(url_params["{{ route.record_id_param }}"], data)
+{% endif %}
         return 200, document
 {% elif route.operation == "delete" %}
-        document = await service.delete(url_params["id"])
+{% if route.record_parent_params %}
+        document = await service.delete_by({{ record_criteria(route) }})
+{% else %}
+        document = await service.delete(url_params["{{ route.record_id_param }}"])
+{% endif %}
         return 200, document
 {% endif %}
     except NotFoundError:

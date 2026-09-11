@@ -21,6 +21,7 @@ from yaml_api_generator.parsers.service_input_parser import (
 from yaml_api_generator.parsers.transformers.symbol_validation import validate_spec_symbols
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 from yaml_api_generator.server.common.request_context import RequestContext
+from yaml_api_generator.server.common.steps.repositories import RepositoryOperationStep
 from yaml_api_generator.server.common.steps.services import ServiceInputStep
 
 
@@ -58,15 +59,24 @@ def test_parse_input_invalid_shape_aborts():
     assert _codes(errors) == {"SERVICE_INPUT_INVALID"}
 
 
+def test_parse_input_rejects_empty_and_unknown_field_type():
+    _, empty_errors = parse_service_input([], {}, "p")
+    _, type_errors = parse_service_input({"value": "mystery"}, {}, "p")
+
+    assert _codes(empty_errors) == {"SERVICE_INPUT_INVALID"}
+    assert _codes(type_errors) == {"SERVICE_INPUT_FIELD_INVALID"}
+
+
 def test_parse_with_symbols_and_literals():
     parsed, errors = parse_service_with(
-        {"id": "$postId", "status": "'open'", "count": "3"}, "p"
+        {"id": "$postId", "status": "open", "count": 3, "active": True}, "p"
     )
     assert errors == []
     assert parsed == {
         "id": IRSymbolRef(root="postId"),
         "status": IRLiteralRef("open"),
         "count": IRLiteralRef(3),
+        "active": IRLiteralRef(True),
     }
 
 
@@ -101,8 +111,96 @@ def test_with_rhs_unbound_aborts_with_undefined_symbol():
 
 
 def test_with_literal_needs_no_input():
-    spec = _with_spec({"postId": "string"}, {"status": "'archived'"})
+    spec = _with_spec({"postId": "string"}, {"status": "archived"})
     assert validate_spec_symbols(spec) == []
+
+
+def test_repository_filter_may_use_forwarded_input():
+    spec = {
+        "version": "0.3",
+        "repositories": {
+            "posts": {
+                "operations": {
+                    "archive": {"query": {"filter": {"owner": "$owner"}}}
+                }
+            }
+        },
+        "services": {
+            "archive": {
+                "repository": "posts",
+                "operation": "archive",
+                "input": {"ownerId": "string"},
+                "with": {"owner": "$ownerId"},
+            }
+        },
+        "controllers": {
+            "posts": {
+                "routes": {
+                    "archive": {
+                        "service": "archive",
+                        "path": "/archive",
+                    }
+                }
+            }
+        },
+    }
+
+    assert validate_spec_symbols(spec) == []
+
+
+def test_repository_filter_must_be_satisfied_on_every_route():
+    spec = {
+        "version": "0.3",
+        "repositories": {
+            "posts": {
+                "operations": {
+                    "archive": {"query": {"filter": {"owner": "$owner"}}}
+                }
+            }
+        },
+        "services": {
+            "archive": {"repository": "posts", "operation": "archive"}
+        },
+        "controllers": {
+            "posts": {
+                "routes": {
+                    "archive": {"service": "archive", "path": "/{owner}"},
+                    "archiveAll": {"service": "archive", "path": "/all"},
+                }
+            }
+        },
+    }
+
+    errors = validate_spec_symbols(spec)
+
+    assert _codes(errors) == {"UNDEFINED_SYMBOL"}
+    assert "archiveAll" in errors[0].message
+
+
+def test_repository_forwarding_rejects_unused_target():
+    spec = {
+        "version": "0.3",
+        "repositories": {
+            "posts": {
+                "operations": {
+                    "archive": {"query": {"filter": {"id": "$id"}}}
+                }
+            }
+        },
+        "services": {
+            "archive": {
+                "repository": "posts",
+                "operation": "archive",
+                "input": {"postId": "string"},
+                "with": {"unused": "$postId"},
+            }
+        },
+    }
+
+    assert _codes(validate_spec_symbols(spec)) == {
+        "SERVICE_WITH_TARGET_UNKNOWN",
+        "UNDEFINED_SYMBOL",
+    }
 
 
 # --- transformer / IR end to end ------------------------------------------
@@ -168,6 +266,13 @@ def test_unbound_forwarding_aborts_end_to_end(tmp_path):
     assert any(e.code == "UNDEFINED_SYMBOL" for e in exc_info.value.errors)
 
 
+def test_v02_rejects_service_input_syntax(tmp_path):
+    with pytest.raises(ConfigErrors) as exc_info:
+        _load(tmp_path, _SPEC.replace('version: "0.3"', 'version: "0.2"'))
+
+    assert any(e.code == "SERVICE_INPUT_UNSUPPORTED" for e in exc_info.value.errors)
+
+
 # --- runtime step ---------------------------------------------------------
 
 
@@ -193,7 +298,17 @@ def test_runtime_forwards_symbol_from_path_into_params():
     )
     ctx = step(_ctx({"postId": "p1"}))
     assert ctx.service_inputs == {"id": "p1"}
-    assert ctx.url_params["id"] == "p1"
+    assert ctx.url_params == {"postId": "p1"}
+
+
+def test_runtime_path_input_cannot_be_spoofed_by_body():
+    step = ServiceInputStep(
+        {"postId": {"type": "string"}}, {"id": IRSymbolRef(root="postId")}
+    )
+
+    ctx = step(_ctx({"postId": "path-value"}, body={"postId": "spoofed"}))
+
+    assert ctx.service_inputs == {"id": "path-value"}
 
 
 def test_runtime_forwards_symbol_from_body():
@@ -220,3 +335,39 @@ def test_runtime_ill_typed_input_is_422():
     step = ServiceInputStep({"count": {"type": "number"}}, {})
     with pytest.raises(ValueError):
         step(_ctx({}, body={"count": "not-a-number"}))
+
+
+@pytest.mark.asyncio
+async def test_runtime_repository_operation_receives_forwarded_values():
+    class RecordingRepository:
+        def __init__(self):
+            self.bindings = None
+
+        async def run_operation(self, collection, query, bindings):
+            self.bindings = bindings
+            return {"id": bindings["lookup"], "state": bindings["state"]}
+
+    repository = RecordingRepository()
+    ctx = _ctx({"postId": "p1"})
+    ctx.repository = repository
+    ctx = ServiceInputStep(
+        {"postId": {"type": "string"}},
+        {
+            "lookup": IRSymbolRef(root="postId"),
+            "state": IRLiteralRef("archived"),
+        },
+    )(ctx)
+
+    result = await RepositoryOperationStep(
+        "posts",
+        {"command": "findOne", "filter": {"id": "$lookup"}},
+        "id",
+    )(ctx)
+
+    assert repository.bindings["lookup"] == "p1"
+    assert repository.bindings["params"] == {
+        "postId": "p1",
+        "lookup": "p1",
+        "state": "archived",
+    }
+    assert result.response == {"id": "p1", "state": "archived"}

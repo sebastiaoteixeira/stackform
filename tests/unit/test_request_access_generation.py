@@ -33,7 +33,7 @@ def test_create_route_uses_typed_body_and_request_locals(tmp_path):
     route = (tmp_path / "routes" / "memberships.py").read_text()
     assert "from models._dto import CreateMembership" in route
     assert "payload: CreateMembership" in route
-    assert "_request_body = payload.model_dump(exclude_unset=True)" in route
+    assert '_request_body = payload.model_dump(mode="json")' in route
     assert "request: Request" not in route or "_request_query" in route
 
 

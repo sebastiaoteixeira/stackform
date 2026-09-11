@@ -40,6 +40,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         routes=routes,
         auth=auth,
         operations=operations,
+        spec_version=document.version,
     )
 
 
