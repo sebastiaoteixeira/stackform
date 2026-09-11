@@ -10,6 +10,7 @@ from yaml_api_generator.generators.backend.fastapi import FastAPIGenerator
 from yaml_api_generator.generators.backend.drf import DRFGenerator
 from yaml_api_generator.generators.backend.raw import RawASGIGenerator
 from yaml_api_generator.generators.backend.vendoring import clear_vendored, vendor_packages
+from yaml_api_generator.server.common.loader import SchemaManagement
 
 
 _GENERATORS: dict[str, type[CodeGenerator]] = {
@@ -46,7 +47,7 @@ def compile_project(
 
     result = load_and_generate_ir(yaml_file, schema_file)
     out = Path(output_dir)
-    context = build_context(result.ir)
+    context = build_context(result.ir, SchemaManagement.for_spec(yaml_file))
     backend = out / "backend"
 
     clear_vendored(result.ir.vendored_imports, backend)

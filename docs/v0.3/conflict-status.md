@@ -39,5 +39,11 @@ can still occur after request validation because uniqueness is enforced
 atomically by the datastore; the repository translation is therefore the
 authoritative error boundary.
 
+Where the MongoDB index comes from depends on whether the spec has graduated to
+versioned migrations: see
+[MongoDB migrations](./mongo-migrations.md), which also lists the runtimes that
+still create those indexes on connect. The response contract above is the same
+either way — it depends on the index existing, not on what created it.
+
 The behavior is not version-gated: it holds for `0.2` and `0.3` specs alike, and
 replaces only the former unhandled-error path, so no successful response changes.
