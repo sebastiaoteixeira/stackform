@@ -30,7 +30,9 @@ class RequestContext:
     repositories: Any | None = None
     query: dict[str, str | list[str]] | None = None
     cookies: dict[str, str] | None = None
-    where_documents: dict[str, Any] | None = None
+    where_documents: list[dict[str, Any]] | None = None
+    authorized_rule_index: int | None = None
+    bound_inputs: dict[str, Any] | None = None
     service_inputs: dict[str, Any] | None = None
 
     def repository_for(self, collection: str | None) -> Any:

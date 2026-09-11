@@ -102,7 +102,7 @@ required depends on `trust`.
 | `type` | yes | Must be `oidc`. |
 | `trust` | no | `app` (default) or `idp`. |
 | `client_id` | yes | OAuth client identifier issued by the IdP (e.g. "Client ID" in Google console, "Application (client) ID" in Azure). |
-| `client_secret` | no | OAuth client secret. Omit it for a public client -- the token exchange runs without a `client_secret`. Supply it for confidential clients. |
+| `client_secret` | no | OAuth client secret. Omit it for a public client -- the token exchange runs without a `client_secret`. For confidential clients, its presence emits a `<PROVIDER>_CLIENT_SECRET` env var read at run time via a `SecretStr` setting; the spec value is only a placeholder, never the literal secret. |
 | `discovery_url` | yes | OpenID configuration URL (`.../.well-known/openid-configuration`); used to resolve endpoints, JWKS keys, and the expected token issuer. |
 | `issuer` | no | Override for the expected token `iss`. Normally not needed — the value is read from the discovery document automatically. |
 | `audience` | no | Override for the expected token `aud`. Defaults to `client_id`, which is correct for ID tokens on Google, Azure, and standard Keycloak. Set this only when the token's `aud` differs from `client_id` — for example, Azure access tokens scoped to a separate API registration (`api://...` or a Microsoft Graph scope), or when you configure a Keycloak audience mapper to add a custom audience. |
@@ -125,9 +125,11 @@ There is no built-in discovery for any provider name. Names such as `google`,
 ## Environment interpolation
 
 Any value may use `${VAR}` interpolation, resolved at build time before schema
-validation. This keeps secrets out of the *spec file*, but the resolved value is
-baked into the built artifact -- it is not deferred to runtime. A `${VAR:-default}`
-form supplies a fallback when the variable is unset:
+validation. This keeps secrets out of the *spec file*. Most resolved values are baked
+into the built artifact, but `client_secret` is the exception: it is deferred to
+runtime through a `<PROVIDER>_CLIENT_SECRET` env var backed by a pydantic `SecretStr`
+setting, never baked as a literal. A `${VAR:-default}` form supplies a fallback when
+the variable is unset:
 
 ```yaml
 providers:
@@ -139,9 +141,10 @@ providers:
 ```
 
 A referenced variable that has no value and no default aborts generation with
-`INTERPOLATION_MISSING_VAR`. Because the resolved value is baked into the artifact,
-a secret that must never appear in the build should be left out of the spec
-entirely; the deployed backend reads such values from its own runtime environment.
+`INTERPOLATION_MISSING_VAR`. The literal `client_secret` must never appear in the
+spec: the `${OIDC_CLIENT_SECRET}` placeholder above only marks the field
+confidential, and the deployed backend reads the real value from its own
+`<PROVIDER>_CLIENT_SECRET` runtime env var.
 See [Environment variables](../configuration/environment-variables.md).
 
 ## Routes a bound provider adds

@@ -5,9 +5,10 @@ description: The dead `filter` key is gone from the v0.3 access rule; using it a
 
 ## The `filter` key is removed
 
-The access-rule `filter` key never scoped anything at runtime &mdash; it was
-carried in the IR but no generator ever consumed it. In v0.3 it is removed from
-the grammar. A rule that still declares it aborts generation with
+The access-rule `filter` key was carried in the IR but never enforced by the
+runtime or generated backends. Leaving it available could make an apparently
+restricted rule authorize more records than intended. In v0.3 it is removed
+from the grammar, and a rule that still declares it aborts generation with
 `ACCESS_FILTER_REMOVED`:
 
 ```yaml
@@ -21,7 +22,9 @@ access:
 
 Restricting which records a principal may reach is the job of the `where`
 [binding form](./given-where.md): bind a `given:` symbol to the one record the
-predicate selects, fetched before the rule runs, with a `404` on miss.
+predicate selects before the rule runs. A lookup miss makes that rule fail; if
+no other rule allows the request, authorization returns 403 without revealing
+whether the record exists.
 
 ```yaml
 access:

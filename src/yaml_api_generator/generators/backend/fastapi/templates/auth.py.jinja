@@ -94,6 +94,17 @@ def _extract_roles(doc: dict[str, Any], roles_field: str | None) -> list[str]:
 
 
 {% if auth.has_idp_auth %}
+def _roles_from_claims(claims: dict[str, Any], claim_path: str | None) -> list[str]:
+    roles = resolve_claim_path(claims, claim_path) if claim_path else None
+    if isinstance(roles, list):
+        return [str(role) for role in roles]
+    if isinstance(roles, str):
+        return [roles]
+    return []
+{% endif %}
+
+
+{% if auth.has_idp_auth %}
 _IDP_ISSUERS: dict[str, dict] = {
 {% for p in auth.idp_providers %}
     {{ p.discovery_url | py_literal }}: {
@@ -145,6 +156,7 @@ async def _resolve_idp_principal(
 {% if provider and provider.is_idp %}
     if provider_name == {{ binding.provider | py_literal }}:
         claim_mapping: dict[str, str] = {{ binding.claim_mapping | tojson }}
+        _roles_claim_path = {{ (binding.claim_mapping.get(identity.roles_field, identity.roles_field) if identity.roles_field else None) | py_literal }}
         user_fields: dict[str, Any] = {
             local_field: resolved
             for local_field, oidc_claim in claim_mapping.items()
@@ -157,7 +169,7 @@ async def _resolve_idp_principal(
                 "sub": idp_sub,
                 "client_id": claims.get("azp") or claims.get("client_id") or idp_sub,
                 "is_service": True,
-                "roles": _extract_roles(claims, {{ identity.roles_field | py_literal }}),
+                "roles": _roles_from_claims(claims, _roles_claim_path),
                 "record": None,
                 "identity_collection": None,
             }
@@ -182,13 +194,13 @@ async def _resolve_idp_principal(
                 await col.update_one({"{{ identity.id_field }}": idp_sub}, {"$set": _fk_fields})
                 existing = {**existing, **_fk_fields}
 {% endif %}
-            return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": existing, "roles": _extract_roles(existing, {{ identity.roles_field | py_literal }})}
+            return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": existing, "roles": _roles_from_claims(claims, _roles_claim_path)}
 {% if binding.auto_provision %}
         payload = {**user_fields, **_fk_fields}
         payload["{{ identity.id_field }}"] = idp_sub
         created = await col.insert_one(payload)
         payload["_id"] = created.inserted_id
-        return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": payload, "roles": _extract_roles(payload, {{ identity.roles_field | py_literal }})}
+        return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": payload, "roles": _roles_from_claims(claims, _roles_claim_path)}
 {% else %}
         raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
 {% endif %}

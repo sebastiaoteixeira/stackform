@@ -3,7 +3,7 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
+from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields, generated_secret_values
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
@@ -62,10 +62,12 @@ class FastAPIGenerator(TemplateBasedGenerator):
         collections_by_name = group_by_collection(context)
 
         self._render_settings(env, context, output_dir)
+        self._render_env(env, context, output_dir)
         self._render_app(env, context, output_dir)
         self._render_models(env, context, collections_by_name, output_dir)
         self._render_dtos(env, context, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
+        self._render_service_inputs(env, context, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_dependencies(env, context, output_dir)
@@ -77,12 +79,42 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
         )
 
+    def _render_service_inputs(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        self._render_single_file(
+            env,
+            context,
+            output_dir,
+            SingleFileRenderConfig(
+                template_name="service_inputs.py.jinja",
+                output_path="dependencies/service_inputs.py",
+            ),
+        )
+
     def _render_settings(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
         template = env.get_template("settings.py.jinja")
         content = template.render(settings_fields=build_settings_fields(context))
         (output_dir / "settings.py").write_text(content)
+
+    def _render_env(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        fields = build_settings_fields(context)
+        secret_values = generated_secret_values(fields)
+        env_values = {
+            f.env_name: secret_values.get(f.env_name, f.default or "")
+            for f in fields
+        }
+        example_values = {
+            f.env_name: f"<{f.env_name.lower()}>" if f.secret else (f.default or "")
+            for f in fields
+        }
+        template = env.get_template("env.jinja")
+        (output_dir / ".env").write_text(template.render(settings_fields=fields, values=env_values))
+        (output_dir / ".env.example").write_text(template.render(settings_fields=fields, values=example_values))
 
     def _render_app(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -226,6 +258,20 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         auth_imports: list[str] = []
 
+        handler_routes = [
+            route
+            for route in context.routes
+            if route.collection is None and route.handler is not None
+        ]
+        if handler_routes:
+            (routes_dir / "_handlers.py").write_text(
+                env.get_template("handler_routes.py.jinja").render(
+                    routes=handler_routes,
+                    auth=context.auth,
+                )
+            )
+            auth_imports.append("from ._handlers import router as handlers_router")
+
         if context.auth.has_password_auth:
             (routes_dir / "login.py").write_text(
                 env.get_template("login_routes.py.jinja").render(auth=context.auth)
@@ -359,6 +405,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
+        if any(context.repository_operations.values()):
+            (deps_dir / "bindings.py").write_text(
+                (_STATIC_DIR / "bindings.py").read_text()
+            )
 
         init_imports: list[str] = []
         auth_files = []
@@ -421,4 +471,3 @@ class FastAPIGenerator(TemplateBasedGenerator):
         (deps_dir / "__init__.py").write_text(
             "\n".join(init_imports) + "\n" if init_imports else ""
         )
-

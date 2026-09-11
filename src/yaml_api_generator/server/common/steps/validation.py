@@ -166,6 +166,8 @@ def validate_field_values(
     for name, cfg in field_configs.items():
         if name not in values:
             continue
+        if values[name] is None and not cfg.get("required", True):
+            continue
         schema = _FieldSchema(
             name=name,
             field_type=cfg.get("type", "string"),
@@ -215,8 +217,13 @@ def ValidateBodyStep(
 
         for key, value in body.items():
             schema = schema_by_name.get(key)
-            if schema is not None:
-                _validate_type(key, value, schema)
+            if schema is None:
+                continue
+            if value is None and not schema.required:
+                continue
+            if value is None and schema.required:
+                raise ValueError(f"Field '{key}' is required and cannot be null")
+            _validate_type(key, value, schema)
 
         return ctx
 

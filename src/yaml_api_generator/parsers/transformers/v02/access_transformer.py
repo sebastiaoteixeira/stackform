@@ -14,7 +14,6 @@ from yaml_api_generator.ir import (
 )
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 from yaml_api_generator.parsers.when_parser import parse_when_list
-from yaml_api_generator.parsers.where_parser import parse_rhs_value
 from yaml_api_generator.parsers.transformers.principal_resolver import resolve_principal
 from yaml_api_generator.parsers.transformers.v02.binding_classifier import classify_binding
 
@@ -114,7 +113,7 @@ class AccessTransformer:
                 code="ACCESS_FILTER_REMOVED",
                 message="access-rule 'filter' key was removed in v0.3",
                 path=f"{path}.filter",
-                hint="Scope reads through a service input: with a where binding instead",
+                hint="Bind the record in given: with '<collection> where <field> = <value>'",
             ))
         given = rule.get("given", {})
         effect = rule.get("then", "allow")
@@ -148,12 +147,10 @@ class AccessTransformer:
         bind: dict[str, WhereRhs] = {}
         bind_raw = rule.get("bind")
         if self._allow_where and isinstance(bind_raw, dict):
-            for name, raw in bind_raw.items():
-                rhs, rhs_errors = parse_rhs_value(str(raw), f"{path}.bind.{name}")
-                if rhs is None:
-                    errors.extend(rhs_errors)
-                    continue
-                bind[name] = rhs
+            from yaml_api_generator.parsers.service_input_parser import parse_service_with
+
+            bind, bind_errors = parse_service_with(bind_raw, f"{path}.bind")
+            errors.extend(bind_errors)
 
         if errors:
             return None, errors

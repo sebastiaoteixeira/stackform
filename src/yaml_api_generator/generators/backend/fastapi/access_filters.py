@@ -11,6 +11,8 @@ from yaml_api_generator.ir.when import (
     Equals,
     FieldRef,
     In,
+    IsNotNull,
+    IsNull,
     Not,
     NotEquals,
     NotIn,
@@ -38,11 +40,21 @@ def _safe_nested(root: str, path: tuple[str, ...]) -> str:
     return f'{root}{chain}.get("{path[-1]}")'
 
 
-def _operand_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
+def _operand_to_python(
+    expr: WhenExpr,
+    record_roots: frozenset[str],
+    wrapper_roots: frozenset[str],
+) -> str:
     if isinstance(expr, StringLiteral):
         return f'"{expr.value}"'
     if isinstance(expr, FieldRef):
-        if expr.root in request_roots:
+        if expr.root in record_roots:
+            if not expr.path:
+                return expr.root
+            if len(expr.path) == 1:
+                return f'{expr.root}.get("{expr.path[0]}")'
+            return _safe_nested(expr.root, expr.path)
+        if expr.root in wrapper_roots:
             return _safe_nested(expr.root, expr.path) if expr.path else expr.root
         if not expr.path:
             return f'{expr.root}.get("sub")'
@@ -55,13 +67,17 @@ def _operand_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
     return "None"
 
 
-def _when_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
-    operand = lambda e: _operand_to_python(e, request_roots)
-    recurse = lambda e: _when_to_python(e, request_roots)
+def _when_to_python(
+    expr: WhenExpr,
+    record_roots: frozenset[str],
+    wrapper_roots: frozenset[str],
+) -> str:
+    operand = lambda e: _operand_to_python(e, record_roots, wrapper_roots)
+    recurse = lambda e: _when_to_python(e, record_roots, wrapper_roots)
     if isinstance(expr, Equals):
-        return f"{operand(expr.left)} == {operand(expr.right)}"
+        return f"_values_equal({operand(expr.left)}, {operand(expr.right)})"
     if isinstance(expr, NotEquals):
-        return f"{operand(expr.left)} != {operand(expr.right)}"
+        return f"(not _values_equal({operand(expr.left)}, {operand(expr.right)}))"
     if isinstance(expr, And):
         return f"({recurse(expr.left)} and {recurse(expr.right)})"
     if isinstance(expr, Or):
@@ -69,20 +85,28 @@ def _when_to_python(expr: WhenExpr, request_roots: frozenset[str]) -> str:
     if isinstance(expr, Not):
         return f"(not {recurse(expr.operand)})"
     if isinstance(expr, In):
-        return f"{operand(expr.left)} in {tuple(expr.values)!r}"
+        return f"any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r})"
     if isinstance(expr, NotIn):
-        return f"{operand(expr.left)} not in {tuple(expr.values)!r}"
+        return f"(not any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r}))"
+    if isinstance(expr, IsNull):
+        return f"({operand(expr.operand)} is None)"
+    if isinstance(expr, IsNotNull):
+        return f"({operand(expr.operand)} is not None)"
     return "False"
 
 
 def rule_to_python(rule: AccessRuleDescriptor) -> str:
     """Compile a single access rule to an inline Python boolean expression."""
-    request_roots = frozenset(sym.name for sym in rule.request_symbols)
+    record_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_record_shaped)
+    wrapper_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_whole)
     conditions: list[str] = []
+    if rule.principal.startswith("identity:"):
+        collection = rule.principal.removeprefix("identity:")
+        conditions.append(f'principal.get("identity_collection") == "{collection}"')
     if rule.required_role is not None:
         conditions.append(f'_principal_has_role(principal, "{rule.required_role}")')
     if rule.when is not None:
-        conditions.append(_when_to_python(rule.when, request_roots))
+        conditions.append(_when_to_python(rule.when, record_roots, wrapper_roots))
     return " and ".join(conditions) if conditions else "True"
 
 
@@ -112,7 +136,7 @@ def request_symbol_binding(symbol) -> str:
     if symbol.is_whole:
         parts = ", ".join(f'"{part}": {source}' for part, source in _PART_SOURCE.items())
         return f"{symbol.name} = {{{parts}}}"
-    return f"{symbol.name} = {_PART_SOURCE[symbol.part]}"
+    return f"{symbol.name} = {_PART_SOURCE[symbol.effective_part]}"
 
 
 def needs_request_rule(rule: AccessRuleDescriptor) -> bool:
@@ -127,7 +151,7 @@ def needs_post_fetch(route: RouteDescriptor) -> bool:
 
 
 def is_unconditional(rule: AccessRuleDescriptor) -> bool:
-    return rule.when is None and rule.required_role is None
+    return not rule.principal and rule.when is None and rule.required_role is None
 
 
 def needs_document_rule(rule: AccessRuleDescriptor) -> bool:
