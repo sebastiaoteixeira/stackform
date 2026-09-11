@@ -10,7 +10,9 @@ development server verify each bearer token against a single verifier chosen
 strictly by its `iss` claim:
 
 - `iss` matches a trusted IdP issuer -> the token is verified against that IdP,
-  checking `aud` and `iss` against the provider's configuration.
+  checking `aud` and `iss` against the provider's configuration. What that
+  verification covers, and how each failure is answered, is described in
+  [Resource-server IdP token verification](./verify-idp.md).
 - `iss` matches no trusted issuer -> the request is rejected with `401` and the
   message `Untrusted token issuer`. A foreign IdP token is never retried as an
   app token or an api key.
