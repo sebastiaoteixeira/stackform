@@ -26,14 +26,18 @@ symbol $principal is not bound in scope repository 'orders' operation 'byOwner' 
 ```
 
 The same rule and error apply to a `when:` operand, repository query filter,
-[`where` right-hand side](./given-where.md#symbol-scope), and service `with:`
-forward. Each site builds an explicit scope and delegates to the shared
-resolver.
+[`where` right-hand side](./given-where.md#symbol-scope), service `with:`
+forward, and [access-rule `bind:`](./controller-bind.md#symbol-scope). Each site
+builds an explicit scope and delegates to the shared resolver.
 
 A `where` binding's scope is the route's slugs plus the `identity:` / `request`
 names its rule binds; document bindings of the same rule are not in scope. Its
 left-hand-side field is checked separately and reports `WHERE_FIELD_UNKNOWN`,
 not `UNDEFINED_SYMBOL`.
+
+An access-rule `bind:` uses the same pre-authorization scope. Its keys must be
+declared service inputs; bind keys and route slugs must cover all required
+inputs before the spec can build.
 
 ## `$principal` is not ambient in v0.3
 

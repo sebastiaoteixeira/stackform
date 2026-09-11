@@ -254,6 +254,24 @@ def ResolveWhereBindingsStep(access_rules: list[RuntimeAccessRule]) -> Step:
     return step
 
 
+def ResolveAccessBindStep(
+    access_rules: list[RuntimeAccessRule] | None = None,
+) -> Step:
+    def step(ctx: RequestContext) -> RequestContext:
+        index = ctx.authorized_rule_index
+        if not access_rules or index is None or index >= len(access_rules):
+            return ctx
+
+        rule = access_rules[index]
+        namespace = _where_namespace(rule, ctx)
+        ctx.bound_inputs = {
+            name: _rhs_value(rhs, namespace) for name, rhs in rule.bind.items()
+        }
+        return ctx
+
+    return step
+
+
 def AuthorizeRouteStep(
     access_rules: list[RuntimeAccessRule] | None = None,
     auth_config: RuntimeAuthConfig | None = None,
@@ -265,7 +283,9 @@ def AuthorizeRouteStep(
         if not access_rules:
             return ctx
 
-        for rule, where_documents in _rules_with_where_documents(access_rules, ctx):
+        for index, (rule, where_documents) in enumerate(
+            _rules_with_where_documents(access_rules, ctx)
+        ):
             if _rule_needs_postfetch(rule):
                 return ctx
 
@@ -275,6 +295,7 @@ def AuthorizeRouteStep(
             if _evaluate_rule(rule, None, where_documents, ctx):
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
+                ctx.authorized_rule_index = index
                 return ctx
 
         raise ForbiddenError("Forbidden")
@@ -288,7 +309,9 @@ def PostFetchAuthorizeStep(
 ) -> Step:
     def step(ctx: RequestContext) -> RequestContext:
         document = ctx.response if isinstance(ctx.response, dict) else None
-        for rule, where_documents in _rules_with_where_documents(access_rules, ctx):
+        for index, (rule, where_documents) in enumerate(
+            _rules_with_where_documents(access_rules, ctx)
+        ):
             if not _rule_matches_principal(rule, ctx.principal, auth_config):
                 continue
 
@@ -300,6 +323,7 @@ def PostFetchAuthorizeStep(
             if _evaluate_rule(rule, rule_document, where_documents, ctx):
                 if rule.effect == "deny":
                     raise ForbiddenError("Forbidden")
+                ctx.authorized_rule_index = index
                 return ctx
 
         raise ForbiddenError("Forbidden")

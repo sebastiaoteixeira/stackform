@@ -10,6 +10,7 @@ from yaml_api_generator.ir import (
     IRDocumentBinding,
     IRIdentityBinding,
     IRRequestBinding,
+    WhereRhs,
 )
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 from yaml_api_generator.parsers.when_parser import parse_when_list
@@ -136,6 +137,14 @@ class AccessTransformer:
             when_expr, when_errors = parse_when_list(when_raw, f"{path}.when")
             errors.extend(when_errors)
 
+        bind: dict[str, WhereRhs] = {}
+        bind_raw = rule.get("bind")
+        if self._allow_where and isinstance(bind_raw, dict):
+            from yaml_api_generator.parsers.service_input_parser import parse_service_with
+
+            bind, bind_errors = parse_service_with(bind_raw, f"{path}.bind")
+            errors.extend(bind_errors)
+
         if errors:
             return None, errors
 
@@ -153,4 +162,5 @@ class AccessTransformer:
             filter=rule.get("filter"),
             write_fields=rule.get("writeFields", []),
             reason=rule.get("reason"),
+            bind=bind,
         ), []

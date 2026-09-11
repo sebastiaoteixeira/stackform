@@ -2,16 +2,14 @@
 
 A repository operation's query resolves ``$<symbol>`` references against the
 slugs of the routes that reach it; nothing else is ambient (there is no
-principal or request root). An access-rule ``where`` binding resolves its
-right-hand-side ``$<symbol>`` references against the same namespace the runtime
-builds for the predicate fetch: the route's declared slugs plus the identity and
-request symbols the rule binds in ``given:``. Document symbols -- including the
-binding itself -- are fetched by that step, so they are not in scope. Any other
-free symbol aborts generation with the single ``UNDEFINED_SYMBOL`` error naming
-the symbol and the scope. The predicate's left-hand-side field must be declared
-on the collection's entity; an unknown one aborts with ``WHERE_FIELD_UNKNOWN``.
-``when`` operands are enforced by the same scope model inside the access
-validator.
+principal or request root). Access-rule ``where`` and ``bind`` expressions
+resolve references against the same pre-authorization namespace: route slugs
+plus identity and request symbols declared by that rule's ``given:`` mapping.
+Document symbols are unavailable until their fetch completes. Any other free
+symbol aborts generation with ``UNDEFINED_SYMBOL``. A ``where`` predicate field
+must exist on the collection entity or generation aborts with
+``WHERE_FIELD_UNKNOWN``. ``when`` operands use the same scope model through the
+access validator.
 """
 
 from __future__ import annotations
@@ -31,6 +29,9 @@ from .v02.binding_classifier import BindingKind, binding_kind
 
 WHERE_FIELD_UNKNOWN = "WHERE_FIELD_UNKNOWN"
 ROUTE_LOCATOR_FIELD_UNKNOWN = "ROUTE_LOCATOR_FIELD_UNKNOWN"
+BIND_MISSING_REQUIRED_INPUT = "BIND_MISSING_REQUIRED_INPUT"
+BIND_TARGET_UNKNOWN = "BIND_TARGET_UNKNOWN"
+BIND_DOCUMENT_RULE_UNSUPPORTED = "BIND_DOCUMENT_RULE_UNSUPPORTED"
 
 _SLUG = re.compile(r"\{(\w+)\}")
 _WHERE_NAMESPACE_KINDS = frozenset({BindingKind.IDENTITY, BindingKind.REQUEST})
@@ -41,6 +42,7 @@ def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
     errors: list[ConfigError] = []
     errors.extend(_validate_repository_filters(spec))
     errors.extend(_validate_where_bindings(spec))
+    errors.extend(_validate_access_bind(spec))
     errors.extend(_validate_service_with(spec))
     errors.extend(_validate_record_locators(spec))
     return errors
@@ -203,7 +205,23 @@ class _AccessRuleSite:
     label: str
     path: str
     slugs: frozenset[str]
-    given: dict[str, Any]
+    rule: dict[str, Any]
+    service_name: str | None
+    route_has_document_rule: bool
+
+    @property
+    def given(self) -> dict[str, Any]:
+        given = self.rule.get("given")
+        return given if isinstance(given, dict) else {}
+
+    @property
+    def bound(self) -> frozenset[str]:
+        return self.slugs | frozenset(
+            name
+            for name, value in self.given.items()
+            if isinstance(value, str)
+            and binding_kind(value, allow_where=True) in _WHERE_NAMESPACE_KINDS
+        )
 
     def where_errors(
         self, fields_by_collection: dict[str, frozenset[str]]
@@ -213,27 +231,88 @@ class _AccessRuleSite:
             for name, value in self.given.items()
             if isinstance(value, str)
         }
-        bound = self.slugs | frozenset(
-            name for name, kind in kinds.items() if kind in _WHERE_NAMESPACE_KINDS
-        )
         return [
             error
             for name, kind in kinds.items()
             if kind is BindingKind.WHERE
-            for error in self._binding_errors(name, bound, fields_by_collection)
+            for error in self._binding_errors(name, fields_by_collection)
         ]
+
+    def bind_errors(
+        self,
+        dtos: dict[str, Any],
+        services: dict[str, Any],
+    ) -> list[ConfigError]:
+        bind = self.rule.get("bind")
+        if not isinstance(bind, dict):
+            return []
+
+        from yaml_api_generator.parsers.service_input_parser import (
+            parse_service_input,
+            parse_service_with,
+        )
+
+        forwarding, parse_errors = parse_service_with(bind, f"{self.path}.bind")
+        scope = SymbolScope(label=f"{self.label} bind", bound=self.bound)
+        errors = parse_errors + [
+            error
+            for name, rhs in forwarding.items()
+            if isinstance(rhs, IRSymbolRef)
+            for error in scope.undefined({rhs.root}, f"{self.path}.bind.{name}")
+        ]
+        if self.route_has_document_rule:
+            errors.append(
+                ConfigError(
+                    code=BIND_DOCUMENT_RULE_UNSUPPORTED,
+                    message=f"{self.label} cannot combine bind with a document rule",
+                    path=f"{self.path}.bind",
+                    hint="Use only identity/request bindings on a route with bind",
+                )
+            )
+
+        service = services.get(self.service_name)
+        input_ir = None
+        if isinstance(service, dict) and service.get("input") is not None:
+            input_ir, _ = parse_service_input(
+                service["input"], dtos, f"services.{self.service_name}.input"
+            )
+        input_fields = input_ir.fields if input_ir is not None else {}
+        errors.extend(
+            ConfigError(
+                code=BIND_TARGET_UNKNOWN,
+                message=(
+                    f"{self.label} binds '{name}', but service "
+                    f"'{self.service_name}' does not declare that input"
+                ),
+                path=f"{self.path}.bind.{name}",
+                hint="Declare the service input or remove this bind target",
+            )
+            for name in forwarding
+            if name not in input_fields
+        )
+        supplied = self.slugs | frozenset(forwarding)
+        errors.extend(
+            ConfigError(
+                code=BIND_MISSING_REQUIRED_INPUT,
+                message=f"{self.label} bind omits required service input '{name}'",
+                path=f"{self.path}.bind",
+                hint=f"Bind '{name}' or declare it as a route path parameter",
+            )
+            for name, config in input_fields.items()
+            if config.get("required", True) and name not in supplied
+        )
+        return errors
 
     def _binding_errors(
         self,
         name: str,
-        bound: frozenset[str],
         fields_by_collection: dict[str, frozenset[str]],
     ) -> list[ConfigError]:
         path = f"{self.path}.given.{name}"
         binding, _ = parse_where_binding(self.given[name], path)
         if binding is None:
             return []
-        scope = SymbolScope(label=f"{self.label} given '{name}' where", bound=bound)
+        scope = SymbolScope(label=f"{self.label} given '{name}' where", bound=self.bound)
         return scope.undefined(binding.symbols, path) + _unknown_fields(
             binding, fields_by_collection, path
         )
@@ -248,6 +327,18 @@ def _validate_where_bindings(spec: dict[str, Any]) -> list[ConfigError]:
     ]
 
 
+def _validate_access_bind(spec: dict[str, Any]) -> list[ConfigError]:
+    if str(spec.get("version")) != "0.3":
+        return []
+    dtos = spec.get("dto") or {}
+    services = spec.get("services") or {}
+    return [
+        error
+        for site in _access_rule_sites(spec)
+        for error in site.bind_errors(dtos, services)
+    ]
+
+
 def _access_rule_sites(spec: dict[str, Any]) -> Iterator[_AccessRuleSite]:
     for controller_name, controller in (spec.get("controllers") or {}).items():
         if not isinstance(controller, dict):
@@ -259,8 +350,19 @@ def _access_rule_sites(spec: dict[str, Any]) -> Iterator[_AccessRuleSite]:
             slugs = frozenset(_SLUG.findall(base + str(route.get("path", ""))))
             access = route.get("access")
             rules = access if isinstance(access, list) else [access]
+            route_has_document_rule = any(
+                isinstance(candidate, dict)
+                and isinstance(candidate.get("given"), dict)
+                and any(
+                    isinstance(value, str)
+                    and binding_kind(value, allow_where=True)
+                    in (BindingKind.DOCUMENT, BindingKind.WHERE)
+                    for value in candidate["given"].values()
+                )
+                for candidate in rules
+            )
             for index, rule in enumerate(rules):
-                if not isinstance(rule, dict) or not isinstance(rule.get("given"), dict):
+                if not isinstance(rule, dict):
                     continue
                 yield _AccessRuleSite(
                     label=(
@@ -272,7 +374,11 @@ def _access_rule_sites(spec: dict[str, Any]) -> Iterator[_AccessRuleSite]:
                         f".access[{index}]"
                     ),
                     slugs=slugs,
-                    given=rule["given"],
+                    rule=rule,
+                    service_name=(
+                        str(route["service"]) if route.get("service") is not None else None
+                    ),
+                    route_has_document_rule=route_has_document_rule,
                 )
 
 

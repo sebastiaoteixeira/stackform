@@ -48,6 +48,7 @@ class DRFGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["rule_to_python"] = _rule_to_python
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["int"] = int
         env.tests["needs_document"] = _needs_document_test
@@ -333,6 +334,11 @@ def _when_to_python(expr: WhenExpr, symbol_map: dict[str, str] | None = None) ->
 
 def _rule_to_python(rule) -> str:
     conditions: list[str] = []
+    if getattr(rule, "principal", "").startswith("identity:"):
+        collection = rule.principal.removeprefix("identity:")
+        conditions.append(
+            f'_resolved_principal.get("identity_collection") == "{collection}"'
+        )
     if getattr(rule, "required_role", None) is not None:
         conditions.append(f'_principal_has_role(_resolved_principal, "{rule.required_role}")')
     if getattr(rule, "when", None) is not None:
@@ -347,4 +353,8 @@ def _needs_document_test(expr: WhenExpr) -> bool:
 
 
 def _is_unconditional(rule) -> bool:
-    return getattr(rule, "when", None) is None and getattr(rule, "required_role", None) is None
+    return (
+        not getattr(rule, "principal", "")
+        and getattr(rule, "when", None) is None
+        and getattr(rule, "required_role", None) is None
+    )
