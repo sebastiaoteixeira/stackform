@@ -1,8 +1,13 @@
+---
+title: Dual-trust token dispatch
+---
+
 # Dual-trust token dispatch
 
 When a spec mixes an app-trust login (`password`, `apiKey`, or app-trust OIDC)
-with a `trust: idp` provider, generated backends and the dev server verify each
-bearer token against a single verifier chosen strictly by its `iss` claim:
+with a `trust: idp` provider, the generated FastAPI backend and the FastAPI
+development server verify each bearer token against a single verifier chosen
+strictly by its `iss` claim:
 
 - `iss` matches a trusted IdP issuer -> the token is verified against that IdP,
   checking `aud` and `iss` against the provider's configuration.
@@ -18,7 +23,9 @@ validated by another.
 
 ## Provider requirements
 
-`trust: idp` is only valid on `oidc` and `saml` providers. On such a provider
+`trust: idp` is only valid on `oidc` and `saml` providers. JWT bearer dispatch
+applies to OIDC providers; SAML providers use their browser-based flow and are
+not treated as JWT issuer verifiers. On such a provider
 the app mints no token of its own, so app-signing fields (`algorithm`,
 `secret`, `ttl`, `refresh`, `delivery`) are rejected. The issuer is derived from
 the discovery document, and the accepted audience defaults to the provider's
