@@ -95,3 +95,4 @@ class RuntimeContext:
     routes: list[RuntimeRouteDescriptor]
     auth: RuntimeAuthConfig
     operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)
+    spec_version: str = "0.2"

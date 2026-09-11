@@ -53,6 +53,11 @@ whose `orgId` is `o1`. A member that exists under a different org is not found
 same `find_one` predicate machinery as the [`where` binding form](./given-where.md);
 a single (non-nested) token keeps the direct id fetch.
 
+Every preceding token must name a field declared on the collection's entity.
+Generation fails with `ROUTE_LOCATOR_FIELD_UNKNOWN` when it does not. This
+prevents a misspelled scope from becoming a permanent 404 in MongoDB or a
+runtime column error in SQL.
+
 When an access rule needs a different field mapping than same-name (for example
 a parent column named `org_id`), declare it explicitly with the
 [`where` binding form](./given-where.md) in the rule's `given:`; that binding
@@ -67,11 +72,38 @@ message naming the actual token:
 Missing route parameter: categoryId
 ```
 
+Framework-generated routes declare the actual token names, so FastAPI and DRF
+also expose the correct path parameters in request validation and OpenAPI/schema
+output.
+
+## Fetch and mutation semantics
+
+The route-derived predicate applies consistently to `get`, `update`, `replace`,
+and `delete` in both `yaml-api run` and generated FastAPI, DRF, and raw ASGI
+backends. Scoped writes are a single repository operation: the complete parent
+and id predicate is applied by `update_by`, `replace_by`, or `delete_by`. The
+implementation does not fetch by scope and then mutate by id, so a concurrent
+change cannot move a record across the parent boundary between those actions.
+Fields supplied by the route predicate are immutable for that request: update
+and replacement payload values cannot override the id or parent scope.
+
+Custom runtime repositories must implement these `BaseRepository` methods in
+addition to `find_one`:
+
+```python
+async def update_by(collection_name, criteria, payload): ...
+async def replace_by(collection_name, criteria, payload): ...
+async def delete_by(collection_name, criteria): ...
+```
+
+Each method returns the affected document, or `None` when the complete predicate
+does not match. The built-in MongoDB and SQL adapters and all generated
+repositories implement this contract.
+
 ## v0.2 compatibility
 
-v0.2 built-in single-record ops always use the `{id}` convention, so this
-behavior is byte-identical there: the final (only) token is `id`, the record is
-loaded by the id fetch, and a missing token yields the exact legacy message
-`Missing route parameter: id`. The route-derived predicate is additive and
-reachable only through v0.3 authoring (a freely-named or nested token); no v0.2
-route, generated output, or error message changes.
+v0.2 built-in single-record ops always use the `{id}` convention. Runtime and
+generated backends continue to load directly by `id`, and a missing runtime
+parameter yields the exact legacy message `Missing route parameter: id`.
+Freely-named and nested record predicates are enabled only when the spec version
+is `0.3`.

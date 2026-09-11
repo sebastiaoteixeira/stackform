@@ -29,15 +29,58 @@ from .symbol_resolution import SymbolScope
 from .v02.binding_classifier import BindingKind, binding_kind
 
 WHERE_FIELD_UNKNOWN = "WHERE_FIELD_UNKNOWN"
+ROUTE_LOCATOR_FIELD_UNKNOWN = "ROUTE_LOCATOR_FIELD_UNKNOWN"
 
 _SLUG = re.compile(r"\{(\w+)\}")
 _WHERE_NAMESPACE_KINDS = frozenset({BindingKind.IDENTITY, BindingKind.REQUEST})
+_RECORD_OPERATIONS = frozenset({"get", "update", "replace", "delete"})
 
 
 def validate_spec_symbols(spec: dict[str, Any]) -> list[ConfigError]:
     errors: list[ConfigError] = []
     errors.extend(_validate_repository_filters(spec))
     errors.extend(_validate_where_bindings(spec))
+    errors.extend(_validate_record_locators(spec))
+    return errors
+
+
+def _validate_record_locators(spec: dict[str, Any]) -> list[ConfigError]:
+    services = spec.get("services") or {}
+    fields_by_collection = _fields_by_collection(spec)
+    errors: list[ConfigError] = []
+    for controller_name, controller in (spec.get("controllers") or {}).items():
+        if not isinstance(controller, dict):
+            continue
+        base = str(controller.get("base_path", ""))
+        for route_name, route in (controller.get("routes") or {}).items():
+            if not isinstance(route, dict):
+                continue
+            service = services.get(route.get("service"))
+            if not isinstance(service, dict):
+                continue
+            operation = service.get("operation") or route_name
+            repository = service.get("repository")
+            fields = fields_by_collection.get(repository)
+            tokens = _SLUG.findall(base + str(route.get("path", "")))
+            if operation not in _RECORD_OPERATIONS or fields is None or not tokens:
+                continue
+            path = f"controllers.{controller_name}.routes.{route_name}.path"
+            errors.extend(
+                ConfigError(
+                    code=ROUTE_LOCATOR_FIELD_UNKNOWN,
+                    message=(
+                        f"route scope token '{token}' is not declared on collection "
+                        f"'{repository}'"
+                    ),
+                    path=path,
+                    hint=(
+                        f"Declare '{token}' on the collection's entity or use a "
+                        "where binding for a different field mapping"
+                    ),
+                )
+                for token in tokens[:-1]
+                if token not in fields
+            )
     return errors
 
 

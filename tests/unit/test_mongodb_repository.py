@@ -45,6 +45,23 @@ class FakeCollection:
                 return dict(payload)
         return None
 
+    async def find_one_and_update(
+        self, match_filter: dict[str, Any], update: dict[str, Any], **_: Any
+    ) -> dict[str, Any] | None:
+        for index, doc in enumerate(self._docs):
+            if self._matches(doc, match_filter):
+                self._docs[index] = {**doc, **update["$set"]}
+                return dict(self._docs[index])
+        return None
+
+    async def find_one_and_delete(
+        self, match_filter: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        for index, doc in enumerate(self._docs):
+            if self._matches(doc, match_filter):
+                return dict(self._docs.pop(index))
+        return None
+
 
 @pytest.fixture
 def repository() -> MongoRepository:
@@ -98,3 +115,48 @@ async def test_find_one_normalizes_object_id(repository: MongoRepository) -> Non
 
     assert found is not None
     assert found["_id"] == str(object_id)
+
+
+@pytest.mark.asyncio
+async def test_criteria_mutations_are_atomic_and_scoped(
+    repository: MongoRepository,
+) -> None:
+    await repository.create("items", {"id": "a", "tenant": "t1", "title": "old"})
+    await repository.create("items", {"id": "a", "tenant": "t2", "title": "other"})
+
+    updated = await repository.update_by(
+        "items",
+        {"id": "a", "tenant": "t1"},
+        {"tenant": "t3", "title": "updated"},
+    )
+    assert updated is not None
+    assert updated["title"] == "updated" and updated["tenant"] == "t1"
+    unchanged = await repository.update_by(
+        "items", {"id": "a", "tenant": "t1"}, {"id": "different", "tenant": "t3"}
+    )
+    assert unchanged == updated
+
+    replaced = await repository.replace_by(
+        "items", {"id": "a", "tenant": "t1"}, {"tenant": "t3", "title": "fresh"}
+    )
+    assert replaced == {"id": "a", "tenant": "t1", "title": "fresh"}
+
+    deleted = await repository.delete_by("items", {"id": "a", "tenant": "t1"})
+    assert deleted == replaced
+    remaining = await repository.find_one("items", {"id": "a", "tenant": "t2"})
+    assert remaining is not None and remaining["title"] == "other"
+
+
+@pytest.mark.asyncio
+async def test_criteria_mutation_wrong_scope_does_not_mutate(
+    repository: MongoRepository,
+) -> None:
+    await repository.create("items", {"id": "a", "tenant": "t1", "title": "old"})
+
+    result = await repository.update_by(
+        "items", {"id": "a", "tenant": "t2"}, {"title": "wrong"}
+    )
+
+    assert result is None
+    found = await repository.get("items", "a")
+    assert found is not None and found["title"] == "old"

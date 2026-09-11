@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from tests.unit.support.repositories import InMemoryRepository
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.repositories.base import BaseRepository
 from yaml_api_generator.server.common.request_context import RequestContext
@@ -31,81 +32,6 @@ from yaml_api_generator.server.common.steps.repositories import (
     record_locator,
 )
 from yaml_api_generator.server.fastapi.factory import register_fastapi_routes
-
-
-class InMemoryRepository(BaseRepository):
-    def __init__(self, data: dict[str, list[dict[str, Any]]] | None = None) -> None:
-        self._data = data or {}
-        self._id_fields: dict[str, str] = {}
-
-    def register_id_field(self, collection_name: str, id_field: str) -> None:
-        self._id_fields[collection_name] = id_field
-
-    def connect(self) -> None:
-        pass
-
-    async def close(self) -> None:
-        pass
-
-    def _id_field(self, collection_name: str) -> str:
-        return self._id_fields.get(collection_name, "id")
-
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
-        return [dict(record) for record in self._data.get(collection_name, [])]
-
-    async def get(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
-        field = self._id_field(collection_name)
-        return next(
-            (dict(r) for r in self._data.get(collection_name, [])
-             if str(r.get(field)) == str(document_id)),
-            None,
-        )
-
-    async def find_one(
-        self, collection_name: str, criteria: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        for record in self._data.get(collection_name, []):
-            if all(record.get(field) == value for field, value in criteria.items()):
-                return dict(record)
-        return None
-
-    async def create(self, collection_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-        self._data.setdefault(collection_name, []).append(dict(payload))
-        return dict(payload)
-
-    async def _target(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
-        field = self._id_field(collection_name)
-        return next(
-            (r for r in self._data.get(collection_name, [])
-             if str(r.get(field)) == str(document_id)),
-            None,
-        )
-
-    async def update(
-        self, collection_name: str, document_id: str, payload: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        record = await self._target(collection_name, document_id)
-        if record is None:
-            return None
-        record.update(payload)
-        return dict(record)
-
-    async def replace(
-        self, collection_name: str, document_id: str, payload: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        record = await self._target(collection_name, document_id)
-        if record is None:
-            return None
-        record.clear()
-        record.update(payload)
-        return dict(record)
-
-    async def delete(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
-        record = await self._target(collection_name, document_id)
-        if record is None:
-            return None
-        self._data[collection_name].remove(record)
-        return dict(record)
 
 
 def _ctx(
@@ -186,7 +112,7 @@ async def test_delete_step_renamed_token_removes_record():
         _ctx(repo, {"categoryId": "c1"}, collection="assetCategories", operation="delete")
     )
     assert result.response["id"] == "c1"
-    assert repo._data["assetCategories"] == []
+    assert repo.documents("assetCategories") == []
 
 
 # --- single-record steps: multi-token nested path -------------------------
@@ -339,7 +265,7 @@ async def test_delete_step_v02_id_token_removes_record():
     step = RepositoryDeleteStep("items", "id")
     result = await step(_ctx(repo, {"id": "i1"}, collection="items", operation="delete"))
     assert result.response["id"] == "i1"
-    assert repo._data["items"] == []
+    assert repo.documents("items") == []
 
 
 # --- per-token error message ----------------------------------------------
@@ -391,7 +317,7 @@ async def test_v02_default_locator_uses_id_fetch():
 # --- end-to-end through the FastAPI factory / pipeline builder ------------
 
 
-def _app(collections, routes, repo):
+def _app(collections, routes, repo, *, spec_version="0.3"):
     from fastapi import FastAPI
 
     app = FastAPI()
@@ -406,6 +332,7 @@ def _app(collections, routes, repo):
             has_password_auth=False,
             has_api_key_auth=False,
         ),
+        spec_version=spec_version,
     )
     register_fastapi_routes(app, ctx, RepositoryRegistry.single(repo))
     return app
@@ -475,7 +402,35 @@ def test_fastapi_v02_id_token_get_regression():
     )
     repo = InMemoryRepository({"items": [{"id": "i1", "title": "kept"}]})
     client = TestClient(
-        _app({"items": _collection("items", fields={"title": {"type": "string"}})}, [route], repo)
+        _app(
+            {"items": _collection("items", fields={"title": {"type": "string"}})},
+            [route],
+            repo,
+            spec_version="0.2",
+        )
     )
     assert client.get("/api/v1/items/i1").json()["title"] == "kept"
     assert client.get("/api/v1/items/missing").status_code == 404
+
+
+def test_fastapi_v02_renamed_token_does_not_enable_v03_lookup():
+    from fastapi.testclient import TestClient
+
+    route = RuntimeRouteDescriptor(
+        method="GET",
+        path="/api/v1/categories/{categoryId}",
+        operation="get",
+        collection="assetCategories",
+        is_public=True,
+    )
+    repo = InMemoryRepository({"assetCategories": [{"id": "c1"}]})
+    client = TestClient(
+        _app(
+            {"assetCategories": _collection("assetCategories")},
+            [route],
+            repo,
+            spec_version="0.2",
+        )
+    )
+    response = client.get("/api/v1/categories/c1")
+    assert response.status_code == 422

@@ -22,7 +22,7 @@ from .steps import (
     ValidateBodyStep,
     ValidateIdentityCreateStep,
 )
-from .steps.repositories import record_locator
+from .steps.repositories import RecordLocator, record_locator
 
 
 def _document_bindings(route: RuntimeRouteDescriptor) -> Iterator[IRDocumentBinding]:
@@ -171,6 +171,8 @@ class PipelineBuilder:
         return PostFetchAuthorizeStep(route.access_rules, self._ctx.auth)
 
     def _locator(self, route: RuntimeRouteDescriptor):
+        if getattr(self._ctx, "spec_version", "0.2") != "0.3":
+            return RecordLocator(self._ctx.collections[route.collection].id_field)
         return record_locator(
             route.path, self._ctx.collections[route.collection].id_field
         )

@@ -117,3 +117,38 @@ async def test_find_one_no_match_is_none(seeded):
 async def test_find_one_unknown_field_is_programming_error(seeded):
     with pytest.raises(KeyError):
         await seeded.find_one("events", {"ghost": "x"})
+
+
+@pytest.mark.asyncio
+async def test_criteria_mutations_are_atomic_and_scoped(seeded):
+    updated = await seeded.update_by(
+        "events",
+        {"id": "e1", "level": "low"},
+        {"level": "high", "kind": "updated"},
+    )
+    assert updated is not None
+    assert updated["kind"] == "updated" and updated["level"] == "low"
+    unchanged = await seeded.update_by(
+        "events", {"id": "e1", "level": "low"}, {"id": "other", "level": "high"}
+    )
+    assert unchanged == updated
+
+    assert (
+        await seeded.update_by(
+            "events", {"id": "e2", "level": "low"}, {"kind": "wrong"}
+        )
+        is None
+    )
+    untouched = await seeded.get("events", "e2")
+    assert untouched is not None and untouched["kind"] == "click"
+
+    replaced = await seeded.replace_by(
+        "events", {"id": "e1", "level": "low"}, {"kind": "fresh"}
+    )
+    assert replaced is not None
+    assert replaced["id"] == "e1" and replaced["kind"] == "fresh"
+    assert replaced["level"] == "low"
+
+    deleted = await seeded.delete_by("events", {"id": "e1", "kind": "fresh"})
+    assert deleted is not None and deleted["id"] == "e1"
+    assert await seeded.get("events", "e1") is None

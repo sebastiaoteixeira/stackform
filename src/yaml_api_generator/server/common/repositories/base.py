@@ -42,6 +42,30 @@ class BaseRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def update_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def replace_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_by(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def create(
         self, collection_name: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
