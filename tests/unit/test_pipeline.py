@@ -15,7 +15,7 @@ from yaml_api_generator.server.common.server_context import (
 )
 from yaml_api_generator.server.common.steps import ForbiddenError, UnauthorizedError
 from yaml_api_generator.ir.when import Equals, FieldRef
-from .test_repository_steps import InMemoryRepository
+from tests.unit.support.repositories import InMemoryRepository
 
 
 def _make_runtime_context(
@@ -195,11 +195,10 @@ async def test_builder_login_route_validates_and_returns_token():
         routes=[route],
         has_password_auth=True,
     )
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({
+        "users": [{"id": "u1", "email": "a@b.com", "_auth": {"passwordHash": hash_password("secret")}}]
+    })
     repo.register_id_field("users", "id")
-    repo._data["users"] = {
-        "u1": {"id": "u1", "email": "a@b.com", "_auth": {"passwordHash": hash_password("secret")}}
-    }
 
     pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(body={"email": "a@b.com", "password": "secret"})
@@ -341,9 +340,8 @@ async def test_builder_update_with_document_rule_allows_matching_principal():
         routes=[route],
         has_password_auth=True,
     )
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({"items": [{"id": "item-1", "title": "Old", "authorId": "user-1"}]})
     repo.register_id_field("items", "id")
-    repo._data["items"] = {"item-1": {"id": "item-1", "title": "Old", "authorId": "user-1"}}
     pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run(
         url_params={"id": "item-1"},
@@ -382,9 +380,8 @@ async def test_builder_update_with_document_rule_denies_non_matching_principal()
         routes=[route],
         has_password_auth=True,
     )
-    repo = InMemoryRepository()
+    repo = InMemoryRepository({"items": [{"id": "item-1", "title": "Old", "authorId": "user-1"}]})
     repo.register_id_field("items", "id")
-    repo._data["items"] = {"item-1": {"id": "item-1", "title": "Old", "authorId": "user-1"}}
     pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(ForbiddenError):
         await pipeline.run(

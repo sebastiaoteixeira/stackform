@@ -12,18 +12,22 @@ from ..repositories import BaseRepository, RepositoryRegistry
 from ..server_context import RuntimeCollectionDescriptor
 from ..utils.ids import generate_id
 from ..utils.field_access import resolve_claim_path
+from ..utils.ttl_cache import TTLCache
 from .login_codes import login_codes
 
-_discovery_cache: dict[str, dict[str, Any]] = {}
+_discovery_cache: TTLCache[str, dict[str, Any]] = TTLCache()
 
 
 async def _discovery(discovery_url: str) -> dict[str, Any]:
-    if discovery_url not in _discovery_cache:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(discovery_url)
-            resp.raise_for_status()
-            _discovery_cache[discovery_url] = resp.json()
-    return _discovery_cache[discovery_url]
+    cached = _discovery_cache.get(discovery_url)
+    if cached is not None:
+        return cached
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(discovery_url)
+        resp.raise_for_status()
+    document: dict[str, Any] = resp.json()
+    _discovery_cache[discovery_url] = document
+    return document
 
 
 async def build_login_redirect(provider: IROIDCProvider, callback_url: str) -> str:

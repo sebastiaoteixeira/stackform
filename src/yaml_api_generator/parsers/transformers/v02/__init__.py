@@ -104,7 +104,9 @@ class V02Transformer:
             if role_errors:
                 raise ConfigErrors(role_errors)
 
-        services = self._route.transform_services(services_data, repo_entity_map, import_map)
+        services = self._route.transform_services(
+            services_data, repo_entity_map, import_map, dtos_data
+        )
         routes = self._route.transform_routes(
             controllers_data,
             services,

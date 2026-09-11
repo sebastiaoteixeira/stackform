@@ -64,6 +64,13 @@ class GetSvc:
         await self._after_get(document)
         return document
 
+    async def get_by(self, criteria: dict[str, Any]) -> dict:
+        document = await self._repo.find_one(criteria)
+        if document is None:
+            raise NotFoundError(self._name, criteria)
+        await self._after_get(document)
+        return document
+
 
 class CreateSvc:
     async def create(self, data: dict) -> dict:
@@ -84,6 +91,15 @@ class UpdateSvc:
         await self._after_update(document)
         return document
 
+    async def update_by(self, criteria: dict[str, Any], data: dict) -> dict:
+        await self._before_update(criteria, data)
+        await self._before_write(data)
+        document = await self._repo.update_by(criteria, data)
+        if document is None:
+            raise NotFoundError(self._name, criteria)
+        await self._after_update(document)
+        return document
+
 
 class ReplaceSvc:
     async def replace(self, resource_id: str, data: dict) -> dict:
@@ -95,6 +111,15 @@ class ReplaceSvc:
         await self._after_replace(document)
         return document
 
+    async def replace_by(self, criteria: dict[str, Any], data: dict) -> dict:
+        await self._before_replace(criteria, data)
+        await self._before_write(data)
+        document = await self._repo.replace_by(criteria, data)
+        if document is None:
+            raise NotFoundError(self._name, criteria)
+        await self._after_replace(document)
+        return document
+
 
 class DeleteSvc:
     async def delete(self, resource_id: str) -> dict:
@@ -102,6 +127,14 @@ class DeleteSvc:
         document = await self._repo.delete(resource_id)
         if document is None:
             raise NotFoundError(self._name, resource_id)
+        await self._after_delete(document)
+        return document
+
+    async def delete_by(self, criteria: dict[str, Any]) -> dict:
+        await self._before_delete(criteria)
+        document = await self._repo.delete_by(criteria)
+        if document is None:
+            raise NotFoundError(self._name, criteria)
         await self._after_delete(document)
         return document
 

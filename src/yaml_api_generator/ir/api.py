@@ -164,9 +164,30 @@ class IRCollection:
 
 
 @dataclass(frozen=True)
+class IRSymbolRef:
+    root: str
+    path: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IRLiteralRef:
+    value: Any
+
+
+WhereRhs = IRSymbolRef | IRLiteralRef
+
+
+@dataclass(frozen=True)
+class IRWhereConjunct:
+    field: str
+    rhs: WhereRhs
+
+
+@dataclass(frozen=True)
 class IRDocumentBinding:
     collection: str
     id_param: str | None = None
+    where: tuple[IRWhereConjunct, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -211,6 +232,16 @@ class IRAccessRule:
     filter: str | None = None
     write_fields: list[str] = field(default_factory=list)
     reason: str | None = None
+    bind: dict[str, WhereRhs] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class IRServiceInput:
+    fields: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def names(self) -> frozenset[str]:
+        return frozenset(self.fields)
 
 
 @dataclass(frozen=True)
@@ -221,6 +252,8 @@ class IRService:
     handler: str | None = None
     abstract: bool = False
     inherits: str | None = None
+    input: IRServiceInput | None = None
+    forwarding: dict[str, WhereRhs] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
