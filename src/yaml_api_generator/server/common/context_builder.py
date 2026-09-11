@@ -40,6 +40,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         routes=routes,
         auth=auth,
         operations=operations,
+        spec_version=document.version,
     )
 
 
@@ -88,9 +89,16 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                     request_symbols=rule.request_symbols,
                     when=rule.when,
                     effect=rule.effect,
+                    reason=rule.reason if document.version == "0.3" else None,
+                    bind=rule.bind,
                 )
                 for rule in route.access_rules
             ]
+        service = document.services.get(route.service)
+        service_input = (
+            service.input.fields if service is not None and service.input is not None else None
+        )
+        service_forwarding = dict(service.forwarding) if service is not None else {}
         routes.append(
             RuntimeRouteDescriptor(
                 method=route.method,
@@ -100,6 +108,8 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                 is_public=route.is_public,
                 handler=route.handler,
                 access_rules=access_rules,
+                service_input=service_input,
+                service_forwarding=service_forwarding,
                 pagination=route.pagination,
             )
         )

@@ -6,6 +6,7 @@ from yaml_api_generator.ir import (
     IRIdentityBinding,
     IRProviderBinding,
     IRRequestBinding,
+    WhereRhs,
 )
 from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
@@ -57,6 +58,8 @@ class RuntimeAccessRule:
     request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
+    reason: str | None = None
+    bind: dict[str, WhereRhs] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,8 @@ class RuntimeRouteDescriptor:
     is_public: bool
     handler: str | None = None
     access_rules: list[RuntimeAccessRule] | None = None
+    service_input: dict[str, Any] | None = None
+    service_forwarding: dict[str, Any] = field(default_factory=dict)
     pagination: IRPagination | None = None
 
 
@@ -96,3 +101,4 @@ class RuntimeContext:
     routes: list[RuntimeRouteDescriptor]
     auth: RuntimeAuthConfig
     operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)
+    spec_version: str = "0.2"

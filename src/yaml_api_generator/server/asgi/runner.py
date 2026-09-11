@@ -9,7 +9,7 @@ from ..common.loader import initialize_indexes
 from ..common.pipeline import Pipeline
 from ..common.pipeline_builder import PipelineBuilder
 from ..common.repositories import RepositoryRegistry
-from ..common.steps import ForbiddenError, NotFoundError, UnauthorizedError
+from ..common.steps import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 
 
 _RouteEntry = tuple[re.Pattern[str], Pipeline, RuntimeRouteDescriptor]
@@ -101,6 +101,9 @@ class ASGIApp:
             return
         except NotFoundError as exc:
             await self._send_json(send, 404, {"detail": str(exc)})
+            return
+        except ConflictError as exc:
+            await self._send_json(send, 409, {"detail": str(exc)})
             return
         except ValueError as exc:
             await self._send_json(send, 422, {"detail": str(exc)})

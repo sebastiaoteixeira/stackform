@@ -23,7 +23,7 @@ from ..common.server_context import (
 from ..common.pipeline import Pipeline
 from ..common.pipeline_builder import PipelineBuilder
 from ..common.repositories import BaseRepository, RepositoryRegistry
-from ..common.steps import ForbiddenError, NotFoundError, UnauthorizedError
+from ..common.steps import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 
 
 WRITE_OPERATIONS = frozenset({"create", "update", "replace"})
@@ -392,6 +392,8 @@ async def _run_pipeline(
         raise HTTPException(status_code=403, detail=str(error)) from error
     except NotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return jsonable_encoder(ctx.response)

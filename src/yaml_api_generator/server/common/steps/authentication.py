@@ -37,6 +37,13 @@ def ResolvePrincipalStep(
     return step
 
 
+def _has_idp_provider(providers: dict[str, Any]) -> bool:
+    return any(
+        isinstance(provider, IROIDCProvider) and provider.is_idp
+        for provider in providers.values()
+    )
+
+
 async def _resolve_idp_principal(
     bearer_token: str,
     identity_collections: dict[str, RuntimeIdentityDescriptor],
@@ -166,15 +173,17 @@ async def _resolve_identity_principal(
 ) -> dict[str, Any] | None:
     bearer_token = extract_bearer_token(headers)
     if bearer_token is not None:
-        idp_principal = await _resolve_idp_principal(
-            bearer_token,
-            identity_collections,
-            collections,
-            providers,
-            registry,
-        )
-        if idp_principal is not None:
-            return idp_principal
+        if _has_idp_provider(providers) and idp.unverified_issuer(bearer_token) is not None:
+            idp_principal = await _resolve_idp_principal(
+                bearer_token,
+                identity_collections,
+                collections,
+                providers,
+                registry,
+            )
+            if idp_principal is not None:
+                return idp_principal
+            raise UnauthorizedError("Untrusted token issuer")
 
         jwt_principal = await _resolve_jwt_principal(
             bearer_token,

@@ -1,0 +1,95 @@
+from importlib import import_module
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from dependencies.service_inputs import prepare_service_inputs, resolve_access_bind
+{% if routes | selectattr("needs_auth") | list %}
+from dependencies.auth import require_principal
+{% endif %}
+{% if routes | selectattr("access_rules") | list %}
+from dependencies.authorization import _principal_has_role, _values_equal
+{% endif %}
+
+
+router = APIRouter(tags=["Handlers"])
+
+{% for route in routes %}
+@router.{{ route.method | lower }}("{{ route.relative_path }}")
+async def {{ route.operation | py_identifier }}_{{ loop.index }}(
+    request: Request{% if route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}
+) -> Any:
+    body: dict[str, Any] = {}
+    try:
+        body = await request.json()
+    except (UnicodeDecodeError, ValueError):
+        pass
+{% if route.access_rules %}
+    _request_body = body
+    _request_path = dict(request.path_params)
+    _request_query = dict(request.query_params)
+    _request_header = dict(request.headers)
+    _request_cookie = dict(request.cookies)
+{% set ns_symbols = namespace(identity=[], request=[]) %}
+{% for rule in route.access_rules %}
+{% for symbol in rule.identity_symbols %}
+{% if symbol not in ns_symbols.identity %}{% set _ = ns_symbols.identity.append(symbol) %}{% endif %}
+{% endfor %}
+{% for symbol in rule.request_symbols %}
+{% if symbol.name not in (ns_symbols.request | map(attribute="name") | list) %}{% set _ = ns_symbols.request.append(symbol) %}{% endif %}
+{% endfor %}
+{% endfor %}
+{% for symbol in ns_symbols.identity %}
+    {{ symbol }} = principal
+{% endfor %}
+{% for symbol in ns_symbols.request %}
+    {{ symbol | request_symbol_binding }}
+{% endfor %}
+    _access_bindings = {}
+{% set ns = namespace(first=true, terminal=false, conditional=false) %}
+{% for rule in route.access_rules %}
+{% if not ns.terminal %}
+{% if rule is unconditional %}
+{% if rule.effect == "deny" %}
+    raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
+{% else %}
+    _access_bindings = {{ rule.bind | py_literal }}
+{% endif %}
+{% set ns.terminal = true %}
+{% else %}
+{% set keyword = "if" if ns.first else "elif" %}
+    {{ keyword }} {{ rule | rule_to_python }}:
+{% if rule.effect == "deny" %}
+        raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
+{% else %}
+        _access_bindings = {{ rule.bind | py_literal }}
+{% endif %}
+{% set ns.first = false %}
+{% set ns.conditional = true %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if ns.conditional and not ns.terminal %}
+    else:
+        raise HTTPException(status_code=403, detail="Forbidden")
+{% endif %}
+    bound_inputs = resolve_access_bind(_access_bindings, locals())
+{% else %}
+    bound_inputs = {}
+{% endif %}
+    try:
+        service_inputs = prepare_service_inputs(
+            dict(request.path_params),
+            body,
+            {{ route.service_input | py_literal }},
+            {{ route.service_forwarding | py_literal }},
+            bound_inputs,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    request.state.service_inputs = service_inputs
+    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
+    return await getattr(import_module(module_path), function_name)(request)
+
+
+{% endfor %}

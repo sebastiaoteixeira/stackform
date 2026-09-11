@@ -6,15 +6,26 @@ The issuer is derived from the discovery document, so it never needs to be
 declared in the spec. When no audience override is set, the token's aud is
 verified against the provider's client_id (correct for ID tokens from Google,
 Azure, and standard Keycloak).
+
+A token whose header carries no kid cannot be matched against the JWKS and is
+rejected. Only jwt.InvalidTokenError means "invalid token": an unreachable IdP
+propagates as a transport error rather than an authentication failure.
 """
+
+from contextlib import suppress
 
 import httpx
 import jwt
 
 from yaml_api_generator.ir.api import IROIDCProvider
+from ..utils.ttl_cache import TTLCache
 from .oidc import _discovery
 
-_jwks_cache: dict[str, jwt.PyJWKSet] = {}
+JWKS_CACHE_TTL_SECONDS = 300.0
+REQUIRED_CLAIMS = ["exp", "iss", "aud", "sub"]
+
+_jwks_cache: TTLCache[str, jwt.PyJWKSet] = TTLCache(ttl=JWKS_CACHE_TTL_SECONDS)
+_ASYMMETRIC_ALGORITHMS = ["RS256", "ES256"]
 
 
 async def _fetch_jwks(jwks_uri: str) -> jwt.PyJWKSet:
@@ -27,13 +38,14 @@ async def _fetch_jwks(jwks_uri: str) -> jwt.PyJWKSet:
 async def _get_signing_key(jwks_uri: str, kid: str | None) -> jwt.PyJWK | None:
     if kid is None:
         return None
-    if jwks_uri not in _jwks_cache:
-        _jwks_cache[jwks_uri] = await _fetch_jwks(jwks_uri)
-    match = next((k for k in _jwks_cache[jwks_uri].keys if k.key_id == kid), None)
-    if match is None:
-        _jwks_cache[jwks_uri] = await _fetch_jwks(jwks_uri)
-        match = next((k for k in _jwks_cache[jwks_uri].keys if k.key_id == kid), None)
-    return match
+    cached = _jwks_cache.get(jwks_uri)
+    if cached is not None:
+        with suppress(KeyError):
+            return cached[kid]
+    rotated = _jwks_cache[jwks_uri] = await _fetch_jwks(jwks_uri)
+    with suppress(KeyError):
+        return rotated[kid]
+    return None
 
 
 async def issuer_of(provider: IROIDCProvider) -> str:
@@ -72,9 +84,10 @@ async def verify_idp_token(token: str, provider: IROIDCProvider) -> dict | None:
         return jwt.decode(
             token,
             signing_key.key,
-            algorithms=["RS256"],
+            algorithms=_ASYMMETRIC_ALGORITHMS,
             audience=accepted_audiences,
             issuer=expected_issuer,
+            options={"require": REQUIRED_CLAIMS},
         )
     except jwt.InvalidTokenError:
         return None
