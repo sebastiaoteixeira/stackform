@@ -646,7 +646,6 @@
           "enum": ["allow", "deny"],
           "default": "allow"
         },
-        "filter": { "type": "string" },
         "writeFields": {
           "type": "array",
           "items": { "type": "string" }

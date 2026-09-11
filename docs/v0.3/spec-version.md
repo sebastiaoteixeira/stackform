@@ -16,12 +16,13 @@ v0.2 and is transformed by `V03Transformer`, which subclasses the v0.2 transform
 A `version: "0.2"` spec is unaffected and behaves exactly as before. An unknown
 version (for example `"9.9"`) is rejected with the `UNSUPPORTED_VERSION` error.
 
-## A superset of v0.2
+## Compatibility with v0.2
 
-Every spec that is valid under v0.2 is valid under v0.3. Opting in changes nothing
-about existing constructs; it only unlocks the additional v0.3 constructs below.
-The v0.3 schema lives at `parsers/schemas/yaml-spec-v0.3.schema.json` and is a copy
-of the v0.2 schema extended permissively with:
+Most v0.2 specs remain valid under v0.3. The exception is the dead access-rule
+`filter` key: it was never enforced and is rejected in v0.3 to prevent a false
+sense of authorization. The v0.3 schema lives at
+`parsers/schemas/yaml-spec-v0.3.schema.json` and derives from v0.2 with these
+changes:
 
 - **[`where` binding form](./given-where.md)** &mdash; access-rule `given:`
   values may bind a record by predicate over fields, `$`-sigil symbols, and
@@ -32,6 +33,8 @@ of the v0.2 schema extended permissively with:
   authorization rule supplies trusted values for a service's declared inputs.
 - **`$`-sigil slugs** &mdash; symbolic references such as `$userId`, resolved at
   build or call time.
+- **[removed access-rule `filter`](./removed-filter-key.md)** &mdash; v0.3 rejects
+  this unenforced legacy key with `ACCESS_FILTER_REMOVED`.
 
 Service `input:` / `with:` and controller `bind:` are implemented in the runtime
 server and generated backends. A construct is not listed as implemented until
