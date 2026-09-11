@@ -63,7 +63,8 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 {% macro openapi_extra(route) %}{% if route.needs_auth and security_schemes %}, openapi_extra={"security": {{ security_schemes }}}{% endif %}{% endmacro %}
 {% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% endmacro %}
 {% macro svc_dep() %}svc=Depends(get_{{ service_groups | first }}_service){% endmacro %}
-{% macro extra_path_params(route) %}{% for name in route.path_params if name != "id" %}, {{ name }}: str{% endfor %}{% endmacro %}
+{% macro extra_path_params(route) %}{% for name in route.path_params if name != route.record_id_param %}, {{ name }}: str{% endfor %}{% endmacro %}
+{% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": {{ param }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% macro request_param(route) %}{% if route.needs_request %}, request: Request{% endif %}{% endmacro %}
 {% macro request_locals(route, body_expr) %}
 {% if route.access_rules %}
@@ -202,15 +203,21 @@ async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% e
 
 {% elif route.operation == "get" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def get_{{ collection_name }}(id: str{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
+async def get_{{ collection_name }}({{ route.record_id_param }}: str{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ request_locals(route, "None") }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await svc.get(id)
+{% if route.record_parent_params %}
+    existing = await svc.get_by({{ record_criteria(route) }})
+{% else %}
+    existing = await svc.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_guard(route, "existing") }}
     return existing
+{% elif route.record_parent_params %}
+    return await svc.get_by({{ record_criteria(route) }})
 {% else %}
-    return await svc.get(id)
+    return await svc.get({{ route.record_id_param }})
 {% endif %}
 
 
@@ -224,38 +231,62 @@ async def create_{{ collection_name }}(payload: {{ body_model }}{{ extra_path_pa
 
 {% elif route.operation == "update" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def update_{{ collection_name }}(id: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
+async def update_{{ collection_name }}({{ route.record_id_param }}: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ request_locals(route, 'payload.model_dump(mode="json", exclude_unset=True)') }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await svc.get(id)
+{% if route.record_parent_params %}
+    existing = await svc.get_by({{ record_criteria(route) }})
+{% else %}
+    existing = await svc.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await svc.update(id, payload.model_dump(mode="json", exclude_unset=True))
+{% if route.record_parent_params %}
+    return await svc.update_by({{ record_criteria(route) }}, payload.model_dump(mode="json", exclude_unset=True))
+{% else %}
+    return await svc.update({{ route.record_id_param }}, payload.model_dump(mode="json", exclude_unset=True))
+{% endif %}
 
 
 {% elif route.operation == "replace" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def replace_{{ collection_name }}(id: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
+async def replace_{{ collection_name }}({{ route.record_id_param }}: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ request_locals(route, 'payload.model_dump(mode="json")') }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await svc.get(id)
+{% if route.record_parent_params %}
+    existing = await svc.get_by({{ record_criteria(route) }})
+{% else %}
+    existing = await svc.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await svc.replace(id, payload.model_dump(mode="json"))
+{% if route.record_parent_params %}
+    return await svc.replace_by({{ record_criteria(route) }}, payload.model_dump(mode="json"))
+{% else %}
+    return await svc.replace({{ route.record_id_param }}, payload.model_dump(mode="json"))
+{% endif %}
 
 
 {% elif route.operation == "delete" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def delete_{{ collection_name }}(id: str{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
+async def delete_{{ collection_name }}({{ route.record_id_param }}: str{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}) -> Any:
 {{ request_locals(route, "None") }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-    existing = await svc.get(id)
+{% if route.record_parent_params %}
+    existing = await svc.get_by({{ record_criteria(route) }})
+{% else %}
+    existing = await svc.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
-    return await svc.delete(id)
+{% if route.record_parent_params %}
+    return await svc.delete_by({{ record_criteria(route) }})
+{% else %}
+    return await svc.delete({{ route.record_id_param }})
+{% endif %}
 
 
 {% endif %}

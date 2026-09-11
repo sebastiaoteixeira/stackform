@@ -28,6 +28,7 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% set class_name = collection_name | capitalize_collection %}
 {% set list_routes = crud_routes | selectattr("has_id_param", "false") | list %}
 {% set detail_routes = crud_routes | selectattr("has_id_param") | list %}
+{% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": {{ param }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 
 {% macro security_decorator(route) %}
 {% if route.needs_auth %}
@@ -143,7 +144,10 @@ class {{ class_name }}ListView(APIView):
 {% for route in list_routes %}
 
 {{ security_decorator(route) }}
-    async def {{ route.method | lower }}(self, request):
+    async def {{ route.method | lower }}(self, request, **path_params):
+{% for name in route.path_params %}
+        {{ name }} = path_params["{{ name }}"]
+{% endfor %}
         db = get_database()
         repo = {{ class_name }}Repository(db)
         service = {{ class_name }}Service(repo)
@@ -171,14 +175,21 @@ class {{ class_name }}DetailView(APIView):
 {% for route in detail_routes %}
 
 {{ security_decorator(route) }}
-    async def {{ route.method | lower }}(self, request, pk):
+    async def {{ route.method | lower }}(self, request, **path_params):
+{% for name in route.path_params %}
+        {{ name }} = path_params["{{ name }}"]
+{% endfor %}
         db = get_database()
         repo = {{ class_name }}Repository(db)
         service = {{ class_name }}Service(repo)
 {{ pre_fetch_check(route) }}
         try:
 {% if route.operation == "get" %}
-            result = await service.get(pk)
+{% if route.record_parent_params %}
+            result = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            result = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "result") }}
             return Response(result)
 {% elif route.operation == "update" %}
@@ -186,27 +197,51 @@ class {{ class_name }}DetailView(APIView):
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = await service.get(pk)
+{% if route.record_parent_params %}
+            prefetch = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            prefetch = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = await service.update(pk, data)
+{% if route.record_parent_params %}
+            result = await service.update_by({{ record_criteria(route) }}, data)
+{% else %}
+            result = await service.update({{ route.record_id_param }}, data)
+{% endif %}
             return Response(result)
 {% elif route.operation == "replace" %}
             serializer = {{ route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = await service.get(pk)
+{% if route.record_parent_params %}
+            prefetch = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            prefetch = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = await service.replace(pk, data)
+{% if route.record_parent_params %}
+            result = await service.replace_by({{ record_criteria(route) }}, data)
+{% else %}
+            result = await service.replace({{ route.record_id_param }}, data)
+{% endif %}
             return Response(result)
 {% elif route.operation == "delete" %}
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = await service.get(pk)
+{% if route.record_parent_params %}
+            prefetch = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            prefetch = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = await service.delete(pk)
+{% if route.record_parent_params %}
+            result = await service.delete_by({{ record_criteria(route) }})
+{% else %}
+            result = await service.delete({{ route.record_id_param }})
+{% endif %}
             return Response(result)
 {% endif %}
         except NotFoundError:

@@ -38,6 +38,31 @@ class InMemoryRepository(BaseRepository):
         )
         return next(matches, None)
 
+    async def update_by(
+        self, collection_name: str, criteria: Document, payload: Document
+    ) -> Document | None:
+        changes = {field: value for field, value in payload.items() if field not in criteria}
+        return self._transform_by(
+            collection_name, criteria, lambda document: {**document, **changes}
+        )
+
+    async def replace_by(
+        self, collection_name: str, criteria: Document, payload: Document
+    ) -> Document | None:
+        return self._transform_by(
+            collection_name,
+            criteria,
+            lambda _: {**payload, **criteria},
+        )
+
+    async def delete_by(
+        self, collection_name: str, criteria: Document
+    ) -> Document | None:
+        index = self._index_matching(collection_name, criteria)
+        if index is None:
+            return None
+        return dict(self.documents(collection_name).pop(index))
+
     async def create(self, collection_name: str, payload: Document) -> Document:
         self.documents(collection_name).append(dict(payload))
         return dict(payload)
@@ -65,6 +90,29 @@ class InMemoryRepository(BaseRepository):
             if str(doc.get(id_field)) == document_id
         )
         return next(positions, None)
+
+    def _index_matching(
+        self, collection_name: str, criteria: Document
+    ) -> int | None:
+        positions = (
+            index
+            for index, document in enumerate(self.documents(collection_name))
+            if all(document.get(field) == value for field, value in criteria.items())
+        )
+        return next(positions, None)
+
+    def _transform_by(
+        self,
+        collection_name: str,
+        criteria: Document,
+        transform: Callable[[Document], Document],
+    ) -> Document | None:
+        documents = self.documents(collection_name)
+        index = self._index_matching(collection_name, criteria)
+        if index is None:
+            return None
+        documents[index] = transform(documents[index])
+        return dict(documents[index])
 
     def _transform(
         self,
