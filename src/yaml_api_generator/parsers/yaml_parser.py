@@ -448,4 +448,8 @@ def load_and_generate_ir(
 
     from .transformers.registry import transform_config
 
-    return ParseResult(ir=transform_config(resolved), ui_block=ui_block, warnings=trust_warnings + access_warnings)
+    return ParseResult(
+        ir=transform_config(resolved, yaml_path.parent),
+        ui_block=ui_block,
+        warnings=trust_warnings + access_warnings,
+    )

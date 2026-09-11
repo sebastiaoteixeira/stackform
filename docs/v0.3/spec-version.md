@@ -33,6 +33,9 @@ changes:
   authorization rule supplies trusted values for a service's declared inputs.
 - **[access-rule `reason:`](./access-reason.md)** &mdash; an explicit matching deny
   may return a safe, rule-specific explanation in the 403 response.
+- **[vendored `imports:`](./vendored-imports.md)** &mdash; an `imports` entry may
+  be an object that copies a custom-handler package into the generated target and
+  merges its dependencies into the manifest.
 - **`$`-sigil slugs** &mdash; symbolic references such as `$userId`, resolved at
   build or call time.
 - **[removed access-rule `filter`](./removed-filter-key.md)** &mdash; v0.3 rejects

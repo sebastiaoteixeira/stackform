@@ -25,6 +25,7 @@ dependencies = [
   "asyncpg>=0.31.0",
   "alembic>=1.18.4",
   "psycopg[binary]>=3.3.4",
+  "packaging",
 ]
 
 [project.optional-dependencies]
