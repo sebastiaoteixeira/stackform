@@ -1,6 +1,8 @@
 import json
 import re
+from http.cookies import SimpleCookie
 from typing import Any
+from urllib.parse import parse_qs
 
 from settings import settings
 
@@ -9,6 +11,10 @@ from dependencies.mongodb import connect_db, close_db, get_database
 {% for col_name in collections %}
 from routes.{{ col_name }} import *
 {% endfor %}
+{% set handler_routes = routes | selectattr("handler") | rejectattr("collection") | list %}
+{% if handler_routes %}
+from routes.handlers import *
+{% endif %}
 {% if ctx.auth.has_password_auth %}
 from routes.login import *
 {% endif %}
@@ -32,6 +38,9 @@ ROUTES: dict[str, list[tuple[re.Pattern[str], Any]]] = {}
 {% set handler_name = "handle_" ~ route.operation ~ "_" ~ route.collection %}
 ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.path | path_to_regex }}$"), {{ handler_name }}))
 {% endif %}
+{% endfor %}
+{% for route in handler_routes %}
+ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.path | path_to_regex }}$"), handle_custom_{{ loop.index }}))
 {% endfor %}
 {% for identity in ctx.auth.identity_collections %}
 {% if identity.has_password and identity.identifier %}
@@ -78,11 +87,21 @@ class ASGIApp:
             k.decode("latin-1"): v.decode("latin-1")
             for k, v in scope.get("headers", [])
         }
+        parsed_query = parse_qs(scope.get("query_string", b"").decode("utf-8"))
+        query = {
+            key: values[0] if len(values) == 1 else values
+            for key, values in parsed_query.items()
+        }
+        cookie_jar = SimpleCookie()
+        cookie_jar.load(headers.get("cookie", ""))
+        cookies = {key: morsel.value for key, morsel in cookie_jar.items()}
 
         db = get_database()
 
         try:
-            status, data = await handler(url_params, body, headers, db)
+            status, data = await handler(
+                url_params, body, headers, db, query=query, cookies=cookies
+            )
         except ValueError as exc:
             await self._send_json(send, 422, {"detail": str(exc)})
             return

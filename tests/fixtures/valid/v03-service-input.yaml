@@ -1,0 +1,51 @@
+version: "0.3"
+api:
+  name: service-input
+  basePath: /api
+entities:
+  post:
+    fields:
+      id:
+        type: id
+      state:
+        type: string
+repositories:
+  posts:
+    entity: post
+    operations:
+      archive:
+        query:
+          command: findOne
+          filter:
+            id: $lookup
+            state: $state
+services:
+  archive:
+    repository: posts
+    operation: archive
+    input:
+      postId: string
+    with:
+      lookup: $postId
+      state: archived
+  notify:
+    handler: tests.support.service_input_handler.notify
+    input:
+      postId: string
+    with:
+      id: $postId
+controllers:
+  posts:
+    base_path: /posts
+    routes:
+      archive:
+        service: archive
+        method: POST
+        path: /{postId}/archive
+  notifications:
+    base_path: /notifications
+    routes:
+      notify:
+        service: notify
+        method: POST
+        path: /{postId}

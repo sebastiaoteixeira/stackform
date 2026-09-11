@@ -19,8 +19,9 @@ from api.serializers.{{ collection_name }} import {{ ns.model_imports | join(", 
 from api.repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from api.services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from api.services.exceptions import NotFoundError, ValidationError
+from api.service_inputs import prepare_service_inputs, resolve_access_bind, resolve_bindings
 from api.authentication.mongodb import get_database
-{% set needs_auth = crud_routes | selectattr("needs_auth") | list %}
+{% set needs_auth = routes | selectattr("needs_auth") | list %}
 {% if needs_auth %}
 from api.authentication.auth import resolve_principal, _principal_has_role
 {% endif %}
@@ -28,6 +29,8 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% set class_name = collection_name | capitalize_collection %}
 {% set list_routes = crud_routes | selectattr("has_id_param", "false") | list %}
 {% set detail_routes = crud_routes | selectattr("has_id_param") | list %}
+{% set custom_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("operation", "in", crud_op_names) | list %}
+{% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": {{ param }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 
 {% macro security_decorator(route) %}
 {% if route.needs_auth %}
@@ -35,9 +38,34 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% else %}
     @extend_schema(tags=["{{ collection_name | capitalize_collection }}"], auth=[])
 {% endif %}
+
+{% endmacro %}
+
+{% macro request_locals(route) %}
+{% if route.request_symbols %}
+        _request_body = body
+        _request_path = path_params
+        _request_query = dict(request.query_params)
+        _request_header = dict(request.headers)
+        _request_cookie = dict(request.COOKIES)
+{% for symbol in route.request_symbols %}
+        {{ symbol | request_symbol_binding }}
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+{% macro bind_inputs(route) %}
+{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+        bound_inputs = resolve_access_bind(_access_bindings, locals())
+{% else %}
+        bound_inputs = {}
+{% endif %}
 {% endmacro %}
 
 {% macro pre_fetch_check(route) %}
+{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+        _access_bindings = {}
+{% endif %}
 {% if route.needs_auth %}
         db = get_database()
         _resolved_principal = resolve_principal(request, db)
@@ -61,35 +89,39 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% if not ns.has_doc_rule %}
 {% set ns.first = true %}
 {% set ns.has_conditionals = false %}
+{% set ns.terminal = false %}
 {% for rule in route.access_rules %}
+{% if not ns.terminal %}
 {% if rule is unconditional %}
 {% if rule.effect == "allow" %}
-        pass
+        _access_bindings = {{ rule.bind | py_literal }}
 {% else %}
-        return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% endif %}
 {% set ns.first = false %}
+{% set ns.terminal = true %}
 {% else %}
 {% set ns.has_conditionals = true %}
 {% if ns.first %}
         if {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
-            pass
+            _access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
 {% else %}
         elif {{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
             pass
 {% endif %}
 {% endif %}
 {% set ns.first = false %}
 {% endif %}
+{% endif %}
 {% endfor %}
-{% if ns.has_conditionals and not ns.first %}
+{% if ns.has_conditionals and not ns.terminal %}
         else:
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 {% endif %}
@@ -124,7 +156,7 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% set keyword = "if" if ns.first else "elif" %}
             {{ keyword }} {% if doc_guard %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+                return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
                 pass
 {% endif %}
@@ -143,12 +175,19 @@ class {{ class_name }}ListView(APIView):
 {% for route in list_routes %}
 
 {{ security_decorator(route) }}
-    async def {{ route.method | lower }}(self, request):
+    async def {{ route.method | lower }}(self, request, **path_params):
+{% for name in route.path_params %}
+        {{ name }} = path_params["{{ name }}"]
+{% endfor %}
         db = get_database()
         repo = {{ class_name }}Repository(db)
         service = {{ class_name }}Service(repo)
+        body = request.data if isinstance(request.data, dict) else {}
+{{ request_locals(route) }}
 {{ pre_fetch_check(route) }}
+{{ bind_inputs(route) }}
         try:
+            prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
 {% if route.operation == "list" %}
             documents = await service.list()
             return Response(documents)
@@ -161,24 +200,77 @@ class {{ class_name }}ListView(APIView):
 {% endif %}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-        except ValidationError as exc:
-            return Response({"detail": exc.message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except (ValidationError, ValueError) as exc:
+            detail = exc.message if isinstance(exc, ValidationError) else str(exc)
+            return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 {% endfor %}
 {% endif %}
+
+{% for route in custom_routes %}
+{% set custom_class = class_name ~ (route.operation | capitalize_collection) ~ "View" %}
+class {{ custom_class }}(APIView):
+
+{{ security_decorator(route) }}
+    async def {{ route.method | lower }}(self, request, **path_params):
+        db = get_database()
+        repo = {{ class_name }}Repository(db)
+        body = request.data if isinstance(request.data, dict) else {}
+{{ request_locals(route) }}
+{{ pre_fetch_check(route) }}
+{{ bind_inputs(route) }}
+        try:
+            service_inputs = prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
+            params = {**path_params, **service_inputs}
+{% if route.handler %}
+            from importlib import import_module
+            module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
+            request.service_inputs = service_inputs
+            result = await getattr(import_module(module_path), function_name)(request)
+            return result if isinstance(result, Response) else Response(result)
+{% else %}
+{% set query = repo_queries[route.operation] %}
+            bindings = {**params, "params": params, "body": body}
+            resolved = resolve_bindings({{ query | py_literal }}, bindings)
+            kwargs = {
+                key: value
+                for key, value in resolved.items()
+                if key not in ("command", "collection")
+            }
+            return Response(await repo.{{ route.operation }}(**kwargs))
+{% endif %}
+        except NotFoundError:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        except (ValidationError, ValueError) as exc:
+            detail = exc.message if isinstance(exc, ValidationError) else str(exc)
+            return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+
+{% endfor %}
 
 {% if detail_routes %}
 class {{ class_name }}DetailView(APIView):
 {% for route in detail_routes %}
 
 {{ security_decorator(route) }}
-    async def {{ route.method | lower }}(self, request, pk):
+    async def {{ route.method | lower }}(self, request, **path_params):
+{% for name in route.path_params %}
+        {{ name }} = path_params["{{ name }}"]
+{% endfor %}
         db = get_database()
         repo = {{ class_name }}Repository(db)
         service = {{ class_name }}Service(repo)
+        body = request.data if isinstance(request.data, dict) else {}
+{{ request_locals(route) }}
 {{ pre_fetch_check(route) }}
+{{ bind_inputs(route) }}
         try:
+            prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
 {% if route.operation == "get" %}
-            result = await service.get(pk)
+{% if route.record_parent_params %}
+            result = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            result = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "result") }}
             return Response(result)
 {% elif route.operation == "update" %}
@@ -186,32 +278,57 @@ class {{ class_name }}DetailView(APIView):
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = await service.get(pk)
+{% if route.record_parent_params %}
+            prefetch = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            prefetch = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = await service.update(pk, data)
+{% if route.record_parent_params %}
+            result = await service.update_by({{ record_criteria(route) }}, data)
+{% else %}
+            result = await service.update({{ route.record_id_param }}, data)
+{% endif %}
             return Response(result)
 {% elif route.operation == "replace" %}
             serializer = {{ route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = await service.get(pk)
+{% if route.record_parent_params %}
+            prefetch = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            prefetch = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = await service.replace(pk, data)
+{% if route.record_parent_params %}
+            result = await service.replace_by({{ record_criteria(route) }}, data)
+{% else %}
+            result = await service.replace({{ route.record_id_param }}, data)
+{% endif %}
             return Response(result)
 {% elif route.operation == "delete" %}
 {% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
-            prefetch = await service.get(pk)
+{% if route.record_parent_params %}
+            prefetch = await service.get_by({{ record_criteria(route) }})
+{% else %}
+            prefetch = await service.get({{ route.record_id_param }})
+{% endif %}
 {{ post_fetch_check(route, "prefetch") }}
 {% endif %}
-            result = await service.delete(pk)
+{% if route.record_parent_params %}
+            result = await service.delete_by({{ record_criteria(route) }})
+{% else %}
+            result = await service.delete({{ route.record_id_param }})
+{% endif %}
             return Response(result)
 {% endif %}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-        except ValidationError as exc:
-            return Response({"detail": exc.message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except (ValidationError, ValueError) as exc:
+            detail = exc.message if isinstance(exc, ValidationError) else str(exc)
+            return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 {% endfor %}
 {% endif %}

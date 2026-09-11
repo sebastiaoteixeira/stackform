@@ -10,6 +10,7 @@ from yaml_api_generator.ir import (
     IRDocumentBinding,
     IRIdentityBinding,
     IRRequestBinding,
+    WhereRhs,
 )
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 from yaml_api_generator.parsers.when_parser import parse_when_list
@@ -18,7 +19,14 @@ from yaml_api_generator.parsers.transformers.v02.binding_classifier import class
 
 
 class AccessTransformer:
-    """Parses access control rules with symbol resolution."""
+    """Parses access control rules with symbol resolution.
+
+    ``allow_where`` enables the v0.3 ``where`` binding form for ``given:``
+    values; v0.2 leaves it off so document bindings keep their implicit fetch.
+    """
+
+    def __init__(self, allow_where: bool = False) -> None:
+        self._allow_where = allow_where
 
     def parse_access(
         self,
@@ -100,6 +108,13 @@ class AccessTransformer:
         entity_to_collection: dict[str, str],
     ) -> tuple[IRAccessRule | None, list[ConfigError]]:
         errors: list[ConfigError] = []
+        if self._allow_where and "filter" in rule:
+            errors.append(ConfigError(
+                code="ACCESS_FILTER_REMOVED",
+                message="access-rule 'filter' key was removed in v0.3",
+                path=f"{path}.filter",
+                hint="Bind the record in given: with '<collection> where <field> = <value>'",
+            ))
         given = rule.get("given", {})
         effect = rule.get("then", "allow")
 
@@ -112,7 +127,8 @@ class AccessTransformer:
                 if not isinstance(symbol_value, str):
                     continue
                 binding, binding_errors = classify_binding(
-                    symbol_value, f"{path}.given.{symbol_name}", entity_to_collection
+                    symbol_value, f"{path}.given.{symbol_name}", entity_to_collection,
+                    allow_where=self._allow_where,
                 )
                 errors.extend(binding_errors)
                 if isinstance(binding, IRIdentityBinding):
@@ -127,6 +143,14 @@ class AccessTransformer:
         if when_raw is not None:
             when_expr, when_errors = parse_when_list(when_raw, f"{path}.when")
             errors.extend(when_errors)
+
+        bind: dict[str, WhereRhs] = {}
+        bind_raw = rule.get("bind")
+        if self._allow_where and isinstance(bind_raw, dict):
+            from yaml_api_generator.parsers.service_input_parser import parse_service_with
+
+            bind, bind_errors = parse_service_with(bind_raw, f"{path}.bind")
+            errors.extend(bind_errors)
 
         if errors:
             return None, errors
@@ -145,4 +169,5 @@ class AccessTransformer:
             filter=rule.get("filter"),
             write_fields=rule.get("writeFields", []),
             reason=rule.get("reason"),
+            bind=bind,
         ), []
