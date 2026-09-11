@@ -218,6 +218,7 @@ class IRDto:
 
 @dataclass(frozen=True)
 class IRVendoredImport:
+    alias: str
     package: str
     source: Path
     requires: tuple[str, ...] = ()

@@ -8,9 +8,16 @@ target dependency manifest.
 
 A source is resolved against the directory holding the spec and must stay inside
 it, so an absolute or escaping ``path`` is rejected instead of reading the host
-filesystem. A symlink inside a vendored tree whose target leaves that tree is
-rejected as well: links that stay inside are preserved as links when the tree is
-copied, so nothing outside the tree is ever materialised into the target.
+filesystem. It must be a regular package, because the emitted ``import
+<package>`` has to expose the handler as an attribute. A symlink inside a
+vendored tree whose target leaves that tree is rejected as well: links that stay
+inside are preserved as links when the tree is copied, so nothing outside the
+tree is ever materialised into the target.
+
+Declaring ``imports`` opts the whole spec into vendoring: every handler must
+then name a vendored package. A v0.3 spec without an ``imports`` block keeps the
+v0.2 handler semantics unchanged, where a dotted handler is emitted verbatim and
+imported from the target environment.
 
 ``requires`` are merged per library and per environment marker. Extras are
 unioned, markers and direct URLs are carried through verbatim, and specifiers
@@ -36,12 +43,16 @@ from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 def process_vendored_imports(
     resolved: dict[str, Any], spec_dir: Path
 ) -> tuple[dict[str, str], tuple[IRVendoredImport, ...], tuple[str, ...]]:
+    entries = resolved.get("imports") or {}
+    if not entries:
+        return {}, (), ()
+
     errors: list[ConfigError] = []
     import_map: dict[str, str] = {}
     vendored: list[IRVendoredImport] = []
     package_owner: dict[str, str] = {}
 
-    for alias, entry in resolved.get("imports", {}).items():
+    for alias, entry in entries.items():
         path = f"imports.{alias}"
         if isinstance(entry, str):
             errors.append(ConfigError(
@@ -69,14 +80,15 @@ def process_vendored_imports(
         package_owner[package] = alias
         import_map[alias] = package
         vendored.append(IRVendoredImport(
+            alias=alias,
             package=package,
             source=source,
             requires=tuple(entry.get("requires") or ()),
         ))
 
-    errors.extend(_undeclared_handler_errors(resolved, import_map))
-
     requirements: tuple[str, ...] = ()
+    if not errors:
+        errors = _undeclared_handler_errors(resolved, import_map)
     if not errors:
         requirements, errors = _merge_requirements(vendored)
 
@@ -107,6 +119,15 @@ def _resolve_source(
             code="IMPORT_SOURCE_MISSING",
             message=f"Import '{alias}' vendors '{raw_path}', which is not an existing directory",
             path=path,
+        ))
+        return None
+
+    if not (source / "__init__.py").is_file():
+        errors.append(ConfigError(
+            code="IMPORT_SOURCE_NOT_PACKAGE",
+            message=f"Import '{alias}' vendors '{raw_path}', which has no __init__.py",
+            path=path,
+            hint="A vendored source must be a regular Python package so the emitted import exposes its handlers",
         ))
         return None
 
@@ -150,18 +171,14 @@ def _undeclared_handler_errors(
 
 def _handler_sites(resolved: dict[str, Any]):
     for name, cfg in resolved.get("services", {}).items():
-        if isinstance(cfg, dict):
-            handler = cfg.get("handler")
-            if isinstance(handler, str) and "." in handler:
-                yield handler, f"services.{name}.handler"
+        if isinstance(cfg, dict) and isinstance(cfg.get("handler"), str):
+            yield cfg["handler"], f"services.{name}.handler"
     for repo_name, repo_cfg in resolved.get("repositories", {}).items():
         if not isinstance(repo_cfg, dict):
             continue
         for op_name, op_cfg in repo_cfg.get("operations", {}).items():
-            if isinstance(op_cfg, dict):
-                handler = op_cfg.get("handler")
-                if isinstance(handler, str) and "." in handler:
-                    yield handler, f"repositories.{repo_name}.operations.{op_name}.handler"
+            if isinstance(op_cfg, dict) and isinstance(op_cfg.get("handler"), str):
+                yield op_cfg["handler"], f"repositories.{repo_name}.operations.{op_name}.handler"
 
 
 def _merge_requirements(

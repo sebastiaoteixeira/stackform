@@ -9,6 +9,7 @@ from yaml_api_generator.generators.backend.base import CodeGenerator
 from yaml_api_generator.generators.backend.fastapi import FastAPIGenerator
 from yaml_api_generator.generators.backend.drf import DRFGenerator
 from yaml_api_generator.generators.backend.raw import RawASGIGenerator
+from yaml_api_generator.generators.backend.vendoring import clear_vendored, vendor_packages
 
 
 _GENERATORS: dict[str, type[CodeGenerator]] = {
@@ -46,12 +47,11 @@ def compile_project(
     result = load_and_generate_ir(yaml_file, schema_file)
     out = Path(output_dir)
     context = build_context(result.ir)
-    generator = generator_cls()
-    generator.generate(context, out / "backend")
+    backend = out / "backend"
 
-    if result.ir.vendored_imports:
-        from yaml_api_generator.generators.backend.vendoring import vendor_packages
-        vendor_packages(result.ir.vendored_imports, Path(yaml_file).parent, out / "backend")
+    clear_vendored(result.ir.vendored_imports, backend)
+    generator_cls().generate(context, backend)
+    vendor_packages(result.ir.vendored_imports, backend)
 
     if result.ui_block is not None:
         from yaml_api_generator.parsers.ui_parser import build_generator_context
