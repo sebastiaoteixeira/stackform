@@ -12,6 +12,7 @@ Key types:
 - FieldDescriptor: Model field with type and constraints
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -126,6 +127,8 @@ class AccessRuleDescriptor:
     request_symbols: list[RequestSymbolDescriptor] = field(default_factory=list)
     when: WhenExpr | None = None
     effect: str = "allow"
+    reason: str | None = None
+    bind: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,11 @@ class RouteDescriptor:
     typed_body_model: str | None = None
     # IR service name (expanded flat key, e.g. "list-posts") backing this route.
     service: str | None = None
+    record_id_param: str | None = None
+    record_parent_params: list[str] = field(default_factory=list)
+    id_field: str | None = None
+    service_input: dict[str, Any] = field(default_factory=dict)
+    service_forwarding: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:
@@ -156,6 +164,18 @@ class RouteDescriptor:
             for sym in rule.request_symbols:
                 seen.setdefault(sym.name, sym)
         return list(seen.values())
+
+    @property
+    def record_criteria(self) -> list[tuple[str, str]]:
+        parents = [(name, name) for name in self.record_parent_params]
+        if self.record_id_param is None or self.id_field is None:
+            return parents
+        return [*parents, (self.id_field, self.record_id_param)]
+
+    @property
+    def django_path(self) -> str:
+        path = self.relative_path.lstrip("/")
+        return re.sub(r"\{(\w+)\}", r"<str:\1>", path)
 
 
 @dataclass(frozen=True)

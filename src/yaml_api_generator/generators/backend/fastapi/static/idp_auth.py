@@ -1,4 +1,4 @@
-"""IdP token verification for generated backends (trust: idp).
+"""IdP token verification for generated FastAPI backends (trust: idp).
 
 Tokens issued by an external IdP are verified against that IdP's JWKS on every
 request. The app never mints a session token for idp-trust providers; the

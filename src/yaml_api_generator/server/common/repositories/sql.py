@@ -6,16 +6,62 @@ pool binds to the serving event loop, not the build-time loop.
 """
 
 import asyncio
-from collections.abc import Iterable
+import sqlite3
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from yaml_api_generator.ir import IRCollection
-from .base import BaseRepository
+from .base import BaseRepository, ConflictError
 from .bindings import resolve
 from .sql_schema import table_from_collection
+
+
+@contextmanager
+def _as_conflict() -> Iterator[None]:
+    try:
+        yield
+    except IntegrityError as error:
+        if not _is_unique_violation(error):
+            raise
+        raise ConflictError(_conflict_field(error)) from error
+
+
+def _is_unique_violation(error: IntegrityError) -> bool:
+    original = getattr(error, "orig", error)
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    sqlite_code = getattr(original, "sqlite_errorcode", None)
+    sqlite_unique_codes = {
+        sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY,
+        sqlite3.SQLITE_CONSTRAINT_UNIQUE,
+    }
+    message = str(original).lower()
+    return (
+        sqlstate == "23505"
+        or sqlite_code in sqlite_unique_codes
+        or "unique constraint failed" in message
+        or "duplicate key value violates unique constraint" in message
+    )
+
+
+def _conflict_field(error: IntegrityError) -> str | None:
+    orig = getattr(error, "orig", error)
+    diagnostics = getattr(orig, "diag", None)
+    column = getattr(diagnostics, "column_name", None)
+    if column:
+        return column
+    detail = getattr(diagnostics, "message_detail", None) or getattr(orig, "detail", None)
+    if detail and "Key (" in detail:
+        return detail.split("Key (", 1)[1].split(")", 1)[0]
+    message = str(orig)
+    if "UNIQUE constraint failed:" in message:
+        first = message.split("UNIQUE constraint failed:", 1)[1].split(",")[0]
+        return first.strip().split(".")[-1]
+    return None
 
 
 class SQLRepository(BaseRepository):
@@ -62,11 +108,83 @@ class SQLRepository(BaseRepository):
             )
             return self._one(result)
 
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        statement = (
+            sa.select(self._table(collection_name))
+            .where(*self._criteria(collection_name, criteria))
+            .limit(1)
+        )
+        async with await self._connection() as conn:
+            return self._one(await conn.execute(statement))
+
+    async def update_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        table = self._table(collection_name)
+        values = self._known_columns(
+            collection_name,
+            {field: value for field, value in payload.items() if field not in criteria},
+            drop_id=True,
+        )
+        if not values:
+            return await self.find_one(collection_name, criteria)
+        statement = (
+            sa.update(table)
+            .where(*self._criteria(collection_name, criteria))
+            .values(**values)
+            .returning(table)
+        )
+        with _as_conflict():
+            async with await self._begin() as conn:
+                return self._one(await conn.execute(statement))
+
+    async def replace_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        table = self._table(collection_name)
+        replacement = {**payload, **criteria}
+        id_field = self._id_fields[collection_name]
+        values = {
+            column.name: replacement.get(column.name)
+            for column in table.columns
+            if column.name != id_field
+        }
+        statement = (
+            sa.update(table)
+            .where(*self._criteria(collection_name, criteria))
+            .values(**values)
+            .returning(table)
+        )
+        with _as_conflict():
+            async with await self._begin() as conn:
+                return self._one(await conn.execute(statement))
+
+    async def delete_by(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        table = self._table(collection_name)
+        statement = (
+            sa.delete(table)
+            .where(*self._criteria(collection_name, criteria))
+            .returning(table)
+        )
+        async with await self._begin() as conn:
+            return self._one(await conn.execute(statement))
+
     async def create(self, collection_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         table = self._table(collection_name)
         values = self._known_columns(collection_name, payload)
-        async with await self._begin() as conn:
-            await conn.execute(sa.insert(table).values(**values))
+        with _as_conflict():
+            async with await self._begin() as conn:
+                await conn.execute(sa.insert(table).values(**values))
         return values
 
     async def upsert_by(
@@ -83,9 +201,10 @@ class SQLRepository(BaseRepository):
             index_elements=[key_field],
             set_={k: statement.excluded[k] for k in values if k != key_field},
         ).returning(table)
-        async with await self._begin() as conn:
-            result = await conn.execute(statement)
-            row = self._one(result)
+        with _as_conflict():
+            async with await self._begin() as conn:
+                result = await conn.execute(statement)
+                row = self._one(result)
         return row if row is not None else values
 
     async def update(
@@ -93,14 +212,15 @@ class SQLRepository(BaseRepository):
     ) -> dict[str, Any] | None:
         table = self._table(collection_name)
         values = self._known_columns(collection_name, payload, drop_id=True)
-        async with await self._begin() as conn:
-            result = await conn.execute(
-                sa.update(table)
-                .where(self._id_column(collection_name) == document_id)
-                .values(**values)
-                .returning(table)
-            )
-            return self._one(result)
+        with _as_conflict():
+            async with await self._begin() as conn:
+                result = await conn.execute(
+                    sa.update(table)
+                    .where(self._id_column(collection_name) == document_id)
+                    .values(**values)
+                    .returning(table)
+                )
+                return self._one(result)
 
     async def replace(
         self, collection_name: str, document_id: str, payload: dict[str, Any]
@@ -112,14 +232,15 @@ class SQLRepository(BaseRepository):
             for column in table.columns
             if column.name != id_field
         }
-        async with await self._begin() as conn:
-            result = await conn.execute(
-                sa.update(table)
-                .where(self._id_column(collection_name) == document_id)
-                .values(**values)
-                .returning(table)
-            )
-            return self._one(result)
+        with _as_conflict():
+            async with await self._begin() as conn:
+                result = await conn.execute(
+                    sa.update(table)
+                    .where(self._id_column(collection_name) == document_id)
+                    .values(**values)
+                    .returning(table)
+                )
+                return self._one(result)
 
     async def delete(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
         table = self._table(collection_name)
@@ -141,17 +262,29 @@ class SQLRepository(BaseRepository):
         if not sql:
             raise ValueError("SQL custom operations require a 'sql' string")
         params = {key: resolve(value, bindings) for key, value in (query.get("params") or {}).items()}
-        async with await self._begin() as conn:
-            result = await conn.execute(sa.text(sql), params)
-            if result.returns_rows:
-                return [dict(row._mapping) for row in result]
-            return {"rowcount": result.rowcount}
+        with _as_conflict():
+            async with await self._begin() as conn:
+                result = await conn.execute(sa.text(sql), params)
+                if result.returns_rows:
+                    return [dict(row._mapping) for row in result]
+                return {"rowcount": result.rowcount}
 
     def _table(self, collection_name: str) -> sa.Table:
         return self._tables[collection_name]
 
+    def _column(self, collection_name: str, field: str) -> sa.Column:
+        return self._table(collection_name).c[field]
+
     def _id_column(self, collection_name: str) -> sa.Column:
-        return self._tables[collection_name].c[self._id_fields[collection_name]]
+        return self._column(collection_name, self._id_fields[collection_name])
+
+    def _criteria(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> tuple[sa.ColumnElement[bool], ...]:
+        return tuple(
+            self._column(collection_name, field) == value
+            for field, value in criteria.items()
+        )
 
     def _known_columns(
         self, collection_name: str, payload: dict[str, Any], drop_id: bool = False

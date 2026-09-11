@@ -214,3 +214,17 @@ class TestDualTrustGeneration:
         idp_pos = resolve_principal_body.index("_find_idp_provider_for_issuer")
         jwt_pos = resolve_principal_body.index("decode_jwt_token")
         assert idp_pos < jwt_pos
+
+    def test_dual_trust_rejects_untrusted_issuer(self, tmp_path, dual_ctx):
+        """A bearer JWT whose iss matches no trusted issuer is rejected, never retried."""
+        FastAPIGenerator().generate(dual_ctx, tmp_path)
+        src = (tmp_path / "dependencies" / "auth.py").read_text()
+        resolve_principal_body = src[src.index("async def resolve_principal"):]
+        reject_pos = resolve_principal_body.index("Untrusted token issuer")
+        jwt_pos = resolve_principal_body.index("decode_jwt_token")
+        assert reject_pos < jwt_pos
+
+    def test_pure_idp_rejects_untrusted_issuer(self, tmp_path, idp_ctx):
+        FastAPIGenerator().generate(idp_ctx, tmp_path)
+        src = (tmp_path / "dependencies" / "auth.py").read_text()
+        assert "Untrusted token issuer" in src
