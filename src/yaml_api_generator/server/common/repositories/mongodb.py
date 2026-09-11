@@ -82,6 +82,46 @@ class MongoRepository(BaseRepository):
         )
         return self._normalize_document(document)
 
+    async def find_one(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        document = await self.collection(collection_name).find_one(dict(criteria))
+        return self._normalize_document(document)
+
+    async def update_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        changes = {field: value for field, value in payload.items() if field not in criteria}
+        if not changes:
+            return await self.find_one(collection_name, criteria)
+        document = await self.collection(collection_name).find_one_and_update(
+            dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize_document(document)
+
+    async def replace_by(
+        self,
+        collection_name: str,
+        criteria: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        replacement = {**payload, **criteria}
+        document = await self.collection(collection_name).find_one_and_replace(
+            dict(criteria), replacement, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize_document(document)
+
+    async def delete_by(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        document = await self.collection(collection_name).find_one_and_delete(
+            dict(criteria)
+        )
+        return self._normalize_document(document)
+
     async def create(
         self, collection_name: str, payload: dict[str, Any]
     ) -> dict[str, Any]:

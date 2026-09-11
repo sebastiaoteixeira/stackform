@@ -48,6 +48,32 @@ class RepositoryBase:
     async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
         return self._normalize(await self._col.find_one({field: value}))
 
+    async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        return self._normalize(await self._col.find_one(dict(criteria)))
+
+    async def update_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        changes = {field: value for field, value in data.items() if field not in criteria}
+        if not changes:
+            return await self.find_one(criteria)
+        doc = await self._col.find_one_and_update(
+            dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize(doc)
+
+    async def replace_by(
+        self, criteria: dict[str, Any], data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        replacement = {**data, **criteria}
+        doc = await self._col.find_one_and_replace(
+            dict(criteria), replacement, return_document=ReturnDocument.AFTER
+        )
+        return self._normalize(doc)
+
+    async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
+        return self._normalize(await self._col.find_one_and_delete(dict(criteria)))
+
     async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
         if self._generate_id is not None:
             data[self.ID_FIELD] = self._generate_id()
