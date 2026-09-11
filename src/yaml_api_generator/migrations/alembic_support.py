@@ -61,8 +61,9 @@ def metadata_from_config(config: Config) -> sa.MetaData:
     return build_metadata(ir, datastore)
 
 
-def make_config(spec_path: str, datastore: str | None = None) -> Config:
-    ir = load_and_generate_ir(spec_path).ir
+def config_from_ir(
+    ir: IRDocument, spec_path: str, datastore: str | None = None
+) -> Config:
     name, dsn = resolve_relational(ir, datastore)
     directory = migrations_dir(spec_path)
     ensure_scaffold(directory)
@@ -74,6 +75,10 @@ def make_config(spec_path: str, datastore: str | None = None) -> Config:
     config.attributes["datastore"] = name
     config.attributes["metadata"] = build_metadata(ir, name)
     return config
+
+
+def make_config(spec_path: str, datastore: str | None = None) -> Config:
+    return config_from_ir(load_and_generate_ir(spec_path).ir, spec_path, datastore)
 
 
 def ensure_scaffold(directory: Path) -> None:

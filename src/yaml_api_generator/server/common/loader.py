@@ -2,6 +2,7 @@
 
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from yaml_api_generator.ir import IRDocument, IRMongo, IRPostgres
@@ -21,6 +22,26 @@ def ensure_spec_dir_importable(yaml_file: str) -> None:
         sys.path.insert(0, spec_dir)
 
 
+@dataclass(frozen=True)
+class SchemaManagement:
+    """Which datastore families evolve their schema through versioned migrations.
+
+    Each family graduates from create-on-connect on its own migrations tree, so
+    adopting Alembic never silences MongoDB index creation and vice versa.
+    """
+
+    sql: bool = False
+    mongo: bool = False
+
+    @classmethod
+    def for_spec(cls, yaml_file: str | Path) -> "SchemaManagement":
+        spec_dir = Path(yaml_file).resolve().parent
+        return cls(
+            sql=(spec_dir / "migrations").is_dir(),
+            mongo=(spec_dir / "mongo_migrations").is_dir(),
+        )
+
+
 def create_repositories(yaml_file: str, schema_file: str | Path | None = None):
     """Load IR and build a connected repository registry.
 
@@ -28,14 +49,7 @@ def create_repositories(yaml_file: str, schema_file: str | Path | None = None):
         Tuple of (IRDocument, RepositoryRegistry)
     """
     ir = load_and_generate_ir(yaml_file, schema_file).ir
-    registry = build_registry(ir, create_schema=not has_managed_migrations(yaml_file))
-    return ir, registry
-
-
-def has_managed_migrations(yaml_file: str) -> bool:
-    """A spec graduates from create-on-connect once a migrations tree exists."""
-    spec_dir = Path(yaml_file).resolve().parent
-    return (spec_dir / "migrations").exists() or (spec_dir / "mongo_migrations").exists()
+    return ir, build_registry(ir, SchemaManagement.for_spec(yaml_file))
 
 
 def mongo_connection_params(ir: IRDocument, name: str) -> tuple[str, str]:
@@ -65,10 +79,12 @@ async def initialize_indexes(ir: IRDocument, registry: RepositoryRegistry) -> No
                 await repo.create_unique_index(col_name, field_name)
 
 
-def build_registry(ir: IRDocument, create_schema: bool = True) -> RepositoryRegistry:
+def build_registry(
+    ir: IRDocument, managed: SchemaManagement = SchemaManagement()
+) -> RepositoryRegistry:
     repositories: dict[str, BaseRepository] = {}
     for name, datastore in ir.datastores.items():
-        repo = _build_repository(name, datastore, ir, create_schema)
+        repo = _build_repository(name, datastore, ir, managed)
         repo.connect()
         repositories[name] = repo
 
@@ -80,13 +96,13 @@ def build_registry(ir: IRDocument, create_schema: bool = True) -> RepositoryRegi
 
 
 def _build_repository(
-    name: str, datastore, ir: IRDocument, create_schema: bool = True
+    name: str, datastore, ir: IRDocument, managed: SchemaManagement
 ) -> BaseRepository:
     if isinstance(datastore, IRMongo):
         uri, database = mongo_connection_params(ir, name)
         return MongoRepository(
             MongoRepositoryConfig(uri=uri, database=database),
-            manage_indexes=create_schema,
+            manage_indexes=not managed.mongo,
         )
 
     if isinstance(datastore, IRPostgres):
@@ -97,6 +113,6 @@ def _build_repository(
             if (col.datastore or ir.default_datastore) == name
         ]
         dsn = os.environ.get(f"YAML_API_DB_{name.upper()}_DSN", datastore.dsn)
-        return SQLRepository(dsn=dsn, collections=collections, create_schema=create_schema)
+        return SQLRepository(dsn=dsn, collections=collections, create_schema=not managed.sql)
 
     raise ValueError(f"Unsupported datastore type for '{name}': {type(datastore).__name__}")

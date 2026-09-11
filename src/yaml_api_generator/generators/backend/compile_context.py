@@ -279,6 +279,7 @@ class CompileContext:
     # IR services keyed by their expanded flat name (e.g. "list-posts").
     services: dict[str, IRService] = field(default_factory=dict)
     dto_models: list[ModelDescriptor] = field(default_factory=list)
+    mongo_schema_managed: bool = False
 
     @property
     def datastore_types(self) -> set[str]:

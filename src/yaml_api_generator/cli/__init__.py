@@ -299,32 +299,36 @@ def migrate_new(yaml_file: str, message: str, datastore: str | None):
     """Autogenerate a revision from the spec (scaffolds on first run)."""
     from ..migrations.dispatch import resolve_driver
 
-    driver = resolve_driver(yaml_file, datastore)
-    driver.new_revision(driver.make_config(yaml_file, datastore), message)
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.new_revision(config, message)
 
 
 @migrate.command("up")
 @_spec_arg
-@click.option("--to", "target", default="head", help="Target revision (default head)")
+@click.option(
+    "--to", "target", default="head", help="Revision id, +N, or head (default head)"
+)
 @_datastore_opt
 def migrate_up(yaml_file: str, target: str, datastore: str | None):
     """Apply migrations forward."""
     from ..migrations.dispatch import resolve_driver
 
-    driver = resolve_driver(yaml_file, datastore)
-    driver.upgrade(driver.make_config(yaml_file, datastore), target)
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.upgrade(config, target)
 
 
 @migrate.command("down")
 @_spec_arg
-@click.option("--to", "target", default="-1", help="Target revision (default one step back)")
+@click.option(
+    "--to", "target", default="-1", help="Revision id, -N, or base (default -1)"
+)
 @_datastore_opt
 def migrate_down(yaml_file: str, target: str, datastore: str | None):
     """Revert migrations."""
     from ..migrations.dispatch import resolve_driver
 
-    driver = resolve_driver(yaml_file, datastore)
-    driver.downgrade(driver.make_config(yaml_file, datastore), target)
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.downgrade(config, target)
 
 
 @migrate.command("status")
@@ -334,8 +338,8 @@ def migrate_status(yaml_file: str, datastore: str | None):
     """Show the current revision."""
     from ..migrations.dispatch import resolve_driver
 
-    driver = resolve_driver(yaml_file, datastore)
-    driver.status(driver.make_config(yaml_file, datastore))
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.status(config)
 
 
 @migrate.command("history")
@@ -345,5 +349,5 @@ def migrate_history(yaml_file: str, datastore: str | None):
     """List revisions."""
     from ..migrations.dispatch import resolve_driver
 
-    driver = resolve_driver(yaml_file, datastore)
-    driver.history(driver.make_config(yaml_file, datastore))
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.history(config)
