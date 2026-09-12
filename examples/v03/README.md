@@ -6,7 +6,7 @@ states which generated backends implement them.
 
 | Example | Demonstrates | Targets |
 | --- | --- | --- |
-| `crud-pagination` | SQLite CRUD, unique-conflict responses, offset and keyset pagination | `run`, FastAPI |
+| `crud-pagination` | SQLite CRUD, unique-conflict responses, offset and keyset pagination, and a generated React view | `run`, FastAPI, frontend |
 | `access-bindings` | `where` bindings, free route slugs, denial reasons, service `input`/`with`, and access-rule `bind` | `run`, FastAPI, DRF, raw ASGI |
 | `secure-session` | RS256 app sessions, rotating refresh tokens, and BFF cookie delivery | `run` except refresh routes, FastAPI |
 | `oidc-pkce-dpop` | OIDC authorization-code login with PKCE and DPoP | `run`, FastAPI |

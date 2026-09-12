@@ -111,7 +111,7 @@ As soon as your spec declares a `type: auth` entity, every non-public route requ
 yaml-api build myapp.yaml -o ./target
 ```
 
-The positional argument after the file selects what to build: `all` (default), `backend`, `frontend`, or `deploy`. Pick the backend framework with `-t`/`--target` (`fastapi` (default), `drf`, or `raw`); choose the output directory with `-o`/`--output` (default `./target`); supply an external JSON schema with `-s`/`--schema`; add `--json` for machine-readable errors.
+The positional argument after the file selects what to build: `all` (default), `backend`, `frontend`, or `deploy`. Pick the backend framework with `-t`/`--target` (`fastapi` (default), `drf`, or `raw`); choose the output directory with `-o`/`--output` (default `./target`; frontend-only builds use `ui.frontend.output` or `./frontend`); supply an external JSON schema with `-s`/`--schema`; add `--json` for machine-readable errors.
 
 The backend lands in `target/backend/`:
 

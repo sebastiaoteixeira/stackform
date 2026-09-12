@@ -45,12 +45,10 @@ a missing `ui:` block is simply skipped rather than an error.)
 
 ### Output location
 
-The output directory is controlled by the build CLI, not the YAML:
-
 - `yaml-api build <file> all -o ./target` writes the frontend to `./target/frontend`.
-- `yaml-api build <file> frontend` writes to the default `./frontend/src` (the
-  `-o` value is not applied in frontend-only mode, and the YAML
-  `ui.frontend.output` field is not consumed either).
+- `yaml-api build <file> frontend -o ./web` writes to `./web`.
+- Without `-o`, a frontend-only build uses `ui.frontend.output`; if that is
+  absent it writes to `./frontend`.
 
 Inside the output directory the pack lays out:
 

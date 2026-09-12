@@ -12,7 +12,6 @@ interface {{ entity.name | pascal_case }} {
 
 {% set entity_plural = entity.name | lower + 's' %}
 {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
-{% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
 {% set role_names = roles.values() | list %}
 {% set role_fields = [] %}
 {% for name in role_names %}
@@ -220,37 +219,8 @@ export default function {{ view.name | pascal_case }}() {
           >
             Edit <kbd className="wf-mono">E</kbd>
           </button>
-          <button
-            onClick={closeMenu}
-            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
-          >
-            Duplicate <kbd className="wf-mono">D</kbd>
-          </button>
-
           <div className="my-1 border-t border-wf-line" />
 
-          {/* Status / assign / tag submenus (stub) */}
-          {% if status_field %}
-          <button className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink">
-            Change status <span className="text-wf-ink-faint">▸</span>
-          </button>
-          {% endif %}
-          <button className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink">
-            Assign to <span className="text-wf-ink-faint">▸</span>
-          </button>
-          <button className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink">
-            Add tag <span className="text-wf-ink-faint">▸</span>
-          </button>
-
-          <div className="my-1 border-t border-wf-line" />
-
-          {/* Export / copy */}
-          <button
-            onClick={closeMenu}
-            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
-          >
-            Export <kbd className="wf-mono">⇧E</kbd>
-          </button>
           <button
             onClick={copyIds}
             className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
@@ -260,13 +230,6 @@ export default function {{ view.name | pascal_case }}() {
 
           <div className="my-1 border-t border-wf-line" />
 
-          {/* Destructive */}
-          <button
-            onClick={closeMenu}
-            className="w-full flex items-center px-3 py-1.5 hover:bg-wf-fill text-wf-ink-dim"
-          >
-            Archive
-          </button>
           <button
             onClick={handleDelete}
             className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-danger-soft text-wf-danger"
