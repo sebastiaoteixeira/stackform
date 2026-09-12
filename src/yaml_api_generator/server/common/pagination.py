@@ -3,7 +3,7 @@
 from typing import Any
 
 from yaml_api_generator.ir.api import IRPagination
-from yaml_api_generator.pagination import (
+from yaml_api_generator.runtime.pagination import (
     Bound,
     BoundKey,
     InvalidPageRequestError,

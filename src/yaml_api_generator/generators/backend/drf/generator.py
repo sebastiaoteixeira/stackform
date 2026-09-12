@@ -10,6 +10,7 @@ from ..utils import (
     find_identity,
     group_by_collection,
     pagination_config,
+    runtime_module_source,
 )
 from ..validation import (
     reject_cookie_delivery,
@@ -40,9 +41,6 @@ from yaml_api_generator.ir.when import (
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "drf" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
-_PAGINATION_SOURCE = Path(__file__).parents[3] / "pagination.py"
-
-
 class DRFGenerator(TemplateBasedGenerator):
     def __init__(self):
         super().__init__()
@@ -91,7 +89,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_service_inputs(env, context, output_dir)
         (api_dir / "pagination.py").write_text(
-            _PAGINATION_SOURCE.read_text()
+            runtime_module_source("pagination")
         )
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)

@@ -12,6 +12,7 @@ from ..utils import (
     find_identity,
     group_by_collection,
     pagination_config,
+    runtime_module_source,
 )
 from ..validation import (
     reject_cookie_delivery,
@@ -27,9 +28,6 @@ from ..fastapi import access_filters
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "raw" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
-_PAGINATION_SOURCE = Path(__file__).parents[3] / "pagination.py"
-
-
 def _path_to_regex(path: str) -> str:
     """Convert /{collection}/{id} style path to regex with named groups."""
     def _replace(m: re.Match) -> str:
@@ -82,7 +80,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             ),
         )
         (output_dir / "pagination.py").write_text(
-            _PAGINATION_SOURCE.read_text()
+            runtime_module_source("pagination")
         )
 
         collections_by_name = group_by_collection(context)

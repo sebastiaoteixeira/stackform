@@ -1,7 +1,19 @@
 """Shared utilities for backend generators."""
+
+from importlib.resources import files
+
 from yaml_api_generator.ir.api import IRPagination
 
 from .compile_context import CompileContext, IdentityCollectionDescriptor
+
+
+_RUNTIME_MODULES = frozenset({"dpop", "pagination"})
+
+
+def runtime_module_source(name: str) -> str:
+    if name not in _RUNTIME_MODULES:
+        raise ValueError(f"Unknown runtime module: {name}")
+    return files("yaml_api_generator.runtime").joinpath(f"{name}.py").read_text()
 
 
 def pagination_config(pagination: IRPagination) -> dict:

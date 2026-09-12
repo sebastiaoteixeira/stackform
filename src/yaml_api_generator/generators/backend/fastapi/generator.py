@@ -11,6 +11,7 @@ from ..utils import (
     find_identity,
     group_by_collection,
     pagination_config,
+    runtime_module_source,
 )
 from ..validation import reject_unsigned_session_algorithm
 from . import access_filters, sql_filters, type_mapper
@@ -21,9 +22,6 @@ _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "fastapi" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
 _STATIC_DIR = _BACKEND_GENERATORS / "fastapi" / "static"
-_DPOP_SOURCE = Path(__file__).parents[3] / "dpop.py"
-_PAGINATION_SOURCE = Path(__file__).parents[3] / "pagination.py"
-
 _CRUD_ORDER = ("list", "get", "create", "update", "replace", "delete")
 
 
@@ -435,10 +433,10 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 (_STATIC_DIR / "claims.py").read_text()
             )
         (deps_dir / "pagination.py").write_text(
-            _PAGINATION_SOURCE.read_text()
+            runtime_module_source("pagination")
         )
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
-            (deps_dir / "dpop.py").write_text(_DPOP_SOURCE.read_text())
+            (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
         if any(context.repository_operations.values()):
             (deps_dir / "bindings.py").write_text(
                 (_STATIC_DIR / "bindings.py").read_text()

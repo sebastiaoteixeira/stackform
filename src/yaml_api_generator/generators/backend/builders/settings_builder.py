@@ -2,7 +2,7 @@ from secrets import token_urlsafe
 
 from ..compile_context import CompileContext, SettingField
 from ....ir.api import IROIDCProvider
-from ....dpop import generate_private_key_pem as generate_dpop_private_key_pem
+from ....runtime.dpop import generate_private_key_pem as generate_dpop_private_key_pem
 from ....utils.rsa_keys import generate_private_key_pem
 from ....utils.strings import to_py_identifier
 

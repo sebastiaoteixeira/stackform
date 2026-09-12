@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import HTTPException
 
-from yaml_api_generator.dpop import DPoPProofFactory, request_with_dpop
+from yaml_api_generator.runtime.dpop import DPoPProofFactory, request_with_dpop
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding, IRProviderRelation
 from ..repositories import BaseRepository, RepositoryRegistry
 from ..server_context import RuntimeCollectionDescriptor
