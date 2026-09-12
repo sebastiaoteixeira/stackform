@@ -476,7 +476,9 @@ class TestDevServerTokens:
     def test_decoding_never_leaks_internal_errors(self, signing_pem):
         tokens = AsymmetricSessionTokens(signing_pem)
         assert tokens.decode("not-a-token") is None
-        assert tokens.decode(pyjwt.encode({"sub": "x"}, "secret")) is None
+        assert tokens.decode(pyjwt.encode(
+            {"sub": "x"}, "wrong-secret-with-at-least-thirty-two-bytes"
+        )) is None
 
 
 class TestDevServerRoutes:

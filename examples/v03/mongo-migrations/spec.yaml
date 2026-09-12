@@ -1,0 +1,37 @@
+version: "0.3"
+
+api:
+  name: v03-mongo-migrations
+  basePath: /api
+
+mongo:
+  uri: mongodb://localhost:27017
+  database: yaml_v03_migrations
+
+entities:
+  customer:
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true, format: email }
+      displayName: { type: string, required: true }
+
+repositories:
+  customers:
+    entity: customer
+
+services:
+  customers:
+    repository: customers
+
+controllers:
+  customers:
+    service: customers
+    base_path: /customers
+    access: public
+    operations:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true

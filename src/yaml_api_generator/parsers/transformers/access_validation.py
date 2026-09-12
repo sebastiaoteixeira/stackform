@@ -286,7 +286,7 @@ def _is_always_allow_rule(rule: Any) -> bool:
         return False
     given = rule.get("given")
     when = rule.get("when")
-    return not given and when is None
+    return not given and when is None and rule.get("then", "allow") == "allow"
 
 
 def _warn_access_rules(

@@ -83,6 +83,17 @@ class TestParseWhenExpr:
     def test_144_whitespace_trimming_evaluates_correctly(self):
         assert _eval("  principal.sub   equals   'hello'  ", principal={"sub": "hello"}) is True
 
+    def test_operator_names_inside_field_references_are_not_tokens(self):
+        expression, errors = parse_when_expr(
+            "organization.ownerId equals principal.sub", _PATH
+        )
+
+        assert not errors
+        assert evaluate_when_with_symbols(expression, {
+            "organization": {"ownerId": "user-1"},
+            "principal": {"sub": "user-1"},
+        }) is True
+
 
 class TestParseWhenList:
     def test_145_single_item_evaluates_like_single_expression(self):
