@@ -12,8 +12,10 @@ _engine: AsyncEngine | None = None
 async def connect_db() -> None:
     global _engine
     _engine = create_async_engine(settings.DATABASE_URL)
+{% if not ctx.sql_schema_managed %}
     async with _engine.begin() as conn:
         await conn.run_sync(metadata.create_all)
+{% endif %}
 
 
 async def close_db() -> None:

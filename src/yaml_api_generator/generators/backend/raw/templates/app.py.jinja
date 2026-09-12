@@ -7,7 +7,9 @@ from urllib.parse import parse_qs
 from conflicts import ConflictError
 from settings import settings
 
-from dependencies.mongodb import connect_db, close_db, get_database
+{% set create_mongo_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
+from dependencies.mongodb import connect_db, close_db, get_database{% if create_mongo_indexes %}, initialize_indexes{% endif %}
+
 {% set collections = routes | map(attribute='collection') | unique | select | list %}
 {% for col_name in collections %}
 from routes.{{ col_name }} import *
@@ -70,6 +72,9 @@ class ASGIApp:
             message = await receive()
             if message["type"] == "lifespan.startup":
                 connect_db()
+{% if create_mongo_indexes %}
+                await initialize_indexes({{ ctx.mongo_unique_indexes | tojson }})
+{% endif %}
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
                 await close_db()

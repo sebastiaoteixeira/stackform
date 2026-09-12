@@ -21,6 +21,7 @@ from ..validation import (
     reject_pkce,
     reject_session_refresh,
     reject_unsigned_session_algorithm,
+    validate_datastore_layout,
 )
 from ..fastapi import access_filters
 
@@ -37,6 +38,7 @@ def _path_to_regex(path: str) -> str:
 
 class RawASGIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
+        validate_datastore_layout(context, "raw")
         reject_cookie_delivery(context, "raw")
         reject_dpop(context, "raw")
         reject_idp_trust(context, "raw")

@@ -12,11 +12,13 @@ from api.views._handlers import {% for route in handler_routes %}Handler{{ route
 {% set list_routes = collection_routes | selectattr("has_id_param", "false") | list %}
 {% set detail_routes = collection_routes | selectattr("has_id_param") | list %}
 from api.views.{{ col_name }} import {% if list_routes %}{{ col_name | capitalize_collection }}ListView{% if detail_routes or custom_routes %}, {% endif %}{% endif %}{% if detail_routes %}{{ col_name | capitalize_collection }}DetailView{% if custom_routes %}, {% endif %}{% endif %}{% for route in custom_routes %}{{ col_name | capitalize_collection }}{{ route.operation | capitalize_collection }}View{% if not loop.last %}, {% endif %}{% endfor %}
+
 {% endfor %}
 {% if auth and auth.has_password_auth %}
 {% for identity in auth.identity_collections %}
 {% if "password" in identity.via and identity.identifier %}
 from api.views.login import {{ identity.name | capitalize_collection }}LoginView
+
 {% endif %}
 {% endfor %}
 {% endif %}

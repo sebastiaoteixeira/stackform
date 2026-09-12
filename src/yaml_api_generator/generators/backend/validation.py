@@ -9,6 +9,44 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
 
+_SQL_DATASTORES = frozenset({"postgres", "postgresql"})
+_MONGO_DATASTORES = frozenset({"mongo", "mongodb"})
+
+
+def validate_datastore_layout(context: CompileContext, backend: str) -> None:
+    mongo = [
+        name
+        for name, datastore in context.datastores.items()
+        if datastore["type"] in _MONGO_DATASTORES
+    ]
+    sql = [
+        name
+        for name, datastore in context.datastores.items()
+        if datastore["type"] in _SQL_DATASTORES
+    ]
+    errors: list[ConfigError] = []
+    for family, names in (("MongoDB", mongo), ("SQL", sql)):
+        if len(names) > 1:
+            errors.append(ConfigError(
+                code="BACKEND_DATASTORE_LAYOUT_UNSUPPORTED",
+                message=(
+                    f"The '{backend}' backend cannot route {family} repositories "
+                    f"across multiple datastores: {', '.join(sorted(names))}"
+                ),
+                path="datastores",
+                hint=f"Use one {family} datastore per generated backend",
+            ))
+    if backend in {"drf", "raw"} and sql:
+        errors.append(ConfigError(
+            code="BACKEND_DATASTORE_UNSUPPORTED",
+            message=f"The '{backend}' backend does not implement SQL repositories",
+            path=f"datastores.{sql[0]}",
+            hint="Generate the FastAPI backend or use a MongoDB datastore",
+        ))
+    if errors:
+        raise ConfigErrors(errors)
+
+
 def reject_idp_trust(context: CompileContext, backend: str) -> None:
     """Reject providers whose tokens the backend cannot verify on each request."""
     errors = [
