@@ -7,7 +7,7 @@ from yaml_api_generator.generators.backend.builders.settings_builder import buil
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from ..validation import reject_unsigned_session_algorithm
+from ..validation import reject_pagination, reject_unsigned_session_algorithm
 from . import access_filters, sql_filters, type_mapper
 
 
@@ -31,6 +31,7 @@ def _crud_operations(col_data: dict) -> list[str]:
 
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
+        reject_pagination(context, "fastapi")
         reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([

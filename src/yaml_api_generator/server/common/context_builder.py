@@ -126,6 +126,7 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                 access_rules=access_rules,
                 service_input=service_input,
                 service_forwarding=service_forwarding,
+                pagination=route.pagination,
             )
         )
     return routes

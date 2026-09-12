@@ -9,6 +9,22 @@ from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from .base import BaseRepository, ConflictError
 from .bindings import resolve
+from ..pagination import Page, Primitives, expand_bound
+
+
+_MONGO_COMPARATORS = {"gt": "$gt", "gte": "$gte", "lt": "$lt", "lte": "$lte"}
+
+
+def _mongo_bounds(bounds) -> list[dict[str, Any]]:
+    clauses: list[dict[str, Any]] = []
+    for bound in bounds:
+        disjuncts: list[dict[str, Any]] = []
+        for equalities, key in expand_bound(bound):
+            term: dict[str, Any] = {field: value for field, value in equalities}
+            term[key.field] = {_MONGO_COMPARATORS[key.op]: key.value}
+            disjuncts.append(term)
+        clauses.append(disjuncts[0] if len(disjuncts) == 1 else {"$or": disjuncts})
+    return clauses
 
 
 @contextmanager
@@ -115,6 +131,26 @@ class MongoRepository(BaseRepository):
         cursor = self.collection(collection_name).find({})
         documents = await cursor.to_list(length=None)
         return [self._normalize_document_required(document) for document in documents]
+
+    async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
+        target = self.collection(collection_name)
+        bound_clauses = _mongo_bounds(primitives.bounds)
+        query = {"$and": bound_clauses} if bound_clauses else {}
+        cursor = target.find(query)
+        if primitives.sort:
+            cursor = cursor.sort(
+                [(key.field, -1 if key.descending else 1) for key in primitives.sort]
+            )
+        if primitives.skip:
+            cursor = cursor.skip(primitives.skip)
+        if primitives.limit is not None:
+            cursor = cursor.limit(primitives.limit)
+        documents = await cursor.to_list(length=None)
+        rows = [self._normalize_document_required(d) for d in documents]
+        total = None
+        if primitives.count == "exact":
+            total = await target.count_documents({})
+        return Page(rows=rows, total=total)
 
     async def get(
         self, collection_name: str, document_id: str

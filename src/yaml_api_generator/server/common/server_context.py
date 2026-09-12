@@ -8,7 +8,7 @@ from yaml_api_generator.ir import (
     IRRequestBinding,
     WhereRhs,
 )
-from yaml_api_generator.ir.api import IRRolesConfig
+from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
 
 
@@ -73,6 +73,7 @@ class RuntimeRouteDescriptor:
     access_rules: list[RuntimeAccessRule] | None = None
     service_input: dict[str, Any] | None = None
     service_forwarding: dict[str, Any] = field(default_factory=dict)
+    pagination: IRPagination | None = None
 
 
 @dataclass(frozen=True)

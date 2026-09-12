@@ -115,6 +115,7 @@ class V02Transformer:
             repo_entity_map,
             auth_entities,
             entity_to_collection,
+            pagination_parser=self._make_pagination_parser(collections),
         )
 
         policies, policy_errors = self._policies.transform(
@@ -165,6 +166,9 @@ class V02Transformer:
 
     def _operation_handler_resolver(self, import_map: dict[str, str]):
         return lambda handler: handler
+
+    def _make_pagination_parser(self, collections: dict[str, Any]):
+        return lambda raw, collection, path: (None, [])
 
     def _expand_route_policies(
         self,

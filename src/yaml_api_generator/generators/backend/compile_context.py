@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ...ir.api import IRProvider, IRRolesConfig, IRService
+from ...ir.api import IRPagination, IRProvider, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
 
 
@@ -157,6 +157,7 @@ class RouteDescriptor:
     id_field: str | None = None
     service_input: dict[str, Any] = field(default_factory=dict)
     service_forwarding: dict[str, dict[str, Any]] = field(default_factory=dict)
+    pagination: IRPagination | None = None
 
     @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:

@@ -228,7 +228,7 @@ class PipelineBuilder:
         )
 
         if operation == "list":
-            return RepositoryListStep(collection_name, id_field)
+            return RepositoryListStep(collection_name, id_field, route.pagination)
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field, self._locator(route))
         if operation == "create":
