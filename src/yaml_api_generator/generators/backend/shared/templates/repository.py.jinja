@@ -16,6 +16,27 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from {{ conflict_import }} import ConflictError
+from {{ pagination_import }} import Page, Primitives, expand_bound
+
+
+_PAGINATION_COMPARATORS = {
+    "gt": "$gt",
+    "gte": "$gte",
+    "lt": "$lt",
+    "lte": "$lte",
+}
+
+
+def _pagination_filter(primitives: Primitives) -> dict[str, Any]:
+    clauses: list[dict[str, Any]] = []
+    for bound in primitives.bounds:
+        disjuncts: list[dict[str, Any]] = []
+        for equalities, key in expand_bound(bound):
+            term = {field: value for field, value in equalities}
+            term[key.field] = {_PAGINATION_COMPARATORS[key.op]: key.value}
+            disjuncts.append(term)
+        clauses.append(disjuncts[0] if len(disjuncts) == 1 else {"$or": disjuncts})
+    return {"$and": clauses} if clauses else {}
 
 
 def _duplicate_details(error: BulkWriteError | DuplicateKeyError) -> dict[str, Any] | None:
@@ -75,6 +96,25 @@ class {{ class_name }}Repository:
         cursor = self._col.find({})
         docs = await cursor.to_list(length=None)
         return [self._normalize(d) for d in docs]
+
+    async def paginate(self, primitives: Primitives) -> Page:
+        query = _pagination_filter(primitives)
+        cursor = self._col.find(query)
+        if primitives.sort:
+            cursor = cursor.sort(
+                [(key.field, -1 if key.descending else 1) for key in primitives.sort]
+            )
+        if primitives.skip:
+            cursor = cursor.skip(primitives.skip)
+        if primitives.limit is not None:
+            cursor = cursor.limit(primitives.limit)
+        documents = await cursor.to_list(length=None)
+        total = (
+            await self._col.count_documents({})
+            if primitives.count == "exact"
+            else None
+        )
+        return Page([self._normalize(document) for document in documents], total)
 
     async def get(self, document_id: str) -> dict[str, Any] | None:
         doc = await self._col.find_one(self._match_filter(document_id))

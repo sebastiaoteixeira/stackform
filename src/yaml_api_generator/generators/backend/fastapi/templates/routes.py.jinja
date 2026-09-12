@@ -9,14 +9,18 @@
 {% if rule.bind %}{% set ns_service_input.access_bind = true %}{% endif %}
 {% endfor %}
 {% endfor %}
+{% set pagination_routes = routes | selectattr("pagination") | list %}
 from typing import Any
 
 {% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
 {% set needs_request = custom_routes or repo_op_routes or (crud_routes | selectattr("needs_request") | list) %}
-from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
+from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
 
 {% if ns_service_input.enabled %}
 from dependencies.service_inputs import prepare_service_inputs{% if ns_service_input.access_bind %}, resolve_access_bind{% endif %}
+{% endif %}
+{% if pagination_routes %}
+from dependencies.pagination import build_response, map_request
 {% endif %}
 
 {% if repo_op_routes and is_mongo %}
@@ -234,12 +238,22 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 {% if route.operation == "list" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 {% set list_prefix = (extra_path_params(route) ~ request_param(route) ~ auth_param(route)) | trim(chars=", ") %}
-async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}) -> Any:
+async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{% if route.pagination %}, limit: int | None = None{% if route.pagination.strategy == "offset" %}, offset: int | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
 {{ request_locals(route, "None") }}
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), "None") }}
+{% if route.pagination %}
+    _pagination_config = {{ route.pagination | pagination_config | py_literal }}
+    _pagination_query = {"limit": limit{% if route.pagination.strategy == "offset" %}, "offset": offset{% else %}, "after": after{% endif %}}
+    try:
+        _page = await svc.list(map_request(_pagination_config, _pagination_query))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return build_response(_pagination_config, _page, _pagination_query)
+{% else %}
     return await svc.list()
+{% endif %}
 
 
 {% elif route.operation == "get" %}

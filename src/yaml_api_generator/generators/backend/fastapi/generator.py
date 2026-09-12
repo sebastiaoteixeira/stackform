@@ -6,8 +6,13 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields, generated_secret_values
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
-from ..utils import find_identity, group_by_collection, extract_identity_fields
-from ..validation import reject_pagination, reject_unsigned_session_algorithm
+from ..utils import (
+    extract_identity_fields,
+    find_identity,
+    group_by_collection,
+    pagination_config,
+)
+from ..validation import reject_unsigned_session_algorithm
 from . import access_filters, sql_filters, type_mapper
 
 
@@ -17,6 +22,7 @@ _TEMPLATES_DIR = _BACKEND_GENERATORS / "fastapi" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
 _STATIC_DIR = _BACKEND_GENERATORS / "fastapi" / "static"
 _DPOP_SOURCE = Path(__file__).parents[3] / "dpop.py"
+_PAGINATION_SOURCE = Path(__file__).parents[3] / "pagination.py"
 
 _CRUD_ORDER = ("list", "get", "create", "update", "replace", "delete")
 
@@ -32,7 +38,6 @@ def _crud_operations(col_data: dict) -> list[str]:
 
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
-        reject_pagination(context, "fastapi")
         reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([
@@ -50,6 +55,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_bool"] = access_filters.py_bool
         env.globals["settings_module"] = "settings"
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["pagination_config"] = pagination_config
         env.filters["sql_column"] = sql_filters.sql_column
         env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
@@ -428,6 +434,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
+        (deps_dir / "pagination.py").write_text(
+            _PAGINATION_SOURCE.read_text()
+        )
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(_DPOP_SOURCE.read_text())
         if any(context.repository_operations.values()):

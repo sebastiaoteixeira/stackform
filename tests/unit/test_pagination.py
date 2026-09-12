@@ -12,11 +12,13 @@ from typing import Any
 
 import pytest
 
+from tests.unit.support.repositories import InMemoryRepository
 from yaml_api_generator.ir import IRCollection
 from yaml_api_generator.ir.api import IRPageSize, IRPagination, IRSortKey
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 from yaml_api_generator.server.common.pagination import (
     BoundKey,
+    InvalidPageRequestError,
     Page,
     PageOverflowError,
     Primitives,
@@ -117,6 +119,22 @@ async def test_count_exact_reflects_scope_not_cursor(sql_repo):
     page = await sql_repo.paginate(
         "post", Primitives(sort=sort, bounds=(bound,), count="exact")
     )
+    assert page.total == 5
+
+
+@pytest.mark.asyncio
+async def test_base_repository_fallback_supports_custom_repositories():
+    repository = InMemoryRepository({"post": _ROWS})
+    primitives = Primitives(
+        limit=2,
+        skip=1,
+        sort=(SortKey("score", "asc"), SortKey("id", "asc")),
+        count="exact",
+    )
+
+    page = await repository.paginate("post", primitives)
+
+    assert _ids(page.rows) == ["a", "b"]
     assert page.total == 5
 
 
@@ -286,6 +304,22 @@ def test_offset_reject_over_max_raises():
         map_request(_offset(on_overflow="reject"), {"limit": "99"})
 
 
+@pytest.mark.parametrize(
+    ("pagination", "query", "parameter"),
+    [
+        (_offset(), {"limit": "invalid"}, "limit"),
+        (_offset(), {"offset": "invalid"}, "offset"),
+        (_offset(), {"limit": "-1"}, "limit"),
+        (_offset(), {"offset": "-1"}, "offset"),
+        (_keyset(), {"limit": "0"}, "limit"),
+    ],
+)
+def test_invalid_page_numbers_are_rejected(pagination, query, parameter):
+    with pytest.raises(InvalidPageRequestError) as raised:
+        map_request(pagination, query)
+    assert raised.value.parameter == parameter
+
+
 def test_keyset_mapping_fetches_one_extra_and_builds_bound():
     token = encode_position({"score": 10, "id": "b"}, (SortKey("score"), SortKey("id")))
     primitives = map_request(_keyset(), {"after": token, "limit": "2"})
@@ -386,8 +420,8 @@ entities:
   post:
     fields:
       id: { type: id }
-      score: { type: number }
-      slug: { type: string, unique: true }
+      score: { type: number, required: true }
+      slug: { type: string, required: true, unique: true }
       title: { type: string }
 repositories:
   posts: { entity: post }
@@ -451,11 +485,20 @@ def test_keyset_without_sort_is_coded_error(tmp_path):
     assert "PAGINATION_KEYSET_SORT_REQUIRED" in _error_codes(excinfo)
 
 
+def test_keyset_zero_default_is_coded_error(tmp_path):
+    with pytest.raises(ConfigErrors) as excinfo:
+        _load(
+            tmp_path,
+            "strategy: keyset\nsize: { default: 0, max: 100 }\nsort:\n  - { field: id }",
+        )
+    assert "PAGINATION_INVALID_SIZE" in _error_codes(excinfo)
+
+
 def test_keyset_non_unique_tiebreaker_is_coded_error(tmp_path):
     with pytest.raises(ConfigErrors) as excinfo:
         _load(
             tmp_path,
-            "strategy: keyset\nsize: { default: 20, max: 100 }\nsort:\n  - { field: title }",
+            "strategy: keyset\nsize: { default: 20, max: 100 }\nsort:\n  - { field: score }",
         )
     assert "PAGINATION_KEYSET_TIEBREAKER_NOT_UNIQUE" in _error_codes(excinfo)
 
@@ -466,6 +509,23 @@ def test_keyset_unique_tiebreaker_is_accepted(tmp_path):
         "strategy: keyset\nsize: { default: 20, max: 100 }\nsort:\n  - { field: score }\n  - { field: slug }",
     )
     assert _list_route(ir).pagination.sort[-1] == IRSortKey("slug", "asc")
+
+
+def test_keyset_nullable_sort_field_is_rejected(tmp_path):
+    spec = _SPEC.replace(
+        "score: { type: number, required: true }",
+        "score: { type: number }",
+    )
+    block = textwrap.indent(
+        "strategy: keyset\nsize: { default: 20, max: 100 }\nsort:\n  - { field: score }\n  - { field: id }",
+        "          ",
+    )
+    path = tmp_path / "nullable.yaml"
+    path.write_text(spec.replace("__PAGINATION__", block))
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        load_and_generate_ir(str(path))
+    assert "PAGINATION_KEYSET_SORT_FIELD_NULLABLE" in _error_codes(excinfo)
 
 
 def test_unknown_sort_field_is_coded_error(tmp_path):

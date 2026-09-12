@@ -5,12 +5,16 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
-from ..utils import find_identity, group_by_collection, extract_identity_fields
+from ..utils import (
+    extract_identity_fields,
+    find_identity,
+    group_by_collection,
+    pagination_config,
+)
 from ..validation import (
     reject_cookie_delivery,
     reject_dpop,
     reject_idp_trust,
-    reject_pagination,
     reject_pkce,
     reject_session_refresh,
     reject_unsigned_session_algorithm,
@@ -36,6 +40,7 @@ from yaml_api_generator.ir.when import (
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "drf" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
+_PAGINATION_SOURCE = Path(__file__).parents[3] / "pagination.py"
 
 
 class DRFGenerator(TemplateBasedGenerator):
@@ -48,7 +53,6 @@ class DRFGenerator(TemplateBasedGenerator):
         reject_dpop(context, "drf")
         reject_idp_trust(context, "drf")
         reject_session_refresh(context, "drf")
-        reject_pagination(context, "drf")
         reject_pkce(context, "drf")
         reject_unsigned_session_algorithm(context)
         env = Environment(
@@ -65,6 +69,7 @@ class DRFGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["rule_to_python"] = _rule_to_python
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["pagination_config"] = pagination_config
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["int"] = int
@@ -85,6 +90,9 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_serializers(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_service_inputs(env, context, output_dir)
+        (api_dir / "pagination.py").write_text(
+            _PAGINATION_SOURCE.read_text()
+        )
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
@@ -267,6 +275,7 @@ class DRFGenerator(TemplateBasedGenerator):
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
                     "conflict_import": "api.conflicts",
+                    "pagination_import": "api.pagination",
                 },
             )
         )
