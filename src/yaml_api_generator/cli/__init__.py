@@ -284,11 +284,11 @@ def remove_pack(pack_name: str):
 
 @cli.group()
 def migrate():
-    """Manage relational database migrations (Alembic)."""
+    """Manage database migrations (relational via Alembic, MongoDB native)."""
 
 
 _spec_arg = click.argument("yaml_file", type=click.Path(exists=True))
-_datastore_opt = click.option("--datastore", default=None, help="Relational datastore name")
+_datastore_opt = click.option("--datastore", default=None, help="Datastore name")
 
 
 @migrate.command("new")
@@ -296,32 +296,39 @@ _datastore_opt = click.option("--datastore", default=None, help="Relational data
 @click.option("-m", "--message", default="auto", help="Revision message")
 @_datastore_opt
 def migrate_new(yaml_file: str, message: str, datastore: str | None):
-    """Autogenerate a revision from the spec (scaffolds Alembic on first run)."""
-    from ..migrations.alembic_support import make_config, new_revision
+    """Autogenerate a revision from the spec (scaffolds on first run)."""
+    from ..migrations.dispatch import resolve_driver
 
-    new_revision(make_config(yaml_file, datastore), message)
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.new_revision(config, message)
 
 
 @migrate.command("up")
 @_spec_arg
-@click.option("--to", "target", default="head", help="Target revision (default head)")
+@click.option(
+    "--to", "target", default="head", help="Revision id, +N, or head (default head)"
+)
 @_datastore_opt
 def migrate_up(yaml_file: str, target: str, datastore: str | None):
     """Apply migrations forward."""
-    from ..migrations.alembic_support import make_config, upgrade
+    from ..migrations.dispatch import resolve_driver
 
-    upgrade(make_config(yaml_file, datastore), target)
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.upgrade(config, target)
 
 
 @migrate.command("down")
 @_spec_arg
-@click.option("--to", "target", default="-1", help="Target revision (default one step back)")
+@click.option(
+    "--to", "target", default="-1", help="Revision id, -N, or base (default -1)"
+)
 @_datastore_opt
 def migrate_down(yaml_file: str, target: str, datastore: str | None):
     """Revert migrations."""
-    from ..migrations.alembic_support import downgrade, make_config
+    from ..migrations.dispatch import resolve_driver
 
-    downgrade(make_config(yaml_file, datastore), target)
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.downgrade(config, target)
 
 
 @migrate.command("status")
@@ -329,9 +336,10 @@ def migrate_down(yaml_file: str, target: str, datastore: str | None):
 @_datastore_opt
 def migrate_status(yaml_file: str, datastore: str | None):
     """Show the current revision."""
-    from ..migrations.alembic_support import make_config, status
+    from ..migrations.dispatch import resolve_driver
 
-    status(make_config(yaml_file, datastore))
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.status(config)
 
 
 @migrate.command("history")
@@ -339,6 +347,7 @@ def migrate_status(yaml_file: str, datastore: str | None):
 @_datastore_opt
 def migrate_history(yaml_file: str, datastore: str | None):
     """List revisions."""
-    from ..migrations.alembic_support import history, make_config
+    from ..migrations.dispatch import resolve_driver
 
-    history(make_config(yaml_file, datastore))
+    driver, config = resolve_driver(yaml_file, datastore)
+    driver.history(config)

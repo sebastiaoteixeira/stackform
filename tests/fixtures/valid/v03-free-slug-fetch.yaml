@@ -1,0 +1,43 @@
+version: "0.3"
+api:
+  basePath: /api
+  version: v1
+mongo:
+  uri: mongodb://localhost:27017
+  database: testdb
+entities:
+  member:
+    fields:
+      id: { type: id }
+      orgId: { type: string, required: true }
+      name: { type: string, required: true }
+repositories:
+  members:
+    entity: member
+services:
+  members:
+    repository: members
+controllers:
+  members:
+    base_path: /orgs
+    routes:
+      get:
+        service: members
+        method: GET
+        path: /{orgId}/members/{memberId}
+        access: public
+      update:
+        service: members
+        method: PATCH
+        path: /{orgId}/members/{memberId}
+        access: public
+      replace:
+        service: members
+        method: PUT
+        path: /{orgId}/members/{memberId}
+        access: public
+      delete:
+        service: members
+        method: DELETE
+        path: /{orgId}/members/{memberId}
+        access: public

@@ -255,4 +255,5 @@ authenticate by header, not by exchanging credentials for a token).
   cross-collection document fetch.
 - `filter`, `writeFields`, and `reason` keys on a rule are accepted but currently
   have no effect.
-- `unique: true` is metadata only (no MongoDB index, not enforced on write).
+- `unique: true` creates a datastore constraint or index; duplicate writes return
+  `409 Conflict`.

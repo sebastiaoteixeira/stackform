@@ -3,11 +3,15 @@
 Validates CRUD operations, query commands, and operation definitions.
 """
 
-from typing import Any
+from typing import Any, Callable
 
 from yaml_api_generator.ir import CRUD_OPERATIONS, IROperation, IRRepository
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 from .datastore_transformer import resolve_binding
+
+
+def _identity_handler(handler: str | None) -> str | None:
+    return handler
 
 
 class RepositoryTransformer:
@@ -46,6 +50,7 @@ class RepositoryTransformer:
         datastore_names: set[str] | None = None,
         default_datastore: str = "default",
         datastore_types: dict[str, str] | None = None,
+        handler_resolver: Callable[[str | None], str | None] = _identity_handler,
     ) -> tuple[dict[str, IRRepository], list[ConfigError]]:
         """Transform repository configurations to IR.
 
@@ -157,7 +162,9 @@ class RepositoryTransformer:
                                     path=op_path,
                                 ))
 
-                ops_dict[op_name] = IROperation(name=op_name, query=query, handler=handler)
+                ops_dict[op_name] = IROperation(
+                    name=op_name, query=query, handler=handler_resolver(handler)
+                )
 
             if entity is None and not ops_dict and not abstract:
                 errors.append(ConfigError(

@@ -1,0 +1,71 @@
+{% if ctx.session.refresh %}
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+from dependencies.jwt_utils import (
+    create_jwt_token,
+    create_refresh_token,
+    decode_refresh_token,
+)
+from dependencies.mongodb import get_database
+from settings import settings
+
+REFRESH_COLLECTION = "_refresh_tokens"
+
+
+def _refresh_records():
+    return get_database()[REFRESH_COLLECTION]
+
+
+async def _mint_refresh_token(sub: str, identity_collection: str, sid: str) -> str:
+    jti = uuid4().hex
+    await _refresh_records().insert_one({
+        "jti": jti,
+        "sid": sid,
+        "sub": sub,
+        "identity_collection": identity_collection,
+        "used": False,
+        "revoked": False,
+        "expires_at": datetime.now(timezone.utc)
+        + timedelta(seconds=settings.JWT_REFRESH_TTL_SECONDS),
+    })
+    return create_refresh_token(sub, identity_collection, jti, sid)
+
+
+async def issue_session(
+    sub: str, identity_collection: str, sid: str | None = None
+) -> dict[str, str]:
+    return {
+        "token": create_jwt_token(sub, identity_collection),
+        "refresh_token": await _mint_refresh_token(
+            sub, identity_collection, sid or uuid4().hex
+        ),
+    }
+
+
+async def revoke_session(sid: str) -> None:
+    await _refresh_records().update_many({"sid": sid}, {"$set": {"revoked": True}})
+
+
+async def rotate_session(refresh_token: str) -> dict[str, str] | None:
+    """Spend a refresh token, revoking its whole family when it was already spent."""
+    claims = decode_refresh_token(refresh_token)
+    if claims is None:
+        return None
+    record = await _refresh_records().find_one_and_update(
+        {"jti": claims["jti"], "used": False, "revoked": False},
+        {"$set": {"used": True}},
+    )
+    if record is None:
+        await revoke_session(claims["sid"])
+        return None
+    return await issue_session(
+        record["sub"], record["identity_collection"], record["sid"]
+    )
+{% else %}
+from dependencies.jwt_utils import create_jwt_token
+
+
+async def issue_session(sub: str, identity_collection: str) -> dict[str, str]:
+    return {"token": create_jwt_token(sub, identity_collection)}
+{% endif %}

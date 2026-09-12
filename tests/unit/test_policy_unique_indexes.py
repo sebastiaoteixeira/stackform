@@ -1,7 +1,9 @@
 import json
 import re
+import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader
@@ -47,13 +49,17 @@ class _RecordingDatabase:
 
 def _render_mongodb_module():
     env = Environment(loader=FileSystemLoader(str(_SHARED_DIR)), keep_trailing_newline=True)
-    return env.get_template("mongodb.py.jinja").render()
+    return env.get_template("mongodb.py.jinja").render(settings_module="settings")
 
 
 def _exec_initialize_indexes(source, database):
     module = types.ModuleType("mongodb_fragment")
-    body = source[source.index("_NON_NULL_BSON_TYPES"):]
-    exec(compile(body, "<mongodb>", "exec"), module.__dict__)
+    settings_module = types.ModuleType("settings")
+    settings_module.settings = types.SimpleNamespace(
+        MONGO_URI="mongodb://localhost", MONGO_DB="test"
+    )
+    with patch.dict(sys.modules, {"settings": settings_module}):
+        exec(compile(source, "<mongodb>", "exec"), module.__dict__)
     module.__dict__["_db"] = database
     return module.initialize_indexes
 

@@ -140,9 +140,13 @@ Notes on this spec:
 
 The handler signature depends on the target you generate or run. Write the version that matches how you ship the app.
 
-### Generated FastAPI (and raw) backend: `request: Request`
+### Generated backends: request object
 
-`yaml-api build myapp.yaml backend` (default target `fastapi`) emits a route that calls your handler with the FastAPI `Request` and awaits its return value. Read inputs off the request, do your own database access through the generated repository, and return a JSON-serializable value.
+`yaml-api build myapp.yaml backend` emits a route that awaits the handler with
+the target's request object. FastAPI supplies `fastapi.Request`, DRF supplies its
+request, and raw-ASGI supplies a request-compatible object with `path_params`,
+`body`, `headers`, and `state`. Read inputs from that object and return a
+JSON-serializable value (or a DRF `Response` in the DRF target).
 
 ```python
 # myapp/handlers/notes.py
@@ -243,13 +247,13 @@ A repository `operations.<op>.handler` is a second handler kind: it is invoked a
 
 The full path is `basePath + version + controller base_path + operation path`. With the `api:` block above, `/{id}/publish` under `base_path: /notes` becomes `/api/v1/notes/{id}/publish`.
 
-Custom-operation routes are emitted only by the `fastapi` target. The `raw` target generates CRUD routes only and does not wire custom handlers, so build with the default `fastapi` target when you rely on a handler.
+Custom-operation routes are emitted by the FastAPI, DRF, and raw-ASGI targets.
 
 ## Key points
 
 - `handler:` on a service operation points to `<alias>.<function>`, resolved through `imports:`.
 - Custom operations require `method` and `path` on the controller operation; there is no inference.
-- The handler contract differs by target: `request: Request` for the generated FastAPI/raw backend, `context: RequestContext` for `yaml-api run`.
+- Generated targets pass their request object; `yaml-api run` passes a `RequestContext`.
 - For a plain parameterized read, prefer a repository `query` operation over a handler.
 - Custom operations participate in the same access vocabulary as CRUD; under `run` and `drf` the rules are enforced for custom routes, while the FastAPI custom route leaves enforcement to your handler.
 

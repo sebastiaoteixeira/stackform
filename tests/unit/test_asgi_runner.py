@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from tests.unit.support.repositories import InMemoryRepository
 from yaml_api_generator.server.asgi.runner import ASGIApp, _compile_path
 from yaml_api_generator.server.common.server_context import (
     RuntimeAppConfig,
@@ -10,7 +11,6 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeContext,
     RuntimeRouteDescriptor,
 )
-from yaml_api_generator.server.common.repositories.base import BaseRepository
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
 
 
@@ -35,51 +35,6 @@ def _make_ctx_with_routes(routes):
         routes=routes,
         auth=auth,
     )
-
-
-class _InMemoryRepo(BaseRepository):
-    def __init__(self):
-        self._data = {}
-        self._id_fields = {}
-
-    def register_id_field(self, collection_name, id_field):
-        self._id_fields[collection_name] = id_field
-
-    def connect(self):
-        pass
-
-    async def close(self):
-        pass
-
-    async def list(self, collection_name):
-        return list(self._data.get(collection_name, {}).values())
-
-    async def get(self, collection_name, document_id):
-        return self._data.get(collection_name, {}).get(document_id)
-
-    async def create(self, collection_name, payload):
-        col = self._data.setdefault(collection_name, {})
-        id_field = self._id_fields.get(collection_name, "id")
-        doc_id = payload.get(id_field, "test-id")
-        payload[id_field] = doc_id
-        col[doc_id] = dict(payload)
-        return dict(payload)
-
-    async def update(self, collection_name, document_id, payload):
-        col = self._data.get(collection_name, {})
-        if document_id not in col:
-            return None
-        col[document_id].update(payload)
-        return dict(col[document_id])
-
-    async def replace(self, collection_name, document_id, payload):
-        col = self._data.get(collection_name, {})
-        col[document_id] = dict(payload)
-        return dict(payload)
-
-    async def delete(self, collection_name, document_id):
-        col = self._data.get(collection_name, {})
-        return col.pop(document_id, None)
 
 
 async def _receive_nothing():
@@ -141,7 +96,7 @@ async def test_route_matching_by_method_and_path_regex():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     status, data = await _invoke_asgi(app, "GET", "/items")
@@ -163,7 +118,7 @@ async def test_no_matching_route_returns_404_json():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     status, data = await _invoke_asgi(app, "GET", "/nonexistent")
@@ -183,7 +138,7 @@ async def test_invalid_json_body_returns_400_json():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     scope = {
@@ -233,7 +188,7 @@ async def test_error_mapping_401_unauthorized():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, UnauthorizedError)
 
@@ -255,7 +210,7 @@ async def test_error_mapping_403_forbidden():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, ForbiddenError)
 
@@ -277,7 +232,7 @@ async def test_error_mapping_404_not_found():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, NotFoundError)
 
@@ -297,7 +252,7 @@ async def test_error_mapping_422_value_error():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
     _inject_failing_pipeline(app, ValueError)
 
@@ -324,7 +279,7 @@ async def test_header_decoding_from_asgi_bytes():
         ),
     ]
     ctx = _make_ctx_with_routes(routes)
-    repo = _InMemoryRepo()
+    repo = InMemoryRepository()
     app = ASGIApp(ctx, RepositoryRegistry.single(repo))
 
     status, data = await _invoke_asgi(
