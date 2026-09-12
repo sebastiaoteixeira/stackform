@@ -1,18 +1,19 @@
 import os
+import secrets
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, create_model
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
-from yaml_api_generator.utils.strings import to_pascal_case
+from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..common.auth import oidc
-from ..common.auth.jwt import create_jwt_token
 from ..common.auth.login_codes import login_codes
+from ..common.auth.session_tokens import SessionTokens
 from ..common.server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
@@ -23,7 +24,8 @@ from ..common.server_context import (
 from ..common.pipeline import Pipeline
 from ..common.pipeline_builder import PipelineBuilder
 from ..common.repositories import BaseRepository, RepositoryRegistry
-from ..common.steps import ForbiddenError, NotFoundError, UnauthorizedError
+from ..common.steps import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
+from .session_cookie import clear_session_cookies, issue_csrf_token, set_session_cookies
 
 
 WRITE_OPERATIONS = frozenset({"create", "update", "replace"})
@@ -102,6 +104,12 @@ def create_pydantic_model(
         model_name = to_pascal_case(collection.name)
         return create_model(f"{model_name}LoginPayload", **fields)
 
+    if operation == "refresh":
+        return create_model(
+            f"{to_pascal_case(collection.name)}RefreshPayload",
+            refresh_token=(str, Field(..., min_length=1)),
+        )
+
     if operation not in WRITE_OPERATIONS:
         return None
 
@@ -136,8 +144,12 @@ def register_fastapi_routes(
                 route.operation,
                 identity_collection,
             )
+            if ctx.session.uses_cookie and route.operation == "refresh":
+                body_model = None
 
-        endpoint = _build_endpoint(pipeline, body_model, route)
+        endpoint = _build_endpoint(
+            pipeline, body_model, route, uses_cookie=ctx.session.uses_cookie
+        )
         security = _security_requirements(route, ctx.auth)
         openapi_extra = {"security": security} if security else None
         app.add_api_route(
@@ -147,7 +159,14 @@ def register_fastapi_routes(
             openapi_extra=openapi_extra,
         )
 
-    register_provider_routes(app, ctx, registry)
+    register_provider_routes(app, ctx, registry, pipeline_builder.tokens)
+    if ctx.session.uses_cookie:
+        app.add_api_route(
+            f"{_base_prefix(ctx)}/auth/logout",
+            _logout_endpoint(),
+            methods=["POST"],
+            status_code=204,
+        )
     _configure_openapi_security(app, ctx.auth)
 
     return pipelines
@@ -164,6 +183,7 @@ def register_provider_routes(
     app: FastAPI,
     ctx: RuntimeContext,
     registry: RepositoryRegistry,
+    session_tokens: SessionTokens,
 ) -> None:
     """Mount OIDC provider routes for each identity collection that binds one.
 
@@ -204,16 +224,29 @@ def register_provider_routes(
             collection = ctx.collections[name]
             callback_path = f"{login_path}/callback"
             app.add_api_route(
-                login_path, _oidc_login_endpoint(provider, callback_path), methods=["GET"]
+                login_path,
+                _oidc_login_endpoint(provider, callback_path, name),
+                methods=["GET"],
             )
             app.add_api_route(
                 callback_path,
-                _oidc_callback_endpoint(provider, binding, collection, registry, callback_path, collections=ctx.collections),
+                _oidc_callback_endpoint(
+                    provider,
+                    binding,
+                    collection,
+                    registry,
+                    callback_path,
+                    collections=ctx.collections,
+                ),
                 methods=["GET"],
             )
 
     if has_oidc:
-        app.add_api_route(f"{base_prefix}/auth/exchange", _exchange_endpoint, methods=["POST"])
+        app.add_api_route(
+            f"{base_prefix}/auth/exchange",
+            _exchange_endpoint(session_tokens, uses_cookie=ctx.session.uses_cookie),
+            methods=["POST"],
+        )
 
 
 def _providers_listing_endpoint(listing: list[dict[str, str]]):
@@ -223,10 +256,46 @@ def _providers_listing_endpoint(listing: list[dict[str, str]]):
     return endpoint
 
 
-def _oidc_login_endpoint(provider: IROIDCProvider, callback_path: str):
+def _oidc_cookie_name(collection: str, provider: str, purpose: str) -> str:
+    return f"{to_py_identifier(collection)}_{to_py_identifier(provider)}_{purpose}"
+
+
+def _oidc_login_endpoint(
+    provider: IROIDCProvider,
+    callback_path: str,
+    collection_name: str,
+):
     async def endpoint(request: Request) -> RedirectResponse:
         callback_url = str(request.base_url).rstrip("/") + callback_path
-        return RedirectResponse(url=await oidc.build_login_redirect(provider, callback_url))
+        state = secrets.token_urlsafe(32)
+        verifier = oidc.create_pkce_verifier() if provider.pkce else None
+        challenge = oidc.pkce_challenge(verifier) if verifier is not None else None
+        url = await oidc.build_login_redirect(
+            provider,
+            callback_url,
+            state=state,
+            code_challenge=challenge,
+        )
+        response = RedirectResponse(url=url)
+        cookie_options = {
+            "max_age": 300,
+            "httponly": True,
+            "secure": request.url.scheme == "https",
+            "samesite": "lax",
+            "path": callback_path,
+        }
+        response.set_cookie(
+            _oidc_cookie_name(collection_name, provider.name, "state"),
+            state,
+            **cookie_options,
+        )
+        if verifier is not None:
+            response.set_cookie(
+                _oidc_cookie_name(collection_name, provider.name, "pkce_verifier"),
+                verifier,
+                **cookie_options,
+            )
+        return response
 
     return endpoint
 
@@ -247,28 +316,77 @@ def _oidc_callback_endpoint(
     callback_path: str,
     collections: dict[str, RuntimeCollectionDescriptor] | None = None,
 ):
-    async def endpoint(request: Request, code: str) -> RedirectResponse:
+    async def endpoint(
+        request: Request,
+        code: str,
+        state: str | None = None,
+    ) -> RedirectResponse:
+        state_cookie = _oidc_cookie_name(collection.name, provider.name, "state")
+        expected_state = request.cookies.get(state_cookie)
+        if (
+            not state
+            or not expected_state
+            or not secrets.compare_digest(state, expected_state)
+        ):
+            raise HTTPException(status_code=400, detail="Invalid OIDC state")
+        verifier_cookie = _oidc_cookie_name(
+            collection.name, provider.name, "pkce_verifier"
+        )
+        verifier = request.cookies.get(verifier_cookie) if provider.pkce else None
+        if provider.pkce and not verifier:
+            raise HTTPException(status_code=400, detail="Missing PKCE verifier")
         repo = registry.for_collection(collection.name)
         callback_url = str(request.base_url).rstrip("/") + callback_path
         login_code = await oidc.handle_callback(
             provider, binding, collection, repo, code, callback_url,
             collections=collections, registry=registry,
+            code_verifier=verifier,
         )
         frontend_url = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
-        return RedirectResponse(url=f"{frontend_url}/auth/callback?code={login_code}")
+        response = RedirectResponse(
+            url=f"{frontend_url}/auth/callback?code={login_code}"
+        )
+        response.delete_cookie(state_cookie, path=callback_path)
+        if provider.pkce:
+            response.delete_cookie(verifier_cookie, path=callback_path)
+        return response
 
     return endpoint
 
 
-async def _exchange_endpoint(payload: dict[str, str]) -> dict[str, str]:
-    code = payload.get("code")
-    if not code:
-        raise HTTPException(status_code=400, detail="Missing code")
-    redeemed = login_codes.redeem(code)
-    if redeemed is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired code")
-    subject, identity_collection, _ = redeemed
-    return {"token": create_jwt_token(subject, identity_collection)}
+def _exchange_endpoint(session_tokens: SessionTokens, *, uses_cookie: bool = False):
+    async def endpoint(request: Request, payload: dict[str, str]) -> Any:
+        code = payload.get("code")
+        if not code:
+            raise HTTPException(status_code=400, detail="Missing code")
+        redeemed = login_codes.redeem(code)
+        if redeemed is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired code")
+        subject, identity_collection, _ = redeemed
+        session = session_tokens.issue(subject, identity_collection)
+        if not uses_cookie:
+            return session
+        csrf_token = issue_csrf_token()
+        response = JSONResponse({"csrf_token": csrf_token})
+        set_session_cookies(
+            response,
+            request,
+            session["token"],
+            csrf_token,
+            session.get("refresh_token"),
+        )
+        return response
+
+    return endpoint
+
+
+def _logout_endpoint():
+    async def endpoint() -> Response:
+        response = Response(status_code=204)
+        clear_session_cookies(response)
+        return response
+
+    return endpoint
 
 
 def _field_annotation(field_config: dict[str, Any]) -> Any:
@@ -301,6 +419,8 @@ def _build_endpoint(
     pipeline: Pipeline,
     body_model: type[BaseModel] | None,
     route: RuntimeRouteDescriptor,
+    *,
+    uses_cookie: bool = False,
 ):
     has_id_param = "{id}" in route.path
 
@@ -313,6 +433,8 @@ def _build_endpoint(
                     request=request,
                     body=None,
                     url_params={"id": id},
+                    uses_cookie=uses_cookie,
+                    operation=route.operation,
                 )
 
             return endpoint_no_body_with_id
@@ -323,6 +445,8 @@ def _build_endpoint(
                 request=request,
                 body=None,
                 url_params={},
+                uses_cookie=uses_cookie,
+                operation=route.operation,
             )
 
         return endpoint_no_body
@@ -341,6 +465,8 @@ def _build_endpoint(
                 request=request,
                 body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
                 url_params={"id": id},
+                uses_cookie=uses_cookie,
+                operation=route.operation,
             )
 
         endpoint_with_body_and_id.__annotations__["payload"] = body_model
@@ -352,6 +478,8 @@ def _build_endpoint(
             request=request,
             body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
             url_params={},
+            uses_cookie=uses_cookie,
+            operation=route.operation,
         )
 
     endpoint_with_body.__annotations__["payload"] = body_model
@@ -363,6 +491,8 @@ async def _run_pipeline(
     request: Request,
     body: dict[str, Any] | None,
     url_params: dict[str, str],
+    uses_cookie: bool = False,
+    operation: str | None = None,
 ) -> Any:
     try:
         path_params = {key: str(value) for key, value in request.path_params.items()}
@@ -378,8 +508,15 @@ async def _run_pipeline(
             else {}
         )
         pre_resolved_principal: dict[str, Any] | None = getattr(request.state, "principal", None)
+        headers = dict(request.headers)
+        if uses_cookie and "authorization" not in headers:
+            session_token = request.cookies.get("session")
+            if session_token:
+                headers["authorization"] = f"Bearer {session_token}"
+        if uses_cookie and operation == "refresh":
+            body = {"refresh_token": request.cookies.get("refresh_token")}
         ctx = await pipeline.run(
-            headers=dict(request.headers),
+            headers=headers,
             url_params=path_params,
             body=body,
             principal=pre_resolved_principal,
@@ -392,9 +529,31 @@ async def _run_pipeline(
         raise HTTPException(status_code=403, detail=str(error)) from error
     except NotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    return jsonable_encoder(ctx.response)
+    response_payload = jsonable_encoder(ctx.response)
+    if not uses_cookie or operation not in {"login", "refresh"}:
+        return response_payload
+    if not isinstance(response_payload, dict) or "token" not in response_payload:
+        return response_payload
+    csrf_token = issue_csrf_token()
+    content = {
+        key: value
+        for key, value in response_payload.items()
+        if key not in {"token", "refresh_token"}
+    }
+    content["csrf_token"] = csrf_token
+    response = JSONResponse(content)
+    set_session_cookies(
+        response,
+        request,
+        response_payload["token"],
+        csrf_token,
+        response_payload.get("refresh_token"),
+    )
+    return response
 
 
 def _identity_methods(auth: RuntimeAuthConfig) -> set[str]:

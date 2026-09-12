@@ -65,6 +65,7 @@ def build_generator_context(
         entities=entities,
         identity_entities=identity_entities,
         role_hierarchies=ir.role_hierarchies,
+        session_delivery=ir.session.delivery,
     )
 
 

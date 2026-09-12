@@ -16,10 +16,10 @@
 {% endfor %}
 {% endfor %}
 import time
+import secrets
 {% if _pkce.used or _dpop.used %}
 import base64
 import hashlib
-import secrets
 {% endif %}
 {% if _dpop.used %}
 import json
@@ -33,10 +33,13 @@ from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import {% if ctx.session.uses_cookie %}JSONResponse, {% endif %}RedirectResponse
 
 from dependencies.claims import resolve_claim_path, resolve_relations
-from dependencies.jwt_utils import create_jwt_token
+from dependencies.session_tokens import issue_session
+{% if ctx.session.uses_cookie %}
+from dependencies.session_cookie import issue_csrf_token, set_session_cookies
+{% endif %}
 from dependencies.login_codes import (
     issue_login_code,
     redeem_login_code,
@@ -75,7 +78,7 @@ def _dpop_proof(method: str, url: str, access_token: str | None = None) -> str:
 {% endif %}
 
 @router.post("/auth/exchange")
-async def exchange_login_code(payload: dict[str, str]) -> dict[str, str]:
+async def exchange_login_code(request: Request, payload: dict[str, str]) -> Any:
     code = payload.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="Missing code")
@@ -83,7 +86,15 @@ async def exchange_login_code(payload: dict[str, str]) -> dict[str, str]:
     if redeemed is None:
         raise HTTPException(status_code=401, detail="Invalid or expired code")
     subject, identity_collection, _ = redeemed
-    return {"token": create_jwt_token(subject, identity_collection)}
+    session = await issue_session(subject, identity_collection)
+{% if ctx.session.uses_cookie %}
+    csrf_token = issue_csrf_token()
+    response = JSONResponse({"csrf_token": csrf_token})
+    set_session_cookies(response, request, session["token"], csrf_token{% if ctx.session.refresh %}, session["refresh_token"]{% endif %})
+    return response
+{% else %}
+    return session
+{% endif %}
 
 {% for col in auth.identity_collections %}
 {% set ext_providers = [] %}
@@ -132,12 +143,25 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
         "response_type": "code",
         "scope": "openid email profile",
     }
+    state = secrets.token_urlsafe(32)
+    params["state"] = state
 {% if provider.pkce %}
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     params["code_challenge"] = challenge
     params["code_challenge_method"] = "S256"
+{% endif %}
     response = RedirectResponse(url=f"{auth_endpoint}?{urlencode(params)}")
+    response.set_cookie(
+        "{{ sym }}_state",
+        state,
+        max_age=300,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback",
+    )
+{% if provider.pkce %}
     response.set_cookie(
         "{{ sym }}_pkce_verifier",
         verifier,
@@ -147,10 +171,8 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
         samesite="lax",
         path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback",
     )
-    return response
-{% else %}
-    return RedirectResponse(url=f"{auth_endpoint}?{urlencode(params)}")
 {% endif %}
+    return response
 
 
 {% set _binding_target_cols = [] %}
@@ -158,7 +180,15 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
 {% if rel.collection not in _binding_target_cols and rel.collection != col.name %}{% set _ = _binding_target_cols.append(rel.collection) %}{% endif %}
 {% endfor %}
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_{{ col.name }}_repository){% for target_col in _binding_target_cols %}, {{ target_col }}_repo=Depends(get_{{ target_col }}_repository){% endfor %}) -> Any:
+async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None = None, repo=Depends(get_{{ col.name }}_repository){% for target_col in _binding_target_cols %}, {{ target_col }}_repo=Depends(get_{{ target_col }}_repository){% endfor %}) -> Any:
+    expected_state = request.cookies.get("{{ sym }}_state")
+    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+        raise HTTPException(status_code=400, detail="Invalid OIDC state")
+{% if provider.pkce %}
+    verifier = request.cookies.get("{{ sym }}_pkce_verifier")
+    if not verifier:
+        raise HTTPException(status_code=400, detail="Missing PKCE verifier")
+{% endif %}
     discovery = await _get_{{ sym }}_discovery()
     token_endpoint = discovery["token_endpoint"]
     callback_url = str(request.base_url).rstrip("/") + "{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback"
@@ -174,9 +204,6 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
         _token_data["client_secret"] = settings.{{ provider_name | upper }}_CLIENT_SECRET.get_secret_value()
         {% endif %}
         {% if provider.pkce %}
-        verifier = request.cookies.get("{{ sym }}_pkce_verifier")
-        if not verifier:
-            raise HTTPException(status_code=400, detail="Missing PKCE verifier")
         _token_data["code_verifier"] = verifier
         {% endif %}
         {% if provider.dpop %}
@@ -272,13 +299,12 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
 {% endif %}
 
     code = await issue_login_code(str(subject), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
-{% if provider.pkce %}
     response = RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
+    response.delete_cookie("{{ sym }}_state", path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback")
+{% if provider.pkce %}
     response.delete_cookie("{{ sym }}_pkce_verifier", path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback")
-    return response
-{% else %}
-    return RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
 {% endif %}
+    return response
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/logout")

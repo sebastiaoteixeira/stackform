@@ -1,6 +1,7 @@
 """Refresh-token rotation, reuse detection, and default-off byte-identity."""
 
 import asyncio
+import importlib
 import importlib.util
 import sys
 import types
@@ -69,12 +70,15 @@ class TestSettings:
 
 
 class TestGeneration:
-    def test_refresh_store_emitted_only_when_on(self, plain_ctx, refresh_ctx, tmp_path):
+    def test_rotation_helpers_emitted_only_when_on(self, plain_ctx, refresh_ctx, tmp_path):
         plain_dir, refresh_dir = tmp_path / "off", tmp_path / "on"
         FastAPIGenerator().generate(plain_ctx, plain_dir)
         FastAPIGenerator().generate(refresh_ctx, refresh_dir)
-        assert (refresh_dir / "dependencies" / "refresh_store.py").exists()
-        assert not (plain_dir / "dependencies" / "refresh_store.py").exists()
+        on = (refresh_dir / "dependencies" / "session_tokens.py").read_text()
+        off = (plain_dir / "dependencies" / "session_tokens.py").read_text()
+        assert "rotate_session" in on
+        assert "rotate_session" not in off
+        assert "_refresh_tokens" not in off
 
     def test_login_route_off_is_byte_identical(self, plain_ctx, refresh_ctx, tmp_path):
         plain_dir, refresh_dir = tmp_path / "off", tmp_path / "on"
@@ -127,6 +131,14 @@ class _FakeCollection:
             if all(d.get(k) == v for k, v in query.items()):
                 d.update(update["$set"])
 
+    async def find_one_and_update(self, query, update):
+        doc = await self.find_one(query)
+        if doc is None:
+            return None
+        before = dict(doc)
+        doc.update(update["$set"])
+        return before
+
 
 class TestRotationRuntime:
     def _wire(self, refresh_ctx, tmp_path):
@@ -153,45 +165,99 @@ class TestRotationRuntime:
         collection = _FakeCollection()
         deps = types.ModuleType("dependencies")
         deps.__path__ = []
-        jw_mod = types.ModuleType("dependencies.jwt_utils")
-        jw_mod.create_refresh_token = jw.create_refresh_token
-        jw_mod.decode_refresh_token = jw.decode_refresh_token
         mongo_mod = types.ModuleType("dependencies.mongodb")
         mongo_mod.get_database = lambda: {"_refresh_tokens": collection}
         sys.modules.update({
             "dependencies": deps,
-            "dependencies.jwt_utils": jw_mod,
+            "dependencies.jwt_utils": jw,
             "dependencies.mongodb": mongo_mod,
         })
-        store = _load(tmp_path / "dependencies" / "refresh_store.py", "refresh_store_x")
-        return store, collection
+        tokens = _load(
+            tmp_path / "dependencies" / "session_tokens.py", "session_tokens_x"
+        )
+        return tokens, collection, jw
 
     def test_rotate_issues_new_token(self, refresh_ctx, tmp_path):
-        store, _ = self._wire(refresh_ctx, tmp_path)
+        tokens, _, jw = self._wire(refresh_ctx, tmp_path)
 
         async def scenario():
-            first = await store.issue("user-1", "user")
-            rotated = await store.rotate(first)
+            first = await tokens.issue_session("user-1", "user")
+            rotated = await tokens.rotate_session(first["refresh_token"])
             assert rotated is not None
-            assert rotated["sub"] == "user-1"
-            assert rotated["refresh_token"] != first
-            again = await store.rotate(rotated["refresh_token"])
-            assert again is not None
+            assert rotated["refresh_token"] != first["refresh_token"]
+            assert jw.decode_jwt_token(rotated["token"])["sub"] == "user-1"
+            assert await tokens.rotate_session(rotated["refresh_token"]) is not None
 
         asyncio.run(scenario())
 
     def test_reuse_revokes_whole_family(self, refresh_ctx, tmp_path):
-        store, collection = self._wire(refresh_ctx, tmp_path)
+        tokens, collection, _ = self._wire(refresh_ctx, tmp_path)
 
         async def scenario():
-            first = await store.issue("user-1", "user")
-            await store.rotate(first)
-            replay = await store.rotate(first)
+            first = await tokens.issue_session("user-1", "user")
+            await tokens.rotate_session(first["refresh_token"])
+            replay = await tokens.rotate_session(first["refresh_token"])
             assert replay is None
             assert all(d["revoked"] for d in collection.docs)
 
         asyncio.run(scenario())
 
+    def test_revoked_family_cannot_rotate(self, refresh_ctx, tmp_path):
+        tokens, _, _ = self._wire(refresh_ctx, tmp_path)
+
+        async def scenario():
+            first = await tokens.issue_session("user-1", "user")
+            second = await tokens.rotate_session(first["refresh_token"])
+            await tokens.rotate_session(first["refresh_token"])
+            assert await tokens.rotate_session(second["refresh_token"]) is None
+
+        asyncio.run(scenario())
+
     def test_unknown_token_rejected(self, refresh_ctx, tmp_path):
-        store, _ = self._wire(refresh_ctx, tmp_path)
-        assert asyncio.run(store.rotate("not-a-token")) is None
+        tokens, _, _ = self._wire(refresh_ctx, tmp_path)
+        assert asyncio.run(tokens.rotate_session("not-a-token")) is None
+
+    def test_refresh_token_is_not_accepted_as_access_token(self, refresh_ctx, tmp_path):
+        tokens, _, jw = self._wire(refresh_ctx, tmp_path)
+
+        async def scenario():
+            issued = await tokens.issue_session("user-1", "user")
+            assert jw.decode_refresh_token(issued["refresh_token"]) is not None
+            assert jw.decode_jwt_token(issued["refresh_token"]) is None
+
+        asyncio.run(scenario())
+
+    def test_records_carry_an_expiry_for_ttl_cleanup(self, refresh_ctx, tmp_path):
+        tokens, collection, _ = self._wire(refresh_ctx, tmp_path)
+        asyncio.run(tokens.issue_session("user-1", "user"))
+        assert collection.docs[0]["expires_at"] is not None
+
+
+class TestUnsupportedBackends:
+    @pytest.mark.parametrize(
+        "generator_path",
+        [
+            "yaml_api_generator.generators.backend.drf.generator.DRFGenerator",
+            "yaml_api_generator.generators.backend.raw.generator.RawASGIGenerator",
+        ],
+    )
+    def test_refresh_is_rejected_loudly(self, refresh_ctx, tmp_path, generator_path):
+        module_name, class_name = generator_path.rsplit(".", 1)
+        generator = getattr(importlib.import_module(module_name), class_name)()
+        with pytest.raises(ConfigErrors) as excinfo:
+            generator.generate(refresh_ctx, tmp_path)
+        codes = {e.code for e in excinfo.value.errors}
+        assert codes == {"BACKEND_FEATURE_UNSUPPORTED"}
+
+    @pytest.mark.parametrize(
+        "generator_path",
+        [
+            "yaml_api_generator.generators.backend.drf.generator.DRFGenerator",
+            "yaml_api_generator.generators.backend.raw.generator.RawASGIGenerator",
+        ],
+    )
+    def test_refresh_off_still_generates(self, plain_ctx, tmp_path, generator_path):
+        module_name, class_name = generator_path.rsplit(".", 1)
+        generator = getattr(importlib.import_module(module_name), class_name)()
+        generator.generate(plain_ctx, tmp_path)
+        assert any(tmp_path.iterdir())

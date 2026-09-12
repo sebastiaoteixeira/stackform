@@ -2,119 +2,119 @@
 import json
 import time
 from base64 import urlsafe_b64encode
-from functools import lru_cache
 from hashlib import sha256
 
 import jwt
 from cryptography.hazmat.primitives import serialization
 from jwt.algorithms import RSAAlgorithm
 
-from settings import settings
+from {{ settings_module }} import settings
+
+ALGORITHM = "RS256"
 
 
-def _jwk_thumbprint(jwk: dict) -> str:
+def _public_jwk(key) -> dict:
+    jwk = json.loads(RSAAlgorithm.to_jwk(key))
     canonical = json.dumps(
         {"e": jwk["e"], "kty": jwk["kty"], "n": jwk["n"]},
         separators=(",", ":"),
         sort_keys=True,
     )
-    return urlsafe_b64encode(sha256(canonical.encode()).digest()).rstrip(b"=").decode()
+    kid = urlsafe_b64encode(sha256(canonical.encode()).digest()).rstrip(b"=").decode()
+    return {**jwk, "kid": kid, "use": "sig", "alg": ALGORITHM}
 
 
-@lru_cache(maxsize=1)
-def _signing_material() -> tuple[str, str, str, dict]:
-    private_pem = settings.JWT_PRIVATE_KEY.get_secret_value()
-    private_key = serialization.load_pem_private_key(private_pem.encode(), password=None)
-    public_key = private_key.public_key()
-    public_pem = public_key.public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode()
-    jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
-    kid = _jwk_thumbprint(jwk)
-    return private_pem, public_pem, kid, {**jwk, "kid": kid, "use": "sig", "alg": "RS256"}
-
-
-def create_jwt_token(sub: str, identity_collection: str) -> str:
-    now = time.time()
-    payload = {
-        "sub": sub,
-        "identity_collection": identity_collection,
-        "iat": int(now),
-        "exp": int(now + {% if ctx.session.refresh %}settings.JWT_ACCESS_TTL_SECONDS{% else %}settings.JWT_EXPIRATION_HOURS * 3600{% endif %}),
-    }
-    private_pem, _, kid, _ = _signing_material()
-    return jwt.encode(payload, private_pem, algorithm="RS256", headers={"kid": kid})
-
-
-def decode_jwt_token(token: str) -> dict | None:
-    try:
-        _, public_pem, _, _ = _signing_material()
-        return jwt.decode(token, public_pem, algorithms=["RS256"])
-    except (jwt.InvalidTokenError, Exception):
-        return None
+_PRIVATE_PEM = settings.JWT_PRIVATE_KEY.get_secret_value()
+_SIGNING_JWK = _public_jwk(
+    serialization.load_pem_private_key(_PRIVATE_PEM.encode(), password=None).public_key()
+)
+_RETIRED_JWKS = [
+    _public_jwk(serialization.load_pem_public_key(pem.encode()))
+    for pem in [settings.JWT_RETIRED_PUBLIC_KEY]
+    if pem
+]
+_PUBLIC_JWKS = [_SIGNING_JWK, *_RETIRED_JWKS]
+_VERIFICATION_KEYS = {jwk["kid"]: jwt.PyJWK.from_dict(jwk).key for jwk in _PUBLIC_JWKS}
+_TOKEN_HEADERS = {"kid": _SIGNING_JWK["kid"]}
 
 
 def public_jwks() -> dict:
-    _, _, _, jwk = _signing_material()
-    return {"keys": [jwk]}
+    return {"keys": _PUBLIC_JWKS}
+
+
+def _signing_key() -> str:
+    return _PRIVATE_PEM
+
+
+def _verification_key(token: str):
+    key = _VERIFICATION_KEYS.get(jwt.get_unverified_header(token).get("kid"))
+    if key is None:
+        raise jwt.DecodeError("Token was not signed by a published key")
+    return key
 {% else %}
 import time
 
 import jwt
 
-from settings import settings
+from {{ settings_module }} import settings
+
+ALGORITHM = "HS256"
+_TOKEN_HEADERS: dict = {}
+
+
+def _signing_key() -> str:
+    return settings.JWT_SECRET.get_secret_value()
+
+
+def _verification_key(_token: str) -> str:
+    return _signing_key()
+{% endif %}
+
+
+def _encode(claims: dict, ttl_seconds: int) -> str:
+    now = int(time.time())
+    return jwt.encode(
+        {**claims, "iat": now, "exp": now + ttl_seconds},
+        _signing_key(),
+        algorithm=ALGORITHM,
+        headers=_TOKEN_HEADERS,
+    )
+
+
+def _decode(token: str) -> dict | None:
+    try:
+        return jwt.decode(token, _verification_key(token), algorithms=[ALGORITHM])
+    except jwt.InvalidTokenError:
+        return None
 
 
 def create_jwt_token(sub: str, identity_collection: str) -> str:
-    now = time.time()
-    payload = {
-        "sub": sub,
-        "identity_collection": identity_collection,
-        "iat": int(now),
-        "exp": int(now + {% if ctx.session.refresh %}settings.JWT_ACCESS_TTL_SECONDS{% else %}settings.JWT_EXPIRATION_HOURS * 3600{% endif %}),
-    }
-    return jwt.encode(payload, settings.JWT_SECRET.get_secret_value(), algorithm="HS256")
+    return _encode(
+        {"sub": sub, "identity_collection": identity_collection},
+        {% if ctx.session.refresh %}settings.JWT_ACCESS_TTL_SECONDS{% else %}settings.JWT_EXPIRATION_HOURS * 3600{% endif %},
+    )
 
 
 def decode_jwt_token(token: str) -> dict | None:
-    try:
-        return jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
-    except (jwt.InvalidTokenError, Exception):
-        return None
-{% endif %}
-
+    claims = _decode(token)
+    return None if claims is None or claims.get("typ") == "refresh" else claims
 {% if ctx.session.refresh %}
 
 
 def create_refresh_token(sub: str, identity_collection: str, jti: str, sid: str) -> str:
-    now = time.time()
-    payload = {
-        "sub": sub,
-        "identity_collection": identity_collection,
-        "jti": jti,
-        "sid": sid,
-        "typ": "refresh",
-        "iat": int(now),
-        "exp": int(now + settings.JWT_REFRESH_TTL_SECONDS),
-    }
-{% if ctx.session.uses_asymmetric %}
-    private_pem, _, kid, _ = _signing_material()
-    return jwt.encode(payload, private_pem, algorithm="RS256", headers={"kid": kid})
-{% else %}
-    return jwt.encode(payload, settings.JWT_SECRET.get_secret_value(), algorithm="HS256")
-{% endif %}
+    return _encode(
+        {
+            "sub": sub,
+            "identity_collection": identity_collection,
+            "jti": jti,
+            "sid": sid,
+            "typ": "refresh",
+        },
+        settings.JWT_REFRESH_TTL_SECONDS,
+    )
 
 
 def decode_refresh_token(token: str) -> dict | None:
-    try:
-{% if ctx.session.uses_asymmetric %}
-        _, public_pem, _, _ = _signing_material()
-        claims = jwt.decode(token, public_pem, algorithms=["RS256"])
-{% else %}
-        claims = jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
-{% endif %}
-    except (jwt.InvalidTokenError, Exception):
-        return None
-    return claims if claims.get("typ") == "refresh" else None
+    claims = _decode(token)
+    return claims if claims and claims.get("typ") == "refresh" else None
 {% endif %}

@@ -5,6 +5,8 @@ description: Manage versioned schema migrations for relational datastores using 
 
 `yaml-api migrate` manages versioned schema migrations for a relational (PostgreSQL) datastore. By default a relational datastore creates its tables on connect; `migrate` graduates a project to versioned migrations once you need reproducible, reviewable schema evolution.
 
+The same subcommands drive a MongoDB datastore through a native driver; this page describes the relational Alembic flow, and [MongoDB migrations](../../../v0.3/mongo-migrations.md) describes the document-store one.
+
 Migrations require a synchronous driver (`psycopg`), which is installed with the generator.
 
 ## Commands
@@ -46,3 +48,4 @@ yaml-api migrate down my-spec.yaml --to -1
 
 - [`datastores:`](../configuration/datastores.md) -- declaring relational datastores
 - [`run`](./run.md) -- the development server
+- [MongoDB migrations](../../../v0.3/mongo-migrations.md) -- the same commands against a document store

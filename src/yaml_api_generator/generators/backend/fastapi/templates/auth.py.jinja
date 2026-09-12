@@ -132,14 +132,11 @@ async def _find_idp_provider_for_issuer(token_issuer: str) -> dict | None:
 async def _resolve_idp_principal(
     bearer_token: str,
     db: Database,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     token_issuer = idp_auth.unverified_issuer(bearer_token)
-    if not token_issuer:
-        return None
-
-    provider_meta = await _find_idp_provider_for_issuer(token_issuer)
+    provider_meta = await _find_idp_provider_for_issuer(token_issuer) if token_issuer else None
     if provider_meta is None:
-        return None
+        raise HTTPException(status_code=401, detail="Untrusted token issuer")
 
     audiences = provider_meta["audiences"] or [provider_meta["client_id"]]
     claims = await idp_auth.verify_idp_token(
@@ -166,8 +163,8 @@ async def _resolve_idp_principal(
             if (resolved := resolve_claim_path(claims, oidc_claim)) is not None
         }
         idp_sub = str(claims["sub"])
-        _identifier_oidc_claim = {{ binding.claim_mapping | tojson }}.get("{{ binding.identifier }}", "{{ binding.identifier }}")
-        if _identifier_oidc_claim not in claims:
+        _identifier_oidc_claim = claim_mapping.get({{ binding.identifier | py_literal }}, {{ binding.identifier | py_literal }})
+        if resolve_claim_path(claims, _identifier_oidc_claim) is None:
             return {
                 "sub": idp_sub,
                 "client_id": claims.get("azp") or claims.get("client_id") or idp_sub,
@@ -205,12 +202,12 @@ async def _resolve_idp_principal(
         payload["_id"] = created.inserted_id
         return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": payload, "roles": _roles_from_claims(claims, _roles_claim_path)}
 {% else %}
-        raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+        raise HTTPException(status_code=401, detail="User not found and auto-provisioning is disabled")
 {% endif %}
 {% endif %}
 {% endfor %}
 {% endfor %}
-    return None
+    raise HTTPException(status_code=401, detail="Untrusted token issuer")
 
 {% endif %}
 
@@ -227,12 +224,8 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 {% endif %}
 
 {% if auth.has_idp_auth %}
-    if bearer_token is not None:
-        token_issuer = idp_auth.unverified_issuer(bearer_token)
-        if token_issuer is not None:
-            if await _find_idp_provider_for_issuer(token_issuer) is None:
-                raise HTTPException(status_code=401, detail="Untrusted token issuer")
-            return await _resolve_idp_principal(bearer_token, db)
+    if bearer_token is not None and idp_auth.unverified_issuer(bearer_token) is not None:
+        return await _resolve_idp_principal(bearer_token, db)
 {% endif %}
 
 {% if auth.uses_jwt %}

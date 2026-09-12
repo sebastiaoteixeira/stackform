@@ -16,6 +16,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeContext,
     RuntimeIdentityDescriptor,
 )
+from yaml_api_generator.server.common.auth.session_tokens import SessionTokens
 from yaml_api_generator.server.fastapi.factory import register_provider_routes
 
 
@@ -63,8 +64,12 @@ def _make_ctx(trust: str = "app") -> RuntimeContext:
 
 def _client(trust: str = "app") -> TestClient:
     app = FastAPI()
+    ctx = _make_ctx(trust)
     register_provider_routes(
-        app, _make_ctx(trust), RepositoryRegistry(repositories={}, bindings={}, default="")
+        app,
+        ctx,
+        RepositoryRegistry(repositories={}, bindings={}, default=""),
+        SessionTokens(ctx.session),
     )
     return TestClient(app)
 

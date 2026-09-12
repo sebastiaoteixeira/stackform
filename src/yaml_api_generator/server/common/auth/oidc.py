@@ -1,5 +1,8 @@
 """OIDC login flow for the dev server, mirroring the generated oidc_routes."""
 
+import base64
+import hashlib
+import secrets
 import time
 from typing import Any
 from urllib.parse import urlencode
@@ -12,21 +15,40 @@ from ..repositories import BaseRepository, RepositoryRegistry
 from ..server_context import RuntimeCollectionDescriptor
 from ..utils.ids import generate_id
 from ..utils.field_access import resolve_claim_path
+from ..utils.ttl_cache import TTLCache
 from .login_codes import login_codes
 
-_discovery_cache: dict[str, dict[str, Any]] = {}
+_discovery_cache: TTLCache[str, dict[str, Any]] = TTLCache()
 
 
 async def _discovery(discovery_url: str) -> dict[str, Any]:
-    if discovery_url not in _discovery_cache:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(discovery_url)
-            resp.raise_for_status()
-            _discovery_cache[discovery_url] = resp.json()
-    return _discovery_cache[discovery_url]
+    cached = _discovery_cache.get(discovery_url)
+    if cached is not None:
+        return cached
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(discovery_url)
+        resp.raise_for_status()
+    document: dict[str, Any] = resp.json()
+    _discovery_cache[discovery_url] = document
+    return document
 
 
-async def build_login_redirect(provider: IROIDCProvider, callback_url: str) -> str:
+def create_pkce_verifier() -> str:
+    return secrets.token_urlsafe(64)
+
+
+def pkce_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+async def build_login_redirect(
+    provider: IROIDCProvider,
+    callback_url: str,
+    *,
+    state: str,
+    code_challenge: str | None = None,
+) -> str:
     if not provider.discovery_url:
         raise RuntimeError(f"Provider '{provider.name}' is missing discovery_url")
     discovery = await _discovery(provider.discovery_url)
@@ -35,7 +57,11 @@ async def build_login_redirect(provider: IROIDCProvider, callback_url: str) -> s
         "redirect_uri": callback_url,
         "response_type": "code",
         "scope": "openid email profile",
+        "state": state,
     }
+    if code_challenge is not None:
+        params["code_challenge"] = code_challenge
+        params["code_challenge_method"] = "S256"
     return f"{discovery['authorization_endpoint']}?{urlencode(params)}"
 
 
@@ -62,12 +88,19 @@ async def handle_callback(
     callback_url: str,
     collections: dict[str, RuntimeCollectionDescriptor] | None = None,
     registry: RepositoryRegistry | None = None,
+    code_verifier: str | None = None,
 ) -> str:
     if not provider.discovery_url:
         raise RuntimeError(f"Provider '{provider.name}' is missing discovery_url")
     discovery = await _discovery(provider.discovery_url)
 
-    token_data = await _exchange_code(provider, discovery, code, callback_url)
+    token_data = await _exchange_code(
+        provider,
+        discovery,
+        code,
+        callback_url,
+        code_verifier=code_verifier,
+    )
     claims = await _fetch_userinfo(discovery, token_data["access_token"])
 
     exp = claims.get("exp")
@@ -86,6 +119,8 @@ async def _exchange_code(
     discovery: dict[str, Any],
     code: str,
     callback_url: str,
+    *,
+    code_verifier: str | None = None,
 ) -> dict[str, Any]:
     data: dict[str, str] = {
         "grant_type": "authorization_code",
@@ -95,6 +130,8 @@ async def _exchange_code(
     }
     if provider.client_secret:
         data["client_secret"] = provider.client_secret
+    if code_verifier is not None:
+        data["code_verifier"] = code_verifier
     async with httpx.AsyncClient() as client:
         resp = await client.post(discovery["token_endpoint"], data=data)
     if resp.status_code != 200:

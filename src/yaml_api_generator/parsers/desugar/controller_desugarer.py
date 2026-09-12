@@ -183,9 +183,17 @@ class ControllerDesugarer:
         elif isinstance(op_override, dict) and "access" in op_override:
             access = op_override["access"]
 
-        return {
+        route = {
             "service": svc_key,
             "method": method,
             "path": path,
             "access": access,
         }
+        pagination = None
+        if isinstance(op_override, dict):
+            pagination = op_override.get("pagination")
+        if isinstance(route_override, dict) and "pagination" in route_override:
+            pagination = route_override["pagination"]
+        if pagination is not None:
+            route["pagination"] = pagination
+        return route

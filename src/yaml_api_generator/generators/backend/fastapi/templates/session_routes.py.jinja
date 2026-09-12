@@ -1,0 +1,12 @@
+from fastapi import APIRouter, Response
+
+from dependencies.session_cookie import clear_session_cookies
+
+router = APIRouter()
+
+
+@router.post("/auth/logout", status_code=204)
+async def logout() -> Response:
+    response = Response(status_code=204)
+    clear_session_cookies(response)
+    return response

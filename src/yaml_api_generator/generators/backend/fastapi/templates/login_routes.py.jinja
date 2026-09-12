@@ -8,14 +8,19 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from dependencies.auth import verify_password
-from dependencies.jwt_utils import create_jwt_token
-{% if ctx.session.refresh %}
-from dependencies.refresh_store import issue as issue_refresh_token, rotate as rotate_refresh_token
-{% endif %}
 {% if ctx.session.uses_cookie %}
-from dependencies.session_cookie import issue_csrf_token, set_session_cookies{% if ctx.session.refresh %}, refresh_token_from_request{% endif %}
+{% if ctx.session.refresh %}
+from dependencies.session_cookie import issue_csrf_token, refresh_token_from_request, set_session_cookies
+{% else %}
+from dependencies.session_cookie import issue_csrf_token, set_session_cookies
+{% endif %}
 {% endif %}
 from dependencies.mongodb import get_database
+{% if ctx.session.refresh %}
+from dependencies.session_tokens import issue_session, rotate_session
+{% else %}
+from dependencies.session_tokens import issue_session
+{% endif %}
 
 router = APIRouter()
 
@@ -55,24 +60,18 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if c
         if subject is None:
             continue
 
-        token = create_jwt_token(str(subject), "{{ identity.name }}")
         safe_user = {
             k: v for k, v in doc.items()
             if k not in ("password", "_id", "_auth")
         }
+        session = await issue_session(str(subject), "{{ identity.name }}")
 {% if ctx.session.uses_cookie %}
-{% if ctx.session.refresh %}
-        refresh_token = await issue_refresh_token(str(subject), "{{ identity.name }}")
-{% endif %}
         csrf_token = issue_csrf_token()
         response = JSONResponse({"user": safe_user, "csrf_token": csrf_token})
-        set_session_cookies(response, request, token, csrf_token{% if ctx.session.refresh %}, refresh_token{% endif %})
+        set_session_cookies(response, request, session["token"], csrf_token{% if ctx.session.refresh %}, session["refresh_token"]{% endif %})
         return response
-{% elif ctx.session.refresh %}
-        refresh_token = await issue_refresh_token(str(subject), "{{ identity.name }}")
-        return {"token": token, "refresh_token": refresh_token, "user": safe_user}
 {% else %}
-        return {"token": token, "user": safe_user}
+        return {**session, "user": safe_user}
 {% endif %}
 
     raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -85,25 +84,23 @@ async def refresh_{{ identity.name }}(request: Request) -> Any:
     presented = refresh_token_from_request(request)
     if presented is None:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    rotated = await rotate_refresh_token(presented)
+    rotated = await rotate_session(presented)
     if rotated is None:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    token = create_jwt_token(rotated["sub"], rotated["identity_collection"])
     csrf_token = issue_csrf_token()
     response = JSONResponse({"csrf_token": csrf_token})
-    set_session_cookies(response, request, token, csrf_token, rotated["refresh_token"])
+    set_session_cookies(response, request, rotated["token"], csrf_token, rotated["refresh_token"])
     return response
 {% else %}
 
 @router.post("/{{ identity.name }}/refresh", tags=["{{ identity.name | capitalize_collection }}"])
 async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
-    rotated = await rotate_refresh_token(payload.refresh_token)
+    rotated = await rotate_session(payload.refresh_token)
     if rotated is None:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    token = create_jwt_token(rotated["sub"], rotated["identity_collection"])
-    return {"token": token, "refresh_token": rotated["refresh_token"]}
-{% endif %}
+    return rotated
 
+{% endif %}
 {% endif %}
 {% endif %}
 {% endfor %}
