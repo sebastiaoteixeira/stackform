@@ -2,3 +2,6 @@ pymongo
 pyjwt{{ "[crypto]" if ctx.session.uses_asymmetric else "" }}
 uvicorn
 pydantic-settings
+{% for req in ctx.vendored_requirements %}
+{{ req }}
+{% endfor %}

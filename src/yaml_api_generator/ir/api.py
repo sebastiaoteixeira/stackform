@@ -21,6 +21,7 @@ eliminating repeated YAML parsing and validation.
 
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .when import WhenExpr
@@ -221,6 +222,14 @@ class IRDto:
 
 
 @dataclass(frozen=True)
+class IRVendoredImport:
+    alias: str
+    package: str
+    source: Path
+    requires: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class IRAccessRule:
     principal: str
     required_role: str | None = None
@@ -369,6 +378,8 @@ class IRDocument:
     policies: dict[str, IRPolicy] = field(default_factory=dict)
     session: IRSession = field(default_factory=IRSession)
     ui_config: dict[str, Any] | None = None
+    vendored_imports: tuple[IRVendoredImport, ...] = ()
+    vendored_requirements: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

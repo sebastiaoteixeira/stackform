@@ -18,9 +18,6 @@ from fastapi.openapi.utils import get_openapi
 {% endfor %}
 {% set uses_sql = (col_types | select("in", ["postgres", "postgresql"]) | list | length) > 0 %}
 {% set uses_mongo = ((col_types | select("in", ["mongodb", "mongo"]) | list | length) > 0) or not uses_sql %}
-{% if uses_mongo %}
-from dependencies.mongodb import connect_db as connect_mongo, close_db as close_mongo, initialize_indexes as initialize_mongo_indexes
-{% endif %}
 {% set mongo_unique_indexes = {} %}
 {% for col_name, col in ctx.collections.items() %}
 {% if col.datastore_type in ["mongodb", "mongo"] %}
@@ -31,6 +28,13 @@ from dependencies.mongodb import connect_db as connect_mongo, close_db as close_
 {% if _unique %}{% set _ = mongo_unique_indexes.update({col_name: _unique}) %}{% endif %}
 {% endif %}
 {% endfor %}
+{% set create_mongo_indexes = uses_mongo and mongo_unique_indexes and not ctx.mongo_schema_managed %}
+{% if uses_mongo %}
+from dependencies.mongodb import connect_db as connect_mongo, close_db as close_mongo
+{% endif %}
+{% if create_mongo_indexes %}
+from dependencies.mongodb import initialize_indexes as initialize_mongo_indexes
+{% endif %}
 {% if uses_sql %}
 from dependencies.postgres import connect_db as connect_pg, close_db as close_pg
 {% endif %}
@@ -44,7 +48,7 @@ from routes.jwks import router as jwks_router
 async def lifespan(app: FastAPI):
 {% if uses_mongo %}
     connect_mongo()
-{% if mongo_unique_indexes %}
+{% if create_mongo_indexes %}
     await initialize_mongo_indexes({{ mongo_unique_indexes | tojson }})
 {% endif %}
 {% endif %}

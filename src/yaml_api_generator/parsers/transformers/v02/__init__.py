@@ -47,7 +47,7 @@ class V02Transformer:
         """
         api_data: dict[str, Any] = resolved.get("api", {})
         defaults = api_data.get("operations", {}).get("defaults", {})
-        import_map = self._route._resolve_imports(resolved.get("imports", {}))
+        import_map, vendored_imports, vendored_requirements = self._process_imports(resolved)
         entities_data: dict[str, Any] = resolved.get("entities", {})
         repos_data: dict[str, Any] = resolved.get("repositories", {})
         services_data: dict[str, Any] = resolved.get("services", {})
@@ -83,7 +83,8 @@ class V02Transformer:
             raise ConfigErrors(id_errors)
 
         repositories, repo_errors = self._repository.transform(
-            repos_data, defaults, datastore_names, default_datastore, datastore_types
+            repos_data, defaults, datastore_names, default_datastore, datastore_types,
+            handler_resolver=self._operation_handler_resolver(import_map),
         )
         if repo_errors:
             raise ConfigErrors(repo_errors)
@@ -149,11 +150,21 @@ class V02Transformer:
             policies=policies,
             session=self._build_session(resolved.get("session", {})),
             ui_config=resolved.get("ui"),
+            vendored_imports=vendored_imports,
+            vendored_requirements=vendored_requirements,
         )
 
     @staticmethod
     def _build_session(session_data: dict[str, Any]) -> IRSession:
         return IRSession(algorithm=session_data.get("algorithm", "HS256"))
+
+    def _process_imports(
+        self, resolved: dict[str, Any]
+    ) -> tuple[dict[str, str], tuple[Any, ...], tuple[str, ...]]:
+        return self._route._resolve_imports(resolved.get("imports", {})), (), ()
+
+    def _operation_handler_resolver(self, import_map: dict[str, str]):
+        return lambda handler: handler
 
     def _expand_route_policies(
         self,
