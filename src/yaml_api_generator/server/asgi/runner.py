@@ -1,6 +1,7 @@
 import json
 import re
 from typing import Any
+from urllib.parse import parse_qs
 
 from yaml_api_generator.ir import IRDocument
 from ..common.server_context import RuntimeContext, RuntimeRouteDescriptor
@@ -15,7 +16,10 @@ _RouteEntry = tuple[re.Pattern[str], Pipeline, RuntimeRouteDescriptor]
 
 
 def _compile_path(path: str) -> re.Pattern[str]:
-    regex = re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", path)
+    regex = "".join(
+        f"(?P<{part[1:-1]}>[^/]+)" if part.startswith("{") else re.escape(part)
+        for part in re.split(r"(\{\w+\})", path)
+    )
     return re.compile(f"^{regex}$")
 
 
@@ -83,11 +87,14 @@ class ASGIApp:
             for k, v in scope.get("headers", [])
         }
 
+        query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+
         try:
             ctx = await pipeline.run(
                 headers=headers,
                 url_params=url_params,
                 body=body,
+                query=query,
             )
         except UnauthorizedError as exc:
             await self._send_json(send, 401, {"detail": str(exc)})

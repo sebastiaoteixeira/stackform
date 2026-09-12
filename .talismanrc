@@ -1,3 +1,6 @@
+fileignoreconfig:
+- filename: uv.lock
+  checksum: 7f1496e619d629a6b3585aba2252f145088b3ae2f8e79584bc1257f16522ebdd
 threshold: medium
 fileignoreconfig:
 - filename: uv.lock

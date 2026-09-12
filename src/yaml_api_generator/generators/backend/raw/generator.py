@@ -8,7 +8,12 @@ from yaml_api_generator.generators.backend.builders.settings_builder import buil
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from ..validation import reject_idp_trust, reject_session_refresh
+from ..validation import (
+    reject_idp_trust,
+    reject_pagination,
+    reject_session_refresh,
+    reject_unsigned_session_algorithm,
+)
 from ..fastapi import access_filters
 
 
@@ -28,6 +33,8 @@ class RawASGIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         reject_idp_trust(context, "raw")
         reject_session_refresh(context, "raw")
+        reject_pagination(context, "raw")
+        reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([
                 FileSystemLoader(str(_TEMPLATES_DIR)),
@@ -37,6 +44,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        env.globals["settings_module"] = "settings"
         env.filters["path_to_regex"] = _path_to_regex
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
@@ -69,6 +77,14 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_routes(env, context, collections_by_name, output_dir)
         if context.auth.has_password_auth:
             self._render_login_routes(env, context, output_dir)
+        if context.session.uses_asymmetric:
+            self._render_single_file(
+                env, context, output_dir,
+                SingleFileRenderConfig(
+                    template_name="jwks_routes.py.jinja",
+                    output_path="routes/jwks.py",
+                )
+            )
         self._render_app(env, context, output_dir)
         self._render_validation(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)

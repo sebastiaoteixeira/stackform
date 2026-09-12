@@ -128,7 +128,6 @@ def register_fastapi_routes(
 ) -> dict[tuple[str, str], Pipeline]:
     pipelines: dict[tuple[str, str], Pipeline] = {}
     pipeline_builder = PipelineBuilder(ctx=ctx, registry=registry)
-    session_tokens = pipeline_builder.session_tokens
 
     for route in ctx.routes:
         pipeline = pipeline_builder.build_for_route(route)
@@ -154,7 +153,7 @@ def register_fastapi_routes(
             openapi_extra=openapi_extra,
         )
 
-    register_provider_routes(app, ctx, registry, session_tokens)
+    register_provider_routes(app, ctx, registry, pipeline_builder.tokens)
     _configure_openapi_security(app, ctx.auth)
 
     return pipelines

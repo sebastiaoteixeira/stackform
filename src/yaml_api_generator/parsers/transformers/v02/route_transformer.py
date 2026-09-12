@@ -129,6 +129,7 @@ class RouteTransformer:
         repo_entity_map: dict[str, str],
         auth_entities: set[str],
         entity_to_collection: dict[str, str],
+        pagination_parser=None,
     ) -> list[IRRoute]:
         """Transform controller routes to IR.
 
@@ -189,6 +190,15 @@ class RouteTransformer:
                 collection = service.repository
                 operation = service.operation or route_name
 
+                pagination = None
+                if pagination_parser is not None:
+                    pagination, pagination_errors = pagination_parser(
+                        route_cfg.get("pagination"),
+                        collection,
+                        f"controllers.{ctrl_name}.operations.{operation}.pagination",
+                    )
+                    all_errors.extend(pagination_errors)
+
                 routes.append(
                     IRRoute(
                         method=route_cfg["method"],
@@ -199,6 +209,7 @@ class RouteTransformer:
                         is_public=is_public,
                         access_rules=access_rules,
                         handler=handler,
+                        pagination=pagination,
                     )
                 )
 

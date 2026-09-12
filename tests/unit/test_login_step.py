@@ -1,7 +1,6 @@
 import pytest
 
 from yaml_api_generator.ir import IRProviderBinding, IRSession
-from yaml_api_generator.server.common.auth.jwt import decode_jwt_token
 from yaml_api_generator.server.common.auth.password import hash_password
 from yaml_api_generator.server.common.auth.session_tokens import SessionTokens
 from yaml_api_generator.server.common.request_context import RequestContext
@@ -11,6 +10,9 @@ from yaml_api_generator.server.common.steps.authorization import UnauthorizedErr
 from yaml_api_generator.server.common.steps.login import LoginStep
 from tests.unit.support.repositories import InMemoryRepository
 from .test_repository_steps import _make_ctx
+
+
+TOKENS = SessionTokens(IRSession())
 
 
 def _make_identity() -> RuntimeIdentityDescriptor:
@@ -34,7 +36,7 @@ def _seed_user(repo: InMemoryRepository, email="a@b.com", password="secret123") 
 
 
 def _login_step(identity, repo):
-    return LoginStep(identity, "id", repo, SessionTokens(IRSession()))
+    return LoginStep(identity, "id", repo, TOKENS)
 
 
 @pytest.mark.asyncio
@@ -166,7 +168,7 @@ async def test_login_jwt_token_contains_sub_and_identity_collection():
         body={"email": "a@b.com", "password": "secret123"},
     )
     result = await step(ctx)
-    claims = decode_jwt_token(result.response["token"])
+    claims = TOKENS.decode(result.response["token"])
     assert claims is not None
     assert claims["sub"] == "user-1"
     assert claims["identity_collection"] == "users"

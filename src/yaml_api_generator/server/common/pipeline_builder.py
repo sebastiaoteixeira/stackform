@@ -2,13 +2,13 @@ import importlib
 from collections.abc import Iterator
 
 from yaml_api_generator.ir import IRDocumentBinding
-
 from .auth.session_tokens import SessionTokens
 from .server_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
 from .steps import (
     AuthorizeRouteStep,
+    JWKSStep,
     LoginStep,
     PostFetchAuthorizeStep,
     ResolveAccessBindStep,
@@ -58,9 +58,13 @@ class PipelineBuilder:
     def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
         self._ctx = ctx
         self._registry = registry
-        self.session_tokens = SessionTokens(ctx.session)
+        self._tokens = SessionTokens(ctx.session)
         for name, col in ctx.collections.items():
             registry.for_collection(name).register_id_field(name, col.id_field)
+
+    @property
+    def tokens(self) -> SessionTokens:
+        return self._tokens
 
     def build_for_route(self, route: RuntimeRouteDescriptor) -> Pipeline:
         if route.handler is not None:
@@ -70,11 +74,24 @@ class PipelineBuilder:
 
         if route.operation == "refresh":
             return Pipeline(
-                steps=[RefreshStep(self.session_tokens)],
+                steps=[RefreshStep(self._tokens)],
                 method=route.method,
                 path=route.path,
                 api_version=self._ctx.app.api_version,
                 collection=route.collection,
+
+                operation=route.operation,
+                repository=repository,
+                repositories=self._registry,
+            )
+
+        if route.operation == "jwks":
+            return Pipeline(
+                steps=[JWKSStep(self._tokens)],
+                method=route.method,
+                path=route.path,
+                api_version=None,
+                collection=None,
                 operation=route.operation,
                 repository=repository,
                 repositories=self._registry,
@@ -90,7 +107,7 @@ class PipelineBuilder:
                         identity,
                         collection.id_field,
                         repository,
-                        self.session_tokens,
+                        self._tokens,
                     ),
                 ],
                 method=route.method,
@@ -172,6 +189,7 @@ class PipelineBuilder:
                     self._registry,
                     self._ctx.auth.providers,
                     self._ctx.collections,
+                    tokens=self._tokens,
                 )
             )
 
@@ -229,7 +247,7 @@ class PipelineBuilder:
         )
 
         if operation == "list":
-            return RepositoryListStep(collection_name, id_field)
+            return RepositoryListStep(collection_name, id_field, route.pagination)
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field, self._locator(route))
         if operation == "create":

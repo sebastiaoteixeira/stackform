@@ -87,6 +87,28 @@ class IRDeploy:
 
 
 @dataclass(frozen=True)
+class IRSortKey:
+    field: str
+    dir: str = "asc"
+
+
+@dataclass(frozen=True)
+class IRPageSize:
+    default: int
+    max: int
+
+
+@dataclass(frozen=True)
+class IRPagination:
+    strategy: str
+    size: IRPageSize
+    count: str = "none"
+    on_overflow: str = "clamp"
+    envelope: bool = False
+    sort: tuple[IRSortKey, ...] = ()
+
+
+@dataclass(frozen=True)
 class IROperation:
     name: str
     query: dict | None = None
@@ -135,6 +157,10 @@ class IRSession:
     algorithm: str = "HS256"
     ttl: int | None = None
     refresh: bool = False
+
+    @property
+    def uses_asymmetric(self) -> bool:
+        return self.algorithm == "RS256"
 
 
 @dataclass(frozen=True)
@@ -277,6 +303,7 @@ class IRRoute:
     is_public: bool = True
     access_rules: list[IRAccessRule] | None = None
     handler: str | None = None
+    pagination: IRPagination | None = None
 
 
 @dataclass(frozen=True)

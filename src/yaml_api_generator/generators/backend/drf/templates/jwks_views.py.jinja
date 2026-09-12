@@ -1,0 +1,14 @@
+from drf_spectacular.utils import extend_schema
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from api.authentication.jwt_utils import public_jwks
+
+
+class JWKSView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @extend_schema(tags=["JWKS"], auth=[])
+    def get(self, request):
+        return Response(public_jwks())

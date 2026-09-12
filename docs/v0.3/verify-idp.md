@@ -117,6 +117,13 @@ A token that carries no identifier claim (a machine-to-machine token) resolves
 to a service principal marked `is_service` with no record, and creates no user
 row.
 
+## The other direction
+
+This page covers tokens the app verifies. For tokens the app mints and signs
+itself, and the JWKS endpoint that publishes the key for them, see
+[RS256 session tokens](./rs256-signing.md). A spec may use both: the two never
+share key material.
+
 ## Testing note
 
 `yaml-api run` does not mount provider routes, so this behaviour is covered by

@@ -8,7 +8,7 @@ from yaml_api_generator.ir import (
     IRRequestBinding,
     WhereRhs,
 )
-from yaml_api_generator.ir.api import IRRolesConfig, IRSession
+from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
 
 
@@ -73,6 +73,7 @@ class RuntimeRouteDescriptor:
     access_rules: list[RuntimeAccessRule] | None = None
     service_input: dict[str, Any] | None = None
     service_forwarding: dict[str, Any] = field(default_factory=dict)
+    pagination: IRPagination | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,17 @@ class RuntimeAuthConfig:
     # Transitively expanded: collection_name -> role -> set of included roles
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
     providers: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RuntimeSessionConfig:
+    algorithm: str = "HS256"
+    ttl: int | None = None
+    refresh: bool = False
+
+    @property
+    def uses_asymmetric(self) -> bool:
+        return self.algorithm == "RS256"
 
 
 @dataclass(frozen=True)
@@ -101,4 +113,4 @@ class RuntimeContext:
     auth: RuntimeAuthConfig
     operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)
     spec_version: str = "0.2"
-    session: IRSession = field(default_factory=IRSession)
+    session: RuntimeSessionConfig = field(default_factory=RuntimeSessionConfig)

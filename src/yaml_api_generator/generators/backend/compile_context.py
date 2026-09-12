@@ -13,10 +13,11 @@ Key types:
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ...ir.api import IRProvider, IRRolesConfig, IRService
+from ...ir.api import IRPagination, IRProvider, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
 
 
@@ -59,11 +60,10 @@ class SettingField:
     """
 
     env_name: str
-    python_type: str  # "str" | "int"
-    default: str | None  # None -> required field
+    python_type: str
+    default: str | None
     secret: bool = False
-    generated: bool = False
-    secret_kind: str = "token"  # "token" | "rsa_private_key"
+    generator: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +157,7 @@ class RouteDescriptor:
     id_field: str | None = None
     service_input: dict[str, Any] = field(default_factory=dict)
     service_forwarding: dict[str, dict[str, Any]] = field(default_factory=dict)
+    pagination: IRPagination | None = None
 
     @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:

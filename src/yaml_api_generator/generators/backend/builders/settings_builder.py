@@ -1,10 +1,21 @@
 from secrets import token_urlsafe
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-
 from ..compile_context import CompileContext, SettingField
 from ....ir.api import IROIDCProvider
+from ....utils.rsa_keys import generate_private_key_pem
+
+
+def _dotenv_pem() -> str:
+    """A fresh RSA private key as a double-quoted single-line dotenv value.
+
+    PEM newlines are escaped as ``\\n`` inside double quotes so python-dotenv
+    restores the real newlines when the generated app loads its ``.env``.
+    """
+    return '"' + generate_private_key_pem().replace("\n", "\\n") + '"'
+
+
+def _token() -> str:
+    return token_urlsafe(32)
 
 
 def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
@@ -39,12 +50,10 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
 
         if ctx.auth.uses_jwt:
             if ctx.session.uses_asymmetric:
-                add(SettingField(
-                    "JWT_PRIVATE_KEY", "str", None,
-                    secret=True, generated=True, secret_kind="rsa_private_key",
-                ))
+                add(SettingField("JWT_PRIVATE_KEY", "str", None, secret=True, generator=_dotenv_pem))
+                add(SettingField("JWT_RETIRED_PUBLIC_KEY", "str", ""))
             else:
-                add(SettingField("JWT_SECRET", "str", None, secret=True, generated=True))
+                add(SettingField("JWT_SECRET", "str", None, secret=True, generator=_token))
             if ctx.session.refresh:
                 add(SettingField(
                     "JWT_ACCESS_TTL_SECONDS", "int", str(ctx.session.ttl or 900)
@@ -58,7 +67,7 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
             for provider_name, provider in ctx.auth.providers.items():
                 if isinstance(provider, IROIDCProvider) and provider.client_secret is not None:
                     env_name = f"{provider_name.upper()}_CLIENT_SECRET"
-                    add(SettingField(env_name, "str", None, secret=True, generated=False))
+                    add(SettingField(env_name, "str", None, secret=True))
 
     add(SettingField("HOST", "str", "127.0.0.1"))
     add(SettingField("PORT", "int", str(ctx.app.port)))
@@ -66,26 +75,6 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
     return fields
 
 
-def _rsa_private_key_env_value() -> str:
-    """A fresh RSA private key as a double-quoted single-line dotenv value.
-
-    PEM newlines are escaped as ``\\n`` inside double quotes so python-dotenv
-    restores the real newlines when the generated app loads its ``.env``.
-    """
-    pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode()
-    return '"' + pem.replace("\n", "\\n") + '"'
-
-
-def _generated_value(field: SettingField) -> str:
-    if field.secret_kind == "rsa_private_key":
-        return _rsa_private_key_env_value()
-    return token_urlsafe(32)
-
-
 def generated_secret_values(fields: list[SettingField]) -> dict[str, str]:
-    """Return a mapping of env_name -> generated value for generated secrets."""
-    return {f.env_name: _generated_value(f) for f in fields if f.generated}
+    """Return a mapping of env_name -> freshly generated value."""
+    return {f.env_name: f.generator() for f in fields if f.generator is not None}
