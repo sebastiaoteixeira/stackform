@@ -21,6 +21,9 @@ from api.repositories.{{ collection_name }} import {{ collection_name | capitali
 from api.services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from api.services.exceptions import NotFoundError, ValidationError
 from api.service_inputs import prepare_service_inputs, resolve_access_bind, resolve_bindings
+{% if routes | selectattr("pagination") | list %}
+from api.pagination import build_response, map_request
+{% endif %}
 from api.authentication.mongodb import get_database
 {% set needs_auth = routes | selectattr("needs_auth") | list %}
 {% if needs_auth %}
@@ -190,8 +193,15 @@ class {{ class_name }}ListView(APIView):
         try:
             prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
 {% if route.operation == "list" %}
+{% if route.pagination %}
+            pagination_config = {{ route.pagination | pagination_config | py_literal }}
+            pagination_query = dict(request.query_params)
+            page = await service.list(map_request(pagination_config, pagination_query))
+            return Response(build_response(pagination_config, page, pagination_query))
+{% else %}
             documents = await service.list()
             return Response(documents)
+{% endif %}
 {% elif route.operation == "create" %}
             serializer = {{ route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)

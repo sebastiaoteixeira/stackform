@@ -7,12 +7,16 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
-from ..utils import find_identity, group_by_collection, extract_identity_fields
+from ..utils import (
+    extract_identity_fields,
+    find_identity,
+    group_by_collection,
+    pagination_config,
+)
 from ..validation import (
     reject_cookie_delivery,
     reject_dpop,
     reject_idp_trust,
-    reject_pagination,
     reject_pkce,
     reject_session_refresh,
     reject_unsigned_session_algorithm,
@@ -23,6 +27,7 @@ from ..fastapi import access_filters
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "raw" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
+_PAGINATION_SOURCE = Path(__file__).parents[3] / "pagination.py"
 
 
 def _path_to_regex(path: str) -> str:
@@ -38,7 +43,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
         reject_dpop(context, "raw")
         reject_idp_trust(context, "raw")
         reject_session_refresh(context, "raw")
-        reject_pagination(context, "raw")
         reject_pkce(context, "raw")
         reject_unsigned_session_algorithm(context)
         env = Environment(
@@ -54,6 +58,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["path_to_regex"] = _path_to_regex
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
+        env.filters["pagination_config"] = pagination_config
         env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
@@ -75,6 +80,9 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 template_name="service_inputs.py.jinja",
                 output_path="service_inputs.py",
             ),
+        )
+        (output_dir / "pagination.py").write_text(
+            _PAGINATION_SOURCE.read_text()
         )
 
         collections_by_name = group_by_collection(context)
@@ -202,6 +210,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
                     "conflict_import": "conflicts",
+                    "pagination_import": "pagination",
                 },
             )
         )

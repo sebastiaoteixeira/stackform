@@ -5,6 +5,9 @@ from repositories.{{ collection_name }} import {{ collection_name | capitalize_c
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from services.exceptions import NotFoundError, ValidationError
 from service_inputs import RawRequest, prepare_service_inputs, resolve_access_bind, resolve_bindings
+{% if routes | selectattr("pagination") | list %}
+from pagination import build_response, map_request
+{% endif %}
 {% if needs_auth %}
 from dependencies.auth import resolve_principal
 {% endif %}
@@ -171,8 +174,15 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% else %}
     try:
 {% if route.operation == "list" %}
+{% if route.pagination %}
+        pagination_config = {{ route.pagination | pagination_config | py_literal }}
+        pagination_query = query or {}
+        page = await service.list(map_request(pagination_config, pagination_query))
+        return 200, build_response(pagination_config, page, pagination_query)
+{% else %}
         documents = await service.list()
         return 200, documents
+{% endif %}
 {% elif route.operation == "get" %}
 {% if route.record_parent_params %}
         document = await service.get_by({{ record_criteria(route) }})

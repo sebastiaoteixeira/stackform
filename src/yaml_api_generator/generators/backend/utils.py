@@ -1,5 +1,24 @@
 """Shared utilities for backend generators."""
+from yaml_api_generator.ir.api import IRPagination
+
 from .compile_context import CompileContext, IdentityCollectionDescriptor
+
+
+def pagination_config(pagination: IRPagination) -> dict:
+    return {
+        "strategy": pagination.strategy,
+        "size": {
+            "default": pagination.size.default,
+            "max": pagination.size.max,
+        },
+        "count": pagination.count,
+        "on_overflow": pagination.on_overflow,
+        "envelope": pagination.envelope,
+        "sort": [
+            {"field": key.field, "dir": key.dir}
+            for key in pagination.sort
+        ],
+    }
 
 
 def find_identity(

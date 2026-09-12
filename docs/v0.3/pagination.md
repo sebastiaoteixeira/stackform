@@ -7,10 +7,8 @@ title: Pagination
 Pagination is decomposed across three layers and declared **explicitly only at
 the controller**. The repository exposes generic primitives implicitly; the
 service maps the request onto them implicitly. All pagination behavior is gated
-on `version: "0.3"`. It is implemented by `yaml-api run`. Generated FastAPI,
-DRF, and raw backends reject paginated operations at build time because their
-emitted repositories still list unbounded; they never silently ignore the
-declaration.
+on `version: "0.3"`. It is implemented by `yaml-api run` and by generated
+FastAPI, DRF, and raw ASGI backends.
 
 ## The three layers
 
@@ -21,7 +19,7 @@ applies whichever are populated:
 
 | primitive | meaning |
 |-----------|---------|
-| `limit`   | maximum rows returned (`int >= 0`) |
+| `limit`   | maximum rows returned (positive for keyset; non-negative for offset) |
 | `skip`    | rows skipped before returning (`int >= 0`) |
 | `sort`    | ordered list of `{ field, dir: asc\|desc }` |
 | `bounds`  | ordered comparison keys compiled lexicographically |
@@ -93,10 +91,13 @@ rejected with `422` when `onOverflow: reject`.
 ### keyset
 
 `?after=&limit=` with a **required** `sort`. The last sort field is the
-tiebreaker and must be unique and indexed, otherwise the build fails. `after`
+tiebreaker and must be unique and indexed, and every sort field must be required
+and non-null; otherwise the build fails. `after`
 is an opaque base64url token encoding the previous page's sort position; the
 service turns it into a compound lexicographic bound. Forward paging is stable
-under concurrent inserts.
+under concurrent inserts. Keyset page sizes must be positive because a zero-item
+page cannot provide a continuation position. Invalid, negative, or zero keyset
+limits return `422`.
 
 ```yaml
 pagination:
@@ -140,4 +141,4 @@ to pass as `after` for the following page (`null` on the last page), and
 | `PAGINATION_SORT_FIELD_UNKNOWN` | a sort field is not a field of the entity |
 | `PAGINATION_KEYSET_SORT_REQUIRED` | keyset declared without a `sort` |
 | `PAGINATION_KEYSET_TIEBREAKER_NOT_UNIQUE` | the last keyset sort field is not unique/indexed |
-| `BACKEND_FEATURE_UNSUPPORTED` | a generated backend is asked to emit pagination |
+| `PAGINATION_KEYSET_SORT_FIELD_NULLABLE` | a keyset sort field is not required/non-null |

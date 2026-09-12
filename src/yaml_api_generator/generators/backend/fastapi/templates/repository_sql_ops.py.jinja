@@ -1,3 +1,4 @@
+import operator
 import sqlite3
 import uuid
 from collections.abc import Callable
@@ -8,6 +9,27 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from conflicts import ConflictError
+from dependencies.pagination import Page, Primitives, expand_bound
+
+
+_PAGINATION_COMPARATORS = {
+    "gt": operator.gt,
+    "gte": operator.ge,
+    "lt": operator.lt,
+    "lte": operator.le,
+}
+
+
+def _pagination_bounds(table: sa.Table, primitives: Primitives) -> list[Any]:
+    clauses = []
+    for bound in primitives.bounds:
+        disjuncts = []
+        for equalities, key in expand_bound(bound):
+            terms = [table.c[field] == value for field, value in equalities]
+            terms.append(_PAGINATION_COMPARATORS[key.op](table.c[key.field], key.value))
+            disjuncts.append(sa.and_(*terms))
+        clauses.append(sa.or_(*disjuncts))
+    return clauses
 
 
 def _is_unique_violation(error: IntegrityError) -> bool:
@@ -186,6 +208,28 @@ class ListOp:
         async with self._engine.connect() as conn:
             result = await conn.execute(sa.select(self.TABLE))
             return [dict(row._mapping) for row in result]
+
+    async def paginate(self, primitives: Primitives) -> Page:
+        statement = sa.select(self.TABLE)
+        clauses = _pagination_bounds(self.TABLE, primitives)
+        if clauses:
+            statement = statement.where(sa.and_(*clauses))
+        for key in primitives.sort:
+            column = self.TABLE.c[key.field]
+            statement = statement.order_by(
+                column.desc() if key.descending else column.asc()
+            )
+        if primitives.skip:
+            statement = statement.offset(primitives.skip)
+        if primitives.limit is not None:
+            statement = statement.limit(primitives.limit)
+        async with self._engine.connect() as conn:
+            rows = [dict(row._mapping) for row in await conn.execute(statement)]
+            total = None
+            if primitives.count == "exact":
+                count_statement = sa.select(sa.func.count()).select_from(self.TABLE)
+                total = (await conn.execute(count_statement)).scalar()
+        return Page(rows, total)
 
 
 class GetOp:

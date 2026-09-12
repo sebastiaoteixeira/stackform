@@ -1,5 +1,32 @@
+import operator
 from abc import ABC, abstractmethod
 from typing import Any
+
+from ..pagination import Page, Primitives, expand_bound
+
+
+_BOUND_COMPARATORS = {
+    "gt": operator.gt,
+    "gte": operator.ge,
+    "lt": operator.lt,
+    "lte": operator.le,
+}
+
+
+def _matches_bound(document: dict[str, Any], bound) -> bool:
+    def compare(key) -> bool:
+        value = document.get(key.field)
+        return (
+            value is not None
+            and key.value is not None
+            and _BOUND_COMPARATORS[key.op](value, key.value)
+        )
+
+    return any(
+        all(document.get(field) == value for field, value in equalities)
+        and compare(key)
+        for equalities, key in expand_bound(bound)
+    )
 
 
 class ConflictError(Exception):
@@ -39,6 +66,32 @@ class BaseRepository(ABC):
     @abstractmethod
     async def list(self, collection_name: str) -> list[dict[str, Any]]:
         raise NotImplementedError
+
+    async def paginate(
+        self,
+        collection_name: str,
+        primitives: Primitives,
+    ) -> Page:
+        documents = await self.list(collection_name)
+        total = len(documents) if primitives.count == "exact" else None
+        rows = [
+            document
+            for document in documents
+            if all(_matches_bound(document, bound) for bound in primitives.bounds)
+        ]
+        for key in reversed(primitives.sort):
+            rows.sort(
+                key=lambda document: (
+                    document.get(key.field) is None,
+                    document.get(key.field),
+                ),
+                reverse=key.descending,
+            )
+        if primitives.skip:
+            rows = rows[primitives.skip:]
+        if primitives.limit is not None:
+            rows = rows[:primitives.limit]
+        return Page(rows, total)
 
     @abstractmethod
     async def get(

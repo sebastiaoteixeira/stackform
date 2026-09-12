@@ -103,6 +103,12 @@ def parse_pagination(
 
     if strategy == "keyset":
         errors.extend(_validate_keyset(sort, collection, path))
+        if not size_errors and size.default == 0:
+            errors.append(ConfigError(
+                code="PAGINATION_INVALID_SIZE",
+                message="keyset pagination size.default must be positive",
+                path=f"{path}.size.default",
+            ))
 
     if errors:
         return None, errors
@@ -203,6 +209,17 @@ def _validate_keyset(
         )]
     if collection is None:
         return []
+    nullable = [key.field for key in sort if not _is_required(collection, key.field)]
+    if nullable:
+        return [ConfigError(
+            code="PAGINATION_KEYSET_SORT_FIELD_NULLABLE",
+            message=(
+                "keyset sort fields must be required and non-null: "
+                + ", ".join(nullable)
+            ),
+            path=f"{path}.sort",
+            hint="Mark every keyset sort field 'required: true' or use the id field",
+        )]
     tiebreaker = sort[-1].field
     if not _is_unique(collection, tiebreaker):
         return [ConfigError(
@@ -225,3 +242,10 @@ def _is_unique(collection: IRCollection, field: str) -> bool:
         return True
     cfg = collection.fields.get(field)
     return isinstance(cfg, dict) and (bool(cfg.get("unique")) or cfg.get("type") == "id")
+
+
+def _is_required(collection: IRCollection, field: str) -> bool:
+    if field == collection.idField:
+        return True
+    cfg = collection.fields.get(field)
+    return isinstance(cfg, dict) and bool(cfg.get("required"))

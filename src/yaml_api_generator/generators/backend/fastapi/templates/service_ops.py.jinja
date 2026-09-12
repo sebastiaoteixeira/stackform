@@ -50,10 +50,14 @@ class ServiceBase:
 
 
 class ListSvc:
-    async def list(self) -> list[dict]:
-        documents = await self._repo.list()
-        await self._after_list(documents)
-        return documents
+    async def list(self, primitives: Any = None) -> Any:
+        if primitives is None:
+            documents = await self._repo.list()
+            await self._after_list(documents)
+            return documents
+        page = await self._repo.paginate(primitives)
+        await self._after_list(page.rows)
+        return page
 
 
 class GetSvc:

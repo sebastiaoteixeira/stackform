@@ -10,8 +10,10 @@ class {{ collection_name | capitalize_collection }}Service:
         self._repo = repo
 
 {% if is_async %}
-    async def list(self) -> list[dict]:
-        return await self._repo.list()
+    async def list(self, primitives=None):
+        if primitives is None:
+            return await self._repo.list()
+        return await self._repo.paginate(primitives)
 
     async def get(self, resource_id: str) -> dict:
         document = await self._repo.get(resource_id)
@@ -82,8 +84,10 @@ class {{ collection_name | capitalize_collection }}Service:
             raise NotFoundError("{{ collection_name }}", criteria)
         return document
 {% else %}
-    def list(self) -> list[dict]:
-        return self._repo.list()
+    def list(self, primitives=None):
+        if primitives is None:
+            return self._repo.list()
+        return self._repo.paginate(primitives)
 
     def get(self, resource_id: str) -> dict:
         document = self._repo.get(resource_id)
