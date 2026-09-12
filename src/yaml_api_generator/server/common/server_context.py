@@ -8,7 +8,7 @@ from yaml_api_generator.ir import (
     IRRequestBinding,
     WhereRhs,
 )
-from yaml_api_generator.ir.api import IRRolesConfig
+from yaml_api_generator.ir.api import IRRolesConfig, IRSession
 from yaml_api_generator.ir.when import WhenExpr
 
 
@@ -101,3 +101,4 @@ class RuntimeContext:
     auth: RuntimeAuthConfig
     operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)
     spec_version: str = "0.2"
+    session: IRSession = field(default_factory=IRSession)

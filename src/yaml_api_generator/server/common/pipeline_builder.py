@@ -2,6 +2,8 @@ import importlib
 from collections.abc import Iterator
 
 from yaml_api_generator.ir import IRDocumentBinding
+
+from .auth.session_tokens import SessionTokens
 from .server_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
@@ -16,6 +18,7 @@ from .steps import (
     RepositoryListStep,
     RepositoryOperationStep,
     RepositoryReplaceStep,
+    RefreshStep,
     RepositoryUpdateStep,
     ResolvePrincipalStep,
     ResolveWhereBindingsStep,
@@ -55,6 +58,7 @@ class PipelineBuilder:
     def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
         self._ctx = ctx
         self._registry = registry
+        self.session_tokens = SessionTokens(ctx.session)
         for name, col in ctx.collections.items():
             registry.for_collection(name).register_id_field(name, col.id_field)
 
@@ -64,13 +68,30 @@ class PipelineBuilder:
 
         repository = self._registry.for_collection(route.collection)
 
+        if route.operation == "refresh":
+            return Pipeline(
+                steps=[RefreshStep(self.session_tokens)],
+                method=route.method,
+                path=route.path,
+                api_version=self._ctx.app.api_version,
+                collection=route.collection,
+                operation=route.operation,
+                repository=repository,
+                repositories=self._registry,
+            )
+
         if route.operation == "login":
             identity = self._ctx.auth.identity_collections.get(route.collection)
             collection = self._ctx.collections[route.collection]
             return Pipeline(
                 steps=[
                     ValidateBodyStep(collection, "login", identity),
-                    LoginStep(identity, collection.id_field, repository),
+                    LoginStep(
+                        identity,
+                        collection.id_field,
+                        repository,
+                        self.session_tokens,
+                    ),
                 ],
                 method=route.method,
                 path=route.path,

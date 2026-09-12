@@ -22,6 +22,7 @@ from .authorization import (
     ValidateIdentityCreateStep,
 )
 from .login import LoginStep
+from .refresh import RefreshStep
 from .repositories import (
     RepositoryCreateStep,
     RepositoryDeleteStep,
@@ -49,6 +50,7 @@ __all__ = [
     "UnauthorizedError",
     "ForbiddenError",
     "LoginStep",
+    "RefreshStep",
     "ValidateBodyStep",
     "RepositoryListStep",
     "RepositoryGetStep",

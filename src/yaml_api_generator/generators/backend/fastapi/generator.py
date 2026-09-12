@@ -434,9 +434,12 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.auth.uses_jwt:
             auth_files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
+            auth_files.append(("session_tokens.py.jinja", "session_tokens.py"))
+            init_imports.append("from .session_tokens import issue_session")
         if context.session.refresh:
-            auth_files.append(("refresh_store.py.jinja", "refresh_store.py"))
-            init_imports.append("from .refresh_store import issue, rotate, revoke_session")
+            init_imports.append(
+                "from .session_tokens import revoke_session, rotate_session"
+            )
 
         for template_name, filename in auth_files:
             (deps_dir / filename).write_text(

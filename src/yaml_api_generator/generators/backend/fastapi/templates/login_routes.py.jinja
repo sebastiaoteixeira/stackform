@@ -4,11 +4,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from dependencies.auth import verify_password
-from dependencies.jwt_utils import create_jwt_token
-{% if ctx.session.refresh %}
-from dependencies.refresh_store import issue as issue_refresh_token, rotate as rotate_refresh_token
-{% endif %}
 from dependencies.mongodb import get_database
+{% if ctx.session.refresh %}
+from dependencies.session_tokens import issue_session, rotate_session
+{% else %}
+from dependencies.session_tokens import issue_session
+{% endif %}
 
 router = APIRouter()
 
@@ -48,17 +49,12 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
         if subject is None:
             continue
 
-        token = create_jwt_token(str(subject), "{{ identity.name }}")
         safe_user = {
             k: v for k, v in doc.items()
             if k not in ("password", "_id", "_auth")
         }
-{% if ctx.session.refresh %}
-        refresh_token = await issue_refresh_token(str(subject), "{{ identity.name }}")
-        return {"token": token, "refresh_token": refresh_token, "user": safe_user}
-{% else %}
-        return {"token": token, "user": safe_user}
-{% endif %}
+        session = await issue_session(str(subject), "{{ identity.name }}")
+        return {**session, "user": safe_user}
 
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -66,11 +62,10 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
 
 @router.post("/{{ identity.name }}/refresh", tags=["{{ identity.name | capitalize_collection }}"])
 async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
-    rotated = await rotate_refresh_token(payload.refresh_token)
+    rotated = await rotate_session(payload.refresh_token)
     if rotated is None:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    token = create_jwt_token(rotated["sub"], rotated["identity_collection"])
-    return {"token": token, "refresh_token": rotated["refresh_token"]}
+    return rotated
 
 {% endif %}
 {% endif %}

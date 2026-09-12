@@ -50,9 +50,14 @@ def create_jwt_token(sub: str, identity_collection: str) -> str:
 def decode_jwt_token(token: str) -> dict | None:
     try:
         _, public_pem, _, _ = _signing_material()
-        return jwt.decode(token, public_pem, algorithms=["RS256"])
+        claims = jwt.decode(token, public_pem, algorithms=["RS256"])
     except (jwt.InvalidTokenError, Exception):
         return None
+{% if ctx.session.refresh %}
+    return None if claims.get("typ") == "refresh" else claims
+{% else %}
+    return claims
+{% endif %}
 
 
 def public_jwks() -> dict:
@@ -79,9 +84,14 @@ def create_jwt_token(sub: str, identity_collection: str) -> str:
 
 def decode_jwt_token(token: str) -> dict | None:
     try:
-        return jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
+        claims = jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
     except (jwt.InvalidTokenError, Exception):
         return None
+{% if ctx.session.refresh %}
+    return None if claims.get("typ") == "refresh" else claims
+{% else %}
+    return claims
+{% endif %}
 {% endif %}
 
 {% if ctx.session.refresh %}
@@ -114,7 +124,7 @@ def decode_refresh_token(token: str) -> dict | None:
 {% else %}
         claims = jwt.decode(token, settings.JWT_SECRET.get_secret_value(), algorithms=["HS256"])
 {% endif %}
-    except (jwt.InvalidTokenError, Exception):
+    except jwt.InvalidTokenError:
         return None
     return claims if claims.get("typ") == "refresh" else None
 {% endif %}

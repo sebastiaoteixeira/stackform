@@ -224,7 +224,7 @@ class TestIdpCallbackGeneration:
         FastAPIGenerator().generate(ctx, tmp_path)
         src = (tmp_path / "routes" / "oidc_routes.py").read_text()
         assert "issue_login_code" in src
-        assert "create_jwt_token" in src
+        assert "issue_session" in src
         assert "issue_idp_code" not in src
 
     def test_app_login_codes_has_no_issue_idp(self, tmp_path):

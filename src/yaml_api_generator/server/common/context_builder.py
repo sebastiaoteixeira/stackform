@@ -41,6 +41,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         auth=auth,
         operations=operations,
         spec_version=document.version,
+        session=document.session,
     )
 
 
@@ -112,7 +113,19 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                 service_forwarding=service_forwarding,
             )
         )
+    if document.session.refresh:
+        routes += [_refresh_route(route) for route in routes if route.operation == "login"]
     return routes
+
+
+def _refresh_route(login: RuntimeRouteDescriptor) -> RuntimeRouteDescriptor:
+    return RuntimeRouteDescriptor(
+        method="POST",
+        path=f"{login.path.removesuffix('/login')}/refresh",
+        operation="refresh",
+        collection=login.collection,
+        is_public=True,
+    )
 
 
 def _build_auth_config(

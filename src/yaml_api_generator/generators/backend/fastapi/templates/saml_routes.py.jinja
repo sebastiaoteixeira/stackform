@@ -6,7 +6,7 @@ from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from onelogin.saml2.idp_metadata_parser import OneLogin_Saml2_IdPMetadataParser
 
 from dependencies.mongodb import get_database
-from dependencies.jwt_utils import create_jwt_token
+from dependencies.session_tokens import issue_session
 from settings import settings
 
 router = APIRouter()
@@ -110,18 +110,18 @@ async def saml_{{ sym }}_callback(
 
     if existing is not None:
         subject = existing.get("{{ col.id_field }}")
-        token = create_jwt_token(str(subject), "{{ col.name }}")
+        session = await issue_session(str(subject), "{{ col.name }}")
         safe_user = {k: v for k, v in existing.items() if k not in ("_id", "_auth")}
-        return {"token": token, "user": safe_user}
+        return {**session, "user": safe_user}
 
     {% if binding.auto_provision %}
     import uuid as _uuid
     new_id = str(_uuid.uuid4())
     user_fields["{{ col.id_field }}"] = new_id
     await collection.insert_one(user_fields)
-    token = create_jwt_token(new_id, "{{ col.name }}")
+    session = await issue_session(new_id, "{{ col.name }}")
     safe_user = {k: v for k, v in user_fields.items() if k not in ("_id", "_auth")}
-    return {"token": token, "user": safe_user}
+    return {**session, "user": safe_user}
     {% else %}
     raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
     {% endif %}
