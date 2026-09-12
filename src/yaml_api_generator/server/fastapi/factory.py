@@ -9,6 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, create_model
 
+from yaml_api_generator.dpop import DPoPProofFactory
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..common.auth import oidc
@@ -223,6 +224,7 @@ def register_provider_routes(
             has_oidc = True
             collection = ctx.collections[name]
             callback_path = f"{login_path}/callback"
+            dpop = _load_dpop_factory(provider) if provider.dpop else None
             app.add_api_route(
                 login_path,
                 _oidc_login_endpoint(provider, callback_path, name),
@@ -237,6 +239,7 @@ def register_provider_routes(
                     registry,
                     callback_path,
                     collections=ctx.collections,
+                    dpop=dpop,
                 ),
                 methods=["GET"],
             )
@@ -258,6 +261,19 @@ def _providers_listing_endpoint(listing: list[dict[str, str]]):
 
 def _oidc_cookie_name(collection: str, provider: str, purpose: str) -> str:
     return f"{to_py_identifier(collection)}_{to_py_identifier(provider)}_{purpose}"
+
+
+def _load_dpop_factory(provider: IROIDCProvider) -> DPoPProofFactory:
+    env_name = f"{to_py_identifier(provider.name).upper()}_DPOP_PRIVATE_KEY"
+    private_key = os.environ.get(env_name)
+    if private_key is None:
+        raise RuntimeError(
+            f"Provider '{provider.name}' enables DPoP but {env_name} is not set"
+        )
+    try:
+        return DPoPProofFactory.from_pem(private_key.replace("\\n", "\n"))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(f"{env_name} is not a valid EC P-256 private key") from error
 
 
 def _oidc_login_endpoint(
@@ -315,6 +331,7 @@ def _oidc_callback_endpoint(
     registry: RepositoryRegistry,
     callback_path: str,
     collections: dict[str, RuntimeCollectionDescriptor] | None = None,
+    dpop: DPoPProofFactory | None = None,
 ):
     async def endpoint(
         request: Request,
@@ -341,6 +358,7 @@ def _oidc_callback_endpoint(
             provider, binding, collection, repo, code, callback_url,
             collections=collections, registry=registry,
             code_verifier=verifier,
+            dpop=dpop,
         )
         frontend_url = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
         response = RedirectResponse(

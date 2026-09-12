@@ -349,7 +349,8 @@
         "discovery_url": { "type": "string", "description": "OIDC discovery document URL; issuer is derived from it automatically" },
         "issuer": { "type": "string" },
         "audiences": { "type": "array", "items": { "type": "string" }, "description": "Accepted token audiences; defaults to [client_id] when omitted" },
-        "pkce": { "type": "boolean", "default": false, "description": "Emit PKCE (S256 code_challenge on authorization, code_verifier on token exchange) for the OIDC client; enable to match a Keycloak client with Require PKCE" }
+        "pkce": { "type": "boolean", "default": false, "description": "Emit PKCE (S256 code_challenge on authorization, code_verifier on token exchange) for the OIDC client; enable to match a Keycloak client with Require PKCE" },
+        "dpop": { "type": "boolean", "default": false, "description": "Emit DPoP (RFC 9449): a client-held key pair and per-request DPoP proof on the token and userinfo calls, switching those from Bearer to DPoP-bound; enable to match a provider that requires sender-constrained tokens" }
       },
       "if": {
         "properties": { "trust": { "const": "idp" } },

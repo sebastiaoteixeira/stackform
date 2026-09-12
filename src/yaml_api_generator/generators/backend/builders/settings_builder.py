@@ -2,7 +2,9 @@ from secrets import token_urlsafe
 
 from ..compile_context import CompileContext, SettingField
 from ....ir.api import IROIDCProvider
+from ....dpop import generate_private_key_pem as generate_dpop_private_key_pem
 from ....utils.rsa_keys import generate_private_key_pem
+from ....utils.strings import to_py_identifier
 
 
 def _dotenv_pem() -> str:
@@ -12,6 +14,14 @@ def _dotenv_pem() -> str:
     restores the real newlines when the generated app loads its ``.env``.
     """
     return '"' + generate_private_key_pem().replace("\n", "\\n") + '"'
+
+
+def _dotenv_dpop_pem() -> str:
+    return '"' + generate_dpop_private_key_pem().replace("\n", "\\n") + '"'
+
+
+def dpop_private_key_env(provider_name: str) -> str:
+    return f"{to_py_identifier(provider_name).upper()}_DPOP_PRIVATE_KEY"
 
 
 def _token() -> str:
@@ -68,6 +78,16 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
                 if isinstance(provider, IROIDCProvider) and provider.client_secret is not None:
                     env_name = f"{provider_name.upper()}_CLIENT_SECRET"
                     add(SettingField(env_name, "str", None, secret=True))
+                if isinstance(provider, IROIDCProvider) and provider.dpop:
+                    add(
+                        SettingField(
+                            dpop_private_key_env(provider_name),
+                            "str",
+                            None,
+                            secret=True,
+                            generator=_dotenv_dpop_pem,
+                        )
+                    )
 
     add(SettingField("HOST", "str", "127.0.0.1"))
     add(SettingField("PORT", "int", str(ctx.app.port)))

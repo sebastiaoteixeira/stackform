@@ -39,6 +39,7 @@ class IROIDCProvider:
     issuer: str | None = None
     audiences: tuple[str, ...] = ()
     pkce: bool = False
+    dpop: bool = False
 
     @property
     def is_idp(self) -> bool:

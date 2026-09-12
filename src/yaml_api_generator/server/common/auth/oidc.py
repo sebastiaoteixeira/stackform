@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import HTTPException
 
+from yaml_api_generator.dpop import DPoPProofFactory, request_with_dpop
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding, IRProviderRelation
 from ..repositories import BaseRepository, RepositoryRegistry
 from ..server_context import RuntimeCollectionDescriptor
@@ -89,6 +90,7 @@ async def handle_callback(
     collections: dict[str, RuntimeCollectionDescriptor] | None = None,
     registry: RepositoryRegistry | None = None,
     code_verifier: str | None = None,
+    dpop: DPoPProofFactory | None = None,
 ) -> str:
     if not provider.discovery_url:
         raise RuntimeError(f"Provider '{provider.name}' is missing discovery_url")
@@ -100,8 +102,18 @@ async def handle_callback(
         code,
         callback_url,
         code_verifier=code_verifier,
+        dpop=dpop,
     )
-    claims = await _fetch_userinfo(discovery, token_data["access_token"])
+    if dpop is not None and token_data.get("token_type", "").lower() != "dpop":
+        raise HTTPException(
+            status_code=401,
+            detail="Provider did not issue a DPoP-bound token",
+        )
+    claims = await _fetch_userinfo(
+        discovery,
+        token_data["access_token"],
+        dpop=dpop,
+    )
 
     exp = claims.get("exp")
     if exp is not None and int(exp) < int(time.time()):
@@ -121,6 +133,7 @@ async def _exchange_code(
     callback_url: str,
     *,
     code_verifier: str | None = None,
+    dpop: DPoPProofFactory | None = None,
 ) -> dict[str, Any]:
     data: dict[str, str] = {
         "grant_type": "authorization_code",
@@ -133,18 +146,42 @@ async def _exchange_code(
     if code_verifier is not None:
         data["code_verifier"] = code_verifier
     async with httpx.AsyncClient() as client:
-        resp = await client.post(discovery["token_endpoint"], data=data)
+        if dpop is None:
+            resp = await client.post(discovery["token_endpoint"], data=data)
+        else:
+            resp = await request_with_dpop(
+                client,
+                "POST",
+                discovery["token_endpoint"],
+                dpop,
+                data=data,
+            )
     if resp.status_code != 200:
         raise HTTPException(status_code=401, detail="Token exchange failed")
     return resp.json()  # type: ignore[no-any-return]
 
 
-async def _fetch_userinfo(discovery: dict[str, Any], access_token: str) -> dict[str, Any]:
+async def _fetch_userinfo(
+    discovery: dict[str, Any],
+    access_token: str,
+    *,
+    dpop: DPoPProofFactory | None = None,
+) -> dict[str, Any]:
+    endpoint = discovery.get("userinfo_endpoint", "")
+    scheme = "DPoP" if dpop is not None else "Bearer"
     async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            discovery.get("userinfo_endpoint", ""),
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
+        headers = {"Authorization": f"{scheme} {access_token}"}
+        if dpop is None:
+            resp = await client.get(endpoint, headers=headers)
+        else:
+            resp = await request_with_dpop(
+                client,
+                "GET",
+                endpoint,
+                dpop,
+                access_token=access_token,
+                headers=headers,
+            )
     if resp.status_code != 200:
         raise HTTPException(status_code=401, detail="Failed to fetch user info")
     return resp.json()  # type: ignore[no-any-return]
