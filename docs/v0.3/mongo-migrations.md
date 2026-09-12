@@ -145,19 +145,18 @@ Where MongoDB graduation takes effect:
 | --- | --- |
 | `yaml-api run` (development server, FastAPI and `--raw` ASGI) | Runs when no `mongo_migrations/` sits next to the spec; skipped once it does. |
 | Generated FastAPI backend | Emitted only when `mongo_migrations/` was absent at generation time; a graduated spec generates an app whose startup makes no index-creation call. |
-| Generated DRF backend | Never runs, graduated or not: the target emits an `initialize_indexes` helper but no startup path calls it, so its indexes come from `migrate` (or by hand) in every case. |
-| Generated raw ASGI backend | Never runs, for the same reason as DRF. |
+| Generated DRF backend | Runs from `AppConfig.ready()` when no `mongo_migrations/` tree exists; skipped once it does. |
+| Generated raw ASGI backend | Runs during ASGI lifespan startup when no `mongo_migrations/` tree exists; skipped once it does. |
 
-The generated FastAPI decision is made at generation time by looking for
-`mongo_migrations/` next to the spec, and baked into the emitted `app.py`; the
-generated app never looks for a migrations tree at run time. Regenerate the
-project after the first `migrate new` for graduation to reach an
+Each generated backend makes the decision at generation time by looking for
+`mongo_migrations/` next to the spec and baking it into the emitted startup
+path; generated apps never look for a migrations tree at run time. Regenerate
+the project after the first `migrate new` for graduation to reach an
 already-generated backend.
 
-Graduation governs MongoDB index creation only. The generated FastAPI backend
-still calls SQLAlchemy `create_all` on connect for relational datastores whether
-or not `migrations/` exists; `yaml-api run` is the only runtime that honours
-relational graduation today.
+Graduation remains per datastore family. Generated FastAPI omits SQLAlchemy
+`create_all` when a relational `migrations/` tree exists, just as every generated
+backend omits MongoDB index initialization when `mongo_migrations/` exists.
 
 Baseline stamping covers the datastore that already has the schema. When the
 first `migrate up` finds an empty `migrations` collection and the spec's

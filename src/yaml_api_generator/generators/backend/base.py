@@ -21,6 +21,7 @@ class RenderConfig:
     context_builder: Callable[[str, dict, CompileContext], dict] | None = None
     should_render: Callable[[str, dict, CompileContext], bool] | None = None
     additional_files: list[tuple[str, str]] = field(default_factory=list)
+    generate_init_imports: bool = True
 
 
 @dataclass
@@ -88,9 +89,10 @@ class TemplateBasedGenerator(CodeGenerator):
             filename = config.output_filename_pattern.format(col_name=col_name)
             (target_dir / filename).write_text(content)
 
-            import_stmt = self._generate_import_statement(col_name, col_data, config)
-            if import_stmt:
-                init_imports.append(import_stmt)
+            if config.generate_init_imports:
+                import_stmt = self._generate_import_statement(col_name, col_data, config)
+                if import_stmt:
+                    init_imports.append(import_stmt)
 
         init_content = "\n".join(init_imports) + "\n" if init_imports else ""
         (target_dir / "__init__.py").write_text(init_content)

@@ -299,11 +299,28 @@ class CompileContext:
     services: dict[str, IRService] = field(default_factory=dict)
     dto_models: list[ModelDescriptor] = field(default_factory=list)
     vendored_requirements: tuple[str, ...] = ()
+    sql_schema_managed: bool = False
     mongo_schema_managed: bool = False
 
     @property
     def datastore_types(self) -> set[str]:
         return {ds["type"] for ds in self.datastores.values()}
+
+    @property
+    def mongo_unique_indexes(self) -> dict[str, list[str]]:
+        return {
+            name: [
+                field_name
+                for field_name, field in collection["fields"].items()
+                if isinstance(field, dict) and field.get("unique")
+            ]
+            for name, collection in self.collections.items()
+            if collection["datastore_type"] in {"mongodb", "mongo"}
+            and any(
+                isinstance(field, dict) and field.get("unique")
+                for field in collection["fields"].values()
+            )
+        }
 
     def collection_datastore_type(self, collection: str) -> str:
         return self.collections.get(collection, {}).get("datastore_type", "mongodb")

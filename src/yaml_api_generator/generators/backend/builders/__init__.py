@@ -118,6 +118,7 @@ class ContextBuilder:
             services=dict(document.services),
             dto_models=dto_models,
             vendored_requirements=document.vendored_requirements,
+            sql_schema_managed=managed.sql,
             mongo_schema_managed=managed.mongo,
         )
 

@@ -21,8 +21,9 @@ api:
   version: v1
 datastores:
   store:
-    type: postgres
-    dsn: "postgresql+asyncpg://localhost/unused"
+    type: mongodb
+    uri: "mongodb://localhost:27017"
+    database: unused
     default: true
 entities:
   post:

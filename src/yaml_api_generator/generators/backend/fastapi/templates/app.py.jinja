@@ -18,16 +18,7 @@ from fastapi.openapi.utils import get_openapi
 {% endfor %}
 {% set uses_sql = (col_types | select("in", ["postgres", "postgresql"]) | list | length) > 0 %}
 {% set uses_mongo = ((col_types | select("in", ["mongodb", "mongo"]) | list | length) > 0) or not uses_sql %}
-{% set mongo_unique_indexes = {} %}
-{% for col_name, col in ctx.collections.items() %}
-{% if col.datastore_type in ["mongodb", "mongo"] %}
-{% set _unique = [] %}
-{% for field_name, field_cfg in col.fields.items() if field_cfg is mapping and field_cfg.get("unique") %}
-{% set _ = _unique.append(field_name) %}
-{% endfor %}
-{% if _unique %}{% set _ = mongo_unique_indexes.update({col_name: _unique}) %}{% endif %}
-{% endif %}
-{% endfor %}
+{% set mongo_unique_indexes = ctx.mongo_unique_indexes %}
 {% set create_mongo_indexes = uses_mongo and mongo_unique_indexes and not ctx.mongo_schema_managed %}
 {% if uses_mongo %}
 from dependencies.mongodb import connect_db as connect_mongo, close_db as close_mongo

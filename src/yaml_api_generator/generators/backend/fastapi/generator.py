@@ -13,7 +13,7 @@ from ..utils import (
     pagination_config,
     runtime_module_source,
 )
-from ..validation import reject_unsigned_session_algorithm
+from ..validation import reject_unsigned_session_algorithm, validate_datastore_layout
 from . import access_filters, sql_filters, type_mapper
 
 
@@ -36,6 +36,7 @@ def _crud_operations(col_data: dict) -> list[str]:
 
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
+        validate_datastore_layout(context, "fastapi")
         reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([
@@ -418,7 +419,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
         if uses_sql:
             (deps_dir / "postgres.py").write_text(
-                env.get_template("postgres.py.jinja").render()
+                env.get_template("postgres.py.jinja").render(ctx=context)
             )
         if context.auth.has_app_oidc_auth:
             (deps_dir / "login_codes.py").write_text(

@@ -19,6 +19,7 @@ from ..validation import (
     reject_pkce,
     reject_session_refresh,
     reject_unsigned_session_algorithm,
+    validate_datastore_layout,
 )
 from . import type_mapper
 from ..fastapi import access_filters
@@ -47,6 +48,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._dir_prefix = "api"
 
     def generate(self, context: CompileContext, output_dir: Path) -> None:
+        validate_datastore_layout(context, "drf")
         reject_cookie_delivery(context, "drf")
         reject_dpop(context, "drf")
         reject_idp_trust(context, "drf")
@@ -217,7 +219,7 @@ class DRFGenerator(TemplateBasedGenerator):
             RenderConfig(
                 template_name="views.py.jinja",
                 output_subdir="views",
-                import_pattern="from .{col_name} import {class_name}ListView, {class_name}DetailView",
+                generate_init_imports=False,
                 context_builder=lambda col_name, col_data, ctx: {
                     "ctx": ctx,
                     "collection_name": col_name,
@@ -320,7 +322,7 @@ class DRFGenerator(TemplateBasedGenerator):
         (api_dir / "__init__.py").write_text("")
 
         apps_template = env.get_template("apps.py.jinja")
-        (api_dir / "apps.py").write_text(apps_template.render())
+        (api_dir / "apps.py").write_text(apps_template.render(ctx=context))
 
 
 def _build_symbol_map(rule) -> dict[str, str]:

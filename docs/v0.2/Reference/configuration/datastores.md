@@ -66,7 +66,18 @@ Referencing an undeclared datastore is a validation error (`DATASTORE_UNKNOWN_RE
 ## Schema management
 
 - **`run` server:** tables are created on connect (relational datastores) unless a `migrations/` directory is present, in which case migrations own the schema. See [`migrate`](../cli/migrate.md).
-- **Generated backend (`build`):** the generated app creates tables on startup. Each datastore type in use contributes its driver to the generated `requirements.txt`.
+- **Generated FastAPI backend:** supports one MongoDB datastore and one
+  PostgreSQL datastore in the same app. It creates tables and unique indexes on
+  startup until the corresponding `migrations/` or `mongo_migrations/` tree
+  exists when the app is generated.
+- **Generated DRF and raw ASGI backends:** support one MongoDB datastore. They
+  initialize unique indexes on startup until `mongo_migrations/` exists.
+
+Generated backends reject unsupported layouts with
+`BACKEND_DATASTORE_UNSUPPORTED` or `BACKEND_DATASTORE_LAYOUT_UNSUPPORTED`
+instead of silently routing repositories to the wrong database. Regenerate an
+app after creating its first migration so its startup behavior reflects
+graduation.
 
 ## Custom operations per datastore
 
@@ -97,6 +108,7 @@ A single operation cannot span two datastores; combine data from different datas
 |----------|------------|-------------|
 | `YAML_API_MONGO_URI` / `YAML_API_MONGO_DB` | default MongoDB datastore (`run`) | Override URI / database. |
 | `YAML_API_DB_<NAME>_DSN` | a relational datastore (`run`) | Override the DSN; `<NAME>` is the uppercased datastore name. |
+| `MONGO_URI` / `MONGO_DB` | generated backend | Override the MongoDB URI/database copied from the spec. |
 | `DATABASE_URL` | generated backend | Override the relational DSN of the generated app. |
 
 ## Example

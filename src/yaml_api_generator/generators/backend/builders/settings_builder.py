@@ -45,8 +45,18 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
         uses_mongo = True
 
     if uses_mongo:
-        add(SettingField("MONGO_URI", "str", "mongodb://localhost:27017"))
-        add(SettingField("MONGO_DB", "str", "yaml_api"))
+        mongo = next(
+            (
+                datastore
+                for datastore in ctx.datastores.values()
+                if datastore["type"] in {"mongodb", "mongo"}
+            ),
+            {},
+        )
+        add(SettingField(
+            "MONGO_URI", "str", mongo.get("uri", "mongodb://localhost:27017")
+        ))
+        add(SettingField("MONGO_DB", "str", mongo.get("database", "yaml_api")))
     if uses_postgres:
         postgres_dsn = next(
             (ds["dsn"] for ds in ctx.datastores.values()
