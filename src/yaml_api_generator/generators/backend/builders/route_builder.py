@@ -162,6 +162,7 @@ class RouteBuilder:
                     id_field=document.collections[ir_route.collection].idField,
                     service_input=service_input,
                     service_forwarding=service_forwarding,
+                    pagination=ir_route.pagination,
                 )
             )
 

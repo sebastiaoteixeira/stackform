@@ -134,12 +134,8 @@ class MongoRepository(BaseRepository):
 
     async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
         target = self.collection(collection_name)
-        scoping = dict(primitives.filter)
         bound_clauses = _mongo_bounds(primitives.bounds)
-        if bound_clauses:
-            query = {"$and": ([scoping] if scoping else []) + bound_clauses}
-        else:
-            query = scoping
+        query = {"$and": bound_clauses} if bound_clauses else {}
         cursor = target.find(query)
         if primitives.sort:
             cursor = cursor.sort(
@@ -153,7 +149,7 @@ class MongoRepository(BaseRepository):
         rows = [self._normalize_document_required(d) for d in documents]
         total = None
         if primitives.count == "exact":
-            total = await target.count_documents(scoping)
+            total = await target.count_documents({})
         return Page(rows=rows, total=total)
 
     async def get(

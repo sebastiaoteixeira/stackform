@@ -562,8 +562,9 @@
       }
     },
     "PaginationConfig": {
-      "description": "v0.3 controller pagination. offset and keyset are implemented; cursor, range and count: estimated are reserved (accepted and validated, no runtime yet).",
+      "description": "v0.3 controller pagination. Only the offset and keyset strategies and count none/exact are supported; cursor, range and count: estimated are named by the grammar so the parser can reject them by name (PAGINATION_UNSUPPORTED).",
       "type": "object",
+      "additionalProperties": false,
       "required": ["strategy", "size"],
       "properties": {
         "strategy": {
@@ -589,7 +590,6 @@
           "default": "clamp"
         },
         "envelope": { "type": "boolean", "default": false },
-        "on": { "type": "string" },
         "sort": {
           "type": "array",
           "items": {

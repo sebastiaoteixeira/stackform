@@ -434,11 +434,11 @@ def test_keyset_pagination_parsed_with_sort(tmp_path):
     assert pagination.sort == (IRSortKey("score", "desc"), IRSortKey("id", "asc"))
 
 
-def test_reserved_strategies_accepted(tmp_path):
+def test_reserved_strategies_rejected(tmp_path):
     for reserved in ("cursor", "range"):
         extra = "sort:\n  - { field: id }" if reserved == "cursor" else '"on": score'
-        ir = _load(tmp_path, f"strategy: {reserved}\nsize: {{ default: 10, max: 50 }}\ncount: estimated\n{extra}")
-        assert _list_route(ir).pagination.strategy == reserved
+        with pytest.raises(ConfigErrors):
+            _load(tmp_path, f"strategy: {reserved}\nsize: {{ default: 10, max: 50 }}\ncount: none\n{extra}")
 
 
 def _error_codes(excinfo) -> set[str]:

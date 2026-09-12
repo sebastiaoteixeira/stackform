@@ -112,12 +112,10 @@ class SQLRepository(BaseRepository):
 
     async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
         table = self._table(collection_name)
-        scoping = [table.c[field] == value for field, value in primitives.filter.items()]
         bound_clauses = self._bounds_clauses(table, primitives.bounds)
-        where = sa.and_(*scoping, *bound_clauses) if (scoping or bound_clauses) else None
         stmt = sa.select(table)
-        if where is not None:
-            stmt = stmt.where(where)
+        if bound_clauses:
+            stmt = stmt.where(sa.and_(*bound_clauses))
         for key in primitives.sort:
             column = table.c[key.field]
             stmt = stmt.order_by(column.desc() if key.descending else column.asc())
@@ -130,8 +128,6 @@ class SQLRepository(BaseRepository):
             total = None
             if primitives.count == "exact":
                 count_stmt = sa.select(sa.func.count()).select_from(table)
-                if scoping:
-                    count_stmt = count_stmt.where(sa.and_(*scoping))
                 total = (await conn.execute(count_stmt)).scalar()
         return Page(rows=rows, total=total)
 

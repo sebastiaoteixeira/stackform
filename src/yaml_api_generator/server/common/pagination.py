@@ -12,7 +12,7 @@ expansion into their native query shapes.
 
 import base64
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from yaml_api_generator.ir.api import IRPagination, IRSortKey
@@ -37,6 +37,10 @@ class BoundKey:
 
 Bound = tuple[BoundKey, ...]
 
+_MAX_CURSOR_LENGTH = 1024
+_MAX_SKIP = 2**63 - 1
+_CURSOR_SCALARS = (str, int, float, bool, type(None))
+
 
 @dataclass(frozen=True)
 class Primitives:
@@ -45,7 +49,6 @@ class Primitives:
     sort: tuple[SortKey, ...] = ()
     bounds: tuple[Bound, ...] = ()
     count: str = "none"
-    filter: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,14 @@ class PageOverflowError(ValueError):
         )
         self.requested = requested
         self.maximum = maximum
+
+
+class InvalidPageRequestError(ValueError):
+    """A pagination query parameter does not denote a usable page position."""
+
+    def __init__(self, parameter: str) -> None:
+        super().__init__(f"Invalid pagination parameter '{parameter}'")
+        self.parameter = parameter
 
 
 def expand_bound(bound: Bound):
@@ -109,13 +120,31 @@ def encode_position(item: dict[str, Any], sort: tuple[SortKey, ...]) -> str:
 
 
 def decode_position(token: str, sort: tuple[SortKey, ...]) -> list[Any]:
+    """Decode an `after` token into one scalar per declared sort key.
+
+    Anything else is client input that cannot denote a page position: a
+    non-scalar would reach the driver as a query operator rather than a value.
+    """
+    if len(token) > _MAX_CURSOR_LENGTH:
+        raise InvalidPageRequestError("after")
     try:
         values = json.loads(base64.urlsafe_b64decode(token.encode()))
-    except (ValueError, json.JSONDecodeError):
-        values = [token]
-    if not isinstance(values, list):
-        values = [values]
+    except (ValueError, RecursionError):
+        raise InvalidPageRequestError("after") from None
+    if (
+        not isinstance(values, list)
+        or len(values) != len(sort)
+        or not all(isinstance(value, _CURSOR_SCALARS) for value in values)
+    ):
+        raise InvalidPageRequestError("after")
     return values
+
+
+def _skip(query: dict[str, Any]) -> int:
+    requested = max(0, _int(query.get("offset")) or 0)
+    if requested > _MAX_SKIP:
+        raise InvalidPageRequestError("offset")
+    return requested
 
 
 def _clamp_limit(pagination: IRPagination, query: dict[str, Any]) -> int:
@@ -132,7 +161,7 @@ def _clamp_limit(pagination: IRPagination, query: dict[str, Any]) -> int:
 def _offset_primitives(pagination: IRPagination, query: dict[str, Any]) -> Primitives:
     return Primitives(
         limit=_clamp_limit(pagination, query),
-        skip=max(0, _int(query.get("offset")) or 0),
+        skip=_skip(query),
         sort=_to_sort(pagination.sort),
         count=pagination.count,
     )
@@ -162,12 +191,7 @@ _MAPPERS = {"offset": _offset_primitives, "keyset": _keyset_primitives}
 
 
 def map_request(pagination: IRPagination, query: dict[str, Any]) -> Primitives:
-    mapper = _MAPPERS.get(pagination.strategy)
-    if mapper is None:
-        raise NotImplementedError(
-            f"Pagination strategy '{pagination.strategy}' has no runtime yet"
-        )
-    return mapper(pagination, query or {})
+    return _MAPPERS[pagination.strategy](pagination, query or {})
 
 
 def build_response(
@@ -188,7 +212,7 @@ def _offset_response(
     envelope: dict[str, Any] = {
         "items": page.rows,
         "limit": _clamp_limit(pagination, query),
-        "offset": max(0, _int(query.get("offset")) or 0),
+        "offset": _skip(query),
     }
     if pagination.count != "none":
         envelope["total"] = page.total

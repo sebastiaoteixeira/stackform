@@ -3,22 +3,72 @@
 Pagination is declared explicitly at the controller (``operations.<op>.pagination``)
 and nowhere else: the repository primitives and the service mapping stay implicit.
 This module turns that declaration into an ``IRPagination`` and validates it
-against the entity it pages. ``offset`` and ``keyset`` are implemented; ``cursor``,
-``range`` and ``count: estimated`` are reserved -- accepted and validated
-syntactically here, without a runtime.
+against the entity it pages.
+
+``offset`` and ``keyset`` are the implemented strategies. The grammar names
+``cursor`` and ``range`` -- and ``count: estimated`` -- but no runtime backs
+them, so a spec that asks for one is rejected here rather than built into an
+app that would ignore it.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from yaml_api_generator.ir import IRCollection
 from yaml_api_generator.ir.api import IRPageSize, IRPagination, IRSortKey
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
-_STRATEGIES = {"offset", "keyset", "cursor", "range"}
-_KEYSET_LIKE = {"keyset", "cursor"}
-_COUNTS = {"none", "exact", "estimated"}
-_OVERFLOWS = {"clamp", "reject"}
 _DIRECTIONS = {"asc", "desc"}
+
+
+@dataclass(frozen=True)
+class Choice:
+    """A closed set of accepted values, split into implemented and unsupported."""
+
+    subject: str
+    supported: frozenset[str]
+    unknown_code: str
+    unsupported: frozenset[str] = frozenset()
+
+    def validate(self, value: Any, path: str) -> list[ConfigError]:
+        if value in self.supported:
+            return []
+        hint = f"Use one of: {', '.join(sorted(self.supported))}"
+        if value in self.unsupported:
+            return [ConfigError(
+                code="PAGINATION_UNSUPPORTED",
+                message=(
+                    f"{self.subject} '{value}' is named by the v0.3 grammar but is "
+                    "not supported yet"
+                ),
+                path=path,
+                hint=hint,
+            )]
+        return [ConfigError(
+            code=self.unknown_code,
+            message=f"Unknown {self.subject} '{value}'",
+            path=path,
+            hint=hint,
+        )]
+
+
+_STRATEGY = Choice(
+    subject="pagination strategy",
+    supported=frozenset({"offset", "keyset"}),
+    unknown_code="PAGINATION_INVALID_STRATEGY",
+    unsupported=frozenset({"cursor", "range"}),
+)
+_COUNT = Choice(
+    subject="count mode",
+    supported=frozenset({"none", "exact"}),
+    unknown_code="PAGINATION_INVALID_COUNT",
+    unsupported=frozenset({"estimated"}),
+)
+_OVERFLOW = Choice(
+    subject="onOverflow mode",
+    supported=frozenset({"clamp", "reject"}),
+    unknown_code="PAGINATION_INVALID_OVERFLOW",
+)
 
 
 def parse_pagination(
@@ -37,44 +87,22 @@ def parse_pagination(
 
     errors: list[ConfigError] = []
     strategy = raw.get("strategy")
-    if strategy not in _STRATEGIES:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_STRATEGY",
-            message=f"Unknown pagination strategy '{strategy}'",
-            path=f"{path}.strategy",
-            hint="Use one of: offset, keyset, cursor, range",
-        ))
+    errors.extend(_STRATEGY.validate(strategy, f"{path}.strategy"))
 
     size, size_errors = _parse_size(raw.get("size"), f"{path}.size")
     errors.extend(size_errors)
 
     count = raw.get("count", "none")
-    if count not in _COUNTS:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_COUNT",
-            message=f"Unknown count mode '{count}'",
-            path=f"{path}.count",
-            hint="Use one of: none, exact, estimated",
-        ))
+    errors.extend(_COUNT.validate(count, f"{path}.count"))
 
     on_overflow = raw.get("onOverflow", "clamp")
-    if on_overflow not in _OVERFLOWS:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_OVERFLOW",
-            message=f"Unknown onOverflow mode '{on_overflow}'",
-            path=f"{path}.onOverflow",
-            hint="Use one of: clamp, reject",
-        ))
+    errors.extend(_OVERFLOW.validate(on_overflow, f"{path}.onOverflow"))
 
     sort, sort_errors = _parse_sort(raw.get("sort"), collection, f"{path}.sort")
     errors.extend(sort_errors)
 
-    if strategy in _KEYSET_LIKE:
+    if strategy == "keyset":
         errors.extend(_validate_keyset(sort, collection, path))
-
-    on = raw.get("on")
-    if strategy == "range":
-        errors.extend(_validate_range(on, collection, path))
 
     if errors:
         return None, errors
@@ -86,7 +114,6 @@ def parse_pagination(
         on_overflow=on_overflow,
         envelope=bool(raw.get("envelope", False)),
         sort=sort,
-        on=on,
     ), []
 
 
@@ -170,7 +197,7 @@ def _validate_keyset(
     if not sort:
         return [ConfigError(
             code="PAGINATION_KEYSET_SORT_REQUIRED",
-            message="keyset and cursor pagination require a 'sort'",
+            message="keyset pagination requires a 'sort'",
             path=f"{path}.sort",
             hint="Declare at least one sort key; the last must be a unique, indexed field",
         )]
@@ -185,24 +212,6 @@ def _validate_keyset(
             ),
             path=f"{path}.sort",
             hint="Mark the last sort field 'unique: true' (or use the id field)",
-        )]
-    return []
-
-
-def _validate_range(
-    on: Any, collection: IRCollection | None, path: str
-) -> list[ConfigError]:
-    if not isinstance(on, str) or not on:
-        return [ConfigError(
-            code="PAGINATION_RANGE_FIELD_REQUIRED",
-            message="range pagination requires 'on: <field>'",
-            path=f"{path}.on",
-        )]
-    if collection is not None and not _has_field(collection, on):
-        return [ConfigError(
-            code="PAGINATION_SORT_FIELD_UNKNOWN",
-            message=f"range field '{on}' is not a field of '{collection.name}'",
-            path=f"{path}.on",
         )]
     return []
 

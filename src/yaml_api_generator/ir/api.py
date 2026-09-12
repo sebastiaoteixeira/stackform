@@ -106,7 +106,6 @@ class IRPagination:
     on_overflow: str = "clamp"
     envelope: bool = False
     sort: tuple[IRSortKey, ...] = ()
-    on: str | None = None
 
 
 @dataclass(frozen=True)

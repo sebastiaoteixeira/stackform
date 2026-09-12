@@ -8,7 +8,7 @@ from yaml_api_generator.generators.backend.builders.settings_builder import buil
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from ..validation import reject_idp_trust
+from ..validation import reject_idp_trust, reject_pagination
 from ..fastapi import access_filters
 
 
@@ -27,6 +27,7 @@ def _path_to_regex(path: str) -> str:
 class RawASGIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         reject_idp_trust(context, "raw")
+        reject_pagination(context, "raw")
         env = Environment(
             loader=ChoiceLoader([
                 FileSystemLoader(str(_TEMPLATES_DIR)),

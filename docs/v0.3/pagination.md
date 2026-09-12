@@ -1,10 +1,16 @@
+---
+title: Pagination
+---
+
 # Pagination (v0.3)
 
 Pagination is decomposed across three layers and declared **explicitly only at
 the controller**. The repository exposes generic primitives implicitly; the
 service maps the request onto them implicitly. All pagination behavior is gated
-on `version: "0.3"` -- a spec that does not opt in, or an operation with no
-`pagination:` block, lists unbounded exactly as in v0.2.
+on `version: "0.3"`. It is implemented by `yaml-api run`. Generated FastAPI,
+DRF, and raw backends reject paginated operations at build time because their
+emitted repositories still list unbounded; they never silently ignore the
+declaration.
 
 ## The three layers
 
@@ -69,9 +75,9 @@ controllers:
     operations:
       list:
         pagination:
-          strategy: offset        # offset | keyset | cursor | range
+          strategy: offset        # offset | keyset
           size: { default: 20, max: 100 }
-          count: none             # none | exact | estimated  (default none)
+          count: none             # none | exact (default none)
           onOverflow: clamp       # clamp | reject             (default clamp)
           envelope: true          # default false
 ```
@@ -104,9 +110,8 @@ pagination:
 
 ### cursor / range (reserved)
 
-`cursor` (`?cursor=&limit=`) and `range` (`?since=&until=&limit=` with
-`on: <field>`), plus `count: estimated`, are accepted and validated by the
-grammar but have no runtime yet.
+`cursor`, `range`, and `count: estimated` are reserved vocabulary with no
+runtime. A spec that declares one fails with `PAGINATION_UNSUPPORTED`.
 
 ## Envelopes
 
@@ -126,12 +131,13 @@ to pass as `after` for the following page (`null` on the last page), and
 
 | code | raised when |
 |------|-------------|
-| `PAGINATION_INVALID_STRATEGY` | `strategy` is not one of the four |
+| `PAGINATION_INVALID_STRATEGY` | `strategy` is not a recognized value |
+| `PAGINATION_UNSUPPORTED` | a reserved strategy or count mode has no runtime |
 | `PAGINATION_INVALID_SIZE` | `size.default`/`size.max` missing, non-integer, or `default > max` |
-| `PAGINATION_INVALID_COUNT` | `count` is not `none`/`exact`/`estimated` |
+| `PAGINATION_INVALID_COUNT` | `count` is not a recognized value |
 | `PAGINATION_INVALID_OVERFLOW` | `onOverflow` is not `clamp`/`reject` |
 | `PAGINATION_INVALID_SORT` | a sort entry is malformed |
-| `PAGINATION_SORT_FIELD_UNKNOWN` | a sort/range field is not a field of the entity |
-| `PAGINATION_KEYSET_SORT_REQUIRED` | keyset/cursor declared without a `sort` |
+| `PAGINATION_SORT_FIELD_UNKNOWN` | a sort field is not a field of the entity |
+| `PAGINATION_KEYSET_SORT_REQUIRED` | keyset declared without a `sort` |
 | `PAGINATION_KEYSET_TIEBREAKER_NOT_UNIQUE` | the last keyset sort field is not unique/indexed |
-| `PAGINATION_RANGE_FIELD_REQUIRED` | range declared without `on: <field>` |
+| `BACKEND_FEATURE_UNSUPPORTED` | a generated backend is asked to emit pagination |
