@@ -17,6 +17,9 @@ from dependencies.jwt_utils import decode_jwt_token
 from dependencies import idp_auth
 from dependencies.claims import resolve_claim_path, resolve_relations
 {% endif %}
+{% if ctx is defined and ctx.session.uses_cookie %}
+from dependencies.session_cookie import session_token_from_request
+{% endif %}
 
 
 def hash_password(password: str, rounds: int = settings.PASSWORD_HASH_ROUNDS) -> str:
@@ -215,6 +218,10 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 
     headers = {k.lower(): v for k, v in request.headers.items()}
     bearer_token = _extract_bearer_token(headers)
+{% if ctx is defined and ctx.session.uses_cookie %}
+    if bearer_token is None:
+        bearer_token = session_token_from_request(request)
+{% endif %}
 
 {% if auth.has_idp_auth %}
     if bearer_token is not None and idp_auth.unverified_issuer(bearer_token) is not None:

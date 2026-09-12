@@ -31,6 +31,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         algorithm=document.session.algorithm,
         ttl=document.session.ttl,
         refresh=document.session.refresh,
+        delivery=document.session.delivery,
     )
     collections = _build_collections(document.collections)
     routes = _build_routes(document)

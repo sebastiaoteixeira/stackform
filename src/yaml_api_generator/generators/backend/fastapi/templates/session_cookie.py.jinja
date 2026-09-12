@@ -1,0 +1,64 @@
+import secrets
+
+from fastapi import Request, Response
+
+SESSION_COOKIE = "session"
+CSRF_COOKIE = "csrf_token"
+CSRF_HEADER = "x-csrf-token"
+{% if ctx.session.refresh %}
+REFRESH_COOKIE = "refresh_token"
+{% endif %}
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+
+def issue_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def set_session_cookies(
+    response: Response,
+    request: Request,
+    token: str,
+    csrf_token: str,
+{% if ctx.session.refresh %}
+    refresh_token: str,
+{% endif %}
+) -> None:
+    secure = request.url.scheme == "https"
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, secure=secure, samesite="lax", path="/")
+    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, secure=secure, samesite="lax", path="/")
+{% if ctx.session.refresh %}
+    response.set_cookie(REFRESH_COOKIE, refresh_token, httponly=True, secure=secure, samesite="lax", path="/")
+{% endif %}
+
+
+def clear_session_cookies(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(CSRF_COOKIE, path="/")
+{% if ctx.session.refresh %}
+    response.delete_cookie(REFRESH_COOKIE, path="/")
+{% endif %}
+
+
+def session_token_from_request(request: Request) -> str | None:
+    return request.cookies.get(SESSION_COOKIE)
+{% if ctx.session.refresh %}
+
+
+def refresh_token_from_request(request: Request) -> str | None:
+    return request.cookies.get(REFRESH_COOKIE)
+{% endif %}
+
+
+def csrf_valid(request: Request) -> bool:
+    if request.method in SAFE_METHODS:
+        return True
+    has_auth_cookie = SESSION_COOKIE in request.cookies
+{% if ctx.session.refresh %}
+    has_auth_cookie = has_auth_cookie or REFRESH_COOKIE in request.cookies
+{% endif %}
+    if not has_auth_cookie:
+        return True
+    cookie = request.cookies.get(CSRF_COOKIE)
+    header = request.headers.get(CSRF_HEADER)
+    return bool(cookie) and bool(header) and secrets.compare_digest(cookie, header)

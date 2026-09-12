@@ -93,10 +93,15 @@ class RuntimeSessionConfig:
     algorithm: str = "HS256"
     ttl: int | None = None
     refresh: bool = False
+    delivery: str = "token-url"
 
     @property
     def uses_asymmetric(self) -> bool:
         return self.algorithm == "RS256"
+
+    @property
+    def uses_cookie(self) -> bool:
+        return self.delivery == "cookie"
 
 
 @dataclass(frozen=True)

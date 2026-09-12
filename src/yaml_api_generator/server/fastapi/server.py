@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from ..common.context_builder import build_runtime_context
 from ..common.loader import create_repositories, ensure_spec_dir_importable, initialize_indexes
@@ -15,6 +15,20 @@ from ..common.server_context import RuntimeContext
 from ..common.repositories import RepositoryRegistry
 from ..common.vendored_packages import install_vendored_packages
 from .factory import register_fastapi_routes
+from .session_cookie import csrf_valid
+
+
+def _csrf_middleware() -> type[BaseHTTPMiddleware]:
+    class CsrfMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next: Any) -> Response:
+            if not csrf_valid(request):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF token missing or invalid"},
+                )
+            return await call_next(request)
+
+    return CsrfMiddleware
 
 
 def _has_idp_providers(ctx: RuntimeContext) -> bool:
@@ -90,6 +104,8 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
 
     if _has_idp_providers(ctx):
         app.add_middleware(_idp_provisioning_middleware(ctx, registry))
+    if ctx.session.uses_cookie:
+        app.add_middleware(_csrf_middleware())
 
     register_fastapi_routes(app, ctx, registry)
 

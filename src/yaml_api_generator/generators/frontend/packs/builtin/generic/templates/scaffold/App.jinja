@@ -23,7 +23,7 @@ interface AuthContextType {
   token: string | null;
   user: any | null;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -133,8 +133,13 @@ function AuthCallback({ onToken }: { onToken: (t: string) => void }) {
       body: JSON.stringify({ code }),
     })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
+{% if context.session_delivery == 'cookie' %}
+      .then(() => {
+        onToken('cookie-session');
+{% else %}
       .then((data) => {
         onToken(data.token);
+{% endif %}
         navigate('/', { replace: true });
       })
       .catch(() => navigate('/login', { replace: true }));
@@ -144,12 +149,23 @@ function AuthCallback({ onToken }: { onToken: (t: string) => void }) {
 {% endif %}
 
 function App() {
+  {% if context.session_delivery == 'cookie' %}
+  const [token, setToken] = useState<string | null>(() =>
+    document.cookie.includes('csrf_token=') ? 'cookie-session' : null
+  );
+  {% else %}
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  {% endif %}
   const [user, setUser] = useState<any | null>(null);
 
-  const logout = () => {
+  const logout = async () => {
     const ssoLogoutPath = localStorage.getItem('sso_logout_path');
+    {% if context.session_delivery == 'cookie' %}
+    await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' }).catch(() => undefined);
+    {% endif %}
+    {% if context.session_delivery != 'cookie' %}
     localStorage.removeItem('token');
+    {% endif %}
     localStorage.removeItem('sso_logout_path');
     setToken(null);
     setUser(null);
@@ -170,16 +186,26 @@ function App() {
     }
     const data = await res.json();
     localStorage.removeItem('sso_logout_path');
+    {% if context.session_delivery == 'cookie' %}
+    setToken('cookie-session');
+    {% else %}
     localStorage.setItem('token', data.token);
     setToken(data.token);
+    {% endif %}
     setUser(data.user);
   };
 
   {% if context.identity_entities %}
+  {% if context.session_delivery == 'cookie' %}
+  const handleExternalToken = () => {
+    setToken('cookie-session');
+  };
+  {% else %}
   const handleExternalToken = (t: string) => {
     localStorage.setItem('token', t);
     setToken(t);
   };
+  {% endif %}
   {% endif %}
 
   return (

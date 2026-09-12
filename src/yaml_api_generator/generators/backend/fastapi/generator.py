@@ -292,17 +292,25 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
             auth_imports.append("from .login import router as login_router")
 
+        if context.session.uses_cookie:
+            (routes_dir / "session.py").write_text(
+                env.get_template("session_routes.py.jinja").render()
+            )
+            auth_imports.append("from .session import router as session_router")
+
         if context.auth.has_app_oidc_auth:
             (routes_dir / "oidc_routes.py").write_text(
                 env.get_template("oidc_routes.py.jinja").render(
-                    auth=context.auth, base_prefix=base_prefix
+                    auth=context.auth, base_prefix=base_prefix, ctx=context
                 )
             )
             auth_imports.append("from .oidc_routes import router as oidc_router")
 
         if context.auth.has_saml_auth:
             (routes_dir / "saml_routes.py").write_text(
-                env.get_template("saml_routes.py.jinja").render(auth=context.auth)
+                env.get_template("saml_routes.py.jinja").render(
+                    auth=context.auth, ctx=context
+                )
             )
             auth_imports.append("from .saml_routes import router as saml_router")
 
@@ -443,6 +451,11 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.session.refresh:
             init_imports.append(
                 "from .session_tokens import revoke_session, rotate_session"
+            )
+        if context.session.uses_cookie:
+            auth_files.append(("session_cookie.py.jinja", "session_cookie.py"))
+            init_imports.append(
+                "from .session_cookie import csrf_valid, set_session_cookies, clear_session_cookies"
             )
 
         for template_name, filename in auth_files:

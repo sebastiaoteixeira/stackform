@@ -1,15 +1,29 @@
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import {% if ctx.session.uses_cookie %}JSONResponse, {% endif %}RedirectResponse, Response
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from onelogin.saml2.idp_metadata_parser import OneLogin_Saml2_IdPMetadataParser
 
 from dependencies.mongodb import get_database
 from dependencies.session_tokens import issue_session
+{% if ctx.session.uses_cookie %}
+from dependencies.session_cookie import issue_csrf_token, set_session_cookies
+{% endif %}
 from settings import settings
 
 router = APIRouter()
+
+
+def _session_response(request: Request, session: dict[str, str], user: dict[str, Any]) -> Any:
+{% if ctx.session.uses_cookie %}
+    csrf_token = issue_csrf_token()
+    response = JSONResponse({"user": user, "csrf_token": csrf_token})
+    set_session_cookies(response, request, session["token"], csrf_token{% if ctx.session.refresh %}, session["refresh_token"]{% endif %})
+    return response
+{% else %}
+    return {**session, "user": user}
+{% endif %}
 
 
 def _build_saml_settings(
@@ -112,7 +126,7 @@ async def saml_{{ sym }}_callback(
         subject = existing.get("{{ col.id_field }}")
         session = await issue_session(str(subject), "{{ col.name }}")
         safe_user = {k: v for k, v in existing.items() if k not in ("_id", "_auth")}
-        return {**session, "user": safe_user}
+        return _session_response(request, session, safe_user)
 
     {% if binding.auto_provision %}
     import uuid as _uuid
@@ -121,7 +135,7 @@ async def saml_{{ sym }}_callback(
     await collection.insert_one(user_fields)
     session = await issue_session(new_id, "{{ col.name }}")
     safe_user = {k: v for k, v in user_fields.items() if k not in ("_id", "_auth")}
-    return {**session, "user": safe_user}
+    return _session_response(request, session, safe_user)
     {% else %}
     raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
     {% endif %}

@@ -161,6 +161,7 @@ class V02Transformer:
             algorithm=session_data.get("algorithm", "HS256"),
             ttl=session_data.get("ttl"),
             refresh=session_data.get("refresh", False),
+            delivery=session_data.get("delivery", "token-url"),
         )
 
     def _process_imports(

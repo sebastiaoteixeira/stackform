@@ -1,9 +1,20 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+{% if ctx.session.uses_cookie %}
+from fastapi import Request
+from fastapi.responses import JSONResponse
+{% endif %}
 from pydantic import BaseModel, Field
 
 from dependencies.auth import verify_password
+{% if ctx.session.uses_cookie %}
+{% if ctx.session.refresh %}
+from dependencies.session_cookie import issue_csrf_token, refresh_token_from_request, set_session_cookies
+{% else %}
+from dependencies.session_cookie import issue_csrf_token, set_session_cookies
+{% endif %}
+{% endif %}
 from dependencies.mongodb import get_database
 {% if ctx.session.refresh %}
 from dependencies.session_tokens import issue_session, rotate_session
@@ -13,7 +24,7 @@ from dependencies.session_tokens import issue_session
 
 router = APIRouter()
 
-{% if ctx.session.refresh %}
+{% if ctx.session.refresh and not ctx.session.uses_cookie %}
 
 class RefreshPayload(BaseModel):
     refresh_token: str = Field(..., min_length=1)
@@ -30,7 +41,7 @@ class {{ class_name }}LoginPayload(BaseModel):
 
 
 @router.post("/{{ identity.name }}/login", tags=["{{ identity.name | capitalize_collection }}"])
-async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> Any:
+async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if ctx.session.uses_cookie %}, request: Request{% endif %}) -> Any:
     db = get_database()
     col = db["{{ identity.name }}"]
     cursor = col.find({})
@@ -54,11 +65,33 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload) -> An
             if k not in ("password", "_id", "_auth")
         }
         session = await issue_session(str(subject), "{{ identity.name }}")
+{% if ctx.session.uses_cookie %}
+        csrf_token = issue_csrf_token()
+        response = JSONResponse({"user": safe_user, "csrf_token": csrf_token})
+        set_session_cookies(response, request, session["token"], csrf_token{% if ctx.session.refresh %}, session["refresh_token"]{% endif %})
+        return response
+{% else %}
         return {**session, "user": safe_user}
+{% endif %}
 
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 {% if ctx.session.refresh %}
+{% if ctx.session.uses_cookie %}
+
+@router.post("/{{ identity.name }}/refresh", tags=["{{ identity.name | capitalize_collection }}"])
+async def refresh_{{ identity.name }}(request: Request) -> Any:
+    presented = refresh_token_from_request(request)
+    if presented is None:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    rotated = await rotate_session(presented)
+    if rotated is None:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    csrf_token = issue_csrf_token()
+    response = JSONResponse({"csrf_token": csrf_token})
+    set_session_cookies(response, request, rotated["token"], csrf_token, rotated["refresh_token"])
+    return response
+{% else %}
 
 @router.post("/{{ identity.name }}/refresh", tags=["{{ identity.name | capitalize_collection }}"])
 async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
@@ -67,6 +100,7 @@ async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     return rotated
 
+{% endif %}
 {% endif %}
 {% endif %}
 {% endfor %}

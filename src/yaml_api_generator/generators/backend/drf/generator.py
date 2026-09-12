@@ -7,6 +7,7 @@ from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
 from ..validation import (
+    reject_cookie_delivery,
     reject_idp_trust,
     reject_pagination,
     reject_session_refresh,
@@ -41,6 +42,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._dir_prefix = "api"
 
     def generate(self, context: CompileContext, output_dir: Path) -> None:
+        reject_cookie_delivery(context, "drf")
         reject_idp_trust(context, "drf")
         reject_session_refresh(context, "drf")
         reject_pagination(context, "drf")

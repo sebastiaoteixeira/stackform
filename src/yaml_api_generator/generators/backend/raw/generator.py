@@ -9,6 +9,7 @@ from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
 from ..validation import (
+    reject_cookie_delivery,
     reject_idp_trust,
     reject_pagination,
     reject_session_refresh,
@@ -31,6 +32,7 @@ def _path_to_regex(path: str) -> str:
 
 class RawASGIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
+        reject_cookie_delivery(context, "raw")
         reject_idp_trust(context, "raw")
         reject_session_refresh(context, "raw")
         reject_pagination(context, "raw")
