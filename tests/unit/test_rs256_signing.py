@@ -97,7 +97,7 @@ class TestSessionParsing:
     def test_invalid_algorithm_rejected(self, tmp_path):
         with pytest.raises(ConfigErrors):
             load_and_generate_ir(
-                _spec_with_session(tmp_path, "auth-password.yaml", "ES512")
+                _spec_with_session(tmp_path, "auth-password.yaml", "BADALG")
             )
 
 
