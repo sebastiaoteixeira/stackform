@@ -7,6 +7,7 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     flatten_role_hierarchy,
 )
+from .auth.jwt import JWKS_PATH
 from .server_context import (
     RuntimeAccessRule,
     RuntimeAppConfig,
@@ -16,6 +17,7 @@ from .server_context import (
     RuntimeIdentityDescriptor,
     RuntimeOperationDescriptor,
     RuntimeRouteDescriptor,
+    RuntimeSessionConfig,
 )
 
 
@@ -25,8 +27,16 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         api_version=document.api.version,
     )
 
+    session = RuntimeSessionConfig(
+        algorithm=document.session.algorithm,
+        ttl=document.session.ttl,
+        refresh=document.session.refresh,
+        delivery=document.session.delivery,
+    )
     collections = _build_collections(document.collections)
     routes = _build_routes(document)
+    if session.uses_asymmetric:
+        routes.append(_jwks_route())
     auth = _build_auth_config(
         document.identityCollections,
         document.collections,
@@ -40,6 +50,18 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         routes=routes,
         auth=auth,
         operations=operations,
+        spec_version=document.version,
+        session=session,
+    )
+
+
+def _jwks_route() -> RuntimeRouteDescriptor:
+    return RuntimeRouteDescriptor(
+        method="GET",
+        path=JWKS_PATH,
+        operation="jwks",
+        collection=None,
+        is_public=True,
     )
 
 
@@ -88,9 +110,16 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                     request_symbols=rule.request_symbols,
                     when=rule.when,
                     effect=rule.effect,
+                    reason=rule.reason if document.version == "0.3" else None,
+                    bind=rule.bind,
                 )
                 for rule in route.access_rules
             ]
+        service = document.services.get(route.service)
+        service_input = (
+            service.input.fields if service is not None and service.input is not None else None
+        )
+        service_forwarding = dict(service.forwarding) if service is not None else {}
         routes.append(
             RuntimeRouteDescriptor(
                 method=route.method,
@@ -100,9 +129,24 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                 is_public=route.is_public,
                 handler=route.handler,
                 access_rules=access_rules,
+                service_input=service_input,
+                service_forwarding=service_forwarding,
+                pagination=route.pagination,
             )
         )
+    if document.session.refresh:
+        routes += [_refresh_route(route) for route in routes if route.operation == "login"]
     return routes
+
+
+def _refresh_route(login: RuntimeRouteDescriptor) -> RuntimeRouteDescriptor:
+    return RuntimeRouteDescriptor(
+        method="POST",
+        path=f"{login.path.removesuffix('/login')}/refresh",
+        operation="refresh",
+        collection=login.collection,
+        is_public=True,
+    )
 
 
 def _build_auth_config(

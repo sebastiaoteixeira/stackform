@@ -6,8 +6,9 @@ from yaml_api_generator.ir import (
     IRIdentityBinding,
     IRProviderBinding,
     IRRequestBinding,
+    WhereRhs,
 )
-from yaml_api_generator.ir.api import IRRolesConfig
+from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
 
 
@@ -57,6 +58,8 @@ class RuntimeAccessRule:
     request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
+    reason: str | None = None
+    bind: dict[str, WhereRhs] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,9 @@ class RuntimeRouteDescriptor:
     is_public: bool
     handler: str | None = None
     access_rules: list[RuntimeAccessRule] | None = None
+    service_input: dict[str, Any] | None = None
+    service_forwarding: dict[str, Any] = field(default_factory=dict)
+    pagination: IRPagination | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +89,22 @@ class RuntimeAuthConfig:
 
 
 @dataclass(frozen=True)
+class RuntimeSessionConfig:
+    algorithm: str = "HS256"
+    ttl: int | None = None
+    refresh: bool = False
+    delivery: str = "token-url"
+
+    @property
+    def uses_asymmetric(self) -> bool:
+        return self.algorithm == "RS256"
+
+    @property
+    def uses_cookie(self) -> bool:
+        return self.delivery == "cookie"
+
+
+@dataclass(frozen=True)
 class RuntimeAppConfig:
     base_path: str
     api_version: str | None
@@ -95,3 +117,5 @@ class RuntimeContext:
     routes: list[RuntimeRouteDescriptor]
     auth: RuntimeAuthConfig
     operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)
+    spec_version: str = "0.2"
+    session: RuntimeSessionConfig = field(default_factory=RuntimeSessionConfig)

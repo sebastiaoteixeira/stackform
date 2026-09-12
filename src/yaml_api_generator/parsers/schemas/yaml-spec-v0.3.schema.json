@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "yaml-spec-v0.3.schema.json",
   "title": "YAML API Generator Structure Spec v0.3",
-  "$comment": "Superset of v0.2. Adds the where binding form (given: strings), service input:/with:, and controller/access-rule bind:. Everything v0.2 accepted stays valid. Reserved constructs are accepted syntactically; their semantics land in later v0.3 issues.",
+  "$comment": "Superset of v0.2. Adds the where binding form (given: strings), service input:/with:, and controller/access-rule bind:. Everything v0.2 accepted stays valid.",
   "type": "object",
   "required": ["version", "entities"],
   "properties": {
@@ -63,7 +63,32 @@
     "imports": {
       "type": "object",
       "additionalProperties": {
-        "type": "string"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": ["path", "package"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "package": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "requires": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "mongo": {
@@ -142,36 +167,47 @@
         "algorithm": { "type": "string", "enum": ["HS256", "RS256"], "default": "HS256" },
         "ttl": { "type": "integer", "minimum": 1 },
         "refresh": { "type": "boolean", "default": false },
-        "delivery": { "type": "string", "enum": ["token-url", "code", "cookie"], "default": "token-url" }
+        "delivery": { "type": "string", "enum": ["token-url", "cookie"], "default": "token-url" }
       },
       "additionalProperties": false
     },
     "Symbol": {
       "type": "string",
       "pattern": "^\\$[A-Za-z_][A-Za-z0-9_]*$",
-      "description": "v0.3 $-sigil slug: a symbolic reference resolved at build or call time (e.g. $userId). Resolution semantics land in a later v0.3 issue."
+      "description": "v0.3 $-sigil slug: a symbolic reference resolved against the explicit scope of its where, bind, with, or repository-query site (e.g. $userId)."
     },
     "WhereOperator": {
       "type": "string",
       "enum": ["=", "and", "!=", "<", "<=", ">", ">=", "in"],
-      "description": "v0.3 where-clause operators. Active in v0.3: '=' and 'and'. Reserved (accepted syntactically, not yet implemented): '!=', '<', '<=', '>', '>=', 'in'."
+      "description": "v0.3 where-clause operators. '=' and 'and' are active. Reserved tokens '!=', '<', '<=', '>', '>=', and 'in' are rejected by the where parser with WHERE_OPERATOR_UNSUPPORTED."
     },
     "WhereExpression": {
       "type": "string",
-      "pattern": "^[\\w$][\\w$.'\"\\s=<>!,()-]*$",
-      "description": "v0.3 where binding form used as a given: value: a boolean expression over fields, $-sigil symbols, literals, and WhereOperator tokens. Only '=' and 'and' are active in v0.3; the remaining operators are reserved."
+      "pattern": "^[\\w$][\\w$.'\"\\s=<>!,()+\\\\-]*$",
+      "description": "v0.3 where binding form used as a given: value: '<collection> where <field> = <rhs> [and <field> = <rhs>]*'. The where parser is the authority on the grammar; this pattern only bounds the character set. Only '=' and 'and' are active in v0.3; the remaining WhereOperator tokens are reserved."
     },
     "SymbolBinding": {
       "type": "object",
       "minProperties": 1,
-      "additionalProperties": { "type": "string" },
-      "description": "v0.3 map of names to $-sigil symbols or request/identity references. Backs controller/access-rule bind: and service with:. Forwarding semantics land in a later v0.3 issue."
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      },
+      "description": "v0.3 map of names to $-sigil symbols or scalar literals. Backs controller/access-rule bind: and service with:."
     },
     "InputConfig": {
-      "description": "v0.3 declares the named inputs a service requires; supplied at build time via bind: or at call time via with:. Semantics land in a later v0.3 issue.",
+      "description": "v0.3 declares the named inputs a service requires.",
       "oneOf": [
         { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-        { "type": "object", "minProperties": 1 }
+        {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string", "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref"] },
+              { "$ref": "#/$defs/FieldConfig" }
+            ]
+          }
+        }
       ]
     },
     "OperationFlags": {
@@ -533,6 +569,51 @@
         "path": { "type": "string" },
         "access": {
           "$ref": "#/$defs/AccessConfig"
+        },
+        "pagination": {
+          "$ref": "#/$defs/PaginationConfig"
+        }
+      }
+    },
+    "PaginationConfig": {
+      "description": "v0.3 controller pagination. Only the offset and keyset strategies and count none/exact are supported; cursor, range and count: estimated are named by the grammar so the parser can reject them by name (PAGINATION_UNSUPPORTED).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "size"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["offset", "keyset", "cursor", "range"]
+        },
+        "size": {
+          "type": "object",
+          "required": ["default", "max"],
+          "properties": {
+            "default": { "type": "integer", "minimum": 0 },
+            "max": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "count": {
+          "type": "string",
+          "enum": ["none", "exact", "estimated"],
+          "default": "none"
+        },
+        "onOverflow": {
+          "type": "string",
+          "enum": ["clamp", "reject"],
+          "default": "clamp"
+        },
+        "envelope": { "type": "boolean", "default": false },
+        "sort": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field"],
+            "properties": {
+              "field": { "type": "string" },
+              "dir": { "type": "string", "enum": ["asc", "desc"], "default": "asc" }
+            }
+          }
         }
       }
     },
@@ -629,11 +710,9 @@
           "minProperties": 1,
           "additionalProperties": {
             "anyOf": [
-              { "type": "string", "enum": ["public", "authenticated"] },
               { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" },
               { "type": "string", "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$" },
               { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$" },
-              { "$ref": "#/$defs/Symbol" },
               { "$ref": "#/$defs/WhereExpression" }
             ]
           }
@@ -648,11 +727,6 @@
           "type": "string",
           "enum": ["allow", "deny"],
           "default": "allow"
-        },
-        "filter": { "type": "string" },
-        "writeFields": {
-          "type": "array",
-          "items": { "type": "string" }
         },
         "reason": { "type": "string" },
         "bind": { "$ref": "#/$defs/SymbolBinding" }

@@ -11,7 +11,7 @@ from api.authentication.mongodb import get_database
 {% if auth.uses_jwt %}
 from api.authentication.jwt_utils import decode_jwt_token
 {% endif %}
-from settings import settings
+from {{ settings_module }} import settings
 
 
 def hash_password(password: str, rounds: int = settings.PASSWORD_HASH_ROUNDS) -> str:

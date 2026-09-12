@@ -208,7 +208,7 @@ hierarchy is not applied during enforcement; only exact matches pass.
 |-----------|-------------|----------|
 | Invalid or unknown API key | 401 | `{"detail": "Unauthorized"}` |
 | Missing credentials on a protected route | 401 | `{"detail": "Unauthorized"}` |
-| Authenticated but role/scope not allowed | 403 | `{"detail": "<reason>"}` |
+| Authenticated but role/scope not allowed | 403 | `{"detail": "Forbidden"}` |
 | Record not found before an ownership check | 404 | `{"detail": "Resource not found"}` |
 
 ## Differences from the password provider

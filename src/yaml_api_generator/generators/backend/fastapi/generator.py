@@ -7,6 +7,7 @@ from yaml_api_generator.generators.backend.builders.settings_builder import buil
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
+from ..validation import reject_pagination, reject_unsigned_session_algorithm
 from . import access_filters, sql_filters, type_mapper
 
 
@@ -30,6 +31,8 @@ def _crud_operations(col_data: dict) -> list[str]:
 
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
+        reject_pagination(context, "fastapi")
+        reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([
                 FileSystemLoader(str(_TEMPLATES_DIR)),
@@ -44,6 +47,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
+        env.globals["settings_module"] = "settings"
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["sql_column"] = sql_filters.sql_column
         env.filters["rule_to_python"] = access_filters.rule_to_python
@@ -58,6 +62,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.globals["needs_any_import"] = type_mapper.needs_any_import
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "conflicts.py").write_text(
+            env.get_template("conflicts.py.jinja").render()
+        )
 
         collections_by_name = group_by_collection(context)
 
@@ -67,6 +74,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_models(env, context, collections_by_name, output_dir)
         self._render_dtos(env, context, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
+        self._render_service_inputs(env, context, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_dependencies(env, context, output_dir)
@@ -76,6 +84,19 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 template_name="requirements.txt.jinja",
                 output_path="requirements.txt",
             )
+        )
+
+    def _render_service_inputs(
+        self, env: Environment, context: CompileContext, output_dir: Path
+    ) -> None:
+        self._render_single_file(
+            env,
+            context,
+            output_dir,
+            SingleFileRenderConfig(
+                template_name="service_inputs.py.jinja",
+                output_path="dependencies/service_inputs.py",
+            ),
         )
 
     def _render_settings(
@@ -246,8 +267,22 @@ class FastAPIGenerator(TemplateBasedGenerator):
 
         if context.auth.uses_jwt and context.session.uses_asymmetric:
             (routes_dir / "jwks.py").write_text(
-                env.get_template("jwks_routes.py.jinja").render(auth=context.auth)
+                env.get_template("jwks_routes.py.jinja").render()
             )
+
+        handler_routes = [
+            route
+            for route in context.routes
+            if route.collection is None and route.handler is not None
+        ]
+        if handler_routes:
+            (routes_dir / "_handlers.py").write_text(
+                env.get_template("handler_routes.py.jinja").render(
+                    routes=handler_routes,
+                    auth=context.auth,
+                )
+            )
+            auth_imports.append("from ._handlers import router as handlers_router")
 
         if context.auth.has_password_auth:
             (routes_dir / "login.py").write_text(
@@ -257,17 +292,25 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
             auth_imports.append("from .login import router as login_router")
 
+        if context.session.uses_cookie:
+            (routes_dir / "session.py").write_text(
+                env.get_template("session_routes.py.jinja").render()
+            )
+            auth_imports.append("from .session import router as session_router")
+
         if context.auth.has_app_oidc_auth:
             (routes_dir / "oidc_routes.py").write_text(
                 env.get_template("oidc_routes.py.jinja").render(
-                    auth=context.auth, base_prefix=base_prefix
+                    auth=context.auth, base_prefix=base_prefix, ctx=context
                 )
             )
             auth_imports.append("from .oidc_routes import router as oidc_router")
 
         if context.auth.has_saml_auth:
             (routes_dir / "saml_routes.py").write_text(
-                env.get_template("saml_routes.py.jinja").render(auth=context.auth)
+                env.get_template("saml_routes.py.jinja").render(
+                    auth=context.auth, ctx=context
+                )
             )
             auth_imports.append("from .saml_routes import router as saml_router")
 
@@ -403,9 +446,12 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.auth.uses_jwt:
             auth_files.append(("jwt_utils.py.jinja", "jwt_utils.py"))
             init_imports.append("from .jwt_utils import create_jwt_token, decode_jwt_token")
+            auth_files.append(("session_tokens.py.jinja", "session_tokens.py"))
+            init_imports.append("from .session_tokens import issue_session")
         if context.session.refresh:
-            auth_files.append(("refresh_store.py.jinja", "refresh_store.py"))
-            init_imports.append("from .refresh_store import issue, rotate, revoke_session")
+            init_imports.append(
+                "from .session_tokens import revoke_session, rotate_session"
+            )
         if context.session.uses_cookie:
             auth_files.append(("session_cookie.py.jinja", "session_cookie.py"))
             init_imports.append(
@@ -458,4 +504,3 @@ class FastAPIGenerator(TemplateBasedGenerator):
         (deps_dir / "__init__.py").write_text(
             "\n".join(init_imports) + "\n" if init_imports else ""
         )
-

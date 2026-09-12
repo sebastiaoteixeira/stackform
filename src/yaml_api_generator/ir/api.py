@@ -21,6 +21,7 @@ eliminating repeated YAML parsing and validation.
 
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .when import WhenExpr
@@ -87,6 +88,28 @@ class IRDeploy:
 
 
 @dataclass(frozen=True)
+class IRSortKey:
+    field: str
+    dir: str = "asc"
+
+
+@dataclass(frozen=True)
+class IRPageSize:
+    default: int
+    max: int
+
+
+@dataclass(frozen=True)
+class IRPagination:
+    strategy: str
+    size: IRPageSize
+    count: str = "none"
+    on_overflow: str = "clamp"
+    envelope: bool = False
+    sort: tuple[IRSortKey, ...] = ()
+
+
+@dataclass(frozen=True)
 class IROperation:
     name: str
     query: dict | None = None
@@ -137,6 +160,10 @@ class IRSession:
     refresh: bool = False
     delivery: str = "token-url"
 
+    @property
+    def uses_asymmetric(self) -> bool:
+        return self.algorithm == "RS256"
+
 
 @dataclass(frozen=True)
 class IRMongo:
@@ -168,9 +195,30 @@ class IRCollection:
 
 
 @dataclass(frozen=True)
+class IRSymbolRef:
+    root: str
+    path: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IRLiteralRef:
+    value: Any
+
+
+WhereRhs = IRSymbolRef | IRLiteralRef
+
+
+@dataclass(frozen=True)
+class IRWhereConjunct:
+    field: str
+    rhs: WhereRhs
+
+
+@dataclass(frozen=True)
 class IRDocumentBinding:
     collection: str
     id_param: str | None = None
+    where: tuple[IRWhereConjunct, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -204,6 +252,14 @@ class IRDto:
 
 
 @dataclass(frozen=True)
+class IRVendoredImport:
+    alias: str
+    package: str
+    source: Path
+    requires: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class IRAccessRule:
     principal: str
     required_role: str | None = None
@@ -215,6 +271,16 @@ class IRAccessRule:
     filter: str | None = None
     write_fields: list[str] = field(default_factory=list)
     reason: str | None = None
+    bind: dict[str, WhereRhs] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class IRServiceInput:
+    fields: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def names(self) -> frozenset[str]:
+        return frozenset(self.fields)
 
 
 @dataclass(frozen=True)
@@ -225,6 +291,8 @@ class IRService:
     handler: str | None = None
     abstract: bool = False
     inherits: str | None = None
+    input: IRServiceInput | None = None
+    forwarding: dict[str, WhereRhs] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -237,6 +305,7 @@ class IRRoute:
     is_public: bool = True
     access_rules: list[IRAccessRule] | None = None
     handler: str | None = None
+    pagination: IRPagination | None = None
 
 
 @dataclass(frozen=True)
@@ -340,6 +409,8 @@ class IRDocument:
     policies: dict[str, IRPolicy] = field(default_factory=dict)
     session: IRSession = field(default_factory=IRSession)
     ui_config: dict[str, Any] | None = None
+    vendored_imports: tuple[IRVendoredImport, ...] = ()
+    vendored_requirements: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

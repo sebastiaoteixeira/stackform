@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..common.context_builder import build_runtime_context
 from ..common.loader import create_repositories, ensure_spec_dir_importable
+from ..common.vendored_packages import install_vendored_packages
 from .runner import ASGIApp
 
 
@@ -19,6 +20,7 @@ def build_raw_app(yaml_file: str, schema_file: str | Path | None = None) -> ASGI
     """
     ensure_spec_dir_importable(yaml_file)
     ir, registry = create_repositories(yaml_file, schema_file)
+    install_vendored_packages(ir.vendored_imports)
     ctx = build_runtime_context(ir)
 
     return ASGIApp(ctx, registry, ir)

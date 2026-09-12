@@ -100,6 +100,9 @@ def rule_to_python(rule: AccessRuleDescriptor) -> str:
     record_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_record_shaped)
     wrapper_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_whole)
     conditions: list[str] = []
+    if rule.principal.startswith("identity:"):
+        collection = rule.principal.removeprefix("identity:")
+        conditions.append(f'principal.get("identity_collection") == "{collection}"')
     if rule.required_role is not None:
         conditions.append(f'_principal_has_role(principal, "{rule.required_role}")')
     if rule.when is not None:
@@ -148,7 +151,7 @@ def needs_post_fetch(route: RouteDescriptor) -> bool:
 
 
 def is_unconditional(rule: AccessRuleDescriptor) -> bool:
-    return rule.when is None and rule.required_role is None
+    return not rule.principal and rule.when is None and rule.required_role is None
 
 
 def needs_document_rule(rule: AccessRuleDescriptor) -> bool:
