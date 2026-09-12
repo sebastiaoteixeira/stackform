@@ -9,7 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, create_model
 
-from yaml_api_generator.dpop import DPoPProofFactory
+from yaml_api_generator.runtime.dpop import DPoPProofFactory
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..common.auth import oidc

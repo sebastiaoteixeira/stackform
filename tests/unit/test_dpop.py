@@ -13,7 +13,7 @@ from jwt.algorithms import ECAlgorithm
 
 from tests.conftest import VALID_DIR
 from tests.unit.support.repositories import InMemoryRepository
-from yaml_api_generator.dpop import (
+from yaml_api_generator.runtime.dpop import (
     DPoPProofFactory,
     generate_private_key_pem,
     request_with_dpop,
