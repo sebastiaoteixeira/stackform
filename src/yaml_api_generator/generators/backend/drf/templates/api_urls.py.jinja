@@ -16,7 +16,7 @@ from api.views.{{ col_name }} import {% if list_routes %}{{ col_name | capitaliz
 {% endfor %}
 {% if auth and auth.has_password_auth %}
 {% for identity in auth.identity_collections %}
-{% if "password" in identity.via and identity.identifier %}
+{% if identity.has_password and identity.identifier %}
 from api.views.login import {{ identity.name | capitalize_collection }}LoginView
 
 {% endif %}
@@ -29,7 +29,7 @@ urlpatterns = [
 {% endfor %}
 {% if auth and auth.has_password_auth %}
 {% for identity in auth.identity_collections %}
-{% if "password" in identity.via and identity.identifier %}
+{% if identity.has_password and identity.identifier %}
     path("{{ identity.name }}/login", {{ identity.name | capitalize_collection }}LoginView.as_view(), name="{{ identity.name }}-login"),
 {% endif %}
 {% endfor %}

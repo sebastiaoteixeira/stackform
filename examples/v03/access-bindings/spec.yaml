@@ -37,6 +37,13 @@ repositories:
     entity: user
   organizations:
     entity: organization
+    operations:
+      listOwned:
+        query:
+          command: findOne
+          filter:
+            slug: $organizationSlug
+            active: true
   posts:
     entity: post
     operations:
@@ -50,6 +57,7 @@ repositories:
 services:
   organizations:
     repository: organizations
+    operation: listOwned
   posts:
     repository: posts
   ownedPost:

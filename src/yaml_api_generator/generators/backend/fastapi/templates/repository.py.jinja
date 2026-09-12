@@ -27,7 +27,7 @@ class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){%
 {% endif %}
 {% for op in custom_operations | default([]) %}
 {% set q = op.query %}
-{% set col_expr = "self._db[\"" + q.collection + "\"]" if q and q.collection else "self._col" %}
+{% set col_expr = "self._db[\"" + q["collection"] + "\"]" if q and q.get("collection") else "self._col" %}
 {% if q %}
 {% set cmd = q.command %}
 {% if cmd == "find" %}

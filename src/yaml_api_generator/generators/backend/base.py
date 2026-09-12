@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Any
 
-from jinja2 import Environment
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, StrictUndefined
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.utils.strings import to_pascal_case
@@ -31,6 +31,23 @@ class SingleFileRenderConfig:
     template_name: str
     output_path: str | Path
     context_builder: Callable[[CompileContext], dict] | None = None
+
+
+def template_environment(*template_dirs: Path) -> Environment:
+    """Build the Jinja environment every backend generator renders through.
+
+    StrictUndefined is what keeps a missing context key from reaching the
+    emitted source: the default undefined renders through repr() as the bare
+    token Undefined, which is valid Python syntax and therefore survives every
+    syntax-level check the generated project is put through.
+    """
+    return Environment(
+        loader=ChoiceLoader([FileSystemLoader(str(d)) for d in template_dirs]),
+        keep_trailing_newline=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
+        undefined=StrictUndefined,
+    )
 
 
 class CodeGenerator(ABC):

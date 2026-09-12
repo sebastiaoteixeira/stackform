@@ -158,6 +158,14 @@ def test_drf_project_scaffold(tmp_path):
     assert (tmp_path / "project" / "wsgi.py").exists()
 
 
+def test_drf_registers_the_login_route_it_emits(tmp_path):
+    ctx = _ctx_from_fixture("request-access.yaml")
+    gen = DRFGenerator()
+    gen.generate(ctx, tmp_path)
+    assert (tmp_path / "api" / "views" / "login.py").exists()
+    assert "LoginView" in (tmp_path / "api" / "urls.py").read_text()
+
+
 def test_drf_serializers_per_collection(tmp_path):
     ctx = _ctx_from_fixture("basic-crud.yaml")
     gen = DRFGenerator()

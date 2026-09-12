@@ -5,9 +5,18 @@ cannot implement one of those features must say so instead of emitting code
 that silently skips it.
 """
 
-from yaml_api_generator.generators.backend.compile_context import CompileContext
+from yaml_api_generator.generators.backend.compile_context import (
+    CompileContext,
+    RouteDescriptor,
+)
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
+
+# Operations every backend implements itself. Any other operation is dispatched to
+# the repository and needs a declared query to filter on.
+_BUILT_IN_OPERATIONS = frozenset(
+    {"list", "get", "create", "update", "replace", "delete", "login"}
+)
 
 _SQL_DATASTORES = frozenset({"postgres", "postgresql"})
 _MONGO_DATASTORES = frozenset({"mongo", "mongodb"})
@@ -160,3 +169,41 @@ def reject_unsigned_session_algorithm(context: CompileContext) -> None:
             ),
         )
     ])
+
+
+def _lacks_repository_operation(context: CompileContext, route: RouteDescriptor) -> bool:
+    if route.collection is None or route.handler is not None:
+        return False
+    if route.operation in _BUILT_IN_OPERATIONS:
+        return False
+    declared = context.repository_operations.get(route.collection, [])
+    return all(operation["name"] != route.operation for operation in declared)
+
+
+def reject_undeclared_repository_operations(context: CompileContext) -> None:
+    """Reject routes that dispatch to a repository operation nothing declares.
+
+    Such a route is emitted as a call into its repository, filtered by the query
+    the operation declares. With no declaration there is no query, and the
+    emitted call would silently drop the filter the route's access rules assume.
+    """
+    errors = [
+        ConfigError(
+            code="REPOSITORY_OPERATION_UNDECLARED",
+            message=(
+                f"Route {route.method} {route.path} calls operation "
+                f"'{route.operation}', which repository '{route.collection}' "
+                "does not declare"
+            ),
+            path=f"repositories.{route.collection}.operations.{route.operation}",
+            hint=(
+                f"Declare '{route.operation}' under "
+                f"repositories.{route.collection}.operations, or point the "
+                "service at one of the built-in operations"
+            ),
+        )
+        for route in context.routes
+        if _lacks_repository_operation(context, route)
+    ]
+    if errors:
+        raise ConfigErrors(errors)

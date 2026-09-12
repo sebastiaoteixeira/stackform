@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from jinja2 import ChoiceLoader, Environment, FileSystemLoader
+from jinja2 import Environment
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields, generated_secret_values
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
-from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
+from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
     extract_identity_fields,
     find_identity,
@@ -13,7 +13,11 @@ from ..utils import (
     pagination_config,
     runtime_module_source,
 )
-from ..validation import reject_unsigned_session_algorithm, validate_datastore_layout
+from ..validation import (
+    reject_undeclared_repository_operations,
+    reject_unsigned_session_algorithm,
+    validate_datastore_layout,
+)
 from . import access_filters, sql_filters, type_mapper
 
 
@@ -38,15 +42,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "fastapi")
         reject_unsigned_session_algorithm(context)
-        env = Environment(
-            loader=ChoiceLoader([
-                FileSystemLoader(str(_TEMPLATES_DIR)),
-                FileSystemLoader(str(_SHARED_TEMPLATES_DIR)),
-            ]),
-            keep_trailing_newline=True,
-            trim_blocks=True,
-            lstrip_blocks=True,
-        )
+        reject_undeclared_repository_operations(context)
+        env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.filters["python_type"] = type_mapper.python_type
         env.filters["python_annotation"] = type_mapper.python_annotation
         env.filters["capitalize_collection"] = to_pascal_case
