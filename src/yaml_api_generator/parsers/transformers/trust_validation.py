@@ -20,7 +20,7 @@ from yaml_api_generator.parsers.yaml_parser import ConfigError
 
 _TRUST_VALUES = frozenset({"app", "idp"})
 _IDP_PROVIDER_TYPES = frozenset({"oidc", "saml"})
-_APP_ONLY_KEYS = ("algorithm", "secret", "ttl", "refresh", "delivery")
+_APP_ONLY_KEYS = ("algorithm", "secret", "ttl", "refresh", "delivery", "pkce")
 
 
 def _check_provider(

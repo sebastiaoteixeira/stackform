@@ -346,7 +346,7 @@ def test_oidc_login_codes_stored_in_collection_datastore(tmp_path):
     assert "_SqlLoginCodes" not in store_src
 
 
-def test_oidc_pkce_off_by_default_is_byte_identical(tmp_path):
+def test_oidc_pkce_off_by_default_omits_pkce_fields(tmp_path):
     plain = tmp_path / "plain"
     gen = FastAPIGenerator()
     gen.generate(_ctx_from_fixture("auth-oidc.yaml"), plain)
@@ -355,6 +355,8 @@ def test_oidc_pkce_off_by_default_is_byte_identical(tmp_path):
     assert "code_verifier" not in oidc_src
     assert "pkce_verifier" not in oidc_src
     assert "import hashlib" not in oidc_src
+    assert 'params["state"] = state' in oidc_src
+    assert '"users_keycloak_state"' in oidc_src
 
 
 def test_oidc_pkce_emits_challenge_and_verifier(tmp_path):

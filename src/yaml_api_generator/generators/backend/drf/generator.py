@@ -10,6 +10,7 @@ from ..validation import (
     reject_cookie_delivery,
     reject_idp_trust,
     reject_pagination,
+    reject_pkce,
     reject_session_refresh,
     reject_unsigned_session_algorithm,
 )
@@ -46,6 +47,7 @@ class DRFGenerator(TemplateBasedGenerator):
         reject_idp_trust(context, "drf")
         reject_session_refresh(context, "drf")
         reject_pagination(context, "drf")
+        reject_pkce(context, "drf")
         reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([
