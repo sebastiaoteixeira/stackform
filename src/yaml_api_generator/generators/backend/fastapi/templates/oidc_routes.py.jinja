@@ -2,12 +2,16 @@
 {% set _relation_target_cols = [] %}
 {% set _pkce = namespace(used=false) %}
 {% set _dpop = namespace(used=false) %}
+{% set _dpop_providers = [] %}
 {% for col in auth.identity_collections %}
 {% for binding in col.bindings %}
 {% set _p = auth.providers.get(binding.provider) %}
 {% if _p and _p.type == "oidc" and not _p.is_idp %}
 {% if _p.pkce %}{% set _pkce.used = true %}{% endif %}
-{% if _p.dpop %}{% set _dpop.used = true %}{% endif %}
+{% if _p.dpop %}
+{% set _dpop.used = true %}
+{% if binding.provider not in _dpop_providers %}{% set _ = _dpop_providers.append(binding.provider) %}{% endif %}
+{% endif %}
 {% if col.name not in _app_oidc_cols %}{% set _ = _app_oidc_cols.append(col.name) %}{% endif %}
 {% for rel in binding.relations %}
 {% if rel.collection not in _relation_target_cols %}{% set _ = _relation_target_cols.append(rel.collection) %}{% endif %}
@@ -17,16 +21,9 @@
 {% endfor %}
 import time
 import secrets
-{% if _pkce.used or _dpop.used %}
+{% if _pkce.used %}
 import base64
 import hashlib
-{% endif %}
-{% if _dpop.used %}
-import json
-
-import jwt
-from cryptography.hazmat.primitives.asymmetric import ec
-from jwt.algorithms import ECAlgorithm
 {% endif %}
 from typing import Any
 from urllib.parse import urlencode
@@ -36,6 +33,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import {% if ctx.session.uses_cookie %}JSONResponse, {% endif %}RedirectResponse
 
 from dependencies.claims import resolve_claim_path, resolve_relations
+{% if _dpop.used %}
+from dependencies.dpop import DPoPProofFactory, request_with_dpop
+{% endif %}
 from dependencies.session_tokens import issue_session
 {% if ctx.session.uses_cookie %}
 from dependencies.session_cookie import issue_csrf_token, set_session_cookies
@@ -53,28 +53,11 @@ from settings import settings
 router = APIRouter()
 
 {% if _dpop.used %}
-_dpop_private_key = ec.generate_private_key(ec.SECP256R1())
-_dpop_jwk = json.loads(ECAlgorithm.to_jwk(_dpop_private_key.public_key()))
-
-
-def _dpop_proof(method: str, url: str, access_token: str | None = None) -> str:
-    payload: dict[str, Any] = {
-        "jti": secrets.token_urlsafe(16),
-        "htm": method,
-        "htu": url.split("?", 1)[0],
-        "iat": int(time.time()),
-    }
-    if access_token is not None:
-        payload["ath"] = base64.urlsafe_b64encode(
-            hashlib.sha256(access_token.encode()).digest()
-        ).rstrip(b"=").decode()
-    return jwt.encode(
-        payload,
-        _dpop_private_key,
-        algorithm="ES256",
-        headers={"typ": "dpop+jwt", "jwk": _dpop_jwk},
-    )
-
+{% for provider_name in _dpop_providers %}
+_{{ provider_name | py_identifier }}_dpop = DPoPProofFactory.from_pem(
+    settings.{{ provider_name | py_identifier | upper }}_DPOP_PRIVATE_KEY.get_secret_value()
+)
+{% endfor %}
 {% endif %}
 
 @router.post("/auth/exchange")
@@ -207,21 +190,34 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None
         _token_data["code_verifier"] = verifier
         {% endif %}
         {% if provider.dpop %}
-        token_resp = await client.post(token_endpoint, data=_token_data, headers={"DPoP": _dpop_proof("POST", token_endpoint)})
+        token_resp = await request_with_dpop(
+            client,
+            "POST",
+            token_endpoint,
+            _{{ provider_name | py_identifier }}_dpop,
+            data=_token_data,
+        )
         {% else %}
         token_resp = await client.post(token_endpoint, data=_token_data)
         {% endif %}
         if token_resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Token exchange failed")
         token_data = token_resp.json()
+        {% if provider.dpop %}
+        if token_data.get("token_type", "").lower() != "dpop":
+            raise HTTPException(status_code=401, detail="Provider did not issue a DPoP-bound token")
+        {% endif %}
 
         {% if provider_name == "github" %}
         {% if provider.dpop %}
-        userinfo_resp = await client.get(
+        userinfo_resp = await request_with_dpop(
+            client,
+            "GET",
             "https://api.github.com/user",
+            _{{ provider_name | py_identifier }}_dpop,
+            access_token=token_data["access_token"],
             headers={
                 "Authorization": f"DPoP {token_data['access_token']}",
-                "DPoP": _dpop_proof("GET", "https://api.github.com/user", token_data["access_token"]),
             },
         )
         {% else %}
@@ -233,11 +229,14 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None
         {% else %}
         userinfo_endpoint = discovery.get("userinfo_endpoint", "")
         {% if provider.dpop %}
-        userinfo_resp = await client.get(
+        userinfo_resp = await request_with_dpop(
+            client,
+            "GET",
             userinfo_endpoint,
+            _{{ provider_name | py_identifier }}_dpop,
+            access_token=token_data["access_token"],
             headers={
                 "Authorization": f"DPoP {token_data['access_token']}",
-                "DPoP": _dpop_proof("GET", userinfo_endpoint, token_data["access_token"]),
             },
         )
         {% else %}

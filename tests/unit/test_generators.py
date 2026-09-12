@@ -388,13 +388,16 @@ def test_oidc_dpop_emits_proof_and_binds_token_and_userinfo(tmp_path):
     gen = FastAPIGenerator()
     gen.generate(_ctx_from_fixture("auth-oidc-dpop.yaml"), tmp_path)
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
-    assert "from cryptography.hazmat.primitives.asymmetric import ec" in oidc_src
-    assert "from jwt.algorithms import ECAlgorithm" in oidc_src
-    assert "_dpop_private_key = ec.generate_private_key(ec.SECP256R1())" in oidc_src
-    assert 'headers={"typ": "dpop+jwt", "jwk": _dpop_jwk}' in oidc_src
-    assert 'headers={"DPoP": _dpop_proof("POST", token_endpoint)}' in oidc_src
+    settings_src = (tmp_path / "settings.py").read_text()
+    dpop_src = (tmp_path / "dependencies" / "dpop.py").read_text()
+    assert "KEYCLOAK_DPOP_PRIVATE_KEY: SecretStr" in settings_src
+    assert "DPoPProofFactory.from_pem" in oidc_src
+    assert "request_with_dpop(" in oidc_src
+    assert "ec.generate_private_key" not in oidc_src
+    assert 'headers={"typ": "dpop+jwt", "jwk": self.public_jwk}' in dpop_src
     assert 'f"DPoP {token_data[\'access_token\']}"' in oidc_src
-    assert '_dpop_proof("GET", userinfo_endpoint, token_data["access_token"])' in oidc_src
+    assert 'access_token=token_data["access_token"]' in oidc_src
+    assert 'token_data.get("token_type", "").lower() != "dpop"' in oidc_src
     assert 'headers={"Authorization": f"Bearer' not in oidc_src
 
 
