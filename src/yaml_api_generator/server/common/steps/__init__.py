@@ -23,6 +23,7 @@ from .authorization import (
 )
 from .jwks import JWKSStep
 from .login import LoginStep
+from .refresh import RefreshStep
 from .repositories import (
     RepositoryCreateStep,
     RepositoryDeleteStep,
@@ -51,6 +52,7 @@ __all__ = [
     "ForbiddenError",
     "JWKSStep",
     "LoginStep",
+    "RefreshStep",
     "ValidateBodyStep",
     "RepositoryListStep",
     "RepositoryGetStep",

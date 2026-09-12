@@ -2,7 +2,7 @@ import importlib
 from collections.abc import Iterator
 
 from yaml_api_generator.ir import IRDocumentBinding
-from .auth.jwt import SessionTokens, build_session_tokens
+from .auth.session_tokens import SessionTokens
 from .server_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
@@ -18,6 +18,7 @@ from .steps import (
     RepositoryListStep,
     RepositoryOperationStep,
     RepositoryReplaceStep,
+    RefreshStep,
     RepositoryUpdateStep,
     ResolvePrincipalStep,
     ResolveWhereBindingsStep,
@@ -57,7 +58,7 @@ class PipelineBuilder:
     def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
         self._ctx = ctx
         self._registry = registry
-        self._tokens = build_session_tokens(ctx.session)
+        self._tokens = SessionTokens(ctx.session)
         for name, col in ctx.collections.items():
             registry.for_collection(name).register_id_field(name, col.id_field)
 
@@ -70,6 +71,19 @@ class PipelineBuilder:
             return self._build_handler_pipeline(route)
 
         repository = self._registry.for_collection(route.collection)
+
+        if route.operation == "refresh":
+            return Pipeline(
+                steps=[RefreshStep(self._tokens)],
+                method=route.method,
+                path=route.path,
+                api_version=self._ctx.app.api_version,
+                collection=route.collection,
+
+                operation=route.operation,
+                repository=repository,
+                repositories=self._registry,
+            )
 
         if route.operation == "jwks":
             return Pipeline(
@@ -89,7 +103,12 @@ class PipelineBuilder:
             return Pipeline(
                 steps=[
                     ValidateBodyStep(collection, "login", identity),
-                    LoginStep(identity, collection.id_field, repository, self._tokens),
+                    LoginStep(
+                        identity,
+                        collection.id_field,
+                        repository,
+                        self._tokens,
+                    ),
                 ],
                 method=route.method,
                 path=route.path,

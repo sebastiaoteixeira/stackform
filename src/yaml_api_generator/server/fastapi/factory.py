@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field, create_model
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..common.auth import oidc
-from ..common.auth.jwt import SessionTokens
 from ..common.auth.login_codes import login_codes
+from ..common.auth.session_tokens import SessionTokens
 from ..common.server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
@@ -102,6 +102,12 @@ def create_pydantic_model(
         model_name = to_pascal_case(collection.name)
         return create_model(f"{model_name}LoginPayload", **fields)
 
+    if operation == "refresh":
+        return create_model(
+            f"{to_pascal_case(collection.name)}RefreshPayload",
+            refresh_token=(str, Field(..., min_length=1)),
+        )
+
     if operation not in WRITE_OPERATIONS:
         return None
 
@@ -164,7 +170,7 @@ def register_provider_routes(
     app: FastAPI,
     ctx: RuntimeContext,
     registry: RepositoryRegistry,
-    tokens: SessionTokens,
+    session_tokens: SessionTokens,
 ) -> None:
     """Mount OIDC provider routes for each identity collection that binds one.
 
@@ -216,7 +222,7 @@ def register_provider_routes(
     if has_oidc:
         app.add_api_route(
             f"{base_prefix}/auth/exchange",
-            _exchange_endpoint(tokens),
+            _exchange_endpoint(session_tokens),
             methods=["POST"],
         )
 
@@ -265,7 +271,7 @@ def _oidc_callback_endpoint(
     return endpoint
 
 
-def _exchange_endpoint(tokens: SessionTokens):
+def _exchange_endpoint(session_tokens: SessionTokens):
     async def endpoint(payload: dict[str, str]) -> dict[str, str]:
         code = payload.get("code")
         if not code:
@@ -274,7 +280,7 @@ def _exchange_endpoint(tokens: SessionTokens):
         if redeemed is None:
             raise HTTPException(status_code=401, detail="Invalid or expired code")
         subject, identity_collection, _ = redeemed
-        return {"token": tokens.create(subject, identity_collection)}
+        return session_tokens.issue(subject, identity_collection)
 
     return endpoint
 

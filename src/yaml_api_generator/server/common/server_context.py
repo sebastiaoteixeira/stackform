@@ -91,6 +91,8 @@ class RuntimeAuthConfig:
 @dataclass(frozen=True)
 class RuntimeSessionConfig:
     algorithm: str = "HS256"
+    ttl: int | None = None
+    refresh: bool = False
 
     @property
     def uses_asymmetric(self) -> bool:

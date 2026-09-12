@@ -50,6 +50,28 @@ def reject_idp_trust(context: CompileContext, backend: str) -> None:
         raise ConfigErrors(errors)
 
 
+def reject_session_refresh(context: CompileContext, backend: str) -> None:
+    """Reject rotation on backends that emit neither refresh tokens nor an endpoint."""
+    if not context.session.refresh:
+        return
+    raise ConfigErrors(
+        [
+            ConfigError(
+                code="BACKEND_FEATURE_UNSUPPORTED",
+                message=(
+                    f"session.refresh is not supported by the '{backend}' backend, "
+                    "which issues no refresh token and exposes no rotation endpoint"
+                ),
+                path="session.refresh",
+                hint=(
+                    "Generate for the 'fastapi' backend, or drop session.refresh to "
+                    "keep long-lived access tokens"
+                ),
+            )
+        ]
+    )
+
+
 def reject_unsigned_session_algorithm(context: CompileContext) -> None:
     """Reject a session algorithm choice on a spec that mints no session tokens."""
     if not context.session.uses_asymmetric or context.auth.uses_jwt:

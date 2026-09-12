@@ -258,6 +258,8 @@ class CorsConfig:
 @dataclass(frozen=True)
 class SessionConfig:
     algorithm: str = "HS256"
+    ttl: int | None = None
+    refresh: bool = False
 
     @property
     def uses_asymmetric(self) -> bool:

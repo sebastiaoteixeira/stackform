@@ -155,6 +155,12 @@ class IRApi:
 @dataclass(frozen=True)
 class IRSession:
     algorithm: str = "HS256"
+    ttl: int | None = None
+    refresh: bool = False
+
+    @property
+    def uses_asymmetric(self) -> bool:
+        return self.algorithm == "RS256"
 
 
 @dataclass(frozen=True)

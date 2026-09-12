@@ -6,7 +6,12 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from ..validation import reject_idp_trust, reject_pagination, reject_unsigned_session_algorithm
+from ..validation import (
+    reject_idp_trust,
+    reject_pagination,
+    reject_session_refresh,
+    reject_unsigned_session_algorithm,
+)
 from . import type_mapper
 from ..fastapi import access_filters
 from .settings_builder import build_drf_settings_fields
@@ -37,6 +42,7 @@ class DRFGenerator(TemplateBasedGenerator):
 
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         reject_idp_trust(context, "drf")
+        reject_session_refresh(context, "drf")
         reject_pagination(context, "drf")
         reject_unsigned_session_algorithm(context)
         env = Environment(

@@ -32,19 +32,60 @@ class SessionTokens:
 
     algorithm = ""
 
-    def create(self, sub: str, identity_collection: str) -> str:
+    def create(
+        self,
+        sub: str,
+        identity_collection: str,
+        ttl_seconds: int | None = None,
+    ) -> str:
+        return self._create_claims(
+            {"sub": sub, "identity_collection": identity_collection},
+            ttl_seconds,
+        )
+
+    def create_refresh(
+        self,
+        sub: str,
+        identity_collection: str,
+        jti: str,
+        sid: str,
+        ttl_seconds: int,
+    ) -> str:
+        return self._create_claims(
+            {
+                "sub": sub,
+                "identity_collection": identity_collection,
+                "jti": jti,
+                "sid": sid,
+                "typ": "refresh",
+            },
+            ttl_seconds,
+        )
+
+    def _create_claims(
+        self, claims: dict, ttl_seconds: int | None = None
+    ) -> str:
         now = int(time.time())
         payload = {
-            "sub": sub,
-            "identity_collection": identity_collection,
+            **claims,
             "iat": now,
-            "exp": now + _expiration_hours() * 3600,
+            "exp": now + (
+                ttl_seconds if ttl_seconds is not None else _expiration_hours() * 3600
+            ),
         }
         return jwt.encode(
             payload, self._signing_key(), algorithm=self.algorithm, headers=self._headers()
         )
 
     def decode(self, token: str) -> dict | None:
+        claims = self._decode_claims(token)
+        return None if claims is None or claims.get("typ") == "refresh" else claims
+
+    def decode_refresh(self, token: str) -> dict | None:
+        claims = self._decode_claims(token)
+        return claims if claims and claims.get("typ") == "refresh" else None
+
+    def _decode_claims(self, token: str) -> dict | None:
         try:
             return jwt.decode(
                 token, self._verification_key(token), algorithms=[self.algorithm]

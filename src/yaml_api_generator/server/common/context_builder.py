@@ -27,7 +27,11 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         api_version=document.api.version,
     )
 
-    session = RuntimeSessionConfig(algorithm=document.session.algorithm)
+    session = RuntimeSessionConfig(
+        algorithm=document.session.algorithm,
+        ttl=document.session.ttl,
+        refresh=document.session.refresh,
+    )
     collections = _build_collections(document.collections)
     routes = _build_routes(document)
     if session.uses_asymmetric:
@@ -129,7 +133,19 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
                 pagination=route.pagination,
             )
         )
+    if document.session.refresh:
+        routes += [_refresh_route(route) for route in routes if route.operation == "login"]
     return routes
+
+
+def _refresh_route(login: RuntimeRouteDescriptor) -> RuntimeRouteDescriptor:
+    return RuntimeRouteDescriptor(
+        method="POST",
+        path=f"{login.path.removesuffix('/login')}/refresh",
+        operation="refresh",
+        collection=login.collection,
+        is_public=True,
+    )
 
 
 def _build_auth_config(

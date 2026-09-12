@@ -39,7 +39,6 @@ _TOKEN_HEADERS = {"kid": _SIGNING_JWK["kid"]}
 
 
 def public_jwks() -> dict:
-    """The public half of every key whose tokens this app still accepts."""
     return {"keys": _PUBLIC_JWKS}
 
 
@@ -72,21 +71,50 @@ def _verification_key(_token: str) -> str:
 {% endif %}
 
 
-def create_jwt_token(sub: str, identity_collection: str) -> str:
+def _encode(claims: dict, ttl_seconds: int) -> str:
     now = int(time.time())
-    payload = {
-        "sub": sub,
-        "identity_collection": identity_collection,
-        "iat": now,
-        "exp": now + settings.JWT_EXPIRATION_HOURS * 3600,
-    }
     return jwt.encode(
-        payload, _signing_key(), algorithm=ALGORITHM, headers=_TOKEN_HEADERS
+        {**claims, "iat": now, "exp": now + ttl_seconds},
+        _signing_key(),
+        algorithm=ALGORITHM,
+        headers=_TOKEN_HEADERS,
     )
 
 
-def decode_jwt_token(token: str) -> dict | None:
+def _decode(token: str) -> dict | None:
     try:
         return jwt.decode(token, _verification_key(token), algorithms=[ALGORITHM])
     except jwt.InvalidTokenError:
         return None
+
+
+def create_jwt_token(sub: str, identity_collection: str) -> str:
+    return _encode(
+        {"sub": sub, "identity_collection": identity_collection},
+        {% if ctx.session.refresh %}settings.JWT_ACCESS_TTL_SECONDS{% else %}settings.JWT_EXPIRATION_HOURS * 3600{% endif %},
+    )
+
+
+def decode_jwt_token(token: str) -> dict | None:
+    claims = _decode(token)
+    return None if claims is None or claims.get("typ") == "refresh" else claims
+{% if ctx.session.refresh %}
+
+
+def create_refresh_token(sub: str, identity_collection: str, jti: str, sid: str) -> str:
+    return _encode(
+        {
+            "sub": sub,
+            "identity_collection": identity_collection,
+            "jti": jti,
+            "sid": sid,
+            "typ": "refresh",
+        },
+        settings.JWT_REFRESH_TTL_SECONDS,
+    )
+
+
+def decode_refresh_token(token: str) -> dict | None:
+    claims = _decode(token)
+    return claims if claims and claims.get("typ") == "refresh" else None
+{% endif %}

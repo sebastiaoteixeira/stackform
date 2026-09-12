@@ -1,8 +1,8 @@
 import pytest
 
-from yaml_api_generator.ir import IRProviderBinding
-from yaml_api_generator.server.common.auth.jwt import SymmetricSessionTokens
+from yaml_api_generator.ir import IRProviderBinding, IRSession
 from yaml_api_generator.server.common.auth.password import hash_password
+from yaml_api_generator.server.common.auth.session_tokens import SessionTokens
 from yaml_api_generator.server.common.request_context import RequestContext
 from yaml_api_generator.server.common.repositories.base import BaseRepository
 from yaml_api_generator.server.common.server_context import RuntimeIdentityDescriptor
@@ -12,7 +12,7 @@ from tests.unit.support.repositories import InMemoryRepository
 from .test_repository_steps import _make_ctx
 
 
-TOKENS = SymmetricSessionTokens("test-secret-at-least-thirty-two-bytes")
+TOKENS = SessionTokens(IRSession())
 
 
 def _make_identity() -> RuntimeIdentityDescriptor:
@@ -35,13 +35,17 @@ def _seed_user(repo: InMemoryRepository, email="a@b.com", password="secret123") 
     return user
 
 
+def _login_step(identity, repo):
+    return LoginStep(identity, "id", repo, TOKENS)
+
+
 @pytest.mark.asyncio
 async def test_login_valid_credentials():
     repo = InMemoryRepository()
     repo.register_id_field("users", "id")
     _seed_user(repo)
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(
         repository=repo,
         collection="users",
@@ -58,7 +62,7 @@ async def test_login_valid_credentials():
 async def test_login_non_dict_body():
     repo = InMemoryRepository()
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(repository=repo, body="not a dict")
     with pytest.raises(UnauthorizedError):
         await step(ctx)
@@ -70,7 +74,7 @@ async def test_login_missing_identifier():
     repo.register_id_field("users", "id")
     _seed_user(repo)
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(repository=repo, body={"password": "secret123"})
     with pytest.raises(UnauthorizedError):
         await step(ctx)
@@ -82,7 +86,7 @@ async def test_login_missing_password():
     repo.register_id_field("users", "id")
     _seed_user(repo)
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(repository=repo, body={"email": "a@b.com"})
     with pytest.raises(UnauthorizedError):
         await step(ctx)
@@ -94,7 +98,7 @@ async def test_login_wrong_password():
     repo.register_id_field("users", "id")
     _seed_user(repo)
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(
         repository=repo,
         body={"email": "a@b.com", "password": "wrong"},
@@ -108,7 +112,7 @@ async def test_login_user_not_found():
     repo = InMemoryRepository()
     repo.register_id_field("users", "id")
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(
         repository=repo,
         body={"email": "nobody@nowhere.com", "password": "secret123"},
@@ -125,7 +129,7 @@ async def test_login_user_missing_id_field():
     user = {"email": "a@b.com", "_auth": {"passwordHash": hashed}}
     repo.documents("users").append(user)
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(
         repository=repo,
         body={"email": "a@b.com", "password": "secret123"},
@@ -140,7 +144,7 @@ async def test_login_safe_user_strips_password_id_auth():
     repo.register_id_field("users", "id")
     _seed_user(repo)
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(
         repository=repo,
         body={"email": "a@b.com", "password": "secret123"},
@@ -158,7 +162,7 @@ async def test_login_jwt_token_contains_sub_and_identity_collection():
     repo.register_id_field("users", "id")
     _seed_user(repo)
     identity = _make_identity()
-    step = LoginStep(identity, "id", repo, TOKENS)
+    step = _login_step(identity, repo)
     ctx = _make_ctx(
         repository=repo,
         body={"email": "a@b.com", "password": "secret123"},

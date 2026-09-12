@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.ir.api import IROIDCProvider
 from yaml_api_generator.server.common.auth import oidc
-from yaml_api_generator.server.common.auth.jwt import SymmetricSessionTokens
 from yaml_api_generator.server.common.auth.login_codes import LoginCodeStore
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.server_context import (
@@ -17,6 +16,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeContext,
     RuntimeIdentityDescriptor,
 )
+from yaml_api_generator.server.common.auth.session_tokens import SessionTokens
 from yaml_api_generator.server.fastapi.factory import register_provider_routes
 
 
@@ -64,11 +64,12 @@ def _make_ctx(trust: str = "app") -> RuntimeContext:
 
 def _client(trust: str = "app") -> TestClient:
     app = FastAPI()
+    ctx = _make_ctx(trust)
     register_provider_routes(
         app,
-        _make_ctx(trust),
+        ctx,
         RepositoryRegistry(repositories={}, bindings={}, default=""),
-        SymmetricSessionTokens("oidc-dev-server-secret-at-least-thirty-two"),
+        SessionTokens(ctx.session),
     )
     return TestClient(app)
 
