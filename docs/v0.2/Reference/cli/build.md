@@ -30,7 +30,7 @@ The `[what]` positional selects which outputs to generate:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `-t`, `--target` | `fastapi` | Backend framework: `fastapi`, `drf`, or `raw`. |
-| `-o`, `--output` | `./target` | Output directory. |
+| `-o`, `--output` | contextual | Output directory. Defaults to `./target`; a frontend-only build uses `ui.frontend.output` or `./frontend`. |
 | `-s`, `--schema` | auto-detected | Path to a JSON Schema for spec validation. The dialect is otherwise chosen from the spec's `version:` field. |
 | `--json` | off | Emit validation/build errors as JSON instead of human-readable text. |
 
@@ -40,7 +40,7 @@ Where files land depends on the `[what]` positional:
 
 - `backend` (and the backend part of `all`) is written to `<output>/backend`.
 - `frontend` as part of `all` is written to `<output>/frontend`.
-- `frontend` built on its own (`yaml-api build app.yaml frontend`) does not use `-o`; it writes to `./frontend/src`.
+- `frontend` built on its own writes to `-o`, then `ui.frontend.output`, then `./frontend` in precedence order.
 - `deploy` artifacts are written directly into `<output>` (no nested subdirectory).
 
 ## Backend targets
@@ -74,12 +74,14 @@ The frontend is generated only when the spec contains a `ui:` block with `ui.fro
 ui:
   frontend:
     pack: generic
+    output: ./web
     overwrite: never   # or "always"
 ```
 
 Behavior:
 
-- `yaml-api build app.yaml frontend` writes the project to `./frontend/src`.
+- `yaml-api build app.yaml frontend` writes the project to `ui.frontend.output`, or `./frontend` when it is omitted.
+- `yaml-api build app.yaml frontend -o ./web` overrides the spec output.
 - `yaml-api build app.yaml all` writes the frontend to `<output>/frontend` alongside the backend.
 - `overwrite: never` (the default) preserves files you have edited and only refreshes the generated zones; `overwrite: always` rewrites everything.
 
@@ -99,8 +101,8 @@ yaml-api build myapp.yaml
 # Backend only, to a custom directory, targeting DRF
 yaml-api build myapp.yaml backend -t drf -o ./my-django-api
 
-# Frontend only (writes to ./frontend/src)
-yaml-api build myapp.yaml frontend
+# Frontend only, to a custom directory
+yaml-api build myapp.yaml frontend -o ./web
 
 # Deployment artifacts only
 yaml-api build myapp.yaml deploy -o ./deploy

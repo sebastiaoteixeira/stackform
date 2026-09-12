@@ -62,3 +62,17 @@ controllers:
             - { field: score, dir: desc }
             - { field: slug, dir: asc }
           envelope: true
+
+ui:
+  frontend:
+    pack: generic
+    output: ./frontend-output
+    overwrite: never
+  views:
+    articles:
+      path: /articles
+      component: context-menu
+      props:
+        collection: article
+        field_roles:
+          title: title

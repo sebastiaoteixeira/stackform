@@ -19,7 +19,7 @@ def generate_frontend(
     output_override: str | None = None,
     overwrite: str = "never",
 ) -> None:
-    output_dir = Path(output_override or "./frontend/src")
+    output_dir = Path(output_override or "./frontend")
 
     pack = load_pack(pack_name)
 

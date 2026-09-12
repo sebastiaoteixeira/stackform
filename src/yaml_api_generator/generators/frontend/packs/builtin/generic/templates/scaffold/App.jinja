@@ -5,7 +5,7 @@
 {% endif %}
 {% endfor %}
 {% set login_view = ns.login_view %}
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, {% if context.identity_entities %}useEffect, {% endif %}createContext, useContext } from 'react';
 import { Routes, Route, Link, {% if context.identity_entities %}useNavigate, {% endif %}useLocation } from 'react-router-dom';
 import { API_BASE_URL } from './config';
 {% if context.identity_entities and not login_view %}
@@ -236,7 +236,9 @@ function App() {
 }
 
 function AppLayout() {
-  const { {% if context.identity_entities %}token, {% endif %}logout } = useAuth();
+  {% if context.identity_entities %}
+  const { token, logout } = useAuth();
+  {% endif %}
   const location = useLocation();
 
   const navItems = [

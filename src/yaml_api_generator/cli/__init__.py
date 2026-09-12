@@ -14,10 +14,13 @@ def cli():
 @click.argument("yaml_file", type=click.Path(exists=True))
 @click.argument("what", default="all", type=click.Choice(["all", "backend", "frontend", "deploy"]))
 @click.option("-s", "--schema", "schema_file", type=click.Path(exists=True), help="JSON schema file")
-@click.option("-o", "--output", "output_dir", default="./target", help="Output directory")
+@click.option(
+    "-o", "--output", "output_dir",
+    help="Output directory (default: ./target, or ui.frontend.output/./frontend for frontend-only)",
+)
 @click.option("-t", "--target", default="fastapi", help="Backend target: fastapi, drf, raw")
 @click.option("--json", "output_json", is_flag=True, help="Output errors in JSON")
-def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, target: str, output_json: bool):
+def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | None, target: str, output_json: bool):
     """Build backend, frontend, deploy, or all."""
     from pathlib import Path
     from .compiler import compile_project
@@ -29,6 +32,7 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
 
     try:
         result = load_and_generate_ir(yaml_file, schema_file)
+        artifact_output = output_dir or "./target"
 
         for w in result.warnings:
             click.echo(f"WARN {w.code} {w.path}: {w.message}", err=True)
@@ -37,10 +41,10 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
             compile_project(
                 yaml_file=yaml_file,
                 schema_file=schema_file,
-                output_dir=output_dir,
+                output_dir=artifact_output,
                 target=target,
             )
-            click.echo(f"Backend generated in {output_dir}")
+            click.echo(f"Backend generated in {artifact_output}")
 
         if what in ("all", "frontend"):
             if result.ui_block is None:
@@ -56,7 +60,11 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
                     pack = load_pack(pack_name)
                     ui = build_generator_context(result.ir, result.ui_block, pack.manifest)
 
-                    frontend_output = f"{output_dir}/frontend" if what == "all" else None
+                    frontend_output = (
+                        f"{artifact_output}/frontend"
+                        if what == "all"
+                        else output_dir or frontend_block.get("output") or "./frontend"
+                    )
 
                     generate_frontend(
                         ir=result.ir,
@@ -81,10 +89,10 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str, t
                     host="localhost",
                     ssh_user="ubuntu",
                     ssh_key="~/.ssh/id_rsa",
-                    output_dir=output_dir,
+                    output_dir=artifact_output,
                     spec_dir=Path(yaml_file).parent,
                 )
-                click.echo(f"Deploy artifacts generated in {output_dir}")
+                click.echo(f"Deploy artifacts generated in {artifact_output}")
 
     except ConfigErrors as error:
         handle_config_errors(error, yaml_file, "json" if output_json else "human")
