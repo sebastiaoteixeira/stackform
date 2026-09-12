@@ -48,3 +48,23 @@ def reject_idp_trust(context: CompileContext, backend: str) -> None:
     ]
     if errors:
         raise ConfigErrors(errors)
+
+
+def reject_unsigned_session_algorithm(context: CompileContext) -> None:
+    """Reject a session algorithm choice on a spec that mints no session tokens."""
+    if not context.session.uses_asymmetric or context.auth.uses_jwt:
+        return
+    raise ConfigErrors([
+        ConfigError(
+            code="SESSION_ALGORITHM_UNUSED",
+            message=(
+                f"session.algorithm: {context.session.algorithm} has no effect because "
+                "this spec never mints a session token"
+            ),
+            path="session.algorithm",
+            hint=(
+                "Give an identity a password, app-trust OIDC or SAML login, "
+                "or drop the session block"
+            ),
+        )
+    ])

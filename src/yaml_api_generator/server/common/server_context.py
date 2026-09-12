@@ -89,6 +89,15 @@ class RuntimeAuthConfig:
 
 
 @dataclass(frozen=True)
+class RuntimeSessionConfig:
+    algorithm: str = "HS256"
+
+    @property
+    def uses_asymmetric(self) -> bool:
+        return self.algorithm == "RS256"
+
+
+@dataclass(frozen=True)
 class RuntimeAppConfig:
     base_path: str
     api_version: str | None
@@ -102,3 +111,4 @@ class RuntimeContext:
     auth: RuntimeAuthConfig
     operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)
     spec_version: str = "0.2"
+    session: RuntimeSessionConfig = field(default_factory=RuntimeSessionConfig)

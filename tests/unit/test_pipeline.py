@@ -12,6 +12,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeCollectionDescriptor,
     RuntimeIdentityDescriptor,
     RuntimeRouteDescriptor,
+    RuntimeSessionConfig,
 )
 from yaml_api_generator.server.common.steps import ForbiddenError, UnauthorizedError
 from yaml_api_generator.ir.when import Equals, FieldRef
@@ -62,6 +63,7 @@ def _make_runtime_context(
             "routes": rts,
             "auth": auth,
             "operations": {},
+            "session": RuntimeSessionConfig(),
         },
     )()
 

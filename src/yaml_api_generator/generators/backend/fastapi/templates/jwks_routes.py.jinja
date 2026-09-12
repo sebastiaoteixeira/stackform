@@ -1,0 +1,10 @@
+from fastapi import APIRouter
+
+from dependencies.jwt_utils import public_jwks
+
+router = APIRouter()
+
+
+@router.get("/.well-known/jwks.json")
+async def jwks() -> dict:
+    return public_jwks()

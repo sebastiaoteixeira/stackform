@@ -13,6 +13,7 @@ import pytest
 
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.ir.api import IROIDCProvider
+from yaml_api_generator.server.common.auth.jwt import SymmetricSessionTokens
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.server_context import (
     RuntimeCollectionDescriptor,
@@ -63,6 +64,8 @@ def _identity() -> RuntimeIdentityDescriptor:
     )
 
 
+_TOKENS = SymmetricSessionTokens("trust-dispatch-secret-at-least-thirty-two")
+
 _COLLECTIONS = {
     "users": RuntimeCollectionDescriptor(
         name="users", type="auth", id_field="id", id_format="uuidv7", fields={}
@@ -79,6 +82,7 @@ async def _resolve(token: str, providers):
         providers=providers,
         collections=_COLLECTIONS,
         headers=headers,
+        tokens=_TOKENS,
     )
 
 

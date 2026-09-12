@@ -40,6 +40,7 @@ from .api import (
     IRProviderRelation,
     IRProvider,
     IRSAMLProvider,
+    IRSession,
     RoleHierarchyCycleError,
     flatten_role_hierarchy,
 )
@@ -121,6 +122,7 @@ __all__ = [
     "IRProviderRelation",
     "IRProvider",
     "IRSAMLProvider",
+    "IRSession",
     "flatten_role_hierarchy",
     "RoleHierarchyCycleError",
     "And",

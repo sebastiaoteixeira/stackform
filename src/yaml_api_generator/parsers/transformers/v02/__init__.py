@@ -7,7 +7,7 @@ from dataclasses import fields as dataclass_fields
 from typing import Any
 
 from yaml_api_generator.ir import IRDocument
-from yaml_api_generator.ir.api import IROIDCProvider, IRProvider, IRSAMLProvider
+from yaml_api_generator.ir.api import IROIDCProvider, IRProvider, IRSAMLProvider, IRSession
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 
 from .access_transformer import AccessTransformer
@@ -149,10 +149,15 @@ class V02Transformer:
             repositories=repositories,
             providers=providers,
             policies=policies,
+            session=self._build_session(resolved.get("session", {})),
             ui_config=resolved.get("ui"),
             vendored_imports=vendored_imports,
             vendored_requirements=vendored_requirements,
         )
+
+    @staticmethod
+    def _build_session(session_data: dict[str, Any]) -> IRSession:
+        return IRSession(algorithm=session_data.get("algorithm", "HS256"))
 
     def _process_imports(
         self, resolved: dict[str, Any]

@@ -3,7 +3,7 @@ from typing import Any
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from ..auth import idp, oidc, verify_password
-from ..auth.jwt import decode_jwt_token
+from ..auth.jwt import SessionTokens
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
 from ..request_context import RequestContext
 from ..server_context import RuntimeCollectionDescriptor, RuntimeIdentityDescriptor
@@ -20,6 +20,8 @@ def ResolvePrincipalStep(
     registry: RepositoryRegistry,
     providers: dict[str, Any] | None = None,
     collections: dict[str, RuntimeCollectionDescriptor] | None = None,
+    *,
+    tokens: SessionTokens,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
         if ctx.principal is not None:
@@ -31,6 +33,7 @@ def ResolvePrincipalStep(
             providers=providers or {},
             collections=collections or {},
             headers=ctx.headers,
+            tokens=tokens,
         )
         return ctx
 
@@ -132,8 +135,9 @@ async def _resolve_jwt_principal(
     identity_collections: dict[str, RuntimeIdentityDescriptor],
     identity_id_fields: dict[str, str],
     registry: RepositoryRegistry,
+    tokens: SessionTokens,
 ) -> dict[str, Any] | None:
-    claims = decode_jwt_token(token)
+    claims = tokens.decode(token)
     if claims is None:
         return None
 
@@ -170,6 +174,7 @@ async def _resolve_identity_principal(
     providers: dict[str, Any],
     collections: dict[str, RuntimeCollectionDescriptor],
     headers: dict[str, str],
+    tokens: SessionTokens,
 ) -> dict[str, Any] | None:
     bearer_token = extract_bearer_token(headers)
     if bearer_token is not None:
@@ -190,6 +195,7 @@ async def _resolve_identity_principal(
             identity_collections,
             identity_id_fields,
             registry,
+            tokens,
         )
         if jwt_principal is not None:
             return jwt_principal

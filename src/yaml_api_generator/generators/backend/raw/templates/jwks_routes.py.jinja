@@ -1,0 +1,14 @@
+from typing import Any
+
+from dependencies.jwt_utils import public_jwks
+
+
+async def handle_jwks(
+    url_params: dict[str, str],
+    body: dict[str, Any] | None,
+    headers: dict[str, str],
+    db: Any,
+    query: dict[str, Any] | None = None,
+    cookies: dict[str, str] | None = None,
+) -> tuple[int, dict[str, Any]]:
+    return 200, public_jwks()

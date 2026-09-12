@@ -7,7 +7,7 @@ from yaml_api_generator.generators.backend.builders.settings_builder import buil
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig
 from ..utils import find_identity, group_by_collection, extract_identity_fields
-from ..validation import reject_pagination
+from ..validation import reject_pagination, reject_unsigned_session_algorithm
 from . import access_filters, sql_filters, type_mapper
 
 
@@ -32,6 +32,7 @@ def _crud_operations(col_data: dict) -> list[str]:
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         reject_pagination(context, "fastapi")
+        reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([
                 FileSystemLoader(str(_TEMPLATES_DIR)),
@@ -46,6 +47,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
+        env.globals["settings_module"] = "settings"
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["sql_column"] = sql_filters.sql_column
         env.filters["rule_to_python"] = access_filters.rule_to_python
@@ -262,6 +264,11 @@ class FastAPIGenerator(TemplateBasedGenerator):
             base_prefix = f"{base_prefix}/{context.app.api_version}"
 
         auth_imports: list[str] = []
+
+        if context.session.uses_asymmetric:
+            (routes_dir / "jwks.py").write_text(
+                env.get_template("jwks_routes.py.jinja").render()
+            )
 
         handler_routes = [
             route

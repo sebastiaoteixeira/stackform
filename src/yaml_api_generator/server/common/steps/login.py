@@ -1,6 +1,6 @@
 from typing import Any
 
-from ..auth.jwt import create_jwt_token
+from ..auth.jwt import SessionTokens
 from ..request_context import RequestContext
 from ..server_context import RuntimeIdentityDescriptor
 from ..repositories import BaseRepository
@@ -13,6 +13,7 @@ def LoginStep(
     identity_collection: RuntimeIdentityDescriptor,
     id_field: str,
     repository: BaseRepository,
+    tokens: SessionTokens,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
         body = ctx.body
@@ -40,7 +41,7 @@ def LoginStep(
         if subject is None:
             raise UnauthorizedError("Identity record missing id field")
 
-        token = create_jwt_token(str(subject), identity_collection.name)
+        token = tokens.create(str(subject), identity_collection.name)
 
         safe_user = {
             k: v for k, v in user.items() if k not in ("password", "_id", "_auth")

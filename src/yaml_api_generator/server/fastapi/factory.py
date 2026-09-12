@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, create_model
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..common.auth import oidc
-from ..common.auth.jwt import create_jwt_token
+from ..common.auth.jwt import SessionTokens
 from ..common.auth.login_codes import login_codes
 from ..common.server_context import (
     RuntimeAuthConfig,
@@ -147,7 +147,7 @@ def register_fastapi_routes(
             openapi_extra=openapi_extra,
         )
 
-    register_provider_routes(app, ctx, registry)
+    register_provider_routes(app, ctx, registry, pipeline_builder.tokens)
     _configure_openapi_security(app, ctx.auth)
 
     return pipelines
@@ -164,6 +164,7 @@ def register_provider_routes(
     app: FastAPI,
     ctx: RuntimeContext,
     registry: RepositoryRegistry,
+    tokens: SessionTokens,
 ) -> None:
     """Mount OIDC provider routes for each identity collection that binds one.
 
@@ -213,7 +214,11 @@ def register_provider_routes(
             )
 
     if has_oidc:
-        app.add_api_route(f"{base_prefix}/auth/exchange", _exchange_endpoint, methods=["POST"])
+        app.add_api_route(
+            f"{base_prefix}/auth/exchange",
+            _exchange_endpoint(tokens),
+            methods=["POST"],
+        )
 
 
 def _providers_listing_endpoint(listing: list[dict[str, str]]):
@@ -260,15 +265,18 @@ def _oidc_callback_endpoint(
     return endpoint
 
 
-async def _exchange_endpoint(payload: dict[str, str]) -> dict[str, str]:
-    code = payload.get("code")
-    if not code:
-        raise HTTPException(status_code=400, detail="Missing code")
-    redeemed = login_codes.redeem(code)
-    if redeemed is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired code")
-    subject, identity_collection, _ = redeemed
-    return {"token": create_jwt_token(subject, identity_collection)}
+def _exchange_endpoint(tokens: SessionTokens):
+    async def endpoint(payload: dict[str, str]) -> dict[str, str]:
+        code = payload.get("code")
+        if not code:
+            raise HTTPException(status_code=400, detail="Missing code")
+        redeemed = login_codes.redeem(code)
+        if redeemed is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired code")
+        subject, identity_collection, _ = redeemed
+        return {"token": tokens.create(subject, identity_collection)}
+
+    return endpoint
 
 
 def _field_annotation(field_config: dict[str, Any]) -> Any:
