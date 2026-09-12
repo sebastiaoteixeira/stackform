@@ -49,7 +49,7 @@ class _RecordingDatabase:
 
 def _render_mongodb_module():
     env = Environment(loader=FileSystemLoader(str(_SHARED_DIR)), keep_trailing_newline=True)
-    return env.get_template("mongodb.py.jinja").render()
+    return env.get_template("mongodb.py.jinja").render(settings_module="settings")
 
 
 def _exec_initialize_indexes(source, database):

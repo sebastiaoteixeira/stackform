@@ -10,6 +10,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeAuthConfig,
     RuntimeIdentityDescriptor,
 )
+from yaml_api_generator.server.common.auth.jwt import SymmetricSessionTokens
 from yaml_api_generator.server.common.steps.authentication import ResolvePrincipalStep
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.auth.utils import (
@@ -31,6 +32,9 @@ from yaml_api_generator.ir.when import (
     StringLiteral,
 )
 from yaml_api_generator.server.common.auth.password import hash_password
+
+
+TOKENS = SymmetricSessionTokens("test-secret-at-least-thirty-two-bytes")
 
 
 def _make_ctx(**overrides) -> RequestContext:
@@ -162,6 +166,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -188,6 +193,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "wrong")})
         result = await step(ctx)
@@ -212,6 +218,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(
             headers={"Authorization": _basic_header("other@b.com", "secret")}
@@ -242,6 +249,7 @@ class TestResolvePrincipalStep:
             identity_collections={"clients": identity},
             identity_id_fields={"clients": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"X-API-Key": "ak123"})
         result = await step(ctx)
@@ -267,6 +275,7 @@ class TestResolvePrincipalStep:
             identity_collections={"clients": identity},
             identity_id_fields={"clients": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"X-API-Key": "wrong"})
         result = await step(ctx)
@@ -280,6 +289,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={})
         result = await step(ctx)
@@ -305,6 +315,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -332,6 +343,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -367,6 +379,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": user_identity, "admins": admin_identity},
             identity_id_fields={"users": "id", "admins": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -375,8 +388,6 @@ class TestResolvePrincipalStep:
 
     @pytest.mark.asyncio
     async def test_210_bearer_jwt_resolves_principal(self):
-        from yaml_api_generator.server.common.auth.jwt import create_jwt_token
-
         pw_hash = hash_password("secret")
         repo = InMemoryRepository(
             {
@@ -391,11 +402,12 @@ class TestResolvePrincipalStep:
             }
         )
         identity = _make_identity(name="users", via=["password"])
-        token = create_jwt_token("u1", "users")
+        token = TOKENS.create("u1", "users")
         step = ResolvePrincipalStep(
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": f"Bearer {token}"})
         result = await step(ctx)
@@ -410,6 +422,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": "Bearer invalid.token.here"})
         result = await step(ctx)
@@ -423,6 +436,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)
@@ -445,6 +459,7 @@ class TestResolvePrincipalStep:
             identity_collections={"clients": identity},
             identity_id_fields={"clients": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": "Bearer ak123"})
         result = await step(ctx)
@@ -470,6 +485,7 @@ class TestResolvePrincipalStep:
             identity_collections={"users": identity},
             identity_id_fields={"users": "id"},
             registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
         )
         ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
         result = await step(ctx)

@@ -13,6 +13,7 @@ Key types:
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -59,11 +60,10 @@ class SettingField:
     """
 
     env_name: str
-    python_type: str  # "str" | "int"
-    default: str | None  # None -> required field
+    python_type: str
+    default: str | None
     secret: bool = False
-    generated: bool = False
-    secret_kind: str = "token"  # "token" | "rsa_private_key"
+    generator: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)

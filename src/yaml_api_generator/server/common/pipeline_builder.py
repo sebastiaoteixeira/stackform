@@ -2,11 +2,13 @@ import importlib
 from collections.abc import Iterator
 
 from yaml_api_generator.ir import IRDocumentBinding
+from .auth.jwt import SessionTokens, build_session_tokens
 from .server_context import RuntimeContext, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
 from .steps import (
     AuthorizeRouteStep,
+    JWKSStep,
     LoginStep,
     PostFetchAuthorizeStep,
     ResolveAccessBindStep,
@@ -55,8 +57,13 @@ class PipelineBuilder:
     def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
         self._ctx = ctx
         self._registry = registry
+        self._tokens = build_session_tokens(ctx.session)
         for name, col in ctx.collections.items():
             registry.for_collection(name).register_id_field(name, col.id_field)
+
+    @property
+    def tokens(self) -> SessionTokens:
+        return self._tokens
 
     def build_for_route(self, route: RuntimeRouteDescriptor) -> Pipeline:
         if route.handler is not None:
@@ -64,13 +71,25 @@ class PipelineBuilder:
 
         repository = self._registry.for_collection(route.collection)
 
+        if route.operation == "jwks":
+            return Pipeline(
+                steps=[JWKSStep(self._tokens)],
+                method=route.method,
+                path=route.path,
+                api_version=None,
+                collection=None,
+                operation=route.operation,
+                repository=repository,
+                repositories=self._registry,
+            )
+
         if route.operation == "login":
             identity = self._ctx.auth.identity_collections.get(route.collection)
             collection = self._ctx.collections[route.collection]
             return Pipeline(
                 steps=[
                     ValidateBodyStep(collection, "login", identity),
-                    LoginStep(identity, collection.id_field, repository),
+                    LoginStep(identity, collection.id_field, repository, self._tokens),
                 ],
                 method=route.method,
                 path=route.path,
@@ -151,6 +170,7 @@ class PipelineBuilder:
                     self._registry,
                     self._ctx.auth.providers,
                     self._ctx.collections,
+                    tokens=self._tokens,
                 )
             )
 

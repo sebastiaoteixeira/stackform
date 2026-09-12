@@ -7,6 +7,7 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     flatten_role_hierarchy,
 )
+from .auth.jwt import JWKS_PATH
 from .server_context import (
     RuntimeAccessRule,
     RuntimeAppConfig,
@@ -16,6 +17,7 @@ from .server_context import (
     RuntimeIdentityDescriptor,
     RuntimeOperationDescriptor,
     RuntimeRouteDescriptor,
+    RuntimeSessionConfig,
 )
 
 
@@ -25,8 +27,11 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         api_version=document.api.version,
     )
 
+    session = RuntimeSessionConfig(algorithm=document.session.algorithm)
     collections = _build_collections(document.collections)
     routes = _build_routes(document)
+    if session.uses_asymmetric:
+        routes.append(_jwks_route())
     auth = _build_auth_config(
         document.identityCollections,
         document.collections,
@@ -41,6 +46,17 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         auth=auth,
         operations=operations,
         spec_version=document.version,
+        session=session,
+    )
+
+
+def _jwks_route() -> RuntimeRouteDescriptor:
+    return RuntimeRouteDescriptor(
+        method="GET",
+        path=JWKS_PATH,
+        operation="jwks",
+        collection=None,
+        is_public=True,
     )
 
 

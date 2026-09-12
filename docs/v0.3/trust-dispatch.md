@@ -32,3 +32,9 @@ the app mints no token of its own, so app-signing fields (`algorithm`,
 `secret`, `ttl`, `refresh`, `delivery`) are rejected. The issuer is derived from
 the discovery document, and the accepted audience defaults to the provider's
 `client_id` unless `audiences` is set explicitly.
+
+## Signing the app's own tokens
+
+Dispatch decides which tokens the app *verifies*. The complementary question —
+how the app *signs* the tokens it mints under `trust: app` — is answered by the
+`session` block; see [RS256 session tokens](./rs256-signing.md).

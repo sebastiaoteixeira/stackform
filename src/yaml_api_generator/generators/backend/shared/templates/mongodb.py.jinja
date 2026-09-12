@@ -1,6 +1,6 @@
 from pymongo import AsyncMongoClient
 
-from settings import settings
+from {{ settings_module }} import settings
 
 
 _NON_NULL_BSON_TYPES = [
