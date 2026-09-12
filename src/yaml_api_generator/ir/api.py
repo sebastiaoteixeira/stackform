@@ -38,6 +38,7 @@ class IROIDCProvider:
     discovery_url: str | None = None
     issuer: str | None = None
     audiences: tuple[str, ...] = ()
+    pkce: bool = False
 
     @property
     def is_idp(self) -> bool:

@@ -1,4 +1,5 @@
 import os
+import secrets
 from datetime import datetime
 from typing import Any, Literal
 
@@ -9,7 +10,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, create_model
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
-from yaml_api_generator.utils.strings import to_pascal_case
+from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..common.auth import oidc
 from ..common.auth.login_codes import login_codes
 from ..common.auth.session_tokens import SessionTokens
@@ -223,11 +224,20 @@ def register_provider_routes(
             collection = ctx.collections[name]
             callback_path = f"{login_path}/callback"
             app.add_api_route(
-                login_path, _oidc_login_endpoint(provider, callback_path), methods=["GET"]
+                login_path,
+                _oidc_login_endpoint(provider, callback_path, name),
+                methods=["GET"],
             )
             app.add_api_route(
                 callback_path,
-                _oidc_callback_endpoint(provider, binding, collection, registry, callback_path, collections=ctx.collections),
+                _oidc_callback_endpoint(
+                    provider,
+                    binding,
+                    collection,
+                    registry,
+                    callback_path,
+                    collections=ctx.collections,
+                ),
                 methods=["GET"],
             )
 
@@ -246,10 +256,46 @@ def _providers_listing_endpoint(listing: list[dict[str, str]]):
     return endpoint
 
 
-def _oidc_login_endpoint(provider: IROIDCProvider, callback_path: str):
+def _oidc_cookie_name(collection: str, provider: str, purpose: str) -> str:
+    return f"{to_py_identifier(collection)}_{to_py_identifier(provider)}_{purpose}"
+
+
+def _oidc_login_endpoint(
+    provider: IROIDCProvider,
+    callback_path: str,
+    collection_name: str,
+):
     async def endpoint(request: Request) -> RedirectResponse:
         callback_url = str(request.base_url).rstrip("/") + callback_path
-        return RedirectResponse(url=await oidc.build_login_redirect(provider, callback_url))
+        state = secrets.token_urlsafe(32)
+        verifier = oidc.create_pkce_verifier() if provider.pkce else None
+        challenge = oidc.pkce_challenge(verifier) if verifier is not None else None
+        url = await oidc.build_login_redirect(
+            provider,
+            callback_url,
+            state=state,
+            code_challenge=challenge,
+        )
+        response = RedirectResponse(url=url)
+        cookie_options = {
+            "max_age": 300,
+            "httponly": True,
+            "secure": request.url.scheme == "https",
+            "samesite": "lax",
+            "path": callback_path,
+        }
+        response.set_cookie(
+            _oidc_cookie_name(collection_name, provider.name, "state"),
+            state,
+            **cookie_options,
+        )
+        if verifier is not None:
+            response.set_cookie(
+                _oidc_cookie_name(collection_name, provider.name, "pkce_verifier"),
+                verifier,
+                **cookie_options,
+            )
+        return response
 
     return endpoint
 
@@ -270,15 +316,40 @@ def _oidc_callback_endpoint(
     callback_path: str,
     collections: dict[str, RuntimeCollectionDescriptor] | None = None,
 ):
-    async def endpoint(request: Request, code: str) -> RedirectResponse:
+    async def endpoint(
+        request: Request,
+        code: str,
+        state: str | None = None,
+    ) -> RedirectResponse:
+        state_cookie = _oidc_cookie_name(collection.name, provider.name, "state")
+        expected_state = request.cookies.get(state_cookie)
+        if (
+            not state
+            or not expected_state
+            or not secrets.compare_digest(state, expected_state)
+        ):
+            raise HTTPException(status_code=400, detail="Invalid OIDC state")
+        verifier_cookie = _oidc_cookie_name(
+            collection.name, provider.name, "pkce_verifier"
+        )
+        verifier = request.cookies.get(verifier_cookie) if provider.pkce else None
+        if provider.pkce and not verifier:
+            raise HTTPException(status_code=400, detail="Missing PKCE verifier")
         repo = registry.for_collection(collection.name)
         callback_url = str(request.base_url).rstrip("/") + callback_path
         login_code = await oidc.handle_callback(
             provider, binding, collection, repo, code, callback_url,
             collections=collections, registry=registry,
+            code_verifier=verifier,
         )
         frontend_url = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
-        return RedirectResponse(url=f"{frontend_url}/auth/callback?code={login_code}")
+        response = RedirectResponse(
+            url=f"{frontend_url}/auth/callback?code={login_code}"
+        )
+        response.delete_cookie(state_cookie, path=callback_path)
+        if provider.pkce:
+            response.delete_cookie(verifier_cookie, path=callback_path)
+        return response
 
     return endpoint
 

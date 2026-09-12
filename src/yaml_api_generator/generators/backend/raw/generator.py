@@ -12,6 +12,7 @@ from ..validation import (
     reject_cookie_delivery,
     reject_idp_trust,
     reject_pagination,
+    reject_pkce,
     reject_session_refresh,
     reject_unsigned_session_algorithm,
 )
@@ -36,6 +37,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         reject_idp_trust(context, "raw")
         reject_session_refresh(context, "raw")
         reject_pagination(context, "raw")
+        reject_pkce(context, "raw")
         reject_unsigned_session_algorithm(context)
         env = Environment(
             loader=ChoiceLoader([

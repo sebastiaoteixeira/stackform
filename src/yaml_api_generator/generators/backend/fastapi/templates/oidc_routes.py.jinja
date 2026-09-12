@@ -1,4 +1,24 @@
+{% set _app_oidc_cols = [] %}
+{% set _relation_target_cols = [] %}
+{% set _pkce = namespace(used=false) %}
+{% for col in auth.identity_collections %}
+{% for binding in col.bindings %}
+{% set _p = auth.providers.get(binding.provider) %}
+{% if _p and _p.type == "oidc" and not _p.is_idp %}
+{% if _p.pkce %}{% set _pkce.used = true %}{% endif %}
+{% if col.name not in _app_oidc_cols %}{% set _ = _app_oidc_cols.append(col.name) %}{% endif %}
+{% for rel in binding.relations %}
+{% if rel.collection not in _relation_target_cols %}{% set _ = _relation_target_cols.append(rel.collection) %}{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}
 import time
+import secrets
+{% if _pkce.used %}
+import base64
+import hashlib
+{% endif %}
 from typing import Any
 from urllib.parse import urlencode
 
@@ -15,19 +35,6 @@ from dependencies.login_codes import (
     issue_login_code,
     redeem_login_code,
 )
-{% set _app_oidc_cols = [] %}
-{% set _relation_target_cols = [] %}
-{% for col in auth.identity_collections %}
-{% for binding in col.bindings %}
-{% set _p = auth.providers.get(binding.provider) %}
-{% if _p and _p.type == "oidc" and not _p.is_idp %}
-{% if col.name not in _app_oidc_cols %}{% set _ = _app_oidc_cols.append(col.name) %}{% endif %}
-{% for rel in binding.relations %}
-{% if rel.collection not in _relation_target_cols %}{% set _ = _relation_target_cols.append(rel.collection) %}{% endif %}
-{% endfor %}
-{% endif %}
-{% endfor %}
-{% endfor %}
 {% set _all_repo_cols = (_app_oidc_cols + _relation_target_cols) | unique | list %}
 {% for name in _all_repo_cols %}
 from dependencies.repositories import get_{{ name }}_repository
@@ -103,7 +110,36 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
         "response_type": "code",
         "scope": "openid email profile",
     }
-    return RedirectResponse(url=f"{auth_endpoint}?{urlencode(params)}")
+    state = secrets.token_urlsafe(32)
+    params["state"] = state
+{% if provider.pkce %}
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    params["code_challenge"] = challenge
+    params["code_challenge_method"] = "S256"
+{% endif %}
+    response = RedirectResponse(url=f"{auth_endpoint}?{urlencode(params)}")
+    response.set_cookie(
+        "{{ sym }}_state",
+        state,
+        max_age=300,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback",
+    )
+{% if provider.pkce %}
+    response.set_cookie(
+        "{{ sym }}_pkce_verifier",
+        verifier,
+        max_age=300,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback",
+    )
+{% endif %}
+    return response
 
 
 {% set _binding_target_cols = [] %}
@@ -111,7 +147,15 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
 {% if rel.collection not in _binding_target_cols and rel.collection != col.name %}{% set _ = _binding_target_cols.append(rel.collection) %}{% endif %}
 {% endfor %}
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_{{ col.name }}_repository){% for target_col in _binding_target_cols %}, {{ target_col }}_repo=Depends(get_{{ target_col }}_repository){% endfor %}) -> Any:
+async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None = None, repo=Depends(get_{{ col.name }}_repository){% for target_col in _binding_target_cols %}, {{ target_col }}_repo=Depends(get_{{ target_col }}_repository){% endfor %}) -> Any:
+    expected_state = request.cookies.get("{{ sym }}_state")
+    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+        raise HTTPException(status_code=400, detail="Invalid OIDC state")
+{% if provider.pkce %}
+    verifier = request.cookies.get("{{ sym }}_pkce_verifier")
+    if not verifier:
+        raise HTTPException(status_code=400, detail="Missing PKCE verifier")
+{% endif %}
     discovery = await _get_{{ sym }}_discovery()
     token_endpoint = discovery["token_endpoint"]
     callback_url = str(request.base_url).rstrip("/") + "{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback"
@@ -125,6 +169,9 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
         }
         {% if provider.client_secret %}
         _token_data["client_secret"] = settings.{{ provider_name | upper }}_CLIENT_SECRET.get_secret_value()
+        {% endif %}
+        {% if provider.pkce %}
+        _token_data["code_verifier"] = verifier
         {% endif %}
         token_resp = await client.post(token_endpoint, data=_token_data)
         if token_resp.status_code != 200:
@@ -195,7 +242,12 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, repo=Depends(get_
 {% endif %}
 
     code = await issue_login_code(str(subject), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
-    return RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
+    response = RedirectResponse(url=f"{frontend_url}/auth/callback?code={code}")
+    response.delete_cookie("{{ sym }}_state", path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback")
+{% if provider.pkce %}
+    response.delete_cookie("{{ sym }}_pkce_verifier", path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback")
+{% endif %}
+    return response
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/logout")

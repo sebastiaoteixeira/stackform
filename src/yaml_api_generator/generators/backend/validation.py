@@ -90,6 +90,30 @@ def reject_cookie_delivery(context: CompileContext, backend: str) -> None:
     )
 
 
+def reject_pkce(context: CompileContext, backend: str) -> None:
+    providers = [
+        name
+        for name, provider in context.auth.providers.items()
+        if getattr(provider, "pkce", False)
+    ]
+    if not providers:
+        return
+    names = ", ".join(sorted(providers))
+    raise ConfigErrors(
+        [
+            ConfigError(
+                code="BACKEND_FEATURE_UNSUPPORTED",
+                message=(
+                    f"OIDC PKCE for provider(s) {names} is not supported by the "
+                    f"'{backend}' backend"
+                ),
+                path="providers",
+                hint="Generate for the 'fastapi' backend, or disable PKCE",
+            )
+        ]
+    )
+
+
 def reject_unsigned_session_algorithm(context: CompileContext) -> None:
     """Reject a session algorithm choice on a spec that mints no session tokens."""
     if not context.session.uses_asymmetric or context.auth.uses_jwt:
