@@ -19,6 +19,9 @@ from routes.handlers import *
 {% if ctx.auth.has_password_auth %}
 from routes.login import *
 {% endif %}
+{% if ctx.session.uses_asymmetric %}
+from routes.jwks import handle_jwks
+{% endif %}
 
 
 _INVALID_JSON: Any = object()
@@ -48,6 +51,9 @@ ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + 
 ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}))
 {% endif %}
 {% endfor %}
+{% if ctx.session.uses_asymmetric %}
+ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), handle_jwks))
+{% endif %}
 
 
 class ASGIApp:

@@ -15,7 +15,10 @@ _RouteEntry = tuple[re.Pattern[str], Pipeline, RuntimeRouteDescriptor]
 
 
 def _compile_path(path: str) -> re.Pattern[str]:
-    regex = re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", path)
+    regex = "".join(
+        f"(?P<{part[1:-1]}>[^/]+)" if part.startswith("{") else re.escape(part)
+        for part in re.split(r"(\{\w+\})", path)
+    )
     return re.compile(f"^{regex}$")
 
 

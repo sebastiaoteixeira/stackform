@@ -2,6 +2,20 @@ from secrets import token_urlsafe
 
 from ..compile_context import CompileContext, SettingField
 from ....ir.api import IROIDCProvider
+from ....utils.rsa_keys import generate_private_key_pem
+
+
+def _dotenv_pem() -> str:
+    """A fresh RSA private key as a double-quoted single-line dotenv value.
+
+    PEM newlines are escaped as ``\\n`` inside double quotes so python-dotenv
+    restores the real newlines when the generated app loads its ``.env``.
+    """
+    return '"' + generate_private_key_pem().replace("\n", "\\n") + '"'
+
+
+def _token() -> str:
+    return token_urlsafe(32)
 
 
 def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
@@ -35,7 +49,11 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
         add(SettingField("PASSWORD_HASH_ROUNDS", "int", "390000"))
 
         if ctx.auth.uses_jwt:
-            add(SettingField("JWT_SECRET", "str", None, secret=True, generated=True))
+            if ctx.session.uses_asymmetric:
+                add(SettingField("JWT_PRIVATE_KEY", "str", None, secret=True, generator=_dotenv_pem))
+                add(SettingField("JWT_RETIRED_PUBLIC_KEY", "str", ""))
+            else:
+                add(SettingField("JWT_SECRET", "str", None, secret=True, generator=_token))
             add(SettingField("JWT_EXPIRATION_HOURS", "int", "24"))
 
         if ctx.auth.has_app_oidc_auth:
@@ -43,7 +61,7 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
             for provider_name, provider in ctx.auth.providers.items():
                 if isinstance(provider, IROIDCProvider) and provider.client_secret is not None:
                     env_name = f"{provider_name.upper()}_CLIENT_SECRET"
-                    add(SettingField(env_name, "str", None, secret=True, generated=False))
+                    add(SettingField(env_name, "str", None, secret=True))
 
     add(SettingField("HOST", "str", "127.0.0.1"))
     add(SettingField("PORT", "int", str(ctx.app.port)))
@@ -52,5 +70,5 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
 
 
 def generated_secret_values(fields: list[SettingField]) -> dict[str, str]:
-    """Return a mapping of env_name -> token_urlsafe(32) for generated secrets."""
-    return {f.env_name: token_urlsafe(32) for f in fields if f.generated}
+    """Return a mapping of env_name -> freshly generated value."""
+    return {f.env_name: f.generator() for f in fields if f.generator is not None}

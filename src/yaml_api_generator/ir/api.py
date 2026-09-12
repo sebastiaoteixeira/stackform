@@ -131,6 +131,11 @@ class IRApi:
 
 
 @dataclass(frozen=True)
+class IRSession:
+    algorithm: str = "HS256"
+
+
+@dataclass(frozen=True)
 class IRMongo:
     uri: str = "mongodb://localhost:27017"
     database: str = "yaml_api"
@@ -371,6 +376,7 @@ class IRDocument:
     deploy: IRDeploy | None = None
     repositories: dict[str, IRRepository] = field(default_factory=dict)
     policies: dict[str, IRPolicy] = field(default_factory=dict)
+    session: IRSession = field(default_factory=IRSession)
     ui_config: dict[str, Any] | None = None
     vendored_imports: tuple[IRVendoredImport, ...] = ()
     vendored_requirements: tuple[str, ...] = ()

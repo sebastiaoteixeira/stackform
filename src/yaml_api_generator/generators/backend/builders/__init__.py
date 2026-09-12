@@ -7,7 +7,7 @@ from typing import Any
 
 from yaml_api_generator.ir import IRDocument, IRPostgres
 from yaml_api_generator.server.common.loader import SchemaManagement
-from ..compile_context import AppConfig, CompileContext, CorsConfig
+from ..compile_context import AppConfig, CompileContext, CorsConfig, SessionConfig
 
 from .auth_builder import AuthBuilder
 from .model_builder import ModelBuilder
@@ -105,6 +105,7 @@ class ContextBuilder:
             routes=routes,
             auth=auth,
             collections=raw_collections,
+            session=SessionConfig(algorithm=document.session.algorithm),
             repository_operations=repository_operations,
             datastores=datastores,
             repository_abstract=repository_abstract,

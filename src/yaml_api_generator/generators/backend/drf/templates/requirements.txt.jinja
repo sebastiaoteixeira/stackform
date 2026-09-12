@@ -3,7 +3,7 @@ djangorestframework
 drf-spectacular
 gunicorn
 pymongo
-pyjwt
+pyjwt{{ "[crypto]" if ctx.session.uses_asymmetric else "" }}
 pydantic-settings
 {% for req in ctx.vendored_requirements %}
 {{ req }}
