@@ -1,0 +1,64 @@
+version: "0.3"
+
+api:
+  name: v03-crud-pagination
+  basePath: /api
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+
+datastores:
+  local:
+    type: postgres
+    dsn: sqlite+aiosqlite:///v03-crud-pagination.sqlite
+    default: true
+
+entities:
+  article:
+    fields:
+      id: { type: id }
+      slug: { type: string, required: true, unique: true }
+      title: { type: string, required: true }
+      score: { type: number, required: true }
+
+repositories:
+  articles:
+    entity: article
+
+services:
+  articles:
+    repository: articles
+
+controllers:
+  articles:
+    service: articles
+    base_path: /articles
+    access: public
+    operations:
+      list:
+        pagination:
+          strategy: offset
+          size: { default: 10, max: 50 }
+          sort:
+            - { field: score, dir: desc }
+          count: exact
+          onOverflow: reject
+          envelope: true
+  articleFeed:
+    service: articles
+    base_path: /feed
+    access: public
+    operations:
+      list:
+        pagination:
+          strategy: keyset
+          size: { default: 10, max: 50 }
+          sort:
+            - { field: score, dir: desc }
+            - { field: slug, dir: asc }
+          envelope: true

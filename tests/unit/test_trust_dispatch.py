@@ -100,7 +100,7 @@ def test_has_idp_provider_false_without_idp():
 async def test_untrusted_issuer_is_rejected():
     token = jwt.encode(
         {"iss": "https://evil/realms/x", "sub": "x", "exp": int(time.time()) + 300},
-        "secret", algorithm="HS256",
+        "wrong-secret-with-at-least-thirty-two-bytes", algorithm="HS256",
     )
     with pytest.raises(UnauthorizedError):
         await _resolve(token, {"keycloak": _idp_provider()})
@@ -118,7 +118,7 @@ async def test_issuer_bearing_token_ignored_when_no_idp_provider():
     )
     token = jwt.encode(
         {"iss": "https://evil/realms/x", "sub": "x", "exp": int(time.time()) + 300},
-        "secret", algorithm="HS256",
+        "wrong-secret-with-at-least-thirty-two-bytes", algorithm="HS256",
     )
     principal = await _resolve(token, {"google": app_provider})
     assert principal is None

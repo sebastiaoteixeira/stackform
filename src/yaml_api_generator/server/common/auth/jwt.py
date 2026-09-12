@@ -23,7 +23,7 @@ from ..server_context import RuntimeSessionConfig
 
 logger = logging.getLogger(__name__)
 
-DEV_SECRET = "yaml-api-dev-secret-change-me"
+DEV_SECRET = "yaml-api-development-secret-change-me"
 JWKS_PATH = "/.well-known/jwks.json"
 
 

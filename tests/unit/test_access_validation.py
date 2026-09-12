@@ -149,6 +149,11 @@ def test_always_allow_dict_with_then_warns():
     assert "PUBLIC_ROUTE" in _warning_codes(controllers)
 
 
+def test_unconditional_deny_does_not_warn_as_public():
+    controllers = {"c": {"operations": {"list": {"access": [{"then": "deny"}]}}}}
+    assert "PUBLIC_ROUTE" not in _warning_codes(controllers)
+
+
 def test_rule_with_when_no_given_does_not_warn():
     controllers = {"c": {"routes": {"/probe": {"access": [
         {"when": "principal.role equals 'admin'"}
