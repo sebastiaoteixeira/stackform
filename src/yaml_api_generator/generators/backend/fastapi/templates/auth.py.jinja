@@ -95,11 +95,11 @@ def _extract_bearer_token(headers: dict[str, str]) -> str | None:
 def _extract_roles(
     doc: dict[str, Any], roles_field: str | None, managed_roles: bool = False
 ) -> list[str]:
-    auth_data = doc.get("_auth")
-    if managed_roles and isinstance(auth_data, dict):
-        roles = auth_data.get("roles")
-    else:
-        roles = doc.get(roles_field) if roles_field else (doc.get("roles") or doc.get("role"))
+    roles = doc.get(roles_field) if roles_field else (doc.get("roles") or doc.get("role"))
+    if roles is None and managed_roles:
+        # The identity declares no role field of its own, so the managed store holds them.
+        auth_data = doc.get("_auth")
+        roles = auth_data.get("roles") if isinstance(auth_data, dict) else None
     if isinstance(roles, list):
         return [str(role) for role in roles]
     if isinstance(roles, str):

@@ -102,9 +102,10 @@ class RepositoryBase:
         return {"$or": conditions}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Hide the datastore's own identifier; the service layer hides domain-internal fields."""
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if not k.startswith("_")}
+        return {k: v for k, v in doc.items() if k != "_id"}
 
     async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
         return self._normalize(await self._col.find_one({field: value}))

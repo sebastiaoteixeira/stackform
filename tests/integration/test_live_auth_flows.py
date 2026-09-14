@@ -23,7 +23,7 @@ from yaml_api_generator.server.fastapi.server import build_app
 from tests.unit.support.repositories import InMemoryRepository
 
 
-EXAMPLES = Path(__file__).parents[2] / "examples" / "v03"
+EXAMPLES = Path(__file__).parents[2] / "examples"
 pytestmark = pytest.mark.integration
 
 
@@ -135,7 +135,7 @@ def _runtime_app(spec: Path, repository: InMemoryRepository) -> FastAPI:
 
 @pytest.mark.asyncio
 async def test_development_server_password_login_and_role_access(tmp_path):
-    source = EXAMPLES / "password-role" / "spec.yaml"
+    source = EXAMPLES / "v03" / "password-role" / "spec.yaml"
     database = tmp_path / "password-role.sqlite"
     spec = tmp_path / "spec.yaml"
     spec.write_text(
@@ -177,7 +177,7 @@ async def test_development_server_password_login_and_role_access(tmp_path):
 def test_generated_fastapi_password_login_and_role_access(tmp_path):
     output = tmp_path / "generated"
     compile_project(
-        EXAMPLES / "password-role" / "spec.yaml",
+        EXAMPLES / "v03" / "password-role" / "spec.yaml",
         output_dir=output,
         target="fastapi",
     )
@@ -239,6 +239,166 @@ asyncio.run(main())
     assert "_auth" not in observed["users"][0]
 
 
+def test_generated_fastapi_password_login_over_mongo(tmp_path):
+    """The Mongo repository must surface the auth material the login route reads.
+
+    No Mongo server is needed: the generated repository is driven over a stub
+    collection, which is what pins the normalisation contract the route relies on.
+    """
+    source = EXAMPLES / "v03" / "password-role" / "spec.yaml"
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        source.read_text().replace(
+            "    type: postgres\n    dsn: sqlite+aiosqlite:///v03-password-role.sqlite",
+            "    type: mongodb\n    uri: mongodb://localhost:27017\n    database: password_role",
+        )
+    )
+    output = tmp_path / "generated"
+    compile_project(spec, output_dir=output, target="fastapi")
+    backend = output / "backend"
+    script = """
+import asyncio
+import json
+
+from dependencies.auth import hash_password
+from repositories.users import UsersRepository
+from routes.login import UsersLoginPayload, login_users
+
+
+class StubCursor:
+    def __init__(self, documents):
+        self._documents = documents
+
+    async def to_list(self, length=None):
+        return list(self._documents)
+
+
+class StubCollection:
+    def __init__(self, documents):
+        self._documents = documents
+
+    def find(self, query):
+        return StubCursor(self._documents)
+
+
+async def main():
+    stored = {
+        "_id": "datastore-identifier",
+        "id": "u1",
+        "email": "user@example.com",
+        "displayName": "User",
+        "role": "user",
+        "_auth": {"passwordHash": hash_password("secret-password")},
+    }
+    repository = UsersRepository({"users": StubCollection([stored])})
+    session = await login_users(
+        UsersLoginPayload(email="user@example.com", password="secret-password"),
+        repository=repository,
+    )
+    read = await repository.list()
+    print(json.dumps({"read": sorted(read[0]), "session": session}))
+
+asyncio.run(main())
+"""
+    environment = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join((str(backend), str(Path(__file__).parents[2] / "src"))),
+        "JWT_SECRET": "regression-secret-of-sufficient-length",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=backend,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    observed = json.loads(result.stdout)
+    assert "_auth" in observed["read"]
+    assert "_id" not in observed["read"]
+    assert observed["session"]["token"]
+    assert set(observed["session"]["user"]) == {"id", "email", "displayName", "role"}
+
+
+def test_generated_fastapi_declared_role_outranks_managed_store(tmp_path):
+    """An identity that declares a role field is authoritative about its own roles.
+
+    The managed store under ``_auth`` holds roles only for identities that declare
+    no such field, so it must not shadow a role the specification made writable.
+    """
+    output = tmp_path / "generated"
+    compile_project(
+        EXAMPLES / "valid" / "access-control-advanced.yaml",
+        output_dir=output,
+        target="fastapi",
+    )
+    backend = output / "backend"
+    script = """
+import asyncio
+import json
+
+from starlette.requests import Request
+
+from dependencies.auth import resolve_principal
+from dependencies.jwt_utils import create_jwt_token
+from repositories.users import UsersRepository
+
+
+class StubCursor:
+    def __init__(self, documents):
+        self._documents = documents
+
+    async def to_list(self, length=None):
+        return list(self._documents)
+
+
+class StubCollection:
+    def __init__(self, documents):
+        self._documents = documents
+
+    def find(self, query):
+        return StubCursor(self._documents)
+
+
+async def main():
+    administrator = {
+        "_id": "datastore-identifier",
+        "id": "u1",
+        "email": "admin@example.test",
+        "name": "Administrator",
+        "role": "admin",
+        "_auth": {"passwordHash": "unused", "roles": "viewer"},
+    }
+    repository = UsersRepository({"users": StubCollection([administrator])})
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/users",
+        "headers": [(b"authorization", b"Bearer " + create_jwt_token("u1", "users").encode())],
+    })
+    principal = await resolve_principal(request, repositories={"users": repository})
+    print(json.dumps(principal["roles"]))
+
+asyncio.run(main())
+"""
+    environment = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join((str(backend), str(Path(__file__).parents[2] / "src"))),
+        "JWT_SECRET": "regression-secret-of-sufficient-length",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=backend,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    assert json.loads(result.stdout) == ["admin"]
+
+
 @pytest.mark.asyncio
 async def test_external_oidc_pkce_dpop_flow_over_live_http(oidc_provider, monkeypatch):
     monkeypatch.setenv(
@@ -247,7 +407,7 @@ async def test_external_oidc_pkce_dpop_flow_over_live_http(oidc_provider, monkey
     )
     monkeypatch.setenv("IDENTITY_DPOP_PRIVATE_KEY", generate_private_key_pem())
     repository = InMemoryRepository()
-    app = _runtime_app(EXAMPLES / "oidc-pkce-dpop" / "spec.yaml", repository)
+    app = _runtime_app(EXAMPLES / "v03" / "oidc-pkce-dpop" / "spec.yaml", repository)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://app.test"
