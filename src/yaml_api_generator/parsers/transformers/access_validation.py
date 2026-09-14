@@ -52,20 +52,26 @@ def _declared_roles(spec: dict[str, Any]) -> dict[str, frozenset[str]]:
     """Map each auth entity to the role names it declares.
 
     Roles may be declared via ``roles.values`` and/or the enum role field named
-    by ``auth.roles`` (defaulting to ``role``). The declared set is their union,
-    so a role used in access is valid if either source lists it.
+    by the v0.2 ``roles`` string or ``auth.roles`` (defaulting to ``role``). The
+    declared set is their union, so a role used in access is valid if either
+    source lists it.
     """
     roles: dict[str, frozenset[str]] = {}
     for entity_name, entity in (spec.get("entities") or {}).items():
         if not isinstance(entity, dict):
             continue
         names: set[str] = set()
-        values = (entity.get("roles") or {}).get("values")
+        role_config = entity.get("roles")
+        values = role_config.get("values") if isinstance(role_config, dict) else None
         if isinstance(values, list):
             names.update(str(value) for value in values)
 
         auth = entity.get("auth") or {}
-        role_field = auth.get("roles", "role") if isinstance(auth, dict) else "role"
+        role_field = (
+            role_config
+            if isinstance(role_config, str)
+            else auth.get("roles", "role") if isinstance(auth, dict) else "role"
+        )
         field = (entity.get("fields") or {}).get(role_field)
         if isinstance(field, dict) and isinstance(field.get("values"), list):
             names.update(str(value) for value in field["values"])

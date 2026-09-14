@@ -5,9 +5,14 @@ import secrets
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request
+{% if auth.has_idp_auth %}
 from pymongo.database import Database
 
 from dependencies.mongodb import get_database
+{% endif %}
+{% for identity in auth.identity_collections %}
+from dependencies.repositories import get_{{ identity.name }}_repository
+{% endfor %}
 from settings import settings
 
 {% if auth.uses_jwt %}
@@ -87,8 +92,14 @@ def _extract_bearer_token(headers: dict[str, str]) -> str | None:
     return None
 
 
-def _extract_roles(doc: dict[str, Any], roles_field: str | None) -> list[str]:
-    roles = doc.get(roles_field) if roles_field else (doc.get("roles") or doc.get("role"))
+def _extract_roles(
+    doc: dict[str, Any], roles_field: str | None, managed_roles: bool = False
+) -> list[str]:
+    auth_data = doc.get("_auth")
+    if managed_roles and isinstance(auth_data, dict):
+        roles = auth_data.get("roles")
+    else:
+        roles = doc.get(roles_field) if roles_field else (doc.get("roles") or doc.get("role"))
     if isinstance(roles, list):
         return [str(role) for role in roles]
     if isinstance(roles, str):
@@ -211,7 +222,14 @@ async def _resolve_idp_principal(
 
 {% endif %}
 
-async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | None:
+async def resolve_principal(
+    request: Request,
+{% if auth.has_idp_auth %}
+    db: Database | None = None,
+{% endif %}
+    repositories: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    repositories = repositories or {}
     pre_resolved = getattr(request.state, "principal", None)
     if pre_resolved is not None:
         return pre_resolved
@@ -225,6 +243,8 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 
 {% if auth.has_idp_auth %}
     if bearer_token is not None and idp_auth.unverified_issuer(bearer_token) is not None:
+        if db is None:
+            raise HTTPException(status_code=500, detail="IdP datastore is unavailable")
         return await _resolve_idp_principal(bearer_token, db)
 {% endif %}
 
@@ -235,14 +255,13 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
             sub = claims.get("sub")
             collection_name = claims.get("identity_collection")
             if sub and collection_name:
-                col = db[collection_name]
-                cursor = col.find({})
-                docs = await cursor.to_list(length=None)
+                repository = repositories.get(collection_name)
+                docs = await repository.list() if repository is not None else []
                 for doc in docs:
 {% for identity in auth.identity_collections %}
 {% if identity.issues_jwt %}
                     if collection_name == "{{ identity.name }}" and str(doc.get("{{ identity.id_field }}", "")) == sub:
-                        return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }})}
+                        return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -251,23 +270,19 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 {% if identity.has_api_key %}
     token = _extract_api_key(headers)
     if token is not None:
-        col = db["{{ identity.name }}"]
-        cursor = col.find({})
-        docs = await cursor.to_list(length=None)
+        docs = await repositories["{{ identity.name }}"].list()
         for doc in docs:
             if str(doc.get("apiKey", "")) == token:
                 subject = doc.get("{{ identity.id_field }}")
                 if subject is not None:
-                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }})}
+                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
 {% endif %}
 {% set pw_binding = identity.bindings | selectattr('provider', 'equalto', 'password') | first | default(none) %}
 {% if pw_binding %}
     credentials = _extract_basic_credentials(headers)
     if credentials is not None:
         identifier_value, password = credentials
-        col = db["{{ identity.name }}"]
-        cursor = col.find({})
-        docs = await cursor.to_list(length=None)
+        docs = await repositories["{{ identity.name }}"].list()
         for doc in docs:
             if str(doc.get("{{ pw_binding.identifier }}", "")) != identifier_value:
                 continue
@@ -278,7 +293,7 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
                 continue
             subject = doc.get("{{ identity.id_field }}")
             if subject is not None:
-                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }})}
+                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
 {% endif %}
 {% endfor %}
 
@@ -287,9 +302,25 @@ async def resolve_principal(request: Request, db: Database) -> dict[str, Any] | 
 
 async def get_optional_principal(
     request: Request,
+{% for identity in auth.identity_collections %}
+    {{ identity.name }}_repository=Depends(get_{{ identity.name }}_repository),
+{% endfor %}
+{% if auth.has_idp_auth %}
     db: Database = Depends(get_database),
+{% endif %}
 ) -> dict[str, Any] | None:
-    return await resolve_principal(request, db)
+    repositories = {
+{% for identity in auth.identity_collections %}
+        "{{ identity.name }}": {{ identity.name }}_repository,
+{% endfor %}
+    }
+    return await resolve_principal(
+        request,
+{% if auth.has_idp_auth %}
+        db,
+{% endif %}
+        repositories=repositories,
+    )
 
 
 async def require_principal(

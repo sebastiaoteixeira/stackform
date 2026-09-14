@@ -31,6 +31,21 @@ def _collection() -> IRCollection:
     )
 
 
+def _auth_collection() -> IRCollection:
+    return IRCollection(
+        name="users",
+        entity_name="user",
+        type="auth",
+        idField="id",
+        idFormat="uuidv4",
+        fields={
+            "id": {"type": "id"},
+            "email": {"type": "string", "required": True},
+        },
+        datastore="warehouse",
+    )
+
+
 def test_table_from_collection_maps_types_and_constraints():
     table = table_from_collection(_collection(), sa.MetaData())
     assert table.name == "events"
@@ -42,6 +57,11 @@ def test_table_from_collection_maps_types_and_constraints():
     assert isinstance(table.c.tags.type, sa.JSON)
     checks = {c.name for c in table.constraints if isinstance(c, sa.CheckConstraint)}
     assert {"ck_kind_maxlen", "ck_score_min", "ck_score_max", "ck_level_enum"} <= checks
+
+
+def test_auth_collection_has_internal_auth_storage():
+    table = table_from_collection(_auth_collection(), sa.MetaData())
+    assert isinstance(table.c._auth.type, sa.JSON)
 
 
 @pytest.fixture
@@ -80,6 +100,21 @@ async def test_unknown_columns_are_dropped(repo):
     created = await repo.create("events", {"id": "e2", "kind": "x", "_auth": {"x": 1}})
     assert "_auth" not in created
     assert await repo.get("events", "e2") is not None
+
+
+@pytest.mark.asyncio
+async def test_auth_metadata_round_trip():
+    repository = SQLRepository("sqlite+aiosqlite://", [_auth_collection()])
+    repository.connect()
+    try:
+        auth = {"passwordHash": "encoded-password-hash"}
+        created = await repository.create(
+            "users", {"id": "u1", "email": "user@example.com", "_auth": auth}
+        )
+        assert created["_auth"] == auth
+        assert (await repository.get("users", "u1"))["_auth"] == auth
+    finally:
+        await repository.close()
 
 
 @pytest.fixture

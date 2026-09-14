@@ -3,7 +3,7 @@ from pathlib import Path
 from jinja2 import Environment
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields, generated_secret_values
+from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
@@ -12,6 +12,7 @@ from ..utils import (
     group_by_collection,
     pagination_config,
     runtime_module_source,
+    write_environment_files,
 )
 from ..validation import (
     reject_undeclared_repository_operations,
@@ -112,19 +113,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
     def _render_env(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
-        fields = build_settings_fields(context)
-        secret_values = generated_secret_values(fields)
-        env_values = {
-            f.env_name: secret_values.get(f.env_name, f.default or "")
-            for f in fields
-        }
-        example_values = {
-            f.env_name: f"<{f.env_name.lower()}>" if f.secret else (f.default or "")
-            for f in fields
-        }
-        template = env.get_template("env.jinja")
-        (output_dir / ".env").write_text(template.render(settings_fields=fields, values=env_values))
-        (output_dir / ".env.example").write_text(template.render(settings_fields=fields, values=example_values))
+        write_environment_files(env, context, output_dir)
 
     def _render_app(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -197,6 +186,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "operations": _crud_operations(col_data),
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
+            "default_role": identity.roles.default if is_identity and identity.roles else None,
             "identity_fields": extract_identity_fields(context, col_name),
         }
 
@@ -380,6 +370,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "operations": _crud_operations(col_data),
                 "id_field": meta["id_field"],
                 "id_field_format": meta["id_format"],
+                "collection_type": meta["type"],
                 "fields": meta["fields"],
                 "custom_operations": ctx_ops if (ctx_ops := context.repository_operations.get(col_name, [])) else [],
                 "generated_base": generated_base(col_name),

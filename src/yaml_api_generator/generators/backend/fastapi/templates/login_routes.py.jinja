@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 {% if ctx.session.uses_cookie %}
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -15,7 +15,9 @@ from dependencies.session_cookie import issue_csrf_token, refresh_token_from_req
 from dependencies.session_cookie import issue_csrf_token, set_session_cookies
 {% endif %}
 {% endif %}
-from dependencies.mongodb import get_database
+{% for identity in auth.identity_collections if identity.has_password %}
+from dependencies.repositories import get_{{ identity.name }}_repository
+{% endfor %}
 {% if ctx.session.refresh %}
 from dependencies.session_tokens import issue_session, rotate_session
 {% else %}
@@ -41,11 +43,8 @@ class {{ class_name }}LoginPayload(BaseModel):
 
 
 @router.post("/{{ identity.name }}/login", tags=["{{ identity.name | capitalize_collection }}"])
-async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if ctx.session.uses_cookie %}, request: Request{% endif %}) -> Any:
-    db = get_database()
-    col = db["{{ identity.name }}"]
-    cursor = col.find({})
-    docs = await cursor.to_list(length=None)
+async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if ctx.session.uses_cookie %}, request: Request{% endif %}, repository=Depends(get_{{ identity.name }}_repository)) -> Any:
+    docs = await repository.list()
 
     for doc in docs:
         if str(doc.get("{{ pw_binding.identifier }}", "")) != payload.{{ pw_binding.identifier }}:

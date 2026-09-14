@@ -11,6 +11,9 @@ from ._sql_ops import SQLRepositoryBase{% for op in operations %}, {{ op | capit
 {% for field_name, field_cfg in fields.items() if field_cfg is mapping %}
     {{ field_name | sql_column(field_cfg, id_field) }},
 {% endfor %}
+{% if collection_type == "auth" and "_auth" not in fields %}
+    sa.Column("_auth", sa.JSON(), nullable=True),
+{% endif %}
 )
 
 

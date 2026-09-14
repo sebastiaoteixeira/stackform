@@ -343,8 +343,12 @@ def _build_principal(
     }
 
     if roles is None:
+        roles_config = identity.roles if identity is not None else None
         roles_field = identity.roles_field if identity is not None else None
-        if roles_field is not None:
+        auth_data = document.get("_auth")
+        if roles_config is not None and isinstance(auth_data, dict):
+            roles = auth_data.get("roles")
+        elif roles_field is not None:
             roles = document.get(roles_field)
         else:
             roles = document.get("roles") or document.get("role")
