@@ -88,9 +88,10 @@ class {{ class_name }}Repository:
         return {self.ID_FIELD: document_id}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Hide the datastore's own identifier; the service layer hides domain-internal fields."""
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if not k.startswith("_")}
+        return {k: v for k, v in doc.items() if k != "_id"}
 
     async def list(self) -> list[dict[str, Any]]:
         cursor = self._col.find({})
