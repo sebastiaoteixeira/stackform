@@ -3,7 +3,12 @@ import base64
 import pytest
 
 from tests.unit.support.repositories import InMemoryRepository
-from yaml_api_generator.ir import IRDocumentBinding, IRIdentityBinding, IRProviderBinding
+from yaml_api_generator.ir import (
+    IRDocumentBinding,
+    IRIdentityBinding,
+    IRProviderBinding,
+    IRRolesConfig,
+)
 from yaml_api_generator.server.common.request_context import RequestContext
 from yaml_api_generator.server.common.server_context import (
     RuntimeAccessRule,
@@ -66,6 +71,7 @@ def _make_identity(
     via: list[str] | None = None,
     id_field: str = "id",
     roles_field: str | None = "role",
+    roles: IRRolesConfig | None = None,
 ) -> RuntimeIdentityDescriptor:
     providers = via or ["password"]
     bindings = tuple(
@@ -76,6 +82,7 @@ def _make_identity(
         name=name,
         bindings=bindings,
         id_field=id_field,
+        roles=roles,
         roles_field=roles_field,
     )
 
@@ -349,6 +356,37 @@ class TestResolvePrincipalStep:
         result = await step(ctx)
         assert result.principal is not None
         assert "admin" in result.principal["roles"]
+
+    @pytest.mark.asyncio
+    async def test_principal_roles_from_managed_auth_metadata(self):
+        pw_hash = hash_password("secret")
+        repo = InMemoryRepository(
+            {
+                "users": [
+                    {
+                        "id": "u1",
+                        "email": "a@b.com",
+                        "_auth": {"passwordHash": pw_hash, "roles": "user"},
+                    }
+                ]
+            }
+        )
+        identity = _make_identity(
+            name="users",
+            via=["password"],
+            roles_field=None,
+            roles=IRRolesConfig(values=("admin", "user"), default="user"),
+        )
+        step = ResolvePrincipalStep(
+            identity_collections={"users": identity},
+            identity_id_fields={"users": "id"},
+            registry=RepositoryRegistry.single(repo),
+            tokens=TOKENS,
+        )
+        ctx = _make_ctx(headers={"Authorization": _basic_header("a@b.com", "secret")})
+        result = await step(ctx)
+        assert result.principal is not None
+        assert result.principal["roles"] == ["user"]
 
     @pytest.mark.asyncio
     async def test_209_multiple_identity_collections_first_match(self):

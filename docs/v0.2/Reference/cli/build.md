@@ -52,7 +52,7 @@ The default. Generates a standalone FastAPI project under `<output>/backend`:
 - `app.py` -- the ASGI application
 - `routes/` -- route handlers
 - `models/` -- Pydantic models
-- `repositories/` -- MongoDB repository implementations
+- `repositories/` -- datastore-specific MongoDB or SQL repository implementations
 - `services/` -- service layer
 - `dependencies/` -- auth and database dependency injection
 - `.env` -- runtime settings with real values (secret-typed settings such as `JWT_SECRET` and each `<PROVIDER>_CLIENT_SECRET` get a generated value), so the bundle runs as-is
@@ -64,7 +64,7 @@ Generates a Django REST Framework project under `<output>/backend` (Django setti
 
 ### `raw`
 
-Generates a runnable raw-ASGI project under `<output>/backend` (its own `app.py`, `requirements.txt`, routes, repositories, and services) without the FastAPI or Django dependency. Custom-operation handler routes are emitted with a request-compatible object carrying path parameters, body, headers, and state.
+Generates a runnable raw-ASGI project under `<output>/backend` (its own `app.py`, `requirements.txt`, routes, repositories, and services) without the FastAPI or Django dependency. Its route table applies `api.basePath` and `api.version` exactly once, matching FastAPI. It emits the same `.env` and `.env.example` runtime-setting files as FastAPI, including a generated `JWT_SECRET` when authentication requires one. Custom-operation handler routes are emitted with a request-compatible object carrying path parameters, body, headers, and state.
 
 ## The frontend subtarget
 

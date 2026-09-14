@@ -13,6 +13,7 @@ from ..utils import (
     group_by_collection,
     pagination_config,
     runtime_module_source,
+    write_environment_files,
 )
 from ..validation import (
     reject_cookie_delivery,
@@ -82,6 +83,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         collections_by_name = group_by_collection(context)
 
         self._render_settings(env, context, output_dir)
+        write_environment_files(env, context, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
         if context.auth.has_password_auth:
             self._render_login_routes(env, context, output_dir)

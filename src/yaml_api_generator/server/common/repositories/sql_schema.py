@@ -23,6 +23,9 @@ def table_from_collection(collection: IRCollection, metadata: sa.MetaData) -> sa
         columns.append(_column(name, cfg, is_pk))
         constraints.extend(_checks(name, cfg))
 
+    if collection.type == "auth" and "_auth" not in collection.fields:
+        columns.append(sa.Column("_auth", sa.JSON(), nullable=True))
+
     return sa.Table(collection.name, metadata, *columns, *constraints)
 
 

@@ -1,8 +1,9 @@
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.ir.api import IROIDCProvider
@@ -62,7 +63,8 @@ def _make_ctx(trust: str = "app") -> RuntimeContext:
     )
 
 
-def _client(trust: str = "app") -> TestClient:
+@asynccontextmanager
+async def _client(trust: str = "app"):
     app = FastAPI()
     ctx = _make_ctx(trust)
     register_provider_routes(
@@ -71,18 +73,27 @@ def _client(trust: str = "app") -> TestClient:
         RepositoryRegistry(repositories={}, bindings={}, default=""),
         SessionTokens(ctx.session),
     )
-    return TestClient(app)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client
 
 
-def test_providers_listing_route_is_mounted():
-    resp = _client().get("/api/v1/users/auth/providers")
+@pytest.mark.asyncio
+async def test_providers_listing_route_is_mounted():
+    async with _client() as client:
+        resp = await client.get("/api/v1/users/auth/providers")
     assert resp.status_code == 200
     assert resp.json() == [{"name": "keycloak", "type": "oidc"}]
 
 
-def test_login_route_redirects_to_idp():
+@pytest.mark.asyncio
+async def test_login_route_redirects_to_idp():
     oidc._discovery_cache[_DISCOVERY_URL] = _DISCOVERY
-    resp = _client().get("/api/v1/users/auth/keycloak", follow_redirects=False)
+    async with _client() as client:
+        resp = await client.get(
+            "/api/v1/users/auth/keycloak", follow_redirects=False
+        )
     assert resp.status_code in (302, 307)
     location = resp.headers["location"]
     assert location.startswith("https://idp.test/authorize?")
@@ -90,9 +101,13 @@ def test_login_route_redirects_to_idp():
     assert "response_type=code" in location
 
 
-def test_logout_route_redirects_to_end_session():
+@pytest.mark.asyncio
+async def test_logout_route_redirects_to_end_session():
     oidc._discovery_cache[_DISCOVERY_URL] = _DISCOVERY
-    resp = _client().get("/api/v1/users/auth/keycloak/logout", follow_redirects=False)
+    async with _client() as client:
+        resp = await client.get(
+            "/api/v1/users/auth/keycloak/logout", follow_redirects=False
+        )
     assert resp.status_code in (302, 307)
     location = resp.headers["location"]
     assert location.startswith("https://idp.test/logout?")
@@ -100,13 +115,19 @@ def test_logout_route_redirects_to_end_session():
     assert "post_logout_redirect_uri=" in location
 
 
-def test_exchange_route_rejects_bad_code():
-    resp = _client().post("/api/v1/auth/exchange", json={"code": "nope"})
+@pytest.mark.asyncio
+async def test_exchange_route_rejects_bad_code():
+    async with _client() as client:
+        resp = await client.post(
+            "/api/v1/auth/exchange", json={"code": "nope"}
+        )
     assert resp.status_code == 401
 
 
-def test_exchange_route_requires_code():
-    resp = _client().post("/api/v1/auth/exchange", json={})
+@pytest.mark.asyncio
+async def test_exchange_route_requires_code():
+    async with _client() as client:
+        resp = await client.post("/api/v1/auth/exchange", json={})
     assert resp.status_code == 400
 
 

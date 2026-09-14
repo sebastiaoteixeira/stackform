@@ -67,6 +67,26 @@ services:
   comments:
     repository: comments
 
+  list_comments_for_post:
+    repository: comments
+    operation: by_post
+
+  create_comment_for_post:
+    repository: comments
+    operation: create
+
+  get_comment:
+    repository: comments
+    operation: get
+
+  update_comment:
+    repository: comments
+    operation: update
+
+  delete_comment:
+    repository: comments
+    operation: delete
+
   categories:
     repository: categories
 
@@ -113,27 +133,27 @@ controllers:
       list_for_post:
         method: GET
         path: /{post_id}/comments
-        service: comments
+        service: list_comments_for_post
         access: public
       create_for_post:
         method: POST
         path: /{post_id}/comments
-        service: comments
+        service: create_comment_for_post
         access: public
       get_comment:
         method: GET
         path: /{post_id}/comments/{id}
-        service: comments
+        service: get_comment
         access: public
       update_comment:
         method: PUT
         path: /{post_id}/comments/{id}
-        service: comments
+        service: update_comment
         access: public
       delete_comment:
         method: DELETE
         path: /{post_id}/comments/{id}
-        service: comments
+        service: delete_comment
         access: public
 
   categories:

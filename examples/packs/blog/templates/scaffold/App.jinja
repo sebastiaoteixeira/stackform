@@ -19,7 +19,7 @@ function Nav() {
               to="{{ view.path }}"
               className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
             >
-              {{ view_name | pascal_case | singular }}s
+              {{ view_name | replace('-list', '') | pascal_case }}s
             </Link>
             {% endif %}
             {% endfor %}

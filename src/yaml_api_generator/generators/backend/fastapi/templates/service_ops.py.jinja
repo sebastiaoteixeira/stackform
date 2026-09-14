@@ -15,11 +15,16 @@ class ServiceBase:
     def _name(self) -> str:
         return self._repo.COLLECTION
 
+    @staticmethod
+    def _strip_internal_fields(document: dict) -> None:
+        document.pop("_auth", None)
+        document.pop("password", None)
+
     async def _before_create(self, data: dict) -> None:
         """Hook invoked before create; override to validate or enrich data."""
 
     async def _after_create(self, document: dict) -> None:
-        """Hook invoked after create; override to react to the new document."""
+        self._strip_internal_fields(document)
 
     async def _before_write(self, data: dict) -> None:
         """Hook invoked before create/update/replace; override for cross-cutting write logic."""
@@ -28,25 +33,26 @@ class ServiceBase:
         """Hook invoked before update; override to validate or enrich partial data."""
 
     async def _after_update(self, document: dict) -> None:
-        """Hook invoked after update; override to react to the updated document."""
+        self._strip_internal_fields(document)
 
     async def _before_replace(self, resource_id: str, data: dict) -> None:
         """Hook invoked before replace; override to validate the replacement payload."""
 
     async def _after_replace(self, document: dict) -> None:
-        """Hook invoked after replace; override to react to the replaced document."""
+        self._strip_internal_fields(document)
 
     async def _before_delete(self, resource_id: str) -> None:
         """Hook invoked before delete; override to enforce preconditions."""
 
     async def _after_delete(self, document: dict) -> None:
-        """Hook invoked after delete; override to perform cleanup."""
+        self._strip_internal_fields(document)
 
     async def _after_get(self, document: dict) -> None:
-        """Hook invoked after get; override to transform or audit the fetched document."""
+        self._strip_internal_fields(document)
 
     async def _after_list(self, documents: list[dict]) -> None:
-        """Hook invoked after list; override to filter or annotate the result set."""
+        for document in documents:
+            self._strip_internal_fields(document)
 
 
 class ListSvc:
@@ -155,6 +161,8 @@ class IdentityFieldsMixin:
 
 
 class PasswordMixin:
+    DEFAULT_ROLE: str | None = None
+
     async def _before_write(self, data: dict) -> None:
         raw_password = data.pop("password", None)
         if raw_password is None:
@@ -165,5 +173,7 @@ class PasswordMixin:
         if not isinstance(auth_data, dict):
             auth_data = {}
         auth_data["passwordHash"] = hash_password(raw_password)
+        if self.DEFAULT_ROLE is not None:
+            auth_data.setdefault("roles", self.DEFAULT_ROLE)
         data["_auth"] = auth_data
 {% endif %}

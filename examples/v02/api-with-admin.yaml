@@ -24,10 +24,11 @@ mongo:
 entities:
   user:
     type: auth
-    via:
-      - provider: password
-        identifier: email
-    roles: role
+    auth:
+      via:
+        - provider: password
+          identifier: email
+      roles: role
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }

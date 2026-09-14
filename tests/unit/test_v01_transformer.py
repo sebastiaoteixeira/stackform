@@ -86,7 +86,7 @@ def test_v01_login_route_auto_generated_for_password() -> None:
     login_routes = [r for r in ir.routes if r.operation == "login"]
     assert len(login_routes) == 1
     assert login_routes[0].method == "POST"
-    assert login_routes[0].path == "/users/login"
+    assert login_routes[0].path == "/api/v1/users/login"
     assert login_routes[0].is_public is True
 
 

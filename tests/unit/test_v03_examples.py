@@ -18,6 +18,7 @@ _UNDEFINED_SENTINEL = re.compile(r"\bUndefined\b")
     ("example", "target"),
     [
         ("crud-pagination", "fastapi"),
+        ("password-role", "fastapi"),
         ("access-bindings", "fastapi"),
         ("access-bindings", "drf"),
         ("access-bindings", "raw"),

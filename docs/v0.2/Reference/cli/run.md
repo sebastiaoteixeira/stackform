@@ -80,6 +80,12 @@ Authentication is configured through the same variables the built backend uses:
 
 `${VAR}` interpolations in the spec are resolved from the environment at startup, after the YAML is loaded and before schema validation. A missing variable without a `:-default` fallback aborts startup (exit 1) with `Environment variable 'X' is required`.
 
+Password routes have the same path in development-server and generated
+FastAPI modes. For an auth collection named `users` with
+`api: { basePath: /api, version: v1 }`, both expose
+`POST /api/v1/users/login`. See the runnable SQLite example at
+`examples/v03/password-role/spec.yaml`.
+
 ```bash
 export YAML_API_MONGO_URI=mongodb://localhost:27017
 export YAML_API_MONGO_DB=myapp
@@ -89,7 +95,7 @@ yaml-api run myapp.yaml
 
 ## Starting MongoDB
 
-The dev server needs a reachable MongoDB instance; it does not start one for you. Run one locally before serving, for example:
+A spec using MongoDB needs a reachable MongoDB instance; the dev server does not start one for you. SQL specs, including the password/role example, do not require MongoDB. Run MongoDB locally when the selected spec needs it, for example:
 
 ```bash
 docker run -d -p 27017:27017 mongo:8

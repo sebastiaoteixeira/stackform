@@ -170,6 +170,12 @@ Both `yaml-api build` and the `yaml-api run` dev server mount these OIDC routes.
 SAML routes are currently only mounted by `yaml-api build`; SAML SSO under the dev
 server is not yet implemented.
 
+The runtime compatibility suite drives this entire OIDC path against a live
+loopback provider over HTTP: discovery, authorization redirect, `state`, PKCE
+S256, DPoP token exchange, DPoP userinfo, automatic provisioning, one-time-code
+redemption, and app-session issuance. Run it with
+`pytest tests/integration/test_live_auth_flows.py`.
+
 ### Logout
 
 Clearing the app JWT only ends the *app* session; the IdP keeps its own SSO cookie,

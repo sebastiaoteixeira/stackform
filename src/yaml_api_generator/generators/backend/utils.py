@@ -1,9 +1,13 @@
 """Shared utilities for backend generators."""
 
 from importlib.resources import files
+from pathlib import Path
+
+from jinja2 import Environment
 
 from yaml_api_generator.ir.api import IRPagination
 
+from .builders.settings_builder import build_settings_fields, generated_secret_values
 from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 
@@ -14,6 +18,30 @@ def runtime_module_source(name: str) -> str:
     if name not in _RUNTIME_MODULES:
         raise ValueError(f"Unknown runtime module: {name}")
     return files("yaml_api_generator.runtime").joinpath(f"{name}.py").read_text()
+
+
+def write_environment_files(
+    env: Environment, context: CompileContext, output_dir: Path
+) -> None:
+    fields = build_settings_fields(context)
+    generated = generated_secret_values(fields)
+    values = {
+        field.env_name: generated.get(field.env_name, field.default or "")
+        for field in fields
+    }
+    examples = {
+        field.env_name: (
+            f"<{field.env_name.lower()}>" if field.secret else field.default or ""
+        )
+        for field in fields
+    }
+    template = env.get_template("env.jinja")
+    (output_dir / ".env").write_text(
+        template.render(settings_fields=fields, values=values)
+    )
+    (output_dir / ".env.example").write_text(
+        template.render(settings_fields=fields, values=examples)
+    )
 
 
 def pagination_config(pagination: IRPagination) -> dict:

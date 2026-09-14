@@ -3,9 +3,16 @@
 Coordinates specialized transformers to convert v0.1 YAML specifications into IR objects.
 """
 
+from dataclasses import replace
 from typing import Any
 
-from yaml_api_generator.ir import IRApi, IRDocument, IRMongo
+from yaml_api_generator.ir import (
+    IRApi,
+    IRDocument,
+    IRMongo,
+    IRRepository,
+    IRService,
+)
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 
 from .collection_transformer import CollectionTransformer
@@ -58,12 +65,44 @@ class V01Transformer:
             identity_collections,
             defaults,
         )
+        api_ir = IRApi(
+            basePath=api.get("basePath", "/api"),
+            version=api.get("version"),
+        )
+        route_prefix = api_ir.basePath.rstrip("/")
+        if api_ir.version:
+            route_prefix = f"{route_prefix}/{api_ir.version}"
+        repositories = {
+            name: IRRepository(name=name, entity=collection.entity_name)
+            for name, collection in collections.items()
+        }
+        services = {
+            f"{route.operation}-{route.collection}": IRService(
+                name=f"{route.operation}-{route.collection}",
+                repository=route.collection,
+                operation=route.operation,
+            )
+            for route in routes
+            if route.collection is not None
+        }
+        routes = [
+            replace(
+                route,
+                path=f"{route_prefix}{route.path}",
+                service=f"{route.operation}-{route.collection}",
+            )
+            if route.collection is not None
+            else route
+            for route in routes
+        ]
 
         mongo_data = resolved.get("mongo", {})
         return IRDocument(
             version=str(resolved["version"]),
-            api=IRApi(basePath=api.get("basePath", "/api"), version=api.get("version")),
+            api=api_ir,
             collections=collections,
+            repositories=repositories,
+            services=services,
             routes=routes,
             identityCollections=identity_collections,
             mongo=IRMongo(
