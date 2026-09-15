@@ -44,33 +44,27 @@ class {{ class_name }}LoginPayload(BaseModel):
 
 @router.post("/{{ identity.name }}/login", tags=["{{ identity.name | capitalize_collection }}"])
 async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if ctx.session.uses_cookie %}, request: Request{% endif %}, repository=Depends(get_{{ identity.name }}_repository)) -> Any:
-    docs = await repository.list()
-
-    for doc in docs:
-        if str(doc.get("{{ pw_binding.identifier }}", "")) != payload.{{ pw_binding.identifier }}:
-            continue
-        stored_hash = doc["_auth"]["passwordHash"]
-        if not isinstance(stored_hash, str):
-            continue
-        if not verify_password(payload.password, stored_hash):
-            continue
-
-        subject = doc.get("{{ identity.id_field }}")
-        if subject is None:
-            continue
-
-        safe_user = {
-            k: v for k, v in doc.items()
-            if k not in ("password", "_id", "_auth")
-        }
-        session = await issue_session(str(subject), "{{ identity.name }}")
+    doc = await repository.find_by(
+        "{{ pw_binding.identifier }}", payload.{{ pw_binding.identifier }}
+    )
+    if doc is not None:
+        auth_data = doc.get("_auth")
+        stored_hash = auth_data.get("passwordHash") if isinstance(auth_data, dict) else None
+        if isinstance(stored_hash, str) and verify_password(payload.password, stored_hash):
+            subject = doc.get("{{ identity.id_field }}")
+            if subject is not None:
+                safe_user = {
+                    k: v for k, v in doc.items()
+                    if k not in ("password", "_id", "_auth")
+                }
+                session = await issue_session(str(subject), "{{ identity.name }}")
 {% if ctx.session.uses_cookie %}
-        csrf_token = issue_csrf_token()
-        response = JSONResponse({"user": safe_user, "csrf_token": csrf_token})
-        set_session_cookies(response, request, session["token"], csrf_token{% if ctx.session.refresh %}, session["refresh_token"]{% endif %})
-        return response
+                csrf_token = issue_csrf_token()
+                response = JSONResponse({"user": safe_user, "csrf_token": csrf_token})
+                set_session_cookies(response, request, session["token"], csrf_token{% if ctx.session.refresh %}, session["refresh_token"]{% endif %})
+                return response
 {% else %}
-        return {**session, "user": safe_user}
+                return {**session, "user": safe_user}
 {% endif %}
 
     raise HTTPException(status_code=401, detail="Invalid credentials")

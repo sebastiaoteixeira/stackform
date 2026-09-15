@@ -65,6 +65,11 @@ The `user` object excludes `password`, `_id`, and the internal `_auth` namespace
 A wrong password or unknown identifier both return 401 with an indistinguishable
 message (no user enumeration).
 
+The generated FastAPI backend performs an exact repository lookup on the
+declared identifier. Authentication does not depend on exposing a `list` CRUD
+operation for the identity collection, so an auth entity may remain absent from
+the application's ordinary collection routes.
+
 ## JWT claims
 
 The minted token carries identity only:
@@ -81,8 +86,9 @@ The minted token carries identity only:
 - `sub` is the record's id-field value; access rules read it as `principal.sub`.
 - `identity_collection` names which auth entity the principal belongs to.
 - Roles are NOT in the token. On every request the app re-loads the record from
-  MongoDB and re-reads the role from the entity's role field, so a role change takes
-  effect on the next request without re-issuing a token.
+  its repository by the configured id field and re-reads the role from the
+  entity's role field, so a role change takes effect on the next request without
+  re-issuing a token.
 
 Tokens are signed HS256 with `JWT_SECRET` and expire after `JWT_EXPIRATION_HOURS`
 (default 24). See [Environment variables](../configuration/environment-variables.md).
@@ -97,6 +103,11 @@ this fixed order; the first that resolves a record wins:
    top-level `apiKey` field of an apiKey auth entity.
 3. `Authorization: Basic <base64(identifier:password)>` -- per-request password
    verification against a password auth entity.
+
+In the generated FastAPI backend, each local credential path uses a single
+exact repository lookup: id field for an app JWT, `apiKey` for an API key, and
+the configured identifier for Basic or password login. It never depends on a
+generated collection-list operation.
 
 If none resolve, the request is unauthenticated and protected routes return 401.
 

@@ -2,6 +2,7 @@ import compileall
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,9 @@ from yaml_api_generator.generators.backend.drf.generator import DRFGenerator
 from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
 from yaml_api_generator.generators.backend.raw.generator import RawASGIGenerator
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+
+
+_EXAMPLE = Path(__file__).parents[2] / "examples" / "v03" / "where-authorization.yaml"
 
 
 _SPEC = """
@@ -248,6 +252,78 @@ def test_generated_fastapi_enforces_where_per_rule(tmp_path):
         response = client.post("/audit/org-1")
         assert response.status_code == 200, response.text
         assert response.json() == {{"authorized": True}}
+        """
+    )
+
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_where_example_logs_in_and_authorizes_without_identity_list(tmp_path):
+    output = tmp_path / "fastapi-example"
+    FastAPIGenerator().generate(
+        build_context(load_and_generate_ir(_EXAMPLE).ir), output
+    )
+    script = textwrap.dedent(
+        f"""
+        import os
+        import sys
+
+        os.environ["JWT_SECRET"] = "test-secret-at-least-thirty-two-bytes"
+        sys.path.insert(0, {str(output)!r})
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from dependencies.auth import hash_password
+        from dependencies.repositories import get_organizations_repository, get_users_repository
+        from dependencies.services import get_reports_service
+        from routes.login import router as login_router
+        from routes.reports import router as reports_router
+
+        class UsersRepository:
+            def __init__(self):
+                self.lookups = []
+                self.user = {{
+                    "id": "u1",
+                    "email": "owner@example.test",
+                    "_auth": {{"passwordHash": hash_password("correct-password")}},
+                }}
+
+            async def find_by(self, field, value):
+                self.lookups.append((field, value))
+                return self.user if self.user.get(field) == value else None
+
+        class OrganizationsRepository:
+            async def find_one(self, criteria):
+                assert criteria == {{"id": "org-1"}}
+                return {{"id": "org-1", "ownerId": "u1", "name": "Example"}}
+
+        class ReportsService:
+            async def list(self):
+                return [{{"id": "report-1", "organizationId": "org-1", "title": "Observed"}}]
+
+        users = UsersRepository()
+        app = FastAPI()
+        app.include_router(login_router)
+        app.include_router(reports_router)
+        app.dependency_overrides[get_users_repository] = lambda: users
+        app.dependency_overrides[get_organizations_repository] = OrganizationsRepository
+        app.dependency_overrides[get_reports_service] = ReportsService
+        client = TestClient(app)
+
+        login = client.post(
+            "/users/login",
+            json={{"email": "owner@example.test", "password": "correct-password"}},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["token"]
+
+        reports = client.get(
+            "/organizations/org-1/reports",
+            headers={{"Authorization": f"Bearer {{token}}"}},
+        )
+        assert reports.status_code == 200, reports.text
+        assert reports.json()[0]["title"] == "Observed"
+        assert users.lookups == [("email", "owner@example.test"), ("id", "u1")]
         """
     )
 
