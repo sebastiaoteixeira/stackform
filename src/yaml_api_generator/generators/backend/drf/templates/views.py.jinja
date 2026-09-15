@@ -18,6 +18,13 @@ from api.conflicts import ConflictError
 from api.serializers.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
 {% endif %}
 from api.repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
+{% set ns_where = namespace(collections=[]) %}
+{% for route in routes %}{% for where_collection in route.where_collections %}
+{% if where_collection not in ns_where.collections %}{% set _ = ns_where.collections.append(where_collection) %}{% endif %}
+{% endfor %}{% endfor %}
+{% for where_collection in ns_where.collections if where_collection != collection_name %}
+from api.repositories.{{ where_collection }} import {{ where_collection | capitalize_collection }}Repository
+{% endfor %}
 from api.services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from api.services.exceptions import NotFoundError, ValidationError
 from api.service_inputs import prepare_service_inputs, resolve_access_bind, resolve_bindings
@@ -67,20 +74,14 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% endmacro %}
 
 {% macro pre_fetch_check(route) %}
-{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
-        _access_bindings = {}
-{% endif %}
 {% if route.needs_auth %}
         db = get_database()
         _resolved_principal = resolve_principal(request, db)
         if _resolved_principal is None:
             return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
 {% if route.access_rules %}
-{% set ns = namespace(has_doc_rule=false, identity_symbols=[]) %}
+{% set ns = namespace(identity_symbols=[]) %}
 {% for rule in route.access_rules %}
-{% if rule.when is not none and rule.when is needs_document %}
-{% set ns.has_doc_rule = true %}
-{% endif %}
 {% for symbol in rule.identity_symbols %}
 {% if symbol not in ns.identity_symbols %}
 {% set _ = ns.identity_symbols.append(symbol) %}
@@ -90,87 +91,45 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% for symbol in ns.identity_symbols %}
         {{ symbol }} = _resolved_principal
 {% endfor %}
-{% if not ns.has_doc_rule %}
-{% set ns.first = true %}
-{% set ns.has_conditionals = false %}
-{% set ns.terminal = false %}
-{% for rule in route.access_rules %}
-{% if not ns.terminal %}
-{% if rule is unconditional %}
-{% if rule.effect == "allow" %}
-        _access_bindings = {{ rule.bind | py_literal }}
-{% else %}
-        return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
-{% endif %}
-{% set ns.first = false %}
-{% set ns.terminal = true %}
-{% else %}
-{% set ns.has_conditionals = true %}
-{% if ns.first %}
-        if {{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
-{% else %}
-            _access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
-{% else %}
-        elif {{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
-{% else %}
-            pass
-{% endif %}
-{% endif %}
-{% set ns.first = false %}
-{% endif %}
-{% endif %}
-{% endfor %}
-{% if ns.has_conditionals and not ns.terminal %}
-        else:
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-{% endif %}
-{% else %}
-        _needs_post_fetch = True
+        _access_bindings = {}
+{% if not (route is needs_post_fetch) %}
+{{ authorize_rules(route, "None") }}
 {% endif %}
 {% endif %}
 {% endif %}
 {% endmacro %}
 
-{% macro post_fetch_check(route, doc_var) %}
-{% if route.needs_auth and route.access_rules %}
-{% set ns = namespace(has_doc_rule=false, document_symbols=[]) %}
+{% macro authorize_rules(route, current_document) %}
+        _access_granted = False
 {% for rule in route.access_rules %}
-{% if rule.when is not none and rule.when is needs_document %}
-{% set ns.has_doc_rule = true %}
+        if not _access_granted:
+{% for binding in rule.document_bindings %}
+{% if binding.uses_where %}
+            {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
+                resolve_access_bind({{ binding.where | py_literal }}, {**path_params, **locals()})
+            )
+{% else %}
+            {{ binding.name }} = {{ current_document }}
 {% endif %}
-{% for symbol in rule.document_symbols %}
-{% if symbol not in ns.document_symbols %}
-{% set _ = ns.document_symbols.append(symbol) %}
+{% endfor %}
+{% if rule is needs_current_document_rule %}
+            document = {{ current_document }}
 {% endif %}
-{% endfor %}
-{% endfor %}
-{% if ns.has_doc_rule %}
-{% for symbol in ns.document_symbols %}
-            {{ symbol }} = {{ doc_var }}
-{% endfor %}
-{% set ns.first = true %}
-{% for rule in route.access_rules %}
-{% set rule_needs_doc = rule.when is not none and rule.when is needs_document %}
-{% set doc_guard = rule_needs_doc and ns.document_symbols | length > 0 %}
-{% set keyword = "if" if ns.first else "elif" %}
-            {{ keyword }} {% if doc_guard %}{{ doc_var }} is not None and {% endif %}{{ rule | rule_to_python }}:
+            if {% for binding in rule.document_bindings if binding.uses_where %}{{ binding.name }} is not None and {% endfor %}{% if rule is needs_current_document_rule %}{{ current_document }} is not None and {% endif %}{{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
                 return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
 {% else %}
-                pass
+                _access_granted = True
+                _access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
-{% set ns.first = false %}
 {% endfor %}
-{% if not ns.first %}
-            else:
-                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-{% endif %}
-{% endif %}
+        if not _access_granted:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+{% endmacro %}
+
+{% macro post_fetch_check(route, doc_var) %}
+{% if route is needs_post_fetch %}
+{{ authorize_rules(route, doc_var) }}
 {% endif %}
 {% endmacro %}
 
@@ -286,19 +245,19 @@ class {{ class_name }}DetailView(APIView):
 {% else %}
             result = await service.get({{ route.record_id_param }})
 {% endif %}
-{{ post_fetch_check(route, "result") }}
+{{ post_fetch_check(route, "result") | indent(4, true) }}
             return Response(result)
 {% elif route.operation == "update" %}
             serializer = {{ route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
-{% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
+{% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
             prefetch = await service.get_by({{ record_criteria(route) }})
 {% else %}
             prefetch = await service.get({{ route.record_id_param }})
 {% endif %}
-{{ post_fetch_check(route, "prefetch") }}
+{{ post_fetch_check(route, "prefetch") | indent(4, true) }}
 {% endif %}
 {% if route.record_parent_params %}
             result = await service.update_by({{ record_criteria(route) }}, data)
@@ -310,13 +269,13 @@ class {{ class_name }}DetailView(APIView):
             serializer = {{ route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
-{% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
+{% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
             prefetch = await service.get_by({{ record_criteria(route) }})
 {% else %}
             prefetch = await service.get({{ route.record_id_param }})
 {% endif %}
-{{ post_fetch_check(route, "prefetch") }}
+{{ post_fetch_check(route, "prefetch") | indent(4, true) }}
 {% endif %}
 {% if route.record_parent_params %}
             result = await service.replace_by({{ record_criteria(route) }}, data)
@@ -325,13 +284,13 @@ class {{ class_name }}DetailView(APIView):
 {% endif %}
             return Response(result)
 {% elif route.operation == "delete" %}
-{% if route.needs_auth and route.access_rules and route.access_rules | selectattr("when") | list | selectattr("when", "needs_document") | list %}
+{% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
             prefetch = await service.get_by({{ record_criteria(route) }})
 {% else %}
             prefetch = await service.get({{ route.record_id_param }})
 {% endif %}
-{{ post_fetch_check(route, "prefetch") }}
+{{ post_fetch_check(route, "prefetch") | indent(4, true) }}
 {% endif %}
 {% if route.record_parent_params %}
             result = await service.delete_by({{ record_criteria(route) }})

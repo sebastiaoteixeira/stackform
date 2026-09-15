@@ -145,7 +145,7 @@ def needs_request_rule(rule: AccessRuleDescriptor) -> bool:
 
 def needs_post_fetch(route: RouteDescriptor) -> bool:
     return route.operation in _POST_FETCH_OPERATIONS and any(
-        rule.document_symbols or (rule.when is not None and needs_document(rule.when))
+        needs_current_document_rule(rule)
         for rule in route.access_rules or ()
     )
 
@@ -156,5 +156,14 @@ def is_unconditional(rule: AccessRuleDescriptor) -> bool:
 
 def needs_document_rule(rule: AccessRuleDescriptor) -> bool:
     return bool(rule.document_symbols) or (
+        rule.when is not None and needs_document(rule.when)
+    )
+
+
+def needs_current_document_rule(rule: AccessRuleDescriptor) -> bool:
+    where_symbols = {
+        binding.name for binding in rule.document_bindings if binding.uses_where
+    }
+    return any(symbol not in where_symbols for symbol in rule.document_symbols) or (
         rule.when is not None and needs_document(rule.when)
     )

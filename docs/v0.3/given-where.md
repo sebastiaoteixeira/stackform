@@ -125,6 +125,12 @@ record, so the same symbol name may be bound differently in two rules without
 collision. An unauthenticated request fetches nothing and is rejected with `401`
 as usual.
 
+These semantics apply equally to `yaml-api run` and to standalone FastAPI, raw
+ASGI and Django REST Framework backends produced by `yaml-api build`. Generated
+routes retain the binding's collection and complete predicate, inject or create
+that collection's repository, and perform the lookup before evaluating the rule.
+Generated applications do not import the generator package at runtime.
+
 ### A miss makes the rule fail
 
 A predicate that matches **no record** makes that rule not match &mdash; for an
@@ -149,15 +155,18 @@ documents available.
 
 ## Custom repositories
 
-The fetch goes through `BaseRepository.find_one(collection_name, criteria)`,
-an abstract method returning one matching record or `None`. The SQL repository
-issues `SELECT ... WHERE <field> = <value> [AND ...] LIMIT 1`; the MongoDB
-repository passes `criteria` as the filter. A repository subclass that does not
-implement `find_one` fails at instantiation.
+In the development server the fetch goes through
+`BaseRepository.find_one(collection_name, criteria)`, an abstract method
+returning one matching record or `None`. Generated repositories expose the
+equivalent collection-specific `find_one(criteria)` operation. The generated
+SQL repository issues `SELECT ... WHERE <field> = <value> [AND ...] LIMIT 1`;
+the generated MongoDB repository passes `criteria` as the filter. A custom
+development-server repository must implement the abstract method, and a custom
+generated repository must retain the collection-specific operation.
 
 ## v0.2 is unchanged
 
 The `where` binding form is available only under `version: "0.3"`. A
 `version: "0.2"` document binding (`<collection>` or `<collection> by <param>`)
-keeps its implicit primary-key / `{id}` fetch and byte-identical behavior; the
-word `where` carries no special meaning in v0.2.
+keeps its implicit primary-key / `{id}` fetch and existing behavior; the word
+`where` carries no special meaning in v0.2.

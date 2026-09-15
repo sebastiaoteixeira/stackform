@@ -59,6 +59,9 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.tests["unconditional"] = access_filters.is_unconditional
         env.tests["needs_document_rule"] = access_filters.needs_document_rule
+        env.tests["needs_current_document_rule"] = (
+            access_filters.needs_current_document_rule
+        )
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.filters["int"] = int
 

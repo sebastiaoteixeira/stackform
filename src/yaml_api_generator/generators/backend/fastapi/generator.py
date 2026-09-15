@@ -59,6 +59,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.tests["needs_document_rule"] = access_filters.needs_document_rule
+        env.tests["needs_current_document_rule"] = (
+            access_filters.needs_current_document_rule
+        )
         env.tests["needs_request_rule"] = access_filters.needs_request_rule
         env.tests["unconditional"] = access_filters.is_unconditional
         env.globals["needs_datetime_import"] = type_mapper.needs_datetime_import

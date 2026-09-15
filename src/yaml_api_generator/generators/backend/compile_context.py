@@ -89,8 +89,14 @@ class ModelDescriptor:
 
 @dataclass(frozen=True)
 class DocumentBindingDescriptor:
+    name: str
     collection: str
     id_param: str | None = None
+    where: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @property
+    def uses_where(self) -> bool:
+        return bool(self.where)
 
 
 _OPENAPI_PARTS = ("body", "path", "query", "header", "cookie")
@@ -125,6 +131,7 @@ class AccessRuleDescriptor:
     required_role: str | None = None
     identity_symbols: list[str] = field(default_factory=list)
     document_symbols: list[str] = field(default_factory=list)
+    document_bindings: list[DocumentBindingDescriptor] = field(default_factory=list)
     request_symbols: list[RequestSymbolDescriptor] = field(default_factory=list)
     when: WhenExpr | None = None
     effect: str = "allow"
@@ -166,6 +173,15 @@ class RouteDescriptor:
             for sym in rule.request_symbols:
                 seen.setdefault(sym.name, sym)
         return list(seen.values())
+
+    @property
+    def where_collections(self) -> list[str]:
+        return list(dict.fromkeys(
+            binding.collection
+            for rule in self.access_rules or ()
+            for binding in rule.document_bindings
+            if binding.uses_where
+        ))
 
     @property
     def record_criteria(self) -> list[tuple[str, str]]:
