@@ -280,6 +280,16 @@ class StubCollection:
     def find(self, query):
         return StubCursor(self._documents)
 
+    async def find_one(self, query):
+        return next(
+            (
+                document
+                for document in self._documents
+                if all(document.get(field) == value for field, value in query.items())
+            ),
+            None,
+        )
+
 
 async def main():
     stored = {
@@ -359,6 +369,16 @@ class StubCollection:
 
     def find(self, query):
         return StubCursor(self._documents)
+
+    async def find_one(self, query):
+        return next(
+            (
+                document
+                for document in self._documents
+                if all(document.get(field) == value for field, value in query.items())
+            ),
+            None,
+        )
 
 
 async def main():

@@ -256,11 +256,11 @@ async def resolve_principal(
             collection_name = claims.get("identity_collection")
             if sub and collection_name:
                 repository = repositories.get(collection_name)
-                docs = await repository.list() if repository is not None else []
-                for doc in docs:
 {% for identity in auth.identity_collections %}
 {% if identity.issues_jwt %}
-                    if collection_name == "{{ identity.name }}" and str(doc.get("{{ identity.id_field }}", "")) == sub:
+                if collection_name == "{{ identity.name }}" and repository is not None:
+                    doc = await repository.find_by("{{ identity.id_field }}", sub)
+                    if doc is not None:
                         return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
 {% endif %}
 {% endfor %}
@@ -270,30 +270,27 @@ async def resolve_principal(
 {% if identity.has_api_key %}
     token = _extract_api_key(headers)
     if token is not None:
-        docs = await repositories["{{ identity.name }}"].list()
-        for doc in docs:
-            if str(doc.get("apiKey", "")) == token:
-                subject = doc.get("{{ identity.id_field }}")
-                if subject is not None:
-                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
+        doc = await repositories["{{ identity.name }}"].find_by("apiKey", token)
+        if doc is not None:
+            subject = doc.get("{{ identity.id_field }}")
+            if subject is not None:
+                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
 {% endif %}
 {% set pw_binding = identity.bindings | selectattr('provider', 'equalto', 'password') | first | default(none) %}
 {% if pw_binding %}
     credentials = _extract_basic_credentials(headers)
     if credentials is not None:
         identifier_value, password = credentials
-        docs = await repositories["{{ identity.name }}"].list()
-        for doc in docs:
-            if str(doc.get("{{ pw_binding.identifier }}", "")) != identifier_value:
-                continue
-            stored_hash = doc["_auth"]["passwordHash"]
-            if not isinstance(stored_hash, str):
-                continue
-            if not verify_password(password, stored_hash):
-                continue
-            subject = doc.get("{{ identity.id_field }}")
-            if subject is not None:
-                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
+        doc = await repositories["{{ identity.name }}"].find_by(
+            "{{ pw_binding.identifier }}", identifier_value
+        )
+        if doc is not None:
+            auth_data = doc.get("_auth")
+            stored_hash = auth_data.get("passwordHash") if isinstance(auth_data, dict) else None
+            if isinstance(stored_hash, str) and verify_password(password, stored_hash):
+                subject = doc.get("{{ identity.id_field }}")
+                if subject is not None:
+                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
 {% endif %}
 {% endfor %}
 
