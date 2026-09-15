@@ -703,7 +703,8 @@
       "anyOf": [
         { "required": ["given"] },
         { "required": ["then"] },
-        { "required": ["when"] }
+        { "required": ["when"] },
+        { "required": ["role"] }
       ],
       "properties": {
         "given": {
@@ -730,6 +731,7 @@
           "default": "allow"
         },
         "reason": { "type": "string" },
+        "role": { "type": "string" },
         "bind": { "$ref": "#/$defs/SymbolBinding" }
       }
     }

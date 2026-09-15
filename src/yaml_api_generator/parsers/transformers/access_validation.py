@@ -21,6 +21,7 @@ from typing import Any
 
 from yaml_api_generator.ir.when import collect_roots, needs_document
 from yaml_api_generator.parsers.when_parser import parse_request_binding, parse_when_list
+from yaml_api_generator.parsers.where_parser import is_where_binding
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
 from .symbol_resolution import SymbolScope
@@ -40,6 +41,23 @@ def _is_request_value(value: Any) -> bool:
     return isinstance(value, str) and (
         value == "request" or value.startswith(("request.", "request:"))
     )
+
+
+def _is_current_document_value(value: Any, version: str) -> bool:
+    """Whether a ``given`` value binds the route's own record.
+
+    A v0.3 ``where`` binding fetches a different record by predicate before the
+    rule runs, so it resolves on a create just as it does anywhere else. Only
+    the implicit ``{id}`` document binding depends on a record the create
+    operation has not produced yet.
+    """
+    if (
+        not isinstance(value, str)
+        or value.startswith("identity:")
+        or _is_request_value(value)
+    ):
+        return False
+    return not (version == "0.3" and is_where_binding(value))
 
 
 def _invalid(message: str, path: str, hint: str) -> ConfigError:
@@ -235,9 +253,7 @@ def _check_rule_list(
                     given, item_path, op_name, known_types, errors
                 )
             given_doc = isinstance(given, dict) and any(
-                isinstance(value, str)
-                and not value.startswith("identity:")
-                and not _is_request_value(value)
+                _is_current_document_value(value, version)
                 for value in given.values()
             )
             expr = _check_when(
@@ -250,7 +266,15 @@ def _check_rule_list(
                  and v.startswith("identity:")),
                 "",
             )
-            _track_contradiction((principal, expr), effect, item_path, seen, errors)
+            role = item.get("role")
+            if isinstance(role, str) and principal:
+                _check_role_declared(
+                    role, principal.removeprefix("identity:"), declared_roles,
+                    f"{item_path}.role", errors,
+                )
+            _track_contradiction(
+                (principal, role, expr), effect, item_path, seen, errors
+            )
 
 
 def _track_contradiction(
@@ -292,7 +316,12 @@ def _is_always_allow_rule(rule: Any) -> bool:
         return False
     given = rule.get("given")
     when = rule.get("when")
-    return not given and when is None and rule.get("then", "allow") == "allow"
+    return (
+        not given
+        and when is None
+        and rule.get("role") is None
+        and rule.get("then", "allow") == "allow"
+    )
 
 
 def _warn_access_rules(
