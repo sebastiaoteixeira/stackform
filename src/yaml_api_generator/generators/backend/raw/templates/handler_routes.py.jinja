@@ -3,6 +3,13 @@ from typing import Any
 from uuid import UUID
 
 from service_inputs import RawRequest, prepare_service_inputs, resolve_access_bind
+{% set ns_where = namespace(collections=[]) %}
+{% for route in routes %}{% for where_collection in route.where_collections %}
+{% if where_collection not in ns_where.collections %}{% set _ = ns_where.collections.append(where_collection) %}{% endif %}
+{% endfor %}{% endfor %}
+{% for where_collection in ns_where.collections %}
+from repositories.{{ where_collection }} import {{ where_collection | capitalize_collection }}Repository
+{% endfor %}
 {% if needs_auth %}
 from dependencies.auth import resolve_principal
 {% endif %}
@@ -73,34 +80,25 @@ async def handle_custom_{{ loop.index }}(
 {% for symbol in symbols.request %}
     {{ symbol | request_symbol_binding }}
 {% endfor %}
+    access_granted = False
     access_bindings = {}
-{% set ns = namespace(first=true, terminal=false, conditional=false) %}
 {% for rule in route.access_rules %}
-{% if not ns.terminal %}
-{% if rule is unconditional %}
+    if not access_granted:
+{% for binding in rule.document_bindings %}
+        {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
+            resolve_access_bind({{ binding.where | py_literal }}, {**url_params, **locals()})
+        )
+{% endfor %}
+        if {% for binding in rule.document_bindings %}{{ binding.name }} is not None and {% endfor %}{{ rule | rule_to_python }}:
 {% if rule.effect == "deny" %}
-    return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
+            return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
 {% else %}
-    access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
-{% set ns.terminal = true %}
-{% else %}
-{% set keyword = "if" if ns.first else "elif" %}
-    {{ keyword }} {{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-        return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
-{% else %}
-        access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
-{% set ns.first = false %}
-{% set ns.conditional = true %}
-{% endif %}
+            access_granted = True
+            access_bindings = {{ rule.bind | py_literal }}
 {% endif %}
 {% endfor %}
-{% if ns.conditional and not ns.terminal %}
-    else:
+    if not access_granted:
         return 403, {"detail": "Forbidden"}
-{% endif %}
     bound_inputs = resolve_access_bind(access_bindings, locals())
 {% else %}
     bound_inputs = {}

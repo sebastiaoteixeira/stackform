@@ -9,6 +9,7 @@ from yaml_api_generator.ir import IRDocument, IRDto, IRSymbolRef
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..compile_context import (
     AccessRuleDescriptor,
+    DocumentBindingDescriptor,
     ModelDescriptor,
     RequestSymbolDescriptor,
     RouteDescriptor,
@@ -32,6 +33,18 @@ def _request_descriptors(rule) -> list[RequestSymbolDescriptor]:
     return [
         RequestSymbolDescriptor(name=name, part=binding.part, type_name=binding.type_name, raw=binding.raw)
         for name, binding in rule.request_symbols.items()
+    ]
+
+
+def _document_descriptors(rule) -> list[DocumentBindingDescriptor]:
+    return [
+        DocumentBindingDescriptor(
+            name=name,
+            collection=binding.collection,
+            id_param=binding.id_param,
+            where={conjunct.field: _rhs_config(conjunct.rhs) for conjunct in binding.where},
+        )
+        for name, binding in rule.document_symbols.items()
     ]
 
 
@@ -89,6 +102,7 @@ class RouteBuilder:
                         required_role=rule.required_role,
                         identity_symbols=list(rule.identity_symbols.keys()),
                         document_symbols=list(rule.document_symbols.keys()),
+                        document_bindings=_document_descriptors(rule),
                         request_symbols=_request_descriptors(rule),
                         when=rule.when,
                         effect=rule.effect,

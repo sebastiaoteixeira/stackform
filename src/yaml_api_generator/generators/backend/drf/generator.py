@@ -68,6 +68,11 @@ class DRFGenerator(TemplateBasedGenerator):
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["int"] = int
         env.tests["needs_document"] = _needs_document_test
+        env.tests["needs_document_rule"] = access_filters.needs_document_rule
+        env.tests["needs_current_document_rule"] = (
+            access_filters.needs_current_document_rule
+        )
+        env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.tests["unconditional"] = _is_unconditional
 
         output_dir.mkdir(parents=True, exist_ok=True)
