@@ -58,16 +58,20 @@ access:
 AccessRule ::= {
   given?: GivenBindings,
   when?: WhenExpression | [WhenExpression, ...],
+  role?: String,
   then?: "allow" | "deny",
   reason?: String,
   bind?: SymbolBinding
 }
 ```
 
-At least one of `given`, `when`, or `then` is required. `then` defaults to
-`allow`. Rules are evaluated in order; the first matching rule decides the
-request. A matching deny returns 403, and no matching rule also returns 403.
-Missing or invalid credentials on a non-public route return 401.
+At least one of `given`, `when`, `then`, or `role` is required. `then` defaults
+to `allow`. `role:` requires the principal to hold that role, and requires an
+identity binding in `given:` to hold it. See
+[Access-rule `role:`](access-role.md). Rules are evaluated in order; the first
+matching rule decides the request. A matching deny returns 403, and no matching
+rule also returns 403. Missing or invalid credentials on a non-public route
+return 401.
 
 In v0.3, `reason:` supplies the safe 403 detail only when its explicit deny rule
 matches. See [Explainable access denials](access-reason.md). The former

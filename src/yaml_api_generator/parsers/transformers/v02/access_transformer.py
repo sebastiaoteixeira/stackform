@@ -122,6 +122,13 @@ class AccessTransformer:
                 path=f"{path}.filter",
                 hint="Bind the record in given: with '<collection> where <field> = <value>'",
             ))
+        if not self._allow_where and "role" in rule:
+            errors.append(ConfigError(
+                code="ACCESS_ROLE_UNSUPPORTED",
+                message="access-rule 'role' requires spec version 0.3",
+                path=f"{path}.role",
+                hint='Set version to "0.3", or use the "<entity>:<role>" shorthand',
+            ))
         if self._allow_where and "writeFields" in rule:
             errors.append(ConfigError(
                 code="ACCESS_WRITE_FIELDS_REMOVED",
@@ -172,9 +179,18 @@ class AccessTransformer:
         first_identity = next(iter(identity_symbols.values()), None)
         principal = f"identity:{first_identity.collection_name}" if first_identity else ""
 
+        required_role = rule.get("role") if self._allow_where else None
+        if required_role is not None and first_identity is None:
+            return None, [ConfigError(
+                code="ACCESS_ROLE_WITHOUT_IDENTITY",
+                message="access-rule 'role' requires an identity binding in given:",
+                path=f"{path}.role",
+                hint="Add '<symbol>: identity:<entity>' to given:",
+            )]
+
         return IRAccessRule(
             principal=principal,
-            required_role=None,
+            required_role=required_role,
             identity_symbols=identity_symbols,
             document_symbols=document_symbols,
             request_symbols=request_symbols,
