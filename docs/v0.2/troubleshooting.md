@@ -64,6 +64,19 @@ Common codes:
   password auth; do not declare these.
 - `WHEN_EXPR_INVALID` / `WHEN_OPERAND_INVALID` / `WHEN_OPERAND_MISSING` /
   `WHEN_LIST_INVALID` -- a `when:` expression is malformed. See the gotchas below.
+- `INCLUDE_INVALID` / `TEMPLATES_INVALID` -- `include:`/`templates:` is not a list
+  of glob-pattern strings.
+- `INCLUDE_NO_MATCH` / `TEMPLATES_NO_MATCH` -- an `include:`/`templates:` glob
+  pattern matched no files.
+- `TEMPLATE_UNKNOWN` -- a `*alias` (or `<<: *alias`) has no matching anchor in
+  the `templates:` pool or earlier in the same file; the hint suggests the
+  closest known anchor name. `TEMPLATE_DUPLICATE` -- an anchor name is defined
+  more than once across `templates:` files, or an `include:` file redefines a
+  name the template pool already owns. `TEMPLATE_CYCLE` -- an anchor
+  references itself (`&a [*a]`), which the loader rejects instead of building
+  a self-referential value. See
+  [Multi-file specs](../v0.3/multi-file-specs.md) for the full `include:` /
+  `templates:` model.
 
 ### When-expression gotchas
 

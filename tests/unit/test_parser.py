@@ -1,4 +1,5 @@
 import os
+import re
 
 import pytest
 
@@ -102,8 +103,10 @@ def test_yaml_syntax_error_raises_parse_error() -> None:
         load_and_generate_ir(str(INVALID_DIR / "malformed-yaml.yaml"))
     codes = {e.code for e in exc_info.value.errors}
     assert "YAML_PARSE_ERROR" in codes
-    err = exc_info.value.errors[0]
-    assert "line:" in err.path or "col:" in err.path
+    err = next(e for e in exc_info.value.errors if e.code == "YAML_PARSE_ERROR")
+    assert err.path == "$"
+    assert err.location is not None
+    assert re.search(r":\d+:\d+$", err.location)
 
 
 # --- Test 3: Empty file → treated as {} ---
