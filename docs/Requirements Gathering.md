@@ -1,5 +1,6 @@
 ---
 title: YAML-Driven API Engine
+description: Numbered requirements for the YAML-driven API engine, grouped by data modelling, auth, and the remaining concern areas.
 ---
 
 ## YAML-Driven API Engine

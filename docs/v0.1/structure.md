@@ -1,5 +1,6 @@
 ---
 title: Structure
+description: Notation and the full shape of a v0.1 spec document, key by key.
 ---
 
 Notation:

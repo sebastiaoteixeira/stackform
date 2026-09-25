@@ -1,3 +1,8 @@
+---
+title: Cookie (BFF) session delivery
+description: Deliver the app session token as an HttpOnly cookie instead of a response body field.
+---
+
 # Cookie (BFF) session delivery
 
 `session.delivery` selects how the app session token reaches the client. It

@@ -1,3 +1,8 @@
+---
+title: DPoP for the OIDC client
+description: Sender-constrain OIDC tokens to a client-held key pair with RFC 9449 proof of possession.
+---
+
 # DPoP for the OIDC client
 
 DPoP (Demonstrating Proof of Possession, [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449))

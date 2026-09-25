@@ -1,3 +1,8 @@
+---
+title: PKCE for the OIDC client
+description: Bind an OIDC authorization code to the client that requested it with RFC 7636 Proof Key for Code Exchange.
+---
+
 # PKCE for the OIDC client
 
 Proof Key for Code Exchange ([RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636))
