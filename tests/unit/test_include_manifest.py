@@ -5,26 +5,20 @@ import pytest
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, _load_spec
 
 
-def _write(path, text):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+def test_single_file_without_include_is_unchanged(spec_tree):
+    spec_tree.write("spec.yaml", "version: '0.2'\nentities:\n  a: {fields: {id: {type: id}}}\n")
 
-
-def test_single_file_without_include_is_unchanged(tmp_path):
-    spec = tmp_path / "spec.yaml"
-    _write(spec, "version: '0.2'\nentities:\n  a: {fields: {id: {type: id}}}\n")
-
-    assert _load_spec(spec) == {
+    assert _load_spec(spec_tree.root / "spec.yaml") == {
         "version": "0.2",
         "entities": {"a": {"fields": {"id": {"type": "id"}}}},
     }
 
 
-def test_directory_resolves_to_manifest(tmp_path):
-    _write(tmp_path / "api.yaml", "version: '0.2'\ninclude: [parts/*.yaml]\n")
-    _write(tmp_path / "parts" / "a.yaml", "entities:\n  a: {fields: {id: {type: id}}}\n")
+def test_directory_resolves_to_manifest(spec_tree):
+    spec_tree.write("api.yaml", "version: '0.2'\ninclude: [parts/*.yaml]\n")
+    spec_tree.write("parts/a.yaml", "entities:\n  a: {fields: {id: {type: id}}}\n")
 
-    result = _load_spec(tmp_path)
+    result = _load_spec(spec_tree.root)
 
     assert result == {
         "version": "0.2",
@@ -33,36 +27,44 @@ def test_directory_resolves_to_manifest(tmp_path):
     assert "include" not in result
 
 
-def test_globs_deep_merge_shared_sections(tmp_path):
-    _write(tmp_path / "api.yaml", "version: '0.2'\ninclude: [domains/*.yaml]\n")
-    _write(tmp_path / "domains" / "a.yaml", "entities: {a: {}}\nservices: {a: {}}\n")
-    _write(tmp_path / "domains" / "b.yaml", "entities: {b: {}}\nservices: {b: {}}\n")
+def test_globs_deep_merge_shared_sections(spec_tree):
+    spec_tree.write("api.yaml", "version: '0.2'\ninclude: [domains/*.yaml]\n")
+    spec_tree.write("domains/a.yaml", "entities: {a: {}}\nservices: {a: {}}\n")
+    spec_tree.write("domains/b.yaml", "entities: {b: {}}\nservices: {b: {}}\n")
 
-    result = _load_spec(tmp_path)
+    result = _load_spec(spec_tree.root)
 
     assert set(result["entities"]) == {"a", "b"}
     assert set(result["services"]) == {"a", "b"}
 
 
-def test_duplicate_leaf_across_files_raises(tmp_path):
-    _write(tmp_path / "api.yaml", "version: '0.2'\ninclude: [domains/*.yaml]\n")
-    _write(tmp_path / "domains" / "a.yaml", "entities: {dup: {x: 1}}\n")
-    _write(tmp_path / "domains" / "b.yaml", "entities: {dup: {x: 2}}\n")
+def test_duplicate_leaf_across_files_raises(spec_tree):
+    spec_tree.write("api.yaml", "version: '0.2'\ninclude: [domains/*.yaml]\n")
+    spec_tree.write("domains/a.yaml", "entities: {dup: {x: 1}}\n")
+    spec_tree.write("domains/b.yaml", "entities: {dup: {x: 2}}\n")
 
     with pytest.raises(ConfigErrors) as exc:
-        _load_spec(tmp_path)
+        _load_spec(spec_tree.root)
     assert any(e.code == "DUPLICATE_KEY" for e in exc.value.errors)
 
 
-def test_include_pattern_with_no_match_raises(tmp_path):
-    _write(tmp_path / "api.yaml", "version: '0.2'\ninclude: [missing/*.yaml]\n")
+def test_include_pattern_with_no_match_raises(spec_tree):
+    spec_tree.write("api.yaml", "version: '0.2'\ninclude: [missing/*.yaml]\n")
 
     with pytest.raises(ConfigErrors) as exc:
-        _load_spec(tmp_path)
+        _load_spec(spec_tree.root)
     assert any(e.code == "INCLUDE_NO_MATCH" for e in exc.value.errors)
 
 
-def test_missing_manifest_in_directory_raises(tmp_path):
+def test_missing_manifest_in_directory_raises(spec_tree):
     with pytest.raises(ConfigErrors) as exc:
-        _load_spec(tmp_path)
+        _load_spec(spec_tree.root)
     assert any(e.code == "MANIFEST_NOT_FOUND" for e in exc.value.errors)
+
+
+def test_include_invalid_type_raises(spec_tree):
+    spec_tree.write("api.yaml", "version: '0.2'\ninclude: not-a-list\n")
+
+    with pytest.raises(ConfigErrors) as exc:
+        _load_spec(spec_tree.root)
+    assert any(e.code == "INCLUDE_INVALID" for e in exc.value.errors)

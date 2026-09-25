@@ -12,7 +12,7 @@ from typing import NoReturn
 
 import yaml
 
-from ...parsers.yaml_parser import ConfigError, ConfigErrors
+from ...parsers.errors import ConfigError, ConfigErrors
 
 
 class Colors:
@@ -72,7 +72,18 @@ def _find_line_number(yaml_file: str, path: str) -> int | None:
                         break
 
         return None
-    except Exception:
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _line_from_location(location: str) -> int | None:
+    """Extract the line number from a ``file:line:col`` location string."""
+    parts = location.rsplit(":", 2)
+    if len(parts) != 3:
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
         return None
 
 
@@ -98,13 +109,15 @@ def _format_error_gcc_style(
     filename = yaml_file or "<input>"
     line_num = None
 
-    if yaml_file and err.path:
-        line_num = _find_line_number(yaml_file, err.path)
-
-    if line_num:
-        location = f"{filename}:{line_num}:{err.path or ''}"
+    if err.location:
+        # A precise file:line:col from the parser beats guessing a line from
+        # the dotted `path`, which only pinpoints a key once values are merged.
+        location = err.location
+        line_num = _line_from_location(err.location)
     else:
-        location = f"{filename}:{err.path or ''}"
+        if yaml_file and err.path:
+            line_num = _find_line_number(yaml_file, err.path)
+        location = f"{filename}:{line_num}:{err.path or ''}" if line_num else f"{filename}:{err.path or ''}"
 
     output.append(
         f"{colors.bold}{location}: "
@@ -152,7 +165,7 @@ def handle_config_errors(
             try:
                 with open(yaml_file, 'r') as f:
                     content_lines = f.read().split('\n')
-            except Exception:
+            except (OSError, UnicodeDecodeError):
                 pass
 
         for err in error.errors:

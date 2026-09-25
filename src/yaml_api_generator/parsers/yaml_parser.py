@@ -22,46 +22,22 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError, best_match
 
 from ..ir import IRDocument
+from .errors import ConfigError, ConfigErrors, join_path
+from .template_loader import Manifest
 
 INTERPOLATION_PATTERN = re.compile(r"\$\{([^{}]*?)\}")
 INTERPOLATION_TOKEN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$", re.DOTALL)
 INTERPOLATION_MAX_DEPTH = 10
 _BRACE_ESCAPES = ((r"\{", "\x00"), (r"\}", "\x01"))
 
-MANIFEST_FILENAME = "api.yaml"
-_MISSING = object()
-
-
-@dataclass(frozen=True)
-class ConfigError(Exception):
-    code: str
-    message: str
-    path: str
-    hint: str | None = None
-    severity: Literal["error", "warning"] = "error"
-
-    def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "code": self.code,
-            "message": self.message,
-            "path": self.path,
-        }
-        if self.hint:
-            payload["hint"] = self.hint
-        return payload
-
-
-class ConfigErrors(Exception):
-    def __init__(self, errors: list[ConfigError]):
-        super().__init__("configuration has errors")
-        self.errors = errors
+__all__ = ["ConfigError", "ConfigErrors", "ParseResult", "load_and_generate_ir"]
 
 
 @dataclass(frozen=True)
@@ -69,10 +45,6 @@ class ParseResult:
     ir: IRDocument
     ui_block: dict | None = None
     warnings: tuple[ConfigError, ...] = field(default_factory=tuple)
-
-
-def _join_path(parts: tuple[str, ...]) -> str:
-    return ".".join(parts) if parts else "$"
 
 
 def _interpolate_string(
@@ -103,7 +75,7 @@ def _interpolate_string(
                 ConfigError(
                     code="INTERPOLATION_MALFORMED_TOKEN",
                     message=f"Malformed interpolation token '{match.group(0)}'",
-                    path=_join_path(path),
+                    path=join_path(path),
                     hint="Use ${VAR_NAME} or ${VAR_NAME:-default}",
                 )
             )
@@ -113,7 +85,7 @@ def _interpolate_string(
                 ConfigError(
                     code="INTERPOLATION_MISSING_VAR",
                     message=f"Environment variable '{var_name}' is required",
-                    path=_join_path(path),
+                    path=join_path(path),
                     hint=f"Set {var_name} or use ${{{var_name}:-default}}",
                 )
             )
@@ -141,132 +113,8 @@ def _resolve_interpolation(
     return node
 
 
-def _load_yaml(path: Path) -> Any:
-    try:
-        with path.open("r", encoding="utf-8") as file:
-            return yaml.safe_load(file)
-    except yaml.YAMLError as error:
-        mark = getattr(error, "problem_mark", None)
-        pointer = "$"
-        if mark is not None:
-            pointer = f"line:{mark.line + 1},col:{mark.column + 1}"
-        raise ConfigErrors(
-            [
-                ConfigError(
-                    code="YAML_PARSE_ERROR",
-                    message=str(error),
-                    path=pointer,
-                )
-            ]
-        ) from error
-
-
-def _ensure_dict(content: Any, source: Path) -> dict[str, Any]:
-    if content is None:
-        return {}
-    if not isinstance(content, dict):
-        raise ConfigErrors(
-            [
-                ConfigError(
-                    code="YAML_ROOT_INVALID",
-                    message="Top-level YAML document must be an object",
-                    path="$",
-                    hint=f"In {source}",
-                )
-            ]
-        )
-    return content
-
-
-def _deep_merge(
-    base: dict[str, Any],
-    incoming: dict[str, Any],
-    source: Path,
-    provenance: dict[tuple[str, ...], Path],
-    path: tuple[str, ...],
-    errors: list[ConfigError],
-) -> dict[str, Any]:
-    merged = dict(base)
-    for key, value in incoming.items():
-        here = (*path, key)
-        existing = merged.get(key, _MISSING)
-        if existing is _MISSING:
-            merged[key] = value
-            provenance[here] = source
-        elif isinstance(existing, dict) and isinstance(value, dict):
-            merged[key] = _deep_merge(existing, value, source, provenance, here, errors)
-        else:
-            origin = provenance.get(here)
-            errors.append(
-                ConfigError(
-                    code="DUPLICATE_KEY",
-                    message=f"'{_join_path(here)}' is defined in more than one file",
-                    path=_join_path(here),
-                    hint=(
-                        f"Already set in {origin}; redefined in {source}"
-                        if origin
-                        else f"Redefined in {source}"
-                    ),
-                )
-            )
-    return merged
-
-
 def _load_spec(path: Path) -> dict[str, Any]:
-    manifest_path = path / MANIFEST_FILENAME if path.is_dir() else path
-    if path.is_dir() and not manifest_path.is_file():
-        raise ConfigErrors(
-            [
-                ConfigError(
-                    code="MANIFEST_NOT_FOUND",
-                    message=f"No {MANIFEST_FILENAME} found in spec directory",
-                    path="$",
-                    hint=f"Create {manifest_path}",
-                )
-            ]
-        )
-
-    root = _ensure_dict(_load_yaml(manifest_path), manifest_path)
-    includes = root.get("include")
-    if includes is None:
-        return root
-    if not isinstance(includes, list) or not all(isinstance(p, str) for p in includes):
-        raise ConfigErrors(
-            [
-                ConfigError(
-                    code="INCLUDE_INVALID",
-                    message="'include' must be a list of glob patterns",
-                    path="include",
-                )
-            ]
-        )
-
-    base_dir = manifest_path.parent
-    errors: list[ConfigError] = []
-    provenance: dict[tuple[str, ...], Path] = {}
-    merged: dict[str, Any] = {}
-    for pattern in includes:
-        matches = sorted(base_dir.glob(pattern))
-        if not matches:
-            errors.append(
-                ConfigError(
-                    code="INCLUDE_NO_MATCH",
-                    message=f"Include pattern '{pattern}' matched no files",
-                    path=pattern,
-                    hint="Patterns are resolved relative to the manifest",
-                )
-            )
-            continue
-        for match in matches:
-            fragment = _ensure_dict(_load_yaml(match), match)
-            merged = _deep_merge(merged, fragment, match, provenance, (), errors)
-
-    overlay = {key: value for key, value in root.items() if key != "include"}
-    merged = _deep_merge(merged, overlay, manifest_path, provenance, (), errors)
-
-    if errors:
-        raise ConfigErrors(errors)
-    return merged
+    return Manifest.discover(path).load()
 
 
 def _load_schema(schema_file: Path) -> dict[str, Any]:
@@ -307,7 +155,7 @@ def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
         ConfigError(
             code="SCHEMA_VALIDATION_ERROR",
             message=_describe_error(error),
-            path=_join_path(tuple(str(part) for part in error.path)),
+            path=join_path(tuple(str(part) for part in error.path)),
         )
         for error in errors
     ]
