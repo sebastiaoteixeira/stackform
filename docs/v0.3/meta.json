@@ -1,5 +1,9 @@
 {
   "title": "v0.3",
   "root": true,
-  "pages": ["multi-file-specs", "..."]
+  "pages": [
+    "index",
+    "multi-file-specs",
+    "..."
+  ]
 }

@@ -1,3 +1,8 @@
+---
+title: Access-rule `role:`
+description: Require a role on the long access-rule form, so a route can gate on a role and still use given, when and bind.
+---
+
 # Access-rule `role:`
 
 In v0.3, a long-form access rule can require the principal to hold a role. The

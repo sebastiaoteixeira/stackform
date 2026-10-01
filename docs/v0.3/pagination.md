@@ -1,5 +1,6 @@
 ---
 title: Pagination
+description: Paged list responses declared at the controller, with implicit repository primitives and service mapping underneath.
 ---
 
 # Pagination (v0.3)

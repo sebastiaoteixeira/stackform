@@ -1,3 +1,8 @@
+---
+title: Service `input:` and `with:` forwarding
+description: Declare the request values a service requires and map them to its repository operation or custom handler.
+---
+
 # Service `input:` and `with:` forwarding
 
 In v0.3, a service declares the request values it requires with `input:` and

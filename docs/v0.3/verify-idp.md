@@ -1,6 +1,6 @@
 ---
 title: Resource-server IdP token verification
-description: How a trust: idp provider's tokens are verified on every request, and which backends implement it.
+description: "How a trust: idp provider's tokens are verified on every request, and which backends implement it."
 ---
 
 # Resource-server IdP token verification

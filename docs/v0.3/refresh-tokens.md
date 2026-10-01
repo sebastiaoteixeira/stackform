@@ -1,3 +1,8 @@
+---
+title: Refresh-token rotation
+description: Split the login flow into a short-lived access token and a rotating refresh token.
+---
+
 # Refresh-token rotation
 
 The optional `session` block turns the login flow from a single long-lived token

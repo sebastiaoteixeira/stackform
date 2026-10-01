@@ -1,3 +1,8 @@
+---
+title: Auth & Security References
+description: Reference material behind the authentication and token design decisions in the generated apps, and the standards to evaluate them against.
+---
+
 # Auth & Security References
 
 Reference material behind the authentication/token design decisions in the generated apps,

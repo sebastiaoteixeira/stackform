@@ -1,5 +1,6 @@
 ---
 title: Dual-trust token dispatch
+description: "How a spec that mixes an app-trust login with a trust: idp provider picks a verifier for each bearer token by its iss claim."
 ---
 
 # Dual-trust token dispatch

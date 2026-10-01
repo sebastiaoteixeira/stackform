@@ -1,5 +1,6 @@
 ---
 title: Specification
+description: "The v0.1 YAML contract: design goals, the transport-agnostic core model, and the compiled step pipelines it lowers to."
 ---
 
 Status: Draft v0.1  

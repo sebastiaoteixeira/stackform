@@ -1,3 +1,8 @@
+---
+title: Access-rule `bind:`
+description: Supply trusted service inputs from an access rule after it authorizes the request.
+---
+
 # Access-rule `bind:`
 
 In v0.3, an access rule can supply trusted service inputs after it authorizes a

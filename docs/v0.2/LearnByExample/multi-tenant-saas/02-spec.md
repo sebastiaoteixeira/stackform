@@ -1,5 +1,6 @@
 ---
 title: "Full Spec"
+description: The complete buildable spec for the multi-tenant SaaS example, with password users, API-key clients, and per-operation ownership rules.
 ---
 
 This is the complete, buildable spec for the multi-tenant SaaS example. It has two
