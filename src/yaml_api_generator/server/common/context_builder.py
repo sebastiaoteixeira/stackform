@@ -5,6 +5,7 @@ from yaml_api_generator.ir import (
     IRDocument,
     IRDocumentBinding,
     IRIdentityCollection,
+    IRRoute,
     flatten_role_hierarchy,
 )
 from .auth.jwt import JWKS_PATH
@@ -14,6 +15,7 @@ from .server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
     RuntimeContext,
+    RuntimeFileRouteDescriptor,
     RuntimeIdentityDescriptor,
     RuntimeOperationDescriptor,
     RuntimeRouteDescriptor,
@@ -52,6 +54,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
         operations=operations,
         spec_version=document.version,
         session=session,
+        file_routes=_build_file_routes(document),
     )
 
 
@@ -91,52 +94,70 @@ def _build_collections(
             id_format=col.idFormat,
             fields=col.fields,
             datastore=col.datastore,
+            files=col.files,
         )
         for name, col in ir_collections.items()
     }
 
 
 def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
-    routes = []
-    for route in document.routes:
-        access_rules = None
-        if route.access_rules:
-            access_rules = [
-                RuntimeAccessRule(
-                    principal=rule.principal,
-                    required_role=rule.required_role,
-                    identity_symbols=rule.identity_symbols,
-                    document_symbols=rule.document_symbols,
-                    request_symbols=rule.request_symbols,
-                    when=rule.when,
-                    effect=rule.effect,
-                    reason=rule.reason if document.version == "0.3" else None,
-                    bind=rule.bind,
-                )
-                for rule in route.access_rules
-            ]
-        service = document.services.get(route.service)
-        service_input = (
-            service.input.fields if service is not None and service.input is not None else None
-        )
-        service_forwarding = dict(service.forwarding) if service is not None else {}
-        routes.append(
-            RuntimeRouteDescriptor(
-                method=route.method,
-                path=route.path,
-                operation=route.operation,
-                collection=route.collection,
-                is_public=route.is_public,
-                handler=route.handler,
-                access_rules=access_rules,
-                service_input=service_input,
-                service_forwarding=service_forwarding,
-                pagination=route.pagination,
-            )
-        )
+    routes = [_runtime_route(route, document) for route in document.routes]
     if document.session.refresh:
         routes += [_refresh_route(route) for route in routes if route.operation == "login"]
     return routes
+
+
+def _runtime_route(route: IRRoute, document: IRDocument) -> RuntimeRouteDescriptor:
+    access_rules = (
+        [
+            RuntimeAccessRule(
+                principal=rule.principal,
+                required_role=rule.required_role,
+                identity_symbols=rule.identity_symbols,
+                document_symbols=rule.document_symbols,
+                request_symbols=rule.request_symbols,
+                when=rule.when,
+                effect=rule.effect,
+                reason=rule.reason if document.version == "0.3" else None,
+                bind=rule.bind,
+            )
+            for rule in route.access_rules
+        ]
+        if route.access_rules
+        else None
+    )
+    service = document.services.get(route.service)
+    service_input = (
+        service.input.fields if service is not None and service.input is not None else None
+    )
+    service_forwarding = dict(service.forwarding) if service is not None else {}
+    return RuntimeRouteDescriptor(
+        method=route.method,
+        path=route.path,
+        operation=route.operation,
+        collection=route.collection,
+        is_public=route.is_public,
+        handler=route.handler,
+        access_rules=access_rules,
+        service_input=service_input,
+        service_forwarding=service_forwarding,
+        pagination=route.pagination,
+    )
+
+
+def _build_file_routes(document: IRDocument) -> tuple[RuntimeFileRouteDescriptor, ...]:
+    return tuple(
+        RuntimeFileRouteDescriptor(
+            action=route.action,
+            method=route.method,
+            path=route.path,
+            collection=route.collection,
+            field=route.field,
+            item=route.item,
+            source=_runtime_route(route.source, document),
+        )
+        for route in document.file_routes
+    )
 
 
 def _refresh_route(login: RuntimeRouteDescriptor) -> RuntimeRouteDescriptor:

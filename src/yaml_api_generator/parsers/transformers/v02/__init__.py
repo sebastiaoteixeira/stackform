@@ -12,8 +12,9 @@ from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 
 from .access_transformer import AccessTransformer
 from .collection_transformer import CollectionTransformer
-from .datastore_transformer import parse_datastores
+from .datastore_transformer import parse_datastores, parse_file_datastores
 from .dto_transformer import DtoTransformer
+from .file_transformer import FileStoreRegistry, FileTransformer
 from .identity_transformer import IdentityTransformer
 from .policies_transformer import PoliciesTransformer
 from .policy_expansion import expand_rule_policies
@@ -32,6 +33,7 @@ class V02Transformer:
         self._access = AccessTransformer()
         self._route = RouteTransformer(self._access)
         self._policies = PoliciesTransformer()
+        self._files = FileTransformer()
 
     def transform(self, resolved: dict[str, Any]) -> IRDocument:
         """Transform v0.2 YAML specification to IR.
@@ -58,8 +60,9 @@ class V02Transformer:
         policies_data: dict[str, Any] = resolved.get("policies", {})
 
         datastores, default_datastore, datastore_errors = parse_datastores(resolved)
-        if datastore_errors:
-            raise ConfigErrors(datastore_errors)
+        file_stores, default_file_store, file_store_errors = parse_file_datastores(resolved)
+        if datastore_errors or file_store_errors:
+            raise ConfigErrors(datastore_errors + file_store_errors)
         datastore_names = set(datastores)
         datastore_types = {name: ds.type for name, ds in datastores.items()}
 
@@ -85,9 +88,17 @@ class V02Transformer:
         repositories, repo_errors = self._repository.transform(
             repos_data, defaults, datastore_names, default_datastore, datastore_types,
             handler_resolver=self._operation_handler_resolver(import_map),
+            file_datastore_names=set(file_stores),
         )
         if repo_errors:
             raise ConfigErrors(repo_errors)
+
+        collections, repositories, binding_errors = self._files.bind(
+            resolved, collections, repositories,
+            FileStoreRegistry.from_spec(resolved, file_stores, default_file_store, datastore_names),
+        )
+        if binding_errors:
+            raise ConfigErrors(binding_errors)
 
         identity_collections = self._identity.transform(
             entities_data, collections, repo_entity_map
@@ -125,6 +136,9 @@ class V02Transformer:
             raise ConfigErrors(policy_errors)
 
         routes = self._expand_route_policies(routes, policies, entity_to_collection)
+        file_routes, file_route_errors = self._files.derive(collections, routes)
+        if file_route_errors:
+            raise ConfigErrors(file_route_errors)
 
         providers = self._parse_providers(providers_data)
 
@@ -145,6 +159,9 @@ class V02Transformer:
             mongo=self._route.build_mongo(mongo_config),
             datastores=datastores,
             default_datastore=default_datastore,
+            file_stores=file_stores,
+            default_file_store=default_file_store,
+            file_routes=file_routes,
             deploy=self._route.build_deploy(resolved.get("deploy"), mongo_config, providers, datastores),
             repositories=repositories,
             providers=providers,

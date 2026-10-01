@@ -1,6 +1,6 @@
 """FastAPI server builder."""
 
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +10,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from ..common.context_builder import build_runtime_context
+from ..common.files import build_file_stores, build_record_files
 from ..common.loader import create_repositories, ensure_spec_dir_importable, initialize_indexes
 from ..common.server_context import RuntimeContext
 from ..common.repositories import RepositoryRegistry
@@ -84,11 +85,16 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
     ir, registry = create_repositories(yaml_file, schema_file)
     install_vendored_packages(ir.vendored_imports)
     ctx = build_runtime_context(ir)
+    stores = build_file_stores(ir)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         await initialize_indexes(ir, registry)
-        yield
+        async with AsyncExitStack() as stack:
+            for store in stores.values():
+                await store.open()
+                stack.push_async_callback(store.close)
+            yield
 
     app = FastAPI(lifespan=lifespan)
 
@@ -107,6 +113,6 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
     if ctx.session.uses_cookie:
         app.add_middleware(_csrf_middleware())
 
-    register_fastapi_routes(app, ctx, registry)
+    register_fastapi_routes(app, ctx, registry, build_record_files(ir, stores))
 
     return app

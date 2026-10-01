@@ -1,0 +1,20 @@
+version: "0.3"
+api: { basePath: /api }
+datastores:
+  uploads: { type: filesystem, path: ./uploads }
+entities:
+  document:
+    fields:
+      id: { type: id }
+      avatar: { type: file }
+repositories:
+  documents: { entity: document }
+services:
+  documents: { repository: documents }
+controllers:
+  documents:
+    base_path: /documents
+    routes:
+      get: { service: documents, method: GET, path: "/{id}" }
+      update: { service: documents, method: PATCH, path: "/{id}" }
+      replaceAvatar: { service: documents, method: PUT, path: "/{id}/files/avatar" }

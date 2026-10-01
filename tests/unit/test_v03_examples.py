@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from yaml_api_generator.cli.compiler import compile_project
+from yaml_api_generator.parsers.errors import ConfigErrors
 
 
 _EXAMPLES = Path(__file__).parents[2] / "examples" / "v03"
@@ -27,6 +28,7 @@ _UNDEFINED_SENTINEL = re.compile(r"\bUndefined\b")
         ("mongo-migrations", "fastapi"),
         ("mongo-migrations", "drf"),
         ("mongo-migrations", "raw"),
+        ("files", "fastapi"),
     ],
 )
 def test_v03_example_builds_for_documented_target(tmp_path, example, target):
@@ -44,3 +46,15 @@ def test_v03_example_builds_for_documented_target(tmp_path, example, target):
         if _UNDEFINED_SENTINEL.search(module.read_text())
     ]
     assert leaks == []
+
+
+@pytest.mark.parametrize("target", ["drf", "raw"])
+def test_files_example_is_refused_by_targets_without_file_datastores(tmp_path, target):
+    with pytest.raises(ConfigErrors) as raised:
+        compile_project(
+            yaml_file=str(_EXAMPLES / "files" / "spec.yaml"),
+            output_dir=str(tmp_path / target),
+            target=target,
+        )
+
+    assert [error.code for error in raised.value.errors] == ["BACKEND_FEATURE_UNSUPPORTED"]

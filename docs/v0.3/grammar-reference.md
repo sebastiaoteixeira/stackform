@@ -282,6 +282,14 @@ reason and unique-conflict detail follow the security rules in
 [Explainable access denials](access-reason.md) and
 [Unique violations and `409 Conflict`](conflict-status.md).
 
+## File endpoints
+
+Derived [file endpoints](file-endpoints.md) declare no access of their own.
+Download endpoints evaluate the access of the controller's `get` route, and
+replace and delete endpoints evaluate the access of its `update` route, with
+the same principal, `given:` bindings, `when:` rules and record locator. File
+fields hold upload metadata, so they cannot be compared in `when:` or `where`.
+
 ## Coded diagnostics
 
 ### Access and `when:`
@@ -322,6 +330,7 @@ reason and unique-conflict detail follow the security rules in
 | `WHERE_RHS_INVALID` | A right-hand side is not a symbol, string, number, or boolean. |
 | `WHERE_FIELD_UNKNOWN` | A predicate field is absent from the collection entity. |
 | `ROUTE_LOCATOR_FIELD_UNKNOWN` | A parent route token is absent from the target collection entity. |
+| `FILE_FIELD_NOT_COMPARABLE` | A `when:` operand or `where` predicate references a [file field](file-fields.md). |
 
 ### Service inputs, forwarding, and rule binding
 
@@ -341,6 +350,7 @@ reason and unique-conflict detail follow the security rules in
 ## Version boundary
 
 `where`, service `input:`/`with:`, access-rule `bind:`, unified
-`UNDEFINED_SYMBOL`, rule-specific deny reasons, and token-derived record locators
-are v0.3 behavior. v0.2 retains its existing access values, identity/document/
-request bindings, `{id}` single-record convention, and legacy symbol errors.
+`UNDEFINED_SYMBOL`, rule-specific deny reasons, token-derived record locators,
+and derived file endpoints are v0.3 behavior. v0.2 retains its existing access
+values, identity/document/request bindings, `{id}` single-record convention, and
+legacy symbol errors.

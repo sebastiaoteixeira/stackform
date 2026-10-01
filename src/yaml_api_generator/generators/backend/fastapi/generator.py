@@ -20,6 +20,7 @@ from ..validation import (
     validate_datastore_layout,
 )
 from . import access_filters, sql_filters, type_mapper
+from .runtime_literals import py_constructor
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
@@ -54,6 +55,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["pagination_config"] = pagination_config
         env.filters["sql_column"] = sql_filters.sql_column
+        env.filters["py_constructor"] = py_constructor
         env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
@@ -231,6 +233,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
             },
             "datastore_type": ctx.collection_datastore_type(col_name),
             "auth": ctx.auth,
+            "files": ctx.file_fields.get(col_name, {}),
+            "file_routes": [route for route in ctx.file_routes if route.collection == col_name],
         }
 
     def _render_routes(
@@ -394,6 +398,18 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 env.get_template("repository_sql_ops.py.jinja").render()
             )
 
+    @staticmethod
+    def _render_file_dependencies(
+        env: Environment, context: CompileContext, deps_dir: Path
+    ) -> None:
+        if not context.has_files:
+            return
+        for module in context.file_runtime_modules:
+            (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
+        (deps_dir / "file_stores.py").write_text(
+            env.get_template("file_stores.py.jinja").render(ctx=context)
+        )
+
     def _render_dependencies(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
@@ -433,6 +449,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "bindings.py").write_text(
                 (_STATIC_DIR / "bindings.py").read_text()
             )
+        self._render_file_dependencies(env, context, deps_dir)
 
         init_imports: list[str] = []
         auth_files = []

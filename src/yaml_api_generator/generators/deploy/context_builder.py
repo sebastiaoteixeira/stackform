@@ -6,6 +6,7 @@ from ...ir import IRDocument, IRPostgres
 from ..backend.builders import build_context
 from ..backend.builders.settings_builder import build_settings_fields
 from .context import DeployContext, DeployDatastore, DockerDeployContext, SystemdDeployContext
+from .file_deployments import build_file_deployments
 
 
 def build_deploy_context(
@@ -20,12 +21,14 @@ def build_deploy_context(
     deploy = ir.deploy
     name = deploy.name or "app"
     mongo_db = ir.mongo.database
-    secret_fields = [f for f in build_settings_fields(build_context(ir)) if f.secret]
+    context = build_context(ir)
+    secret_fields = [f for f in build_settings_fields(context) if f.secret]
+    file_deployments = build_file_deployments(context.file_stores)
     env_vars = {
-        var: ""
-        for var in dict.fromkeys([*deploy.env_vars, *(f.env_name for f in secret_fields)])
+        **{var: "" for var in dict.fromkeys([*deploy.env_vars, *(f.env_name for f in secret_fields)])},
+        **{key: value for fd in file_deployments for key, value in fd.host_env.items()},
     }
-    datastores = _build_datastores(ir)
+    datastores = (*_build_datastores(ir), *(fd.datastore for fd in file_deployments if fd.datastore))
 
     common = dict(
         name=name,
@@ -45,16 +48,13 @@ def build_deploy_context(
     if deploy.runtime == "docker":
         image = deploy.docker.image if deploy.docker else None
         secret_env_names = tuple(f.env_name for f in secret_fields)
-        app_environment = tuple(
-            f"{key}=${{{key}:-{value}}}"
-            for ds in datastores
-            for key, value in ds.app_env.items()
-        ) + (
-            f"PORT=${{PORT:-{deploy.port}}}",
-            "FRONTEND_URL=${FRONTEND_URL:-http://localhost}",
-        ) + tuple(
-            f"{f.env_name}=${{{f.env_name}}}"
-            for f in secret_fields
+        defaults = {
+            **{key: value for source in (*datastores, *file_deployments) for key, value in source.app_env.items()},
+            "PORT": str(deploy.port),
+            "FRONTEND_URL": "http://localhost",
+        }
+        app_environment = tuple(f"{key}=${{{key}:-{value}}}" for key, value in defaults.items()) + tuple(
+            f"{f.env_name}=${{{f.env_name}}}" for f in secret_fields if f.env_name not in defaults
         )
         return DockerDeployContext(
             **common,
@@ -63,6 +63,7 @@ def build_deploy_context(
             include=deploy.include,
             app_environment=app_environment,
             secret_env_names=secret_env_names,
+            app_volumes=tuple(fd.volume for fd in file_deployments if fd.volume),
         )
 
     if deploy.runtime == "systemd":

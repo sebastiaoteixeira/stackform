@@ -1,0 +1,19 @@
+version: "0.3"
+api: { basePath: /api }
+datastores:
+  main: { type: mongodb }
+  uploads: { type: filesystem, path: ./uploads }
+entities:
+  document:
+    fields:
+      id: { type: id }
+      avatar: { type: file }
+repositories:
+  documents: { entity: document, files: main }
+services:
+  documents: { repository: documents }
+controllers:
+  documents:
+    service: documents
+    base_path: /documents
+    access: public

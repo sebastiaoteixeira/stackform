@@ -11,7 +11,10 @@ Each pipeline step receives and returns an updated RequestContext.
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .request_body import RequestBody
 
 
 @dataclass
@@ -34,6 +37,7 @@ class RequestContext:
     authorized_rule_index: int | None = None
     bound_inputs: dict[str, Any] | None = None
     service_inputs: dict[str, Any] | None = None
+    upload: "RequestBody | None" = None
 
     def repository_for(self, collection: str | None) -> Any:
         """Resolve the repository backing a collection (cross-store access)."""

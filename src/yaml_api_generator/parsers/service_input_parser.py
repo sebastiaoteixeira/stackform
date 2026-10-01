@@ -15,6 +15,7 @@ from typing import Any
 
 from yaml_api_generator.ir import IRLiteralRef, IRServiceInput, WhereRhs
 
+from .transformers.file_validation import file_context_errors
 from .where_parser import parse_rhs_value
 from .yaml_parser import ConfigError
 
@@ -102,7 +103,9 @@ def _validate_fields(fields: dict[str, Any], path: str) -> list[ConfigError]:
     for name, config in fields.items():
         field_path = f"{path}.{name}"
         field_type = config.get("type", "string") if isinstance(config, dict) else None
-        if field_type not in _FIELD_TYPES:
+        file_errors = file_context_errors(config, field_path, "service inputs")
+        errors.extend(file_errors)
+        if not file_errors and field_type not in _FIELD_TYPES:
             errors.append(
                 ConfigError(
                     code="SERVICE_INPUT_FIELD_INVALID",

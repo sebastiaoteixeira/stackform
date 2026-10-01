@@ -1,7 +1,7 @@
 """Build SQLAlchemy tables from collection field schemas.
 
 Maps the spec's typed fields onto typed columns plus CHECK/NOT NULL/UNIQUE
-constraints. Array and object fields become JSON; the id field becomes the
+constraints. Array, object and file fields become JSON; the id field becomes the
 primary key. All tables built for one datastore share a single MetaData.
 """
 
@@ -10,6 +10,8 @@ from typing import Any
 import sqlalchemy as sa
 
 from yaml_api_generator.ir import IRCollection
+
+_JSON_TYPES = frozenset({"array", "object", "file"})
 
 
 def table_from_collection(collection: IRCollection, metadata: sa.MetaData) -> sa.Table:
@@ -42,7 +44,7 @@ def _column(name: str, cfg: dict[str, Any], is_pk: bool) -> sa.Column:
 
 def _column_type(cfg: dict[str, Any]) -> sa.types.TypeEngine:
     field_type = cfg.get("type", "string")
-    if field_type in ("array", "object"):
+    if field_type in _JSON_TYPES:
         return sa.JSON()
     if field_type == "number":
         return sa.Numeric()

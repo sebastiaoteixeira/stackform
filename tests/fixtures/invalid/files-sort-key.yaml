@@ -1,0 +1,24 @@
+version: "0.3"
+api: { basePath: /api }
+datastores:
+  uploads: { type: filesystem, path: ./uploads }
+entities:
+  document:
+    fields:
+      id: { type: id }
+      avatar: { type: file }
+repositories:
+  documents: { entity: document }
+services:
+  documents: { repository: documents }
+controllers:
+  documents:
+    service: documents
+    base_path: /documents
+    access: public
+    operations:
+      list:
+        pagination:
+          strategy: offset
+          size: { default: 20, max: 100 }
+          sort: [{ field: avatar }]

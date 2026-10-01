@@ -57,6 +57,15 @@
               "type": "boolean"
             }
           }
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxSize": { "$ref": "#/$defs/FileSize" },
+            "types": { "$ref": "#/$defs/MimeTypes" },
+            "maxFiles": { "type": "integer", "minimum": 1 }
+          }
         }
       }
     },
@@ -161,6 +170,28 @@
     }
   },
   "$defs": {
+    "FileSize": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?\\s*([kKmMgG]?[bB])?$" }
+      ]
+    },
+    "MimeTypes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/(\\*|[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*)$"
+      }
+    },
+    "FileLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxSize": { "$ref": "#/$defs/FileSize" },
+        "types": { "$ref": "#/$defs/MimeTypes" }
+      }
+    },
     "SessionConfig": {
       "type": "object",
       "properties": {
@@ -416,7 +447,7 @@
       "required": ["type"],
       "properties": {
         "type": {
-          "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref", "id"]
+          "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref", "id", "file"]
         },
         "required": { "type": "boolean" },
         "default": {},
@@ -439,7 +470,11 @@
         },
         "additionalProperties": { "type": "boolean" },
         "ref": { "type": "string" },
-        "readonly": { "type": "boolean" }
+        "readonly": { "type": "boolean" },
+        "maxSize": { "$ref": "#/$defs/FileSize" },
+        "types": { "$ref": "#/$defs/MimeTypes" },
+        "disposition": { "enum": ["attachment", "inline"] },
+        "maxItems": { "type": "integer", "minimum": 1 }
       },
       "allOf": [
         {
@@ -477,13 +512,35 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["mongodb", "mongo", "postgres", "postgresql"]
+          "enum": ["mongodb", "mongo", "postgres", "postgresql", "filesystem", "s3"]
         },
         "uri": { "type": "string" },
         "database": { "type": "string" },
         "dsn": { "type": "string" },
-        "default": { "type": "boolean" }
-      }
+        "default": { "type": "boolean" },
+        "path": { "type": "string" },
+        "bucket": { "type": "string" },
+        "endpoint": { "type": "string" },
+        "region": { "type": "string" },
+        "accessKey": { "type": "string" },
+        "secretKey": { "type": "string" },
+        "prefix": { "type": "string" },
+        "files": { "$ref": "#/$defs/FileLimits" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "filesystem" } }, "required": ["type"] },
+          "then": { "required": ["path"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "s3" } }, "required": ["type"] },
+          "then": { "required": ["bucket"] }
+        },
+        {
+          "if": { "properties": { "type": { "enum": ["mongodb", "mongo", "postgres", "postgresql"] } } },
+          "then": { "not": { "required": ["files"] } }
+        }
+      ]
     },
     "RepositoryConfig": {
       "type": "object",
@@ -494,6 +551,9 @@
           "type": "string"
         },
         "datastore": {
+          "type": "string"
+        },
+        "files": {
           "type": "string"
         },
         "crud": {

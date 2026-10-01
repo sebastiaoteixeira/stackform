@@ -20,6 +20,7 @@ from yaml_api_generator.ir import (
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
 from .access_transformer import AccessTransformer
+from .file_transformer import LimitLayer
 
 
 class RouteTransformer:
@@ -274,11 +275,14 @@ class RouteTransformer:
                 headers=cors_raw.get("headers", ["*"]),
                 credentials=cors_raw.get("credentials", False),
             )
+        files = api_data.get("files")
         return IRApi(
             basePath=api_data.get("basePath", "/api"),
             version=api_data.get("version"),
             cors=cors,
             port=int(api_data.get("port", 8000)),
+            files=None if files is None else LimitLayer.parse(files, "api.files")[0].limits(),
+            max_files=(files or {}).get("maxFiles"),
         )
 
     def build_mongo(self, mongo_data: dict[str, Any]) -> IRMongo:

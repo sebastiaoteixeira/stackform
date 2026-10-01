@@ -1,9 +1,11 @@
 from copy import deepcopy
-from inspect import isawaitable
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from .request_context import RequestContext
-from .steps import Step
+from .steps import Step, chain
+
+if TYPE_CHECKING:
+    from .request_body import RequestBody
 
 
 class Pipeline:
@@ -26,6 +28,7 @@ class Pipeline:
         cookies: Mapping[str, str] | None = None,
     ) -> None:
         self.steps = list(steps)
+        self._run_steps = chain(self.steps)
         self._base_ctx = RequestContext(
             method=method,
             path=path,
@@ -59,6 +62,7 @@ class Pipeline:
             repositories=ctx.repositories,
             query=dict(ctx.query) if ctx.query is not None else None,
             cookies=dict(ctx.cookies) if ctx.cookies is not None else None,
+            upload=ctx.upload,
         )
 
     async def run(
@@ -78,6 +82,7 @@ class Pipeline:
         response: Any | None = None,
         query: Mapping[str, str | list[str]] | None = None,
         cookies: Mapping[str, str] | None = None,
+        upload: "RequestBody | None" = None,
     ) -> RequestContext:
         current_ctx = (
             self._clone_context(context)
@@ -111,9 +116,7 @@ class Pipeline:
             current_ctx.query = dict(query)
         if cookies is not None:
             current_ctx.cookies = dict(cookies)
+        if upload is not None:
+            current_ctx.upload = upload
 
-        for step in self.steps:
-            result = step(current_ctx)
-            current_ctx = await result if isawaitable(result) else result
-
-        return current_ctx
+        return await self._run_steps(current_ctx)

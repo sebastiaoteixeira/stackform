@@ -15,6 +15,7 @@ from ..utils import (
 from ..validation import (
     reject_cookie_delivery,
     reject_dpop,
+    reject_file_fields,
     reject_idp_trust,
     reject_pkce,
     reject_session_refresh,
@@ -52,6 +53,7 @@ class DRFGenerator(TemplateBasedGenerator):
         validate_datastore_layout(context, "drf")
         reject_cookie_delivery(context, "drf")
         reject_dpop(context, "drf")
+        reject_file_fields(context, "drf")
         reject_idp_trust(context, "drf")
         reject_session_refresh(context, "drf")
         reject_pkce(context, "drf")

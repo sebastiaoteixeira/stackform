@@ -10,6 +10,7 @@ from yaml_api_generator.server.common.loader import SchemaManagement
 from ..compile_context import AppConfig, CompileContext, CorsConfig, SessionConfig
 
 from .auth_builder import AuthBuilder
+from .file_builder import FileBuilder
 from .model_builder import ModelBuilder
 from .repository_builder import RepositoryBuilder
 from .route_builder import RouteBuilder
@@ -23,6 +24,7 @@ class ContextBuilder:
         self._route = RouteBuilder()
         self._auth = AuthBuilder()
         self._repository = RepositoryBuilder()
+        self._file = FileBuilder()
 
     def build_context(
         self, document: IRDocument, managed: SchemaManagement = SchemaManagement()
@@ -120,6 +122,9 @@ class ContextBuilder:
             vendored_requirements=document.vendored_requirements,
             sql_schema_managed=managed.sql,
             mongo_schema_managed=managed.mongo,
+            file_stores=self._file.build_file_stores(document),
+            file_fields={name: col.files for name, col in document.collections.items() if col.files},
+            file_routes=self._file.build_file_routes(document, routes),
         )
 
 

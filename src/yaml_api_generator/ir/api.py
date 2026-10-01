@@ -23,6 +23,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .when import WhenExpr
 from ..constants import CRUD_OPERATIONS
@@ -126,6 +127,7 @@ class IRRepository:
     datastore: str | None = None
     abstract: bool = False
     inherits: str | None = None
+    files: str | None = None
 
 
 @dataclass(frozen=True)
@@ -146,12 +148,25 @@ class IRCors:
     credentials: bool = False
 
 
+DEFAULT_FILE_MAX_SIZE = 10 * 1024 ** 2
+DEFAULT_MAX_FILES = 10
+
+
+@dataclass(frozen=True)
+class IRFileLimits:
+    max_size: int = DEFAULT_FILE_MAX_SIZE
+    # Lowercased MIME patterns; "image/*" wildcards; () accepts any type.
+    types: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class IRApi:
     basePath: str
     version: str | None
     cors: IRCors | None = None
     port: int = 8000
+    files: IRFileLimits | None = None
+    max_files: int | None = None
 
 
 @dataclass(frozen=True)
@@ -185,6 +200,48 @@ IRDatastore = IRMongo | IRPostgres
 
 
 @dataclass(frozen=True)
+class IRFilesystemStore:
+    path: str
+    limits: IRFileLimits | None = None
+    type: str = "filesystem"
+
+
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
+
+
+@dataclass(frozen=True)
+class IRS3Store:
+    bucket: str
+    endpoint: str | None = None
+    region: str | None = None
+    access_key: str | None = None
+    secret_key: str | None = None
+    prefix: str = ""
+    limits: IRFileLimits | None = None
+    type: str = "s3"
+
+    @property
+    def local(self) -> bool:
+        """A local endpoint is a development MinIO whose bucket the app may create."""
+        return urlparse(self.endpoint or "").hostname in _LOCAL_HOSTS
+
+
+IRFileStore = IRFilesystemStore | IRS3Store
+
+
+@dataclass(frozen=True)
+class IRFileField:
+    name: str
+    store: str
+    limits: IRFileLimits
+    required: bool = False
+    readonly: bool = False
+    multiple: bool = False
+    max_items: int | None = None
+    disposition: str = "attachment"
+
+
+@dataclass(frozen=True)
 class IRCollection:
     name: str
     entity_name: str
@@ -193,6 +250,8 @@ class IRCollection:
     idFormat: str
     fields: dict[str, Any]
     datastore: str | None = None
+    files: dict[str, IRFileField] = field(default_factory=dict)
+    file_store: str | None = None
 
 
 @dataclass(frozen=True)
@@ -310,6 +369,18 @@ class IRRoute:
 
 
 @dataclass(frozen=True)
+class IRFileRoute:
+    action: str
+    method: str
+    path: str
+    collection: str
+    field: str
+    item: bool
+    # The get route (download) or update route (replace/remove) whose access applies.
+    source: IRRoute
+
+
+@dataclass(frozen=True)
 class IRRolesConfig:
     values: tuple[str, ...]
     default: str
@@ -412,6 +483,9 @@ class IRDocument:
     ui_config: dict[str, Any] | None = None
     vendored_imports: tuple[IRVendoredImport, ...] = ()
     vendored_requirements: tuple[str, ...] = ()
+    file_stores: dict[str, IRFileStore] = field(default_factory=dict)
+    default_file_store: str | None = None
+    file_routes: tuple[IRFileRoute, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -419,3 +493,7 @@ class IRDocument:
     @property
     def has_ui(self) -> bool:
         return self.ui_config is not None
+
+    @property
+    def has_files(self) -> bool:
+        return any(collection.files for collection in self.collections.values())

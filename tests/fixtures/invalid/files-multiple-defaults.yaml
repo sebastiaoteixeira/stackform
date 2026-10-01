@@ -1,0 +1,19 @@
+version: "0.3"
+api: { basePath: /api }
+datastores:
+  a: { type: filesystem, path: ./a, default: true }
+  b: { type: s3, bucket: b, default: true }
+entities:
+  document:
+    fields:
+      id: { type: id }
+      avatar: { type: file }
+repositories:
+  documents: { entity: document }
+services:
+  documents: { repository: documents }
+controllers:
+  documents:
+    service: documents
+    base_path: /documents
+    access: public

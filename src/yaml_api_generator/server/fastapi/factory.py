@@ -1,15 +1,25 @@
 import os
+import re
 import secrets
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, create_model
 
 from yaml_api_generator.runtime.dpop import DPoPProofFactory
+from yaml_api_generator.runtime.files import FileError, RecordFiles
+from yaml_api_generator.runtime.file_requests import (
+    json_request_body,
+    read_json,
+    read_upload,
+    upload_request_body,
+)
+from yaml_api_generator.runtime.multipart import file_download_responses, file_upload_body
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..common.auth import oidc
@@ -19,17 +29,30 @@ from ..common.server_context import (
     RuntimeAuthConfig,
     RuntimeCollectionDescriptor,
     RuntimeContext,
+    RuntimeFileRouteDescriptor,
     RuntimeIdentityDescriptor,
     RuntimeRouteDescriptor,
 )
 from ..common.pipeline import Pipeline
 from ..common.pipeline_builder import PipelineBuilder
 from ..common.repositories import BaseRepository, RepositoryRegistry
+from ..common.request_body import RecordBody, RequestBody
+from ..common.request_context import RequestContext
 from ..common.steps import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 from .session_cookie import clear_session_cookies, issue_csrf_token, set_session_cookies
 
 
 WRITE_OPERATIONS = frozenset({"create", "update", "replace"})
+_PATH_TOKEN = re.compile(r"\{(\w+)\}")
+
+BodyReader = Callable[[Request], RequestBody | None]
+
+# Per write operation of a file entity: how its body is read and documented
+_UPLOAD_BODIES = {
+    "create": (read_upload, upload_request_body),
+    "update": (read_upload, upload_request_body),
+    "replace": (read_json, json_request_body),
+}
 
 
 def create_pydantic_model_fields(
@@ -45,7 +68,7 @@ def create_pydantic_model_fields(
             continue
         if raw_config.get("type") == "id":
             continue
-        if field_name == "_auth":
+        if field_name == "_auth" or field_name in collection.files:
             continue
 
         annotation = _field_annotation(raw_config)
@@ -128,9 +151,11 @@ def register_fastapi_routes(
     app: FastAPI,
     ctx: RuntimeContext,
     registry: RepositoryRegistry,
+    files: Mapping[str, RecordFiles] | None = None,
 ) -> dict[tuple[str, str], Pipeline]:
+    files = files or {}
     pipelines: dict[tuple[str, str], Pipeline] = {}
-    pipeline_builder = PipelineBuilder(ctx=ctx, registry=registry)
+    pipeline_builder = PipelineBuilder(ctx=ctx, registry=registry, files=files)
 
     for route in ctx.routes:
         pipeline = pipeline_builder.build_for_route(route)
@@ -148,16 +173,31 @@ def register_fastapi_routes(
             if ctx.session.uses_cookie and route.operation == "refresh":
                 body_model = None
 
+        record_files = files.get(route.collection)
+        if (
+            record_files is not None
+            and body_model is not None
+            and route.handler is None
+            and route.operation in _UPLOAD_BODIES
+        ):
+            _add_upload_route(app, ctx, pipeline, route, body_model, record_files)
+            continue
+
         endpoint = _build_endpoint(
             pipeline, body_model, route, uses_cookie=ctx.session.uses_cookie
         )
-        security = _security_requirements(route, ctx.auth)
-        openapi_extra = {"security": security} if security else None
         app.add_api_route(
             route.path,
             endpoint,
             methods=[route.method],
-            openapi_extra=openapi_extra,
+            openapi_extra=_openapi_extra(route, ctx.auth),
+        )
+
+    for file_route in ctx.file_routes:
+        pipeline = pipeline_builder.build_for_file_route(file_route)
+        pipelines[(file_route.method, file_route.path)] = pipeline
+        _FILE_ROUTES[file_route.action](
+            app, ctx, pipeline, file_route, files[file_route.collection]
         )
 
     register_provider_routes(app, ctx, registry, pipeline_builder.tokens)
@@ -171,6 +211,151 @@ def register_fastapi_routes(
     _configure_openapi_security(app, ctx.auth)
 
     return pipelines
+
+
+def _openapi_extra(
+    route: RuntimeRouteDescriptor, auth: RuntimeAuthConfig, **extra: Any
+) -> dict[str, Any] | None:
+    security = _security_requirements(route, auth)
+    return ({"security": security} if security else {}) | extra or None
+
+
+def _path_parameters(path: str) -> list[dict[str, Any]]:
+    return [
+        {"name": token, "in": "path", "required": True, "schema": {"type": "string"}}
+        for token in _PATH_TOKEN.findall(path)
+    ]
+
+
+def _add_upload_route(
+    app: FastAPI,
+    ctx: RuntimeContext,
+    pipeline: Pipeline,
+    route: RuntimeRouteDescriptor,
+    body_model: type[BaseModel],
+    record_files: RecordFiles,
+) -> None:
+    partial = route.operation == "update"
+    read, document = _UPLOAD_BODIES[route.operation]
+    app.add_api_route(
+        route.path,
+        _record_endpoint(
+            pipeline,
+            route.operation,
+            lambda request: RecordBody(request, body_model, partial, read),
+            uses_cookie=ctx.session.uses_cookie,
+        ),
+        methods=[route.method],
+        openapi_extra=_openapi_extra(
+            route,
+            ctx.auth,
+            requestBody=document(record_files, body_model, partial=partial),
+            parameters=_path_parameters(route.path),
+        ),
+    )
+
+
+def _add_download_route(
+    app: FastAPI,
+    ctx: RuntimeContext,
+    pipeline: Pipeline,
+    route: RuntimeFileRouteDescriptor,
+    _: RecordFiles,
+) -> None:
+    app.add_api_route(
+        route.path,
+        _download_endpoint(pipeline, uses_cookie=ctx.session.uses_cookie),
+        methods=[route.method],
+        responses=file_download_responses(),
+        openapi_extra=_openapi_extra(
+            route.source, ctx.auth, parameters=_path_parameters(route.path)
+        ),
+    )
+
+
+def _add_replace_route(
+    app: FastAPI,
+    ctx: RuntimeContext,
+    pipeline: Pipeline,
+    route: RuntimeFileRouteDescriptor,
+    record_files: RecordFiles,
+) -> None:
+    app.add_api_route(
+        route.path,
+        _record_endpoint(
+            pipeline,
+            route.source.operation,
+            RequestBody,
+            uses_cookie=ctx.session.uses_cookie,
+        ),
+        methods=[route.method],
+        openapi_extra=_openapi_extra(
+            route.source,
+            ctx.auth,
+            requestBody=file_upload_body(record_files.fields[route.field], item=route.item),
+            parameters=_path_parameters(route.path),
+        ),
+    )
+
+
+def _add_remove_route(
+    app: FastAPI,
+    ctx: RuntimeContext,
+    pipeline: Pipeline,
+    route: RuntimeFileRouteDescriptor,
+    _: RecordFiles,
+) -> None:
+    app.add_api_route(
+        route.path,
+        _record_endpoint(
+            pipeline,
+            route.source.operation,
+            lambda _request: None,
+            uses_cookie=ctx.session.uses_cookie,
+        ),
+        methods=[route.method],
+        openapi_extra=_openapi_extra(
+            route.source, ctx.auth, parameters=_path_parameters(route.path)
+        ),
+    )
+
+
+_FILE_ROUTES = {
+    "download": _add_download_route,
+    "replace": _add_replace_route,
+    "remove": _add_remove_route,
+}
+
+
+def _record_endpoint(
+    pipeline: Pipeline, operation: str, read: BodyReader, *, uses_cookie: bool
+):
+    async def endpoint(request: Request) -> Any:
+        return await _run_pipeline(
+            pipeline=pipeline,
+            request=request,
+            body=None,
+            url_params={},
+            uses_cookie=uses_cookie,
+            operation=operation,
+            upload=read(request),
+        )
+
+    return endpoint
+
+
+def _download_endpoint(pipeline: Pipeline, *, uses_cookie: bool):
+    async def endpoint(request: Request) -> StreamingResponse:
+        ctx = await _execute(
+            pipeline=pipeline,
+            request=request,
+            body=None,
+            url_params={},
+            uses_cookie=uses_cookie,
+        )
+        return StreamingResponse(ctx.response.chunks, headers=ctx.response.headers)
+
+    return endpoint
 
 
 def _base_prefix(ctx: RuntimeContext) -> str:
@@ -504,14 +689,15 @@ def _build_endpoint(
     return endpoint_with_body
 
 
-async def _run_pipeline(
+async def _execute(
     pipeline: Pipeline,
     request: Request,
     body: dict[str, Any] | None,
     url_params: dict[str, str],
     uses_cookie: bool = False,
     operation: str | None = None,
-) -> Any:
+    upload: RequestBody | None = None,
+) -> RequestContext:
     try:
         path_params = {key: str(value) for key, value in request.path_params.items()}
         path_params.update(url_params)
@@ -540,6 +726,7 @@ async def _run_pipeline(
             principal=pre_resolved_principal,
             query=query,
             cookies=dict(getattr(request, "cookies", {})),
+            upload=upload,
         )
     except UnauthorizedError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
@@ -551,6 +738,21 @@ async def _run_pipeline(
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    except FileError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    return ctx
+
+
+async def _run_pipeline(
+    pipeline: Pipeline,
+    request: Request,
+    body: dict[str, Any] | None,
+    url_params: dict[str, str],
+    uses_cookie: bool = False,
+    operation: str | None = None,
+    upload: RequestBody | None = None,
+) -> Any:
+    ctx = await _execute(pipeline, request, body, url_params, uses_cookie, operation, upload)
     response_payload = jsonable_encoder(ctx.response)
     if not uses_cookie or operation not in {"login", "refresh"}:
         return response_payload

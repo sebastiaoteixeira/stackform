@@ -1,0 +1,21 @@
+version: "0.3"
+api: { basePath: /api }
+datastores:
+  uploads: { type: filesystem, path: ./uploads }
+entities:
+  document:
+    fields:
+      id: { type: id }
+      avatar: { type: file }
+repositories:
+  documents: { entity: document }
+services:
+  notify:
+    handler: tests.support.service_input_handler.notify
+    input:
+      blob: { type: file }
+controllers:
+  notifications:
+    base_path: /notifications
+    routes:
+      notify: { service: notify, method: POST, path: "" }

@@ -1,0 +1,18 @@
+version: "0.3"
+api: { basePath: /api }
+datastores:
+  uploads: { type: filesystem, path: ./uploads }
+entities:
+  document:
+    fields:
+      id: { type: id }
+      tags: { type: array, maxItems: 3, items: { type: string } }
+repositories:
+  documents: { entity: document }
+services:
+  documents: { repository: documents }
+controllers:
+  documents:
+    service: documents
+    base_path: /documents
+    access: public

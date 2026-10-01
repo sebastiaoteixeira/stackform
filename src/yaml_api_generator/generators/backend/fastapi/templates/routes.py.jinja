@@ -17,14 +17,25 @@
 from typing import Any
 
 {% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
-{% set needs_request = custom_routes or repo_op_routes or (crud_routes | selectattr("needs_request") | list) %}
-from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
+{% set needs_request = custom_routes or repo_op_routes or (crud_routes | selectattr("needs_request") | list) or (file_routes | selectattr("action", "equalto", "replace") | list) %}
+from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes or (file_routes | rejectattr("writable") | list) %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
 
 {% if ns_service_input.enabled or ns_where.collections %}
 from dependencies.service_inputs import {% if ns_service_input.enabled %}prepare_service_inputs{% endif %}{% if ns_service_input.enabled and (ns_service_input.access_bind or ns_where.collections) %}, {% endif %}{% if ns_service_input.access_bind or ns_where.collections %}resolve_access_bind{% endif %}
 {% endif %}
 {% if pagination_routes %}
 from dependencies.pagination import build_response, map_request
+{% endif %}
+{% if files %}
+{% if file_routes | selectattr("action", "equalto", "download") | list %}
+from fastapi.responses import StreamingResponse
+from dependencies.multipart import file_download_responses
+{% endif %}
+{% if file_routes | selectattr("action", "equalto", "replace") | list %}
+from dependencies.multipart import file_upload_body
+{% endif %}
+from dependencies.file_requests import RecordUpload, carried_files, discard_on_error, json_request_body, read_json, record_upload, upload_parts, upload_request_body
+from dependencies.file_stores import record_files
 {% endif %}
 
 {% if repo_op_routes and is_mongo %}
@@ -81,8 +92,11 @@ from models._dto import {{ ns_dto.dto_imports | join(", ") }}
 
 
 router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
+{% if files %}
+_files = record_files[{{ collection_name | tojson }}]
+{% endif %}
 
-{% macro openapi_extra(route) %}{% if route.needs_auth and security_schemes %}, openapi_extra={"security": {{ security_schemes }}}{% endif %}{% endmacro %}
+{% macro openapi_extra(route, request_body=none) %}{% set security = route.needs_auth and security_schemes %}{% if security or request_body %}, openapi_extra={{ "{" }}{% if security %}"security": {{ security_schemes }}{% endif %}{% if security and request_body %}, {% endif %}{% if request_body %}"requestBody": {{ request_body }}{% endif %}{{ "}" }}{% endif %}{% endmacro %}
 {% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% endmacro %}
 {% macro svc_dep() %}svc=Depends(get_{{ service_groups | first }}_service){% endmacro %}
 {% macro extra_path_params(route) %}{% for name in route.path_params if name != route.record_id_param %}, {{ name }}: str{% endfor %}{% endmacro %}
@@ -90,6 +104,35 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 {% macro path_values(route) %}{{ "{" }}{% for name in route.path_params %}"{{ name }}": {{ name }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% macro request_param(route) %}{% if route.needs_request %}, request: Request{% endif %}{% endmacro %}
 {% macro where_repo_params(route) %}{% for where_collection in route.where_collections %}, _where_{{ where_collection }}_repo=Depends(get_{{ where_collection }}_repository){% endfor %}{% endmacro %}
+{% macro record_call(route, operation, arguments="") %}svc.{{ operation }}{% if route.record_parent_params %}_by({{ record_criteria(route) }}{% else %}({{ route.record_id_param }}{% endif %}{% if arguments %}, {{ arguments }}{% endif %}){% endmacro %}
+{% macro payload_param(body_model) %}{% if not files %}, payload: {{ body_model }}{% endif %}{% endmacro %}
+{% macro upload_param(route, body_model, partial) %}{% if files %}, upload: RecordUpload = Depends(record_upload(_files, {{ body_model }}, partial={{ partial | py_bool }}{% if route.operation == "replace" %}, read=read_json{% endif %})){% endif %}{% endmacro %}
+{% macro upload_body(body_model, partial) %}{% if files %}upload_request_body(_files, {{ body_model }}, partial={{ partial | py_bool }}){% endif %}{% endmacro %}
+{% macro json_body(body_model) %}{% if files %}json_request_body(_files, {{ body_model }}, partial=False){% endif %}{% endmacro %}
+{# Writes the record, then drops the stored bytes no longer referenced by it #}
+{% macro persist(call, orphans="_files.orphaned(existing, result)") %}
+{% if files %}
+    result = await {{ call }}
+    await _files.discard({{ orphans }})
+    return result
+{% else %}
+    return await {{ call }}
+{% endif %}
+{% endmacro %}
+{% macro download_file(source, field_name, file_id) %}
+    download = _files.download(existing, {{ field_name }}{{ file_id }})
+    return StreamingResponse(download.chunks, headers=download.headers)
+{% endmacro %}
+{% macro replace_file(source, field_name, file_id) %}
+    value, stored = await _files.replace(existing, {{ field_name }}, upload_parts(request){{ file_id }})
+    async with discard_on_error(_files, stored):
+{{ persist(record_call(source, "update", "{" ~ field_name ~ ": value}")) | indent(4, first=True) }}
+{% endmacro %}
+{% macro remove_file(source, field_name, file_id) %}
+    value = _files.remove(existing, {{ field_name }}{{ file_id }})
+{{ persist(record_call(source, "update", "{" ~ field_name ~ ": value}")) }}
+{% endmacro %}
+{% set file_actions = {"download": download_file, "replace": replace_file, "remove": remove_file} %}
 {% macro prepare_inputs(route, paths, body_expr) %}
 {% if route.service_input or route.service_forwarding %}
     try:
@@ -199,6 +242,9 @@ router = APIRouter(tags=["{{ collection_name | capitalize_collection }}"])
 
 {% for route in crud_routes %}
 {% set body_model = route.typed_body_model or route.body_model %}
+{% set partial = route.operation == "update" %}
+{% set body_expr = "upload.payload" if files else 'payload.model_dump(mode="json"' ~ (", exclude_unset=True" if partial else "") ~ ")" %}
+{% set record_expr = "upload.record" if files else body_expr %}
 {% if route.operation == "list" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 {% set list_prefix = (extra_path_params(route) ~ request_param(route) ~ auth_param(route)) | trim(chars=", ") %}
@@ -226,78 +272,41 @@ async def get_{{ collection_name }}({{ route.record_id_param }}: str{{ extra_pat
 {{ request_locals(route, "None") }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch %}
-{% if route.record_parent_params %}
-    existing = await svc.get_by({{ record_criteria(route) }})
-{% else %}
-    existing = await svc.get({{ route.record_id_param }})
-{% endif %}
+    existing = await {{ record_call(route, "get") }}
 {{ post_fetch_guard(route, "existing") }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), "None") }}
     return existing
-{% elif route.record_parent_params %}
-{{ bind_inputs(route) }}
-{{ prepare_inputs(route, path_values(route), "None") }}
-    return await svc.get_by({{ record_criteria(route) }})
 {% else %}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), "None") }}
-    return await svc.get({{ route.record_id_param }})
+    return await {{ record_call(route, "get") }}
 {% endif %}
 
 
 {% elif route.operation == "create" %}
-@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def create_{{ collection_name }}(payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
-{{ request_locals(route, 'payload.model_dump(mode="json")') }}
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route, upload_body(body_model, partial)) }})
+async def create_{{ collection_name }}({{ (payload_param(body_model) ~ extra_path_params(route) ~ request_param(route) ~ auth_param(route) ~ upload_param(route, body_model, partial)) | trim(chars=", ") }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
+{{ request_locals(route, body_expr) }}
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
-{{ prepare_inputs(route, path_values(route), 'payload.model_dump(mode="json")') }}
-    return await svc.create(payload.model_dump(mode="json"))
+{{ prepare_inputs(route, path_values(route), body_expr) }}
+    return await svc.create({{ record_expr }})
 
 
-{% elif route.operation == "update" %}
-@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def update_{{ collection_name }}({{ route.record_id_param }}: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
-{{ request_locals(route, 'payload.model_dump(mode="json", exclude_unset=True)') }}
+{% elif route.operation in ("update", "replace") %}
+{% set record_expr = "{**upload.payload, **carried_files(_files, existing)}" if files and route.operation == "replace" else record_expr %}
+@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route, upload_body(body_model, partial) if partial else json_body(body_model)) }})
+async def {{ route.operation }}_{{ collection_name }}({{ route.record_id_param }}: str{{ payload_param(body_model) }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}{{ upload_param(route, body_model, partial) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
+{{ request_locals(route, body_expr) }}
 {{ pre_fetch_guard(route) }}
-{% if route is needs_post_fetch %}
-{% if route.record_parent_params %}
-    existing = await svc.get_by({{ record_criteria(route) }})
-{% else %}
-    existing = await svc.get({{ route.record_id_param }})
-{% endif %}
+{% if route is needs_post_fetch or files %}
+    existing = await {{ record_call(route, "get") }}
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
 {{ bind_inputs(route) }}
-{{ prepare_inputs(route, path_values(route), 'payload.model_dump(mode="json", exclude_unset=True)') }}
-{% if route.record_parent_params %}
-    return await svc.update_by({{ record_criteria(route) }}, payload.model_dump(mode="json", exclude_unset=True))
-{% else %}
-    return await svc.update({{ route.record_id_param }}, payload.model_dump(mode="json", exclude_unset=True))
-{% endif %}
-
-
-{% elif route.operation == "replace" %}
-@router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
-async def replace_{{ collection_name }}({{ route.record_id_param }}: str, payload: {{ body_model }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
-{{ request_locals(route, 'payload.model_dump(mode="json")') }}
-{{ pre_fetch_guard(route) }}
-{% if route is needs_post_fetch %}
-{% if route.record_parent_params %}
-    existing = await svc.get_by({{ record_criteria(route) }})
-{% else %}
-    existing = await svc.get({{ route.record_id_param }})
-{% endif %}
-{{ post_fetch_guard(route, "existing") }}
-{% endif %}
-{{ bind_inputs(route) }}
-{{ prepare_inputs(route, path_values(route), 'payload.model_dump(mode="json")') }}
-{% if route.record_parent_params %}
-    return await svc.replace_by({{ record_criteria(route) }}, payload.model_dump(mode="json"))
-{% else %}
-    return await svc.replace({{ route.record_id_param }}, payload.model_dump(mode="json"))
-{% endif %}
+{{ prepare_inputs(route, path_values(route), body_expr) }}
+{{ persist(record_call(route, route.operation, record_expr)) }}
 
 
 {% elif route.operation == "delete" %}
@@ -305,24 +314,34 @@ async def replace_{{ collection_name }}({{ route.record_id_param }}: str, payloa
 async def delete_{{ collection_name }}({{ route.record_id_param }}: str{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
 {{ request_locals(route, "None") }}
 {{ pre_fetch_guard(route) }}
-{% if route is needs_post_fetch %}
-{% if route.record_parent_params %}
-    existing = await svc.get_by({{ record_criteria(route) }})
-{% else %}
-    existing = await svc.get({{ route.record_id_param }})
-{% endif %}
+{% if route is needs_post_fetch or files %}
+    existing = await {{ record_call(route, "get") }}
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), "None") }}
-{% if route.record_parent_params %}
-    return await svc.delete_by({{ record_criteria(route) }})
+{{ persist(record_call(route, "delete"), "_files.attached(existing)") }}
+
+
+{% endif %}
+{% endfor %}
+{% for file_route in file_routes %}
+{% set source = file_route.source %}
+{% set field_name = file_route.field.name | tojson %}
+{% set file_id = ", fileId" if file_route.item else "" %}
+@router.{{ file_route.method | lower }}("{{ file_route.relative_path }}"{{ openapi_extra(source, none if file_route.action != "replace" else "file_upload_body(_files.fields[" ~ field_name ~ "], item=" ~ (file_route.item | py_bool) ~ ")") }}{% if file_route.action == "download" %}, responses=file_download_responses(){% endif %})
+async def {{ file_route.handler_name }}({{ source.record_id_param }}: str{{ extra_path_params(source) }}{% if file_route.item %}, fileId: str{% endif %}{% if file_route.action == "replace" or source.needs_request %}, request: Request{% endif %}{{ auth_param(source) }}, {{ svc_dep() }}{{ where_repo_params(source) }}) -> Any:
+{% if not file_route.writable %}
+    raise HTTPException(status_code=403, detail="Forbidden")
 {% else %}
-    return await svc.delete({{ route.record_id_param }})
+{{ request_locals(source, "None") }}
+{{ pre_fetch_guard(source) }}
+    existing = await {{ record_call(source, "get") }}
+{{ post_fetch_guard(source, "existing") }}
+{{ file_actions[file_route.action](source, field_name, file_id) }}
 {% endif %}
 
 
-{% endif %}
 {% endfor %}
 {% for route in custom_routes %}
 {% set handler_name = route.operation ~ "_" ~ collection_name %}
