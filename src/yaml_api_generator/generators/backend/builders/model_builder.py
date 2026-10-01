@@ -3,6 +3,7 @@
 Converts IR collections into Pydantic model descriptors with field validation.
 """
 
+from collections.abc import Collection
 from typing import Any
 
 from yaml_api_generator.ir import CRUD_OPERATIONS, IRCollection, IRDto, IRIdentityCollection, IRRepository
@@ -40,7 +41,7 @@ class ModelBuilder:
             for op in WRITE_OPERATIONS:
                 if op not in enabled_ops:
                     continue
-                fields = self.build_fields(col, op, identity)
+                fields = self.build_fields(col, op, identity, excluded=col.files.keys())
                 model_name = self._model_name(name, op)
                 models.append(
                     ModelDescriptor(
@@ -69,6 +70,7 @@ class ModelBuilder:
         col: IRCollection,
         operation: str,
         identity: IRIdentityCollection | None,
+        excluded: Collection[str] = (),
     ) -> list[FieldDescriptor]:
         """Build field descriptors for a model.
 
@@ -76,6 +78,7 @@ class ModelBuilder:
             col: Collection IR object
             operation: Operation name (create, update, replace)
             identity: Identity collection IR object if collection is auth
+            excluded: Field names kept out of the model (file fields travel outside the JSON payload)
 
         Returns:
             List of field descriptors
@@ -88,7 +91,7 @@ class ModelBuilder:
                 continue
             if raw_config.get("type") == "id":
                 continue
-            if field_name == "_auth":
+            if field_name == "_auth" or field_name in excluded:
                 continue
             if raw_config.get("readonly", False):
                 continue

@@ -37,7 +37,7 @@ def _build_field_schemas(
             continue
         if raw_config.get("type") == "id":
             continue
-        if field_name == "_auth":
+        if field_name == "_auth" or field_name in collection.files:
             continue
 
         required = not make_optional and bool(raw_config.get("required", False))
@@ -193,7 +193,7 @@ def ValidateBodyStep(
     else:
         field_schemas = _build_field_schemas(collection, operation, identity_collection)
 
-    known_fields = {s.name for s in field_schemas}
+    known_fields = {s.name for s in field_schemas} | set(collection.files)
     schema_by_name = {s.name: s for s in field_schemas}
 
     def step(ctx: RequestContext) -> RequestContext:

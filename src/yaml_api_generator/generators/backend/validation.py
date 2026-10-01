@@ -9,6 +9,7 @@ from yaml_api_generator.generators.backend.compile_context import (
     CompileContext,
     RouteDescriptor,
 )
+from yaml_api_generator.parsers.transformers import file_validation
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
 
@@ -73,6 +74,14 @@ def reject_idp_trust(context: CompileContext, backend: str) -> None:
     ]
     if errors:
         raise ConfigErrors(errors)
+
+
+def reject_file_fields(context: CompileContext, backend: str) -> None:
+    """Reject file fields on backends that implement no file datastore."""
+    file_validation.reject_file_fields(
+        {name: collection["fields"] for name, collection in context.collections.items()},
+        backend,
+    )
 
 
 def reject_session_refresh(context: CompileContext, backend: str) -> None:

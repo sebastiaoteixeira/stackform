@@ -1,0 +1,49 @@
+version: "0.3"
+api:
+  basePath: /api
+  version: v1
+  files:
+    maxSize: 20MB
+    types: [application/pdf]
+    maxFiles: 4
+  operations:
+    defaults:
+      list: true
+      get: true
+      create: true
+      update: true
+      replace: false
+      delete: true
+datastores:
+  main: { type: mongodb, default: true }
+  uploads:
+    type: filesystem
+    path: ./uploads
+    files:
+      maxSize: 5MB
+      types: [image/png, IMAGE/JPEG]
+entities:
+  document:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      avatar: { type: file, maxSize: 1.5KB }
+      attachments:
+        type: array
+        maxItems: 3
+        items: { type: file, disposition: inline }
+      scans:
+        type: array
+        items: { type: file, types: [application/pdf] }
+      contract: { type: file, readonly: true, required: true }
+repositories:
+  documents:
+    entity: document
+services:
+  documents:
+    repository: documents
+controllers:
+  documents:
+    service: documents
+    base_path: /documents
+    access: public

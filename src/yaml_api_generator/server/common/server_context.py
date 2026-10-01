@@ -1,8 +1,10 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from yaml_api_generator.ir import (
     IRDocumentBinding,
+    IRFileField,
     IRIdentityBinding,
     IRProviderBinding,
     IRRequestBinding,
@@ -20,6 +22,7 @@ class RuntimeCollectionDescriptor:
     id_format: str
     fields: dict[str, Any]
     datastore: str | None = None
+    files: Mapping[str, IRFileField] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -77,6 +80,17 @@ class RuntimeRouteDescriptor:
 
 
 @dataclass(frozen=True)
+class RuntimeFileRouteDescriptor:
+    action: str
+    method: str
+    path: str
+    collection: str
+    field: str
+    item: bool
+    source: RuntimeRouteDescriptor
+
+
+@dataclass(frozen=True)
 class RuntimeAuthConfig:
     enabled: bool
     identity_collections: dict[str, RuntimeIdentityDescriptor]
@@ -119,3 +133,4 @@ class RuntimeContext:
     operations: dict[str, dict[str, RuntimeOperationDescriptor]] = field(default_factory=dict)
     spec_version: str = "0.2"
     session: RuntimeSessionConfig = field(default_factory=RuntimeSessionConfig)
+    file_routes: tuple[RuntimeFileRouteDescriptor, ...] = ()

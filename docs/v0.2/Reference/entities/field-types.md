@@ -295,6 +295,10 @@ the datastore.
 | `type: id` with invalid `format` | `ID_FORMAT_INVALID` | "id field format must be uuidv7 or uuidv4" |
 | `pk:` naming a field not in the entity | `PK_FIELD_NOT_FOUND` | "pk field '<name>' not found in entity '<entity>'" |
 
+## File fields (v0.3)
+
+Spec version 0.3 adds `type: file` for uploaded files, stored in a file datastore. It is not available in v0.2 specs. See [File fields](../../../v0.3/file-fields.md).
+
 ## See Also
 
 - [Entities overview](./overview.md)

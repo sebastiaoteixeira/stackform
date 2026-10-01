@@ -3,7 +3,8 @@
 Validates CRUD operations, query commands, and operation definitions.
 """
 
-from typing import Any, Callable
+from collections.abc import Callable, Collection
+from typing import Any
 
 from yaml_api_generator.ir import CRUD_OPERATIONS, IROperation, IRRepository
 from yaml_api_generator.parsers.yaml_parser import ConfigError
@@ -51,6 +52,7 @@ class RepositoryTransformer:
         default_datastore: str = "default",
         datastore_types: dict[str, str] | None = None,
         handler_resolver: Callable[[str | None], str | None] = _identity_handler,
+        file_datastore_names: Collection[str] = frozenset(),
     ) -> tuple[dict[str, IRRepository], list[ConfigError]]:
         """Transform repository configurations to IR.
 
@@ -77,7 +79,7 @@ class RepositoryTransformer:
                 datastore = repo_cfg.get("datastore") or default_datastore
             else:
                 datastore, binding_error = resolve_binding(
-                    repo_name, repo_cfg, datastore_names, default_datastore
+                    repo_name, repo_cfg, datastore_names, default_datastore, file_datastore_names
                 )
                 if binding_error is not None:
                     errors.append(binding_error)

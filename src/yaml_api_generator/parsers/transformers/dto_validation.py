@@ -9,10 +9,12 @@ the spec forbids:
   ``format``.
 - DTO_NOT_FOUND: a DTO field references a type that is neither a declared entity
   nor a declared DTO.
+- FILE_FIELD_CONTEXT_INVALID: a DTO field is, or contains, a ``type: file`` node.
 """
 
 from typing import Any
 
+from yaml_api_generator.parsers.transformers.file_validation import file_context_errors
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
 _FORBIDDEN_ATTRS = ("unique", "format")
@@ -29,6 +31,7 @@ def validate_spec_dtos(spec: dict[str, Any]) -> list[ConfigError]:
             if not isinstance(field, dict):
                 continue
             base = f"dto.{dto_name}.fields.{field_name}"
+            errors.extend(file_context_errors(field, base, "DTOs"))
             if field.get("type") == "id":
                 errors.append(_forbidden("type: id", base))
             for attr in _FORBIDDEN_ATTRS:

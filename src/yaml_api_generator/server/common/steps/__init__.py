@@ -1,8 +1,19 @@
-from typing import Awaitable, Callable
+from inspect import isawaitable
+from typing import Awaitable, Callable, Sequence
 
 from ..request_context import RequestContext
 
 Step = Callable[[RequestContext], RequestContext | Awaitable[RequestContext]]
+
+
+def chain(steps: Sequence[Step]) -> Step:
+    async def step(ctx: RequestContext) -> RequestContext:
+        for current in steps:
+            result = current(ctx)
+            ctx = await result if isawaitable(result) else result
+        return ctx
+
+    return step
 
 
 class NotFoundError(ValueError):

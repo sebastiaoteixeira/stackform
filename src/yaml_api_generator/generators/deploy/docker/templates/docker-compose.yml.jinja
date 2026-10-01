@@ -20,6 +20,12 @@ services:
       - "${APP_PORT:-{{ ctx.port }}}:{{ ctx.port }}"
     env_file:
       - .env
+    {% if ctx.app_volumes %}
+    volumes:
+      {% for vol in ctx.app_volumes %}
+      - {{ vol.name }}:{{ vol.path }}
+      {% endfor %}
+    {% endif %}
     restart: unless-stopped
     {% set local_datastores = ctx.datastores | selectattr("local") | list %}
     {% if local_datastores %}
@@ -32,6 +38,9 @@ services:
   {% for ds in local_datastores %}
   {{ ds.service }}:
     image: {{ ds.image }}
+    {% if ds.command %}
+    command: {{ ds.command }}
+    {% endif %}
     {% if ds.service_env %}
     environment:
       {% for key, value in ds.service_env.items() %}
@@ -71,7 +80,7 @@ services:
 {% endif %}
 {% endfor %}
 {% endfor %}
-{% set datastore_volumes = local_datastores | selectattr("volume") | map(attribute="volume") | list %}
+{% set datastore_volumes = (local_datastores | selectattr("volume") | map(attribute="volume") | list) + (ctx.app_volumes | map(attribute="name") | list) %}
 {% if datastore_volumes or extra_volumes %}
 volumes:
   {% for vol in datastore_volumes %}

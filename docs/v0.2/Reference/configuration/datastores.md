@@ -29,6 +29,8 @@ Each entry is keyed by a datastore name you choose, and has a `type`.
 
 Type: string. Required. One of `mongodb` or `postgres`.
 
+Spec version 0.3 adds file datastores (`filesystem` and `s3`) that hold uploaded file bytes. See [File datastores](../../../v0.3/file-datastores.md).
+
 ### `default`
 
 Type: boolean. Optional.

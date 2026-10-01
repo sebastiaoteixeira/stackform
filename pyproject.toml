@@ -26,6 +26,10 @@ dependencies = [
   "alembic>=1.18.4",
   "psycopg[binary]>=3.3.4",
   "packaging",
+  "python-multipart>=0.0.32",
+  "puremagic>=1.30",
+  "aiobotocore>=3.9.1",
+  "anyio>=4.13.0",
 ]
 
 [project.optional-dependencies]

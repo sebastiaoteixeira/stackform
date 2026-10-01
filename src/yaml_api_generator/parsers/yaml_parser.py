@@ -231,6 +231,11 @@ def load_and_generate_ir(
         if constraint_errors:
             raise ConfigErrors(constraint_errors)
 
+        from .transformers.file_validation import validate_spec_files
+        file_errors = validate_spec_files(resolved)
+        if file_errors:
+            raise ConfigErrors(file_errors)
+
         from .transformers.dto_validation import validate_spec_dtos
         dto_errors = validate_spec_dtos(resolved)
         if dto_errors:

@@ -11,7 +11,9 @@ from .builders.settings_builder import build_settings_fields, generated_secret_v
 from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 
-_RUNTIME_MODULES = frozenset({"dpop", "pagination"})
+_RUNTIME_MODULES = frozenset(
+    {"dpop", "pagination", "files", "multipart", "file_requests", "filesystem_store", "s3_store"}
+)
 
 
 def runtime_module_source(name: str) -> str:

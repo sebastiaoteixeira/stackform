@@ -191,6 +191,13 @@ def _parse_sort(
                 path=f"{path}[{index}].field",
             ))
             continue
+        if collection is not None and field in collection.files:
+            errors.append(ConfigError(
+                code="FILE_FIELD_NOT_COMPARABLE",
+                message=f"file field '{field}' cannot be a sort key",
+                path=f"{path}[{index}].field",
+            ))
+            continue
         keys.append(IRSortKey(field=field, dir=direction))
     return tuple(keys), errors
 

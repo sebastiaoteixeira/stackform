@@ -18,7 +18,7 @@ def sql_column(name: str, cfg: dict[str, Any], id_field: str) -> str:
 
 
 def _column_type(cfg: dict[str, Any], field_type: str) -> str:
-    if field_type in ("array", "object"):
+    if field_type in ("array", "object", "file"):
         return "sa.JSON()"
     if field_type == "number":
         return "sa.Numeric()"

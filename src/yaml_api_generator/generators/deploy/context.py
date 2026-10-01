@@ -11,6 +11,13 @@ class DeployDatastore:
     service_env: dict[str, str]
     volume: str | None
     volume_path: str | None
+    command: str | None = None
+
+
+@dataclass(frozen=True)
+class DeployVolume:
+    name: str
+    path: str
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,7 @@ class DockerDeployContext(DeployContext):
     include: tuple[str, ...] = field(default_factory=tuple)
     app_environment: tuple[str, ...] = field(default_factory=tuple)
     secret_env_names: tuple[str, ...] = field(default_factory=tuple)
+    app_volumes: tuple[DeployVolume, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

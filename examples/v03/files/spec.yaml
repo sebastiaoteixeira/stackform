@@ -1,0 +1,119 @@
+version: "0.3"
+
+api:
+  name: v03-files
+  basePath: /api
+  files:
+    maxSize: 3KB
+    maxFiles: 5
+
+providers:
+  identity:
+    type: oidc
+    trust: idp
+    client_id: files-demo
+    discovery_url: ${OIDC_DISCOVERY_URL:-http://localhost:8080/realms/files/.well-known/openid-configuration}
+
+mongo:
+  uri: ${MONGO_URI:-mongodb://localhost:27017}
+  database: ${MONGO_DB:-yaml_v03_files}
+
+datastores:
+  disk:
+    type: filesystem
+    path: ${FILES_DIR:-./data/uploads}
+    default: true
+    files:
+      maxSize: 2KB
+  media:
+    type: s3
+    bucket: ${S3_BUCKET:-files-demo}
+    endpoint: ${S3_ENDPOINT:-http://localhost:9000}
+    region: us-east-1
+    accessKey: ${S3_ACCESS_KEY:-minioadmin}
+    secretKey: ${S3_SECRET_KEY:-minioadmin}
+
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      roles: role
+      via:
+        - provider: identity
+          identifier: email
+          claim_mapping:
+            email: email
+            role: role
+          auto_provision: true
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      role: { type: enum, values: [editor, reader], default: reader }
+  document:
+    fields:
+      id: { type: id, format: uuidv4 }
+      ownerId: { type: string, required: true }
+      title: { type: string, required: true }
+      cover: { type: file, required: true, maxSize: 1KB, types: [image/png, image/jpeg], disposition: inline }
+      scan: { type: file, types: [application/pdf] }
+      attachments:
+        type: array
+        maxItems: 2
+        items: { type: file, types: [application/pdf] }
+  asset:
+    fields:
+      id: { type: id, format: uuidv4 }
+      label: { type: string }
+      blob: { type: file, required: true }
+
+repositories:
+  users: { entity: user }
+  documents: { entity: document }
+  assets: { entity: asset, files: media }
+
+services:
+  documents: { repository: documents }
+  assets: { repository: assets }
+
+controllers:
+  documents:
+    base_path: /documents
+    routes:
+      create: { service: documents, method: POST, path: "", access: "user:editor" }
+      get:
+        service: documents
+        method: GET
+        path: /{id}
+        access:
+          - given: { principal: "identity:user", document: documents }
+            when: document.ownerId equals principal.sub
+          - then: deny
+            reason: Only the owner may read the document.
+      update:
+        service: documents
+        method: PATCH
+        path: /{id}
+        access:
+          - given: { principal: "identity:user", document: documents }
+            role: editor
+            when: document.ownerId equals principal.sub
+          - then: deny
+            reason: Only an editor who owns the document may change it.
+      delete:
+        service: documents
+        method: DELETE
+        path: /{id}
+        access:
+          - given: { principal: "identity:user", document: documents }
+            role: editor
+            when: document.ownerId equals principal.sub
+          - then: deny
+            reason: Only an editor who owns the document may delete it.
+  assets:
+    base_path: /assets
+    routes:
+      create: { service: assets, method: POST, path: "", access: public }
+      get: { service: assets, method: GET, path: "/{id}", access: public }
+      update: { service: assets, method: PATCH, path: "/{id}", access: "user:editor" }
+      delete: { service: assets, method: DELETE, path: "/{id}", access: "user:editor" }

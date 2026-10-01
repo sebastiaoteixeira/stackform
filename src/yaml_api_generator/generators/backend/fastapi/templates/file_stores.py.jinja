@@ -1,0 +1,37 @@
+from settings import settings
+
+from .files import FileField, FileLimits, RecordFiles
+{% for store in ctx.file_stores.values() | unique(attribute="runtime_module") %}
+from .{{ store.runtime_module }} import {{ store.store_class }}
+{% endfor %}
+
+
+file_stores = {
+{% for name, store in ctx.file_stores.items() %}
+    {{ name | tojson }}: {{ store.constructor }},
+{% endfor %}
+}
+
+record_files = {
+{% for collection, fields in ctx.file_fields.items() %}
+    {{ collection | tojson }}: RecordFiles(
+        {{ collection | tojson }},
+        {
+{% for name, field in fields.items() %}
+            {{ name | tojson }}: {{ field | py_constructor }},
+{% endfor %}
+        },
+        file_stores,
+    ),
+{% endfor %}
+}
+
+
+async def open_file_stores() -> None:
+    for store in file_stores.values():
+        await store.open()
+
+
+async def close_file_stores() -> None:
+    for store in file_stores.values():
+        await store.close()

@@ -1,0 +1,53 @@
+version: "0.3"
+api:
+  basePath: /api
+datastores:
+  records: { type: postgres, dsn: "postgresql+asyncpg://localhost/app" }
+  media:
+    type: s3
+    bucket: app-media
+    endpoint: http://minio:9000
+    region: eu-west-1
+    accessKey: minio
+    secretKey: minio-secret
+    prefix: media/
+    default: true
+  archive: { type: filesystem, path: /var/archive }
+entities:
+  photo:
+    fields:
+      id: { type: id }
+      image: { type: file, maxSize: 2GB }
+  report:
+    fields:
+      id: { type: id }
+      pdf: { type: file, types: [application/pdf] }
+  tag:
+    fields:
+      id: { type: id }
+      label: { type: string }
+repositories:
+  photos: { entity: photo }
+  reports: { entity: report, files: archive }
+  tags: { entity: tag }
+services:
+  photos: { repository: photos }
+  reports: { repository: reports }
+  tags: { repository: tags }
+controllers:
+  photos:
+    service: photos
+    base_path: /photos
+    access: public
+    operations:
+      get: {}
+  reports:
+    service: reports
+    base_path: /reports
+    access: public
+    operations:
+      update: {}
+  tags:
+    service: tags
+    base_path: /tags
+    access: public

@@ -13,12 +13,16 @@ Key types:
 """
 
 import re
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
-from ...ir.api import IRPagination, IRProvider, IRRolesConfig, IRService
+from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
+from ...utils.strings import to_py_identifier
+
+FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,95 @@ class SettingField:
     default: str | None
     secret: bool = False
     generator: Callable[[], str] | None = None
+
+
+@dataclass(frozen=True)
+class FileStoreDescriptor(ABC):
+    """A file datastore as the generated app builds it from its settings."""
+
+    name: str
+
+    runtime_module: ClassVar[str]
+    store_class: ClassVar[str]
+    requirements: ClassVar[tuple[str, ...]] = ()
+
+    def env_name(self, key: str) -> str:
+        return f"FILES_{to_py_identifier(self.name).upper()}_{key}"
+
+    @property
+    @abstractmethod
+    def settings(self) -> tuple[SettingField, ...]: ...
+
+    @property
+    @abstractmethod
+    def arguments(self) -> tuple[str, ...]: ...
+
+    @property
+    def constructor(self) -> str:
+        return f"{self.store_class}({', '.join(self.arguments)})"
+
+
+@dataclass(frozen=True)
+class FilesystemStoreDescriptor(FileStoreDescriptor):
+    path: str = ""
+
+    runtime_module = "filesystem_store"
+    store_class = "FilesystemStore"
+
+    @property
+    def settings(self) -> tuple[SettingField, ...]:
+        return (SettingField(self.env_name("PATH"), "str", self.path),)
+
+    @property
+    def arguments(self) -> tuple[str, ...]:
+        return (f"settings.{self.env_name('PATH')}",)
+
+
+@dataclass(frozen=True)
+class S3StoreDescriptor(FileStoreDescriptor):
+    bucket: str = ""
+    endpoint: str | None = None
+    region: str | None = None
+    access_key: str | None = None
+    secret_key: str | None = None
+    prefix: str = ""
+    local: bool = False
+
+    runtime_module = "s3_store"
+    store_class = "S3Store"
+    requirements = ("aiobotocore",)
+
+    @property
+    def settings(self) -> tuple[SettingField, ...]:
+        return (
+            SettingField(self.env_name("BUCKET"), "str", self.bucket),
+            SettingField(self.env_name("ENDPOINT"), "str", self.endpoint or ""),
+            SettingField(self.env_name("REGION"), "str", self.region or ""),
+            SettingField(self.env_name("PREFIX"), "str", self.prefix),
+            self._credential("ACCESS_KEY", self.access_key),
+            self._credential("SECRET_KEY", self.secret_key),
+            SettingField(self.env_name("CREATE_BUCKET"), "bool", str(self.local)),
+        )
+
+    @property
+    def arguments(self) -> tuple[str, ...]:
+        value = lambda key: f"settings.{self.env_name(key)}"
+        secret = lambda key: f"{value(key)}.get_secret_value() or None"
+        return (
+            value("BUCKET"),
+            f"endpoint={value('ENDPOINT')} or None",
+            f"region={value('REGION')} or None",
+            f"access_key={secret('ACCESS_KEY')}",
+            f"secret_key={secret('SECRET_KEY')}",
+            f"prefix={value('PREFIX')}",
+            f"create_bucket={value('CREATE_BUCKET')}",
+        )
+
+    def _credential(self, key: str, value: str | None) -> SettingField:
+        """Credentials stay out of settings.py: only the generated env file carries the spec value."""
+        return SettingField(
+            self.env_name(key), "str", None, secret=True, generator=lambda: value or ""
+        )
 
 
 @dataclass(frozen=True)
@@ -197,6 +290,25 @@ class RouteDescriptor:
 
 
 @dataclass(frozen=True)
+class FileRouteDescriptor:
+    """A derived file endpoint; `source` is the record route whose access it reuses."""
+
+    action: str
+    method: str
+    relative_path: str
+    collection: str
+    field: IRFileField
+    item: bool
+    source: RouteDescriptor
+    writable: bool = True
+
+    @property
+    def handler_name(self) -> str:
+        suffix = "_item" if self.item else ""
+        return f"{self.action}_{self.collection}_{to_py_identifier(self.field.name)}{suffix}"
+
+
+@dataclass(frozen=True)
 class IdentityCollectionDescriptor:
     name: str
     bindings: list[ProviderBindingDescriptor]
@@ -317,6 +429,25 @@ class CompileContext:
     vendored_requirements: tuple[str, ...] = ()
     sql_schema_managed: bool = False
     mongo_schema_managed: bool = False
+    # File datastores referenced by at least one collection with file fields.
+    file_stores: dict[str, FileStoreDescriptor] = field(default_factory=dict)
+    # Collection name -> its file fields, only for collections that have any.
+    file_fields: dict[str, dict[str, IRFileField]] = field(default_factory=dict)
+    file_routes: list[FileRouteDescriptor] = field(default_factory=list)
+
+    @property
+    def has_files(self) -> bool:
+        return bool(self.file_fields)
+
+    @property
+    def file_requirements(self) -> tuple[str, ...]:
+        store_requirements = (req for store in self.file_stores.values() for req in store.requirements)
+        return tuple(dict.fromkeys((*FILE_REQUIREMENTS, *store_requirements))) if self.has_files else ()
+
+    @property
+    def file_runtime_modules(self) -> tuple[str, ...]:
+        store_modules = (store.runtime_module for store in self.file_stores.values())
+        return tuple(dict.fromkeys(("files", "multipart", "file_requests", *store_modules))) if self.has_files else ()
 
     @property
     def datastore_types(self) -> set[str]:

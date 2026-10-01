@@ -12,6 +12,7 @@ states which generated backends implement them.
 | `secure-session` | RS256 app sessions, rotating refresh tokens, and BFF cookie delivery | `run` except refresh routes, FastAPI |
 | `oidc-pkce-dpop` | OIDC authorization-code login with PKCE and DPoP | `run`, FastAPI |
 | `mongo-migrations` | Native MongoDB migration lifecycle and unique-index graduation | `run`, FastAPI, DRF, raw ASGI |
+| `files` | Filesystem and S3 file datastores, `file` fields, limit precedence, and owner-only downloads | `run`, FastAPI |
 
 Validate any example without contacting its datastore:
 

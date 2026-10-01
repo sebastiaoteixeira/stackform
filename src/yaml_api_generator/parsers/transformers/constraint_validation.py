@@ -11,6 +11,7 @@ every input. These checks run on the pre-desugar spec, mirroring
 
 from typing import Any
 
+from yaml_api_generator.parsers.transformers.file_validation import file_config
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
 # Constraints only meaningful for a given field type. min/max belong to numbers;
@@ -19,6 +20,10 @@ from yaml_api_generator.parsers.yaml_parser import ConfigError
 _NUMERIC_ONLY = ("min", "max")
 _STRING_ONLY = ("minLength", "maxLength")
 _FORMAT_TYPES = ("string", "id")
+# File limits apply to file nodes; a file's record value is upload metadata, so
+# it can be neither unique nor defaulted.
+_FILE_ONLY = ("maxSize", "types", "disposition")
+_FILE_FORBIDDEN = ("unique", "default")
 
 
 def _error(message: str, path: str, hint: str) -> ConfigError:
@@ -82,6 +87,26 @@ def _check_field(field: dict[str, Any], path: str, errors: list[ConfigError]) ->
         errors.append(_error(
             f"format is only valid on string or id fields, not '{field_type}'", path,
             "Remove format or change the field type",
+        ))
+
+    if field_type != "file":
+        for key in _FILE_ONLY:
+            if field.get(key) is not None:
+                errors.append(_error(
+                    f"{key} is only valid on file fields, not '{field_type}'", path,
+                    "Remove the constraint or change the field type to file",
+                ))
+    else:
+        for key in _FILE_FORBIDDEN:
+            if key in field:
+                errors.append(_error(
+                    f"{key} is not valid on file fields", path,
+                    f"Remove {key} from the file field",
+                ))
+    if field.get("maxItems") is not None and (field_type == "file" or file_config(field) is None):
+        errors.append(_error(
+            "maxItems is only valid on arrays of files", path,
+            "Remove maxItems or declare the field as an array of files",
         ))
 
     if field_type == "enum":

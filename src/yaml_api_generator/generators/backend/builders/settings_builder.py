@@ -65,6 +65,9 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
         )
         add(SettingField("DATABASE_URL", "str", postgres_dsn))
 
+    for setting in (f for store in ctx.file_stores.values() for f in store.settings):
+        add(setting)
+
     if ctx.auth.enabled:
         add(SettingField("PASSWORD_HASH_ROUNDS", "int", "390000"))
 

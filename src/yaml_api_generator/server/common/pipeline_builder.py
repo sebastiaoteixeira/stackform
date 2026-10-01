@@ -1,9 +1,10 @@
 import importlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 
 from yaml_api_generator.ir import IRDocumentBinding
 from .auth.session_tokens import SessionTokens
-from .server_context import RuntimeContext, RuntimeRouteDescriptor
+from yaml_api_generator.runtime.files import RecordFiles
+from .server_context import RuntimeContext, RuntimeFileRouteDescriptor, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
 from .steps import (
@@ -26,6 +27,15 @@ from .steps import (
     Step,
     ValidateBodyStep,
     ValidateIdentityCreateStep,
+    chain,
+)
+from .steps.files import (
+    DiscardFilesStep,
+    DownloadFileStep,
+    FileWriteStep,
+    ingest_upload,
+    remove_file,
+    replace_file,
 )
 from .steps.repositories import RecordLocator, record_locator
 
@@ -43,6 +53,14 @@ def _has_access_bind(route: RuntimeRouteDescriptor) -> bool:
 
 
 _CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
+_FILE_WRITE_OPS = frozenset({"create", "update", "replace"})
+_FETCH_FIRST_OPS = frozenset({"update", "replace", "delete"})
+
+_FILE_STEPS = {
+    "download": lambda files, field, _write: DownloadFileStep(files, field),
+    "replace": lambda files, field, write: FileWriteStep(files, replace_file(field), write),
+    "remove": lambda files, field, write: FileWriteStep(files, remove_file(field), write),
+}
 
 
 def _import_handler(dotted_path: str) -> Step:
@@ -55,9 +73,15 @@ def _import_handler(dotted_path: str) -> Step:
 
 
 class PipelineBuilder:
-    def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry) -> None:
+    def __init__(
+        self,
+        ctx: RuntimeContext,
+        registry: RepositoryRegistry,
+        files: Mapping[str, RecordFiles] | None = None,
+    ) -> None:
         self._ctx = ctx
         self._registry = registry
+        self._files = files or {}
         self._tokens = SessionTokens(ctx.session)
         for name, col in ctx.collections.items():
             registry.for_collection(name).register_id_field(name, col.id_field)
@@ -119,64 +143,83 @@ class PipelineBuilder:
                 repositories=self._registry,
             )
 
-        steps = self._base_steps(route)
-        service_input_step = self._service_input_step(route)
-        if service_input_step is not None:
-            steps.append(service_input_step)
-        identity_step = self._identity_step(route)
-        if identity_step is not None:
-            steps.append(identity_step)
-        if route.operation in _CRUD_OPS:
-            steps.append(self._validate_body_step(route))
+        steps = self._base_steps(route) + self._write_steps(route)
+        record_files = self._files.get(route.collection)
+        if record_files is not None and route.operation == "delete":
+            steps.append(DiscardFilesStep(record_files))
+        return self._pipeline(route, steps)
 
-        post_fetch_step = self._post_fetch_authorize_step(route)
-        if post_fetch_step is not None and route.operation in (
-            "update",
-            "replace",
-            "delete",
-        ):
-            steps.append(
-                RepositoryGetStep(
-                    route.collection,
-                    self._ctx.collections[route.collection].id_field,
-                    self._locator(route),
-                )
-            )
-            steps.append(post_fetch_step)
-            steps.append(self._repository_step(route))
-        else:
-            steps.append(self._repository_step(route))
-            if post_fetch_step is not None:
-                steps.append(post_fetch_step)
-
-        return Pipeline(
-            steps=steps,
-            method=route.method,
+    def build_for_file_route(self, route: RuntimeFileRouteDescriptor) -> Pipeline:
+        source = route.source
+        record_files = self._files[route.collection]
+        file_step = _FILE_STEPS[route.action](
+            record_files, route.field, chain([self._repository_step(source)])
+        )
+        return self._pipeline(
+            source,
+            [*self._base_steps(source), *self._fetch_steps(source), file_step],
             path=route.path,
-            api_version=self._ctx.app.api_version,
-            collection=route.collection,
-            operation=route.operation,
-            repository=repository,
-            repositories=self._registry,
         )
 
-    def _build_handler_pipeline(self, route: RuntimeRouteDescriptor) -> Pipeline:
-        steps: list[Step] = self._base_steps(route)
-        service_input_step = self._service_input_step(route)
-        if service_input_step is not None:
-            steps.append(service_input_step)
-        handler_step = _import_handler(route.handler)
-        steps.append(handler_step)
+    def _pipeline(
+        self, route: RuntimeRouteDescriptor, steps: list[Step], path: str | None = None
+    ) -> Pipeline:
         return Pipeline(
             steps=steps,
             method=route.method,
-            path=route.path,
+            path=path or route.path,
             api_version=self._ctx.app.api_version,
             collection=route.collection,
             operation=route.operation,
             repository=self._registry.for_collection(route.collection),
             repositories=self._registry,
         )
+
+    def _write_steps(self, route: RuntimeRouteDescriptor) -> list[Step]:
+        body_steps = [
+            step
+            for step in (
+                self._service_input_step(route),
+                self._identity_step(route),
+                self._validate_body_step(route) if route.operation in _CRUD_OPS else None,
+            )
+            if step is not None
+        ]
+        record_files = self._files.get(route.collection)
+        if record_files is not None and route.operation in _FILE_WRITE_OPS:
+            fetch_steps = self._fetch_steps(route) if route.operation != "create" else []
+            write = FileWriteStep(
+                record_files,
+                ingest_upload,
+                chain([*body_steps, self._repository_step(route)]),
+            )
+            return [*fetch_steps, write]
+
+        post_fetch_step = self._post_fetch_authorize_step(route)
+        if post_fetch_step is not None and route.operation in _FETCH_FIRST_OPS:
+            return [*body_steps, *self._fetch_steps(route), self._repository_step(route)]
+        return [
+            *body_steps,
+            self._repository_step(route),
+            *([post_fetch_step] if post_fetch_step is not None else []),
+        ]
+
+    def _fetch_steps(self, route: RuntimeRouteDescriptor) -> list[Step]:
+        post_fetch_step = self._post_fetch_authorize_step(route)
+        fetch = RepositoryGetStep(
+            route.collection,
+            self._ctx.collections[route.collection].id_field,
+            self._locator(route),
+        )
+        return [fetch, *([post_fetch_step] if post_fetch_step is not None else [])]
+
+    def _build_handler_pipeline(self, route: RuntimeRouteDescriptor) -> Pipeline:
+        steps: list[Step] = self._base_steps(route)
+        service_input_step = self._service_input_step(route)
+        if service_input_step is not None:
+            steps.append(service_input_step)
+        steps.append(_import_handler(route.handler))
+        return self._pipeline(route, steps)
 
     def _base_steps(self, route: RuntimeRouteDescriptor) -> list[Step]:
         steps: list[Step] = []

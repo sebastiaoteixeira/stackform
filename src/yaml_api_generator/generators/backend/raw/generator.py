@@ -18,6 +18,7 @@ from ..utils import (
 from ..validation import (
     reject_cookie_delivery,
     reject_dpop,
+    reject_file_fields,
     reject_idp_trust,
     reject_pkce,
     reject_session_refresh,
@@ -43,6 +44,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         validate_datastore_layout(context, "raw")
         reject_cookie_delivery(context, "raw")
         reject_dpop(context, "raw")
+        reject_file_fields(context, "raw")
         reject_idp_trust(context, "raw")
         reject_session_refresh(context, "raw")
         reject_pkce(context, "raw")
