@@ -17,7 +17,7 @@ pip install -e .
 Start MongoDB locally:
 
 ```bash
-docker-compose up -d
+docker run -d --name yaml-api-mongodb -p 27017:27017 mongo:8
 ```
 
 ## Usage
@@ -88,7 +88,6 @@ The React app is written to `target/frontend/`.
 Try the blog example (backend + frontend):
 
 ```bash
-docker-compose up -d
 yaml-api build examples/v02/api-with-ui.yaml
 cd target/backend && pip install -r requirements.txt && python app.py &
 cd target/frontend && npm install && npm run dev
