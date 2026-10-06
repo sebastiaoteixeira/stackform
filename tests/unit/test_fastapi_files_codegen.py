@@ -114,6 +114,22 @@ def test_service_inputs_import_precedes_file_imports(tmp_path):
     assert compileall.compile_file(str(backend / "routes" / "posts.py"), quiet=1)
 
 
+def test_oidc_and_file_requirements_on_separate_lines(tmp_path):
+    spec = _S3_SPEC.replace("entities:", """providers:
+  keycloak: { type: oidc, trust: idp, client_id: my-app, discovery_url: "http://localhost:8080/.well-known/openid-configuration" }
+entities:
+  user:
+    type: auth
+    auth: { identifier: email, via: [{ provider: keycloak, identifier: email, auto_provision: true }] }
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }""", 1).replace(
+        "repositories:", "repositories:\n  users: { entity: user }", 1
+    )
+    requirements = (_generate(tmp_path, spec) / "requirements.txt").read_text().splitlines()
+    assert {"httpx", "python-multipart"} <= set(requirements)
+
+
 @pytest.fixture
 def backend(tmp_path):
     return _generate(tmp_path, _FILESYSTEM_SPEC)
