@@ -21,7 +21,7 @@ from typing import Any
 from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes or (file_routes | rejectattr("writable") | list) %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
 
 {% if ns_service_input.enabled or ns_where.collections %}
-from dependencies.service_inputs import {% if ns_service_input.enabled %}prepare_service_inputs{% endif %}{% if ns_service_input.enabled and (ns_service_input.access_bind or ns_where.collections) %}, {% endif %}{% if ns_service_input.access_bind or ns_where.collections %}resolve_access_bind{% endif %}
+from dependencies.service_inputs import {% if ns_service_input.enabled %}prepare_service_inputs{% endif %}{% if ns_service_input.enabled and (ns_service_input.access_bind or ns_where.collections) %}, {% endif %}{% if ns_service_input.access_bind or ns_where.collections %}resolve_access_bind{% endif +%}
 {% endif %}
 {% if pagination_routes %}
 from dependencies.pagination import build_response, map_request

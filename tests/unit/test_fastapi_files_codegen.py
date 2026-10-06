@@ -80,6 +80,40 @@ def _generate(tmp_path, spec):
     return tmp_path / "backend"
 
 
+_SERVICE_INPUT_SPEC = """
+version: "0.3"
+api: { basePath: /api, version: v1 }
+datastores:
+  store: { type: mongodb, uri: "mongodb://localhost:27017", database: docs, default: true }
+  uploads: { type: filesystem, path: ./data/uploads }
+entities:
+  post:
+    fields:
+      id: { type: id }
+      cover: { type: file }
+repositories:
+  posts:
+    entity: post
+    files: uploads
+    operations:
+      archive: { query: { command: find, filter: { id: "$postId" } } }
+services:
+  posts: { repository: posts }
+  archive: { repository: posts, operation: archive, input: { postId: string }, with: { postId: $postId } }
+controllers:
+  posts:
+    base_path: /posts
+    routes:
+      get:     { service: posts, method: GET, path: "/{id}", access: public }
+      archive: { service: archive, method: POST, path: "/{postId}/archive", access: public }
+"""
+
+
+def test_service_inputs_import_precedes_file_imports(tmp_path):
+    backend = _generate(tmp_path, _SERVICE_INPUT_SPEC)
+    assert compileall.compile_file(str(backend / "routes" / "posts.py"), quiet=1)
+
+
 @pytest.fixture
 def backend(tmp_path):
     return _generate(tmp_path, _FILESYSTEM_SPEC)
