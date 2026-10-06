@@ -77,7 +77,7 @@ class FakeCollection:
             raise OperationFailure(f"index not found with name [{name}]")
         del self.indexes[name]
 
-    def list_indexes(self) -> FakeCursor:
+    async def list_indexes(self) -> FakeCursor:
         return FakeCursor([{"name": name} for name in self.indexes])
 
     async def insert_one(self, document: dict[str, Any]) -> None:

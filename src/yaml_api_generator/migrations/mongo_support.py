@@ -562,7 +562,8 @@ async def _schema_present(config: MongoMigrationConfig, db: Any) -> bool:
     if not collections <= existing:
         return False
     for coll, name in _desired_indexes(config.ir, config.datastore):
-        indexes = await db[coll].list_indexes().to_list(length=None)
+        cursor = await db[coll].list_indexes()
+        indexes = await cursor.to_list(length=None)
         if f"{name}_1" not in {index["name"] for index in indexes}:
             return False
     return True

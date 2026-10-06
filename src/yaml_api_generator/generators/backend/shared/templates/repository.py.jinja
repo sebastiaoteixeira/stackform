@@ -205,7 +205,7 @@ class {{ class_name }}Repository:
 {% elif cmd == "aggregate" %}
 
     async def {{ op.name }}(self, pipeline: list) -> list[dict[str, Any]]:
-        cursor = {{ col_expr }}.aggregate(pipeline)
+        cursor = await {{ col_expr }}.aggregate(pipeline)
         return await cursor.to_list(length=None)
 {% elif cmd == "countDocuments" %}
 
