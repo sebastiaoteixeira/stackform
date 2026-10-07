@@ -1,51 +1,23 @@
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader
-
 from ..base import DeployGenerator
-from ..context import DeployContext, SystemdDeployContext
+from ..context import SystemdDeployContext
 from ..staging import BundleStager
 
-_TEMPLATES_DIR = Path(__file__).parent / "templates"
+_BUNDLE_FILES = (
+    ("playbook.yml.jinja", "playbook.yml"),
+    ("roles/app/defaults/main.yml.jinja", "roles/app/defaults/main.yml"),
+)
+
+_MONGO_FILES = (("roles/mongodb/tasks/main.yml.jinja", "roles/mongodb/tasks/main.yml"),)
 
 
-class SystemdDeployGenerator(DeployGenerator):
-    def generate(self, ctx: DeployContext, output_dir: Path, spec_dir: Path) -> None:
-        assert isinstance(ctx, SystemdDeployContext)
-        env = Environment(
-            loader=FileSystemLoader(str(_TEMPLATES_DIR)),
-            keep_trailing_newline=True,
-            trim_blocks=True,
-            lstrip_blocks=True,
-        )
-        output_dir.mkdir(parents=True, exist_ok=True)
-        BundleStager(spec_dir, output_dir).packages(ctx.packages)
+class SystemdDeployGenerator(DeployGenerator[SystemdDeployContext]):
+    runtime_dir = Path(__file__).parent
 
-        always = [
-            ("inventory.yml.jinja", "inventory.yml"),
-            ("playbook.yml.jinja", "playbook.yml"),
-            ("env.example.jinja", ".env.example"),
-        ]
-        for tmpl, out in always:
-            self._render(env, tmpl, ctx, output_dir / out)
+    def stage(self, ctx: SystemdDeployContext, stager: BundleStager) -> SystemdDeployContext:
+        stager.packages(ctx.packages)
+        return ctx
 
-        files_dir = output_dir / "files"
-        files_dir.mkdir(exist_ok=True)
-        self._render(env, "files/app.service.jinja", ctx, files_dir / "app.service")
-
-        roles_app = output_dir / "roles" / "app" / "tasks"
-        roles_app.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/app/tasks/main.yml.jinja", ctx, roles_app / "main.yml")
-
-        roles_py = output_dir / "roles" / "python" / "tasks"
-        roles_py.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/python/tasks/main.yml.jinja", ctx, roles_py / "main.yml")
-
-        if ctx.mongo_local:
-            roles_mongo = output_dir / "roles" / "mongodb" / "tasks"
-            roles_mongo.mkdir(parents=True, exist_ok=True)
-            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongo / "main.yml")
-
-    def _render(self, env: Environment, tmpl: str, ctx: DeployContext, dest: Path) -> None:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(env.get_template(tmpl).render(ctx=ctx))
+    def files(self, ctx: SystemdDeployContext) -> tuple[tuple[str, str], ...]:
+        return (*_BUNDLE_FILES, *(_MONGO_FILES if ctx.mongo_local else ()))

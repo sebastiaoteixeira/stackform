@@ -1,0 +1,63 @@
+version: "0.3"
+
+api:
+  name: shop
+  basePath: /api
+  version: v1
+
+datastores:
+  main:
+    type: postgres
+    dsn: postgresql+asyncpg://shop:shop@localhost:5432/shop
+    default: true
+
+deploy:
+  runtime: docker
+  name: shop
+  port: 8000
+  docker:
+    registry: ghcr.io/example/shop
+    delivery: registry
+    retain: 3
+  backend:
+    packages: [deploy-extension/extensions]
+    system_packages: [libpq5]
+    processes:
+      api: { asgi: extensions.main:app }
+      worker: { command: python -m extensions.worker, env: { WORKER_INTERVAL: "30" } }
+  frontend:
+    source: deploy-extension/web
+    env: [VITE_API_BASE_URL]
+    secrets: [NPM_TOKEN]
+  services:
+    mailpit:
+      image: axllent/mailpit:latest
+      profiles: [local]
+  environments:
+    staging:
+      env: { BIND_ADDRESS: 127.0.0.1, APP_PORT: "8001", FRONTEND_PORT: "8081" }
+      secrets: [SMTP_PASSWORD]
+    production:
+      env: { APP_PORT: "8000", FRONTEND_PORT: "8080" }
+      secrets: [SMTP_PASSWORD]
+
+entities:
+  product:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      price: { type: number, required: true }
+
+repositories:
+  products:
+    entity: product
+
+services:
+  products:
+    repository: products
+
+controllers:
+  products:
+    service: products
+    base_path: /products
+    access: public

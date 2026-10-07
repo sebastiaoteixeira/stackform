@@ -1,3 +1,4 @@
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -84,6 +85,7 @@ class DeployContext:
     packages: tuple[DeployPackage, ...] = ()
     system_packages: tuple[str, ...] = ()
     frontend: DeployFrontend | None = None
+    secret_env_names: tuple[str, ...] = ()
 
     @property
     def has_frontend(self) -> bool:
@@ -98,6 +100,11 @@ class DeployContext:
         environments keeps the project, and so the volumes, it has always had."""
         return self.name if self.target else f"{self.name}-{environment.name}"
 
+    @property
+    def host_env(self) -> dict[str, str]:
+        """Remote environment values that neither the environments nor the host's generated secrets set."""
+        return {name: value for name, value in self.env_vars.items() if name not in self.secret_env_names}
+
 
 @dataclass(frozen=True)
 class DockerDeployContext(DeployContext):
@@ -108,7 +115,6 @@ class DockerDeployContext(DeployContext):
     extra_services: tuple[tuple[str, dict], ...] = field(default_factory=tuple)
     include: tuple[str, ...] = field(default_factory=tuple)
     app_environment: tuple[str, ...] = field(default_factory=tuple)
-    secret_env_names: tuple[str, ...] = field(default_factory=tuple)
     app_volumes: tuple[DeployVolume, ...] = field(default_factory=tuple)
 
     @property
@@ -124,11 +130,6 @@ class DockerDeployContext(DeployContext):
         """Repositories of the images each release tags, pruned on the host beyond ``retain``."""
         components = (*(() if self.image else ("backend",)), *(("frontend",) if self.has_frontend else ()))
         return tuple(self._repository(component) for component in components)
-
-    @property
-    def host_env(self) -> dict[str, str]:
-        """Remote environment values that neither the environments nor the host's generated secrets set."""
-        return {name: value for name, value in self.env_vars.items() if name not in self.secret_env_names}
 
     @property
     def registry_host(self) -> str | None:
@@ -151,3 +152,24 @@ class DockerDeployContext(DeployContext):
 class SystemdDeployContext(DeployContext):
     user: str = "ubuntu"
     restart: str = "on-failure"
+
+    @property
+    def host_env(self) -> dict[str, str]:
+        """Unlike compose's ``${VAR:-default}``, an empty value in a unit's environment file
+        masks the app's own default, so only values the bundle knows are rendered."""
+        return {name: value for name, value in super().host_env.items() if value}
+
+    @property
+    def requirements(self) -> tuple[str, ...]:
+        """Requirement files installed into the project's virtualenv, relative to the project directory."""
+        return ("requirements.txt", *(f"{p.bundle_path}/{r}" for p in self.packages for r in p.requirements))
+
+    @staticmethod
+    def unit_suffix(process: IRDeployProcess) -> str:
+        """Units are named ``<project><suffix>.service``; the generated app keeps the unit it has always had."""
+        return "" if process == GENERATED_ASGI_PROCESS else f"-{process.name}"
+
+    def command(self, process: IRDeployProcess) -> str:
+        if process.asgi:
+            return shlex.join(("uvicorn", process.asgi, "--host", "0.0.0.0", "--port", str(self.port)))
+        return process.command if isinstance(process.command, str) else shlex.join(process.command)

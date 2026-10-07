@@ -136,7 +136,7 @@ deploy:
     out = tmp_path / "out"
     DockerDeployGenerator().generate(ctx, out, tmp_path)
 
-    tasks = (out / "roles" / "app" / "tasks" / "main.yml").read_text()
+    tasks = (out / "roles" / "app" / "tasks" / "environment.yml").read_text()
     assert "lookup('ansible.builtin.password'" in tasks
     release = (out / "roles" / "app" / "tasks" / "release.yml").read_text()
     assert "ansible.builtin.template:" in release

@@ -4,7 +4,7 @@ import pytest
 
 from yaml_api_generator.ir import IRDeployDocker, IRDeployEnvironment, IRDeployFrontend
 
-from .support.deploy import docker_bundle
+from .support.deploy import deploy_bundle
 
 ENVIRONMENTS = (IRDeployEnvironment(name="staging"),)
 
@@ -21,7 +21,7 @@ def _deliveries(bundle) -> list[str]:
 
 
 def test_registry_delivery_pulls_tagged_images_between_login_and_logout(tmp_path, web):
-    bundle = docker_bundle(
+    bundle = deploy_bundle(
         tmp_path, environments=ENVIRONMENTS, docker=IRDeployDocker(registry="ghcr.io/example/shop"), frontend=web,
     )
     defaults = bundle.load("roles/app/defaults/main.yml")
@@ -41,12 +41,12 @@ def test_registry_delivery_pulls_tagged_images_between_login_and_logout(tmp_path
     [("example/shop", "docker.io"), ("registry.example.com:5000/shop", "registry.example.com:5000"), ("localhost/shop", "localhost")],
 )
 def test_registry_host_follows_docker_reference_rules(tmp_path, registry, host):
-    bundle = docker_bundle(tmp_path, environments=ENVIRONMENTS, docker=IRDeployDocker(registry=registry))
+    bundle = deploy_bundle(tmp_path, environments=ENVIRONMENTS, docker=IRDeployDocker(registry=registry))
     assert bundle.load("roles/app/defaults/main.yml")["app_registry"] == host
 
 
 def test_ssh_delivery_loads_an_image_archive(tmp_path, web):
-    bundle = docker_bundle(
+    bundle = deploy_bundle(
         tmp_path, name="shop", environments=ENVIRONMENTS, docker=IRDeployDocker(delivery="ssh"), frontend=web,
     )
     defaults = bundle.load("roles/app/defaults/main.yml")
@@ -60,13 +60,13 @@ def test_ssh_delivery_loads_an_image_archive(tmp_path, web):
 
 
 def test_without_registry_images_are_built_on_the_host(tmp_path):
-    bundle = docker_bundle(tmp_path)
+    bundle = deploy_bundle(tmp_path)
     defaults = bundle.load("roles/app/defaults/main.yml")
     assert (defaults["app_delivery"], defaults["app_build"], defaults["image_tag"]) == ("host", "always", "latest")
     assert _deliveries(bundle) == ["host.yml"]
 
 
 def test_pinned_image_is_pulled_and_never_pruned(tmp_path):
-    defaults = docker_bundle(tmp_path, docker=IRDeployDocker(image="python:3.11-slim")).load("roles/app/defaults/main.yml")
+    defaults = deploy_bundle(tmp_path, docker=IRDeployDocker(image="python:3.11-slim")).load("roles/app/defaults/main.yml")
     assert (defaults["app_pull"], defaults["app_build"]) == ("always", "never")
     assert not any(repository.endswith("/backend") for repository in defaults["app_repositories"])

@@ -40,3 +40,7 @@ Spec version 0.3 builds on [v0.2](/docs/v0.2). A spec opts in with
 - [Resource-server IdP token verification](/docs/v0.3/verify-idp) — verifying IdP tokens directly
 - [PKCE for the OIDC client](/docs/v0.3/pkce) — RFC 7636 authorization-code binding
 - [DPoP for the OIDC client](/docs/v0.3/dpop) — RFC 9449 sender-constrained tokens
+
+## Deployment
+
+- [Deploy](/docs/v0.3/deploy) — backend packages and processes, a hand-written frontend, registries and environments

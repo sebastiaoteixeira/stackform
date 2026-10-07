@@ -1,0 +1,56 @@
+- name: Prepare the release environment
+  ansible.builtin.import_tasks: environment.yml
+
+- name: Install the system packages
+  ansible.builtin.apt:
+    name: "{{ app_system_packages }}"
+    state: present
+  when: app_system_packages | length > 0
+
+- name: Copy the app and its packages
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/"
+    dest: "{{ app_dir }}/"
+    delete: true
+    rsync_opts:
+      - "--exclude=/.env"
+      - "--exclude=/venv"
+      - "--exclude=/roles"
+      - "--exclude=/group_vars"
+      - "--exclude=/playbook.yml"
+      - "--exclude=/inventory.yml"
+      - "--exclude=/ansible.cfg"
+      - "--exclude=/requirements.yml"
+
+- name: Render the release environment
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    mode: "0600"
+  diff: false
+
+- name: Install the Python requirements
+  ansible.builtin.pip:
+    requirements: "{{ app_dir }}/{{ item }}"
+    virtualenv: "{{ app_dir }}/venv"
+    virtualenv_command: python3 -m venv
+  loop: "{{ app_requirements }}"
+
+- name: Install the process units
+  ansible.builtin.template:
+    src: unit.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}.service"
+    mode: "0644"
+  loop: "{{ app_units }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Restart the processes
+  ansible.builtin.systemd:
+    name: "{{ item.name }}"
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  loop: "{{ app_units }}"
+  loop_control:
+    label: "{{ item.name }}"

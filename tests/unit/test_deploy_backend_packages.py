@@ -2,7 +2,7 @@
 
 from yaml_api_generator.ir import IRDeployBackend, IRDeployProcess
 
-from .support.deploy import compose_config, docker_bundle
+from .support.deploy import compose_config, deploy_bundle
 
 _API = (IRDeployProcess(name="api", asgi="ext.main:app"),)
 
@@ -14,11 +14,11 @@ def _write(path, text=""):
 
 def _bundle(tmp_path, **backend):
     _write(tmp_path / "ext" / "main.py", "app = None\n")
-    return docker_bundle(tmp_path, backend=IRDeployBackend(packages=("ext",), processes=_API, **backend))
+    return deploy_bundle(tmp_path, backend=IRDeployBackend(packages=("ext",), processes=_API, **backend))
 
 
 def test_without_packages_only_generated_stage(tmp_path):
-    dockerfile = docker_bundle(tmp_path).read("backend/Dockerfile")
+    dockerfile = deploy_bundle(tmp_path).read("backend/Dockerfile")
     assert dockerfile.count("FROM ") == 1
     assert "FROM python:3.11-slim AS generated" in dockerfile
 

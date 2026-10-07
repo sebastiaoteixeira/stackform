@@ -6,7 +6,7 @@ import pytest
 
 from yaml_api_generator.ir import IRDeployBackend, IRDeployFrontend, IRDeployProcess
 
-from .support.deploy import compose_config, docker_bundle
+from .support.deploy import compose_config, deploy_bundle
 
 EXAMPLES_DIR = Path(__file__).parents[2] / "examples" / "valid"
 
@@ -28,7 +28,7 @@ def designs(tmp_path):
 
 
 def _bundle(tmp_path, frontend=_FRONTEND, **deploy):
-    return docker_bundle(tmp_path, frontend=frontend, **deploy)
+    return deploy_bundle(tmp_path, frontend=frontend, **deploy)
 
 
 def test_source_built_with_its_command_and_output(tmp_path, designs):
@@ -97,7 +97,7 @@ def test_frontend_proxies_to_healthy_asgi_process(tmp_path, designs):
 
 
 def test_generated_frontend_reads_api_url_at_runtime(tmp_path):
-    bundle = docker_bundle(tmp_path, spec=EXAMPLES_DIR / "blog-with-ui.yaml")
+    bundle = deploy_bundle(tmp_path, spec=EXAMPLES_DIR / "blog-with-ui.yaml")
     dockerfile = bundle.read("frontend/Dockerfile")
     assert "npm run build" in dockerfile
     assert "ARG " not in dockerfile
@@ -106,7 +106,7 @@ def test_generated_frontend_reads_api_url_at_runtime(tmp_path):
 
 
 def test_without_frontend_no_frontend_artifacts(tmp_path):
-    bundle = docker_bundle(tmp_path)
+    bundle = deploy_bundle(tmp_path)
     assert "frontend" not in bundle.services
     assert not (bundle.root / "frontend").exists()
     assert not (bundle.root / "nginx").exists()

@@ -1,0 +1,20 @@
+[Unit]
+Description={{ item.name }}
+After=network.target
+
+[Service]
+User={{ app_user }}
+WorkingDirectory={{ app_dir }}
+EnvironmentFile={{ app_dir }}/.env
+Environment="PATH={{ app_dir }}/venv/bin:/usr/local/bin:/usr/bin:/bin"
+{% if app_packages %}
+Environment="PYTHONPATH={{ app_dir }}/packages"
+{% endif %}
+{% for name, value in item.env.items() %}
+Environment="{{ name }}={{ value }}"
+{% endfor %}
+ExecStart=/usr/bin/env {{ item.command }}
+Restart={{ app_restart }}
+
+[Install]
+WantedBy=multi-user.target

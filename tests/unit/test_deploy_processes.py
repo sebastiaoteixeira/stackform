@@ -2,7 +2,7 @@
 
 from yaml_api_generator.ir import IRDeployBackend, IRDeployDocker, IRDeployProcess
 
-from .support.deploy import compose_config, docker_bundle
+from .support.deploy import compose_config, deploy_bundle
 
 _PROCESSES = (
     IRDeployProcess(name="api", asgi="ext.main:app"),
@@ -13,7 +13,7 @@ _PROCESSES = (
 
 def _bundle(tmp_path, **deploy):
     (tmp_path / "ext").mkdir()
-    return docker_bundle(tmp_path, backend=IRDeployBackend(packages=("ext",), processes=_PROCESSES), **deploy)
+    return deploy_bundle(tmp_path, backend=IRDeployBackend(packages=("ext",), processes=_PROCESSES), **deploy)
 
 
 def test_one_service_per_process(tmp_path):

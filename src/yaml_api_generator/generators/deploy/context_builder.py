@@ -64,11 +64,11 @@ def build_deploy_context(
         packages=tuple(_package((spec_dir / package).resolve()) for package in deploy.backend.packages),
         system_packages=deploy.backend.system_packages,
         frontend=_frontend(deploy.frontend, spec_dir, ir.has_ui),
+        secret_env_names=tuple(f.env_name for f in secret_fields),
     )
 
     if deploy.runtime == "docker":
         docker = deploy.docker or IRDeployDocker()
-        secret_env_names = tuple(f.env_name for f in secret_fields)
         defaults = {
             **{key: value for source in (*datastores, *file_deployments) for key, value in source.app_env.items()},
             "PORT": str(deploy.port),
@@ -86,7 +86,6 @@ def build_deploy_context(
             extra_services=deploy.extra_services,
             include=deploy.include,
             app_environment=app_environment,
-            secret_env_names=secret_env_names,
             app_volumes=tuple(fd.volume for fd in file_deployments if fd.volume),
         )
 

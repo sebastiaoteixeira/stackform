@@ -6,7 +6,7 @@
         dest: "{{ app_dir }}/.env"
         mode: "0600"
       vars:
-        release_tag: "{{ image_tag }}"
+        release_env: { IMAGE_TAG: "{{ image_tag }}" }
       diff: false
 
     - name: Start the release services
@@ -28,7 +28,7 @@
             dest: "{{ app_dir }}/.env"
             mode: "0600"
           vars:
-            release_tag: "{{ previous_tag }}"
+            release_env: { IMAGE_TAG: "{{ previous_tag }}" }
           diff: false
 
         - name: Restart the previous release services

@@ -1,4 +1,4 @@
-"""Docker deploy bundles generated from a fixture spec with its ``deploy:`` section replaced."""
+"""Deploy bundles generated from a fixture spec with its ``deploy:`` section replaced."""
 
 import shutil
 import subprocess
@@ -11,14 +11,13 @@ import pytest
 import yaml
 
 from tests.conftest import VALID_DIR
-from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
-from yaml_api_generator.generators.deploy.docker.generator import DockerDeployGenerator
+from yaml_api_generator.generators.deploy.generate import generate_deploy
 from yaml_api_generator.ir import IRDeploy
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 
 
 @dataclass(frozen=True)
-class DockerBundle:
+class DeployBundle:
     root: Path
 
     def read(self, path: str) -> str:
@@ -36,15 +35,17 @@ class DockerBundle:
         return self.compose["services"]
 
 
-def docker_bundle(spec_dir: Path, spec: Path = VALID_DIR / "auth-oidc.yaml", **deploy) -> DockerBundle:
-    """Generate into ``spec_dir/out`` the bundle of ``spec`` deployed with ``deploy`` on docker."""
-    ir = replace(load_and_generate_ir(str(spec)).ir, deploy=IRDeploy(runtime="docker", **deploy))
+def deploy_bundle(
+    spec_dir: Path, spec: Path = VALID_DIR / "auth-oidc.yaml", runtime: str = "docker", **deploy
+) -> DeployBundle:
+    """Generate into ``spec_dir/out`` the bundle of ``spec`` deployed with ``deploy`` on ``runtime``."""
+    ir = replace(load_and_generate_ir(str(spec)).ir, deploy=IRDeploy(runtime=runtime, **deploy))
     out = spec_dir / "out"
-    DockerDeployGenerator().generate(build_deploy_context(ir, spec_dir), out, spec_dir)
-    return DockerBundle(out)
+    generate_deploy(ir, str(out), spec_dir)
+    return DeployBundle(out)
 
 
-def compose_config(bundle: DockerBundle) -> dict:
+def compose_config(bundle: DeployBundle) -> dict:
     """The compose file as Docker Compose resolves it; skips without the compose CLI."""
     if not shutil.which("docker") or subprocess.run(
         ["docker", "compose", "version"], capture_output=True, check=False
@@ -59,7 +60,7 @@ def compose_config(bundle: DockerBundle) -> dict:
     return yaml.safe_load(result.stdout)
 
 
-def ansible_syntax_check(bundle: DockerBundle, *extra_vars: str) -> None:
+def ansible_syntax_check(bundle: DeployBundle, *extra_vars: str) -> None:
     """Ansible's syntax check of the playbook; skips without ansible-playbook."""
     if not shutil.which("ansible-playbook"):
         pytest.skip("ansible-playbook is not installed")

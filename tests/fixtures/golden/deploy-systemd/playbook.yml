@@ -1,0 +1,7 @@
+- name: Deploy backend-service
+  hosts: default
+  become: true
+  roles:
+    - mongodb
+    - python
+    - app

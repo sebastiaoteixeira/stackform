@@ -1,5 +1,9 @@
 - name: Deploy {{ ctx.name }}
-  hosts: app
+{% if ctx.target %}
+  hosts: {{ ctx.environments[0].name }}
+{% else %}
+  hosts: "{{ '{{' }} deploy_environment {{ '}}' }}"
+{% endif %}
   become: true
   roles:
     {% if ctx.mongo_local %}
