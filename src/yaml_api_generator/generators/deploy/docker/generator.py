@@ -10,6 +10,22 @@ from ..staging import BundleStager
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
+_BUNDLE_FILES = (
+    ("inventory.yml.jinja", "inventory.yml"),
+    ("playbook.yml.jinja", "playbook.yml"),
+    ("docker-compose.yml.jinja", "docker-compose.yml"),
+    ("Dockerfile.jinja", "backend/Dockerfile"),
+    ("env.example.jinja", ".env.example"),
+    ("README.md.jinja", "README.md"),
+)
+
+# The nginx templates are rendered from the environment each time the frontend container starts.
+_FRONTEND_FILES = (
+    ("Dockerfile.frontend.jinja", "frontend/Dockerfile"),
+    ("nginx/default.conf.template.jinja", "nginx/default.conf.template"),
+    ("nginx/config.js.template.jinja", "nginx/config.js.template"),
+)
+
 
 class DockerDeployGenerator(DeployGenerator):
     def generate(self, ctx: DeployContext, output_dir: Path, spec_dir: Path) -> None:
@@ -27,22 +43,10 @@ class DockerDeployGenerator(DeployGenerator):
         stager = BundleStager(spec_dir, output_dir)
         ctx = replace(ctx, extra_services=stager.services(ctx.extra_services))
         stager.packages(ctx.packages)
-        stager.frontend(ctx.frontend_source)
+        stager.frontend(ctx.frontend)
 
-        always = [
-            ("inventory.yml.jinja", "inventory.yml"),
-            ("playbook.yml.jinja", "playbook.yml"),
-            ("docker-compose.yml.jinja", "docker-compose.yml"),
-            ("Dockerfile.jinja", "backend/Dockerfile"),
-            ("env.example.jinja", ".env.example"),
-            ("README.md.jinja", "README.md"),
-        ]
-        for tmpl, out in always:
+        for tmpl, out in (*_BUNDLE_FILES, *(_FRONTEND_FILES if ctx.frontend else ())):
             self._render(env, tmpl, ctx, output_dir / out)
-
-        if ctx.has_frontend:
-            self._render(env, "nginx.conf.jinja", ctx, output_dir / "nginx.conf")
-            self._render(env, "Dockerfile.frontend.jinja", ctx, output_dir / "frontend" / "Dockerfile")
 
         roles_app_tasks = output_dir / "roles" / "app" / "tasks"
         roles_app_tasks.mkdir(parents=True, exist_ok=True)

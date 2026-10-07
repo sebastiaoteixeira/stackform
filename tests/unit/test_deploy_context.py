@@ -68,21 +68,21 @@ def test_frontend_source_enables_frontend(tmp_path):
     ctx = _context(tmp_path, frontend=IRDeployFrontend(source="designs", env=("VITE_API_BASE_URL",)))
 
     assert ctx.has_frontend
-    assert ctx.frontend_source.source == (tmp_path / "designs").resolve()
-    assert (ctx.frontend_source.build, ctx.frontend_source.output) == ("npm run build", "dist")
-    assert ctx.frontend_source.env == ("VITE_API_BASE_URL",)
-    assert not ctx.frontend_source.locked
+    assert ctx.frontend.source == (tmp_path / "designs").resolve()
+    assert (ctx.frontend.build, ctx.frontend.output) == ("npm run build", "dist")
+    assert ctx.frontend.env == ("VITE_API_BASE_URL",)
+    assert not ctx.frontend.locked
 
 
 def test_frontend_lockfile_selects_clean_install(tmp_path):
     _write(tmp_path / "designs" / "package.json", "{}")
     _write(tmp_path / "designs" / "package-lock.json", "{}")
-    assert _context(tmp_path, frontend=IRDeployFrontend(source="designs")).frontend_source.locked
+    assert _context(tmp_path, frontend=IRDeployFrontend(source="designs")).frontend.locked
 
 
 def test_without_frontend_source_or_ui_no_frontend(tmp_path):
     ctx = _context(tmp_path)
-    assert ctx.frontend_source is None
+    assert ctx.frontend is None
     assert not ctx.has_frontend
 
 

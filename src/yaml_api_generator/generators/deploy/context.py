@@ -50,16 +50,20 @@ class DeployPackage:
 
 
 @dataclass(frozen=True)
-class DeployFrontendSource:
-    """A hand-written frontend built in place of the generated one; ``locked`` selects ``npm ci``."""
+class DeployFrontend:
+    """The frontend image. ``source`` is a hand-written app built in place of the generated one;
+    ``env`` names are served at runtime through ``/config.js``; ``locked`` selects ``npm ci``."""
 
-    source: Path
-    build: str
-    output: str
+    source: Path | None = None
+    build: str = "npm run build"
+    output: str = "dist"
     env: tuple[str, ...] = ()
     args: tuple[str, ...] = ()
     secrets: tuple[str, ...] = ()
     locked: bool = False
+
+
+GENERATED_FRONTEND = DeployFrontend(env=("VITE_API_BASE_URL",))
 
 
 @dataclass(frozen=True)
@@ -71,14 +75,17 @@ class DeployContext:
     mongo_db: str
     env_vars: dict[str, str]
     has_auth: bool
-    has_frontend: bool
     target: DeployTarget | None
     datastores: tuple[DeployDatastore, ...] = ()
     environments: tuple[IRDeployEnvironment, ...] = ()
     processes: tuple[IRDeployProcess, ...] = (GENERATED_ASGI_PROCESS,)
     packages: tuple[DeployPackage, ...] = ()
     system_packages: tuple[str, ...] = ()
-    frontend_source: DeployFrontendSource | None = None
+    frontend: DeployFrontend | None = None
+
+    @property
+    def has_frontend(self) -> bool:
+        return self.frontend is not None
 
     @property
     def asgi_process(self) -> IRDeployProcess:
@@ -96,6 +103,18 @@ class DockerDeployContext(DeployContext):
     app_environment: tuple[str, ...] = field(default_factory=tuple)
     secret_env_names: tuple[str, ...] = field(default_factory=tuple)
     app_volumes: tuple[DeployVolume, ...] = field(default_factory=tuple)
+
+    @property
+    def backend_image(self) -> str:
+        return self.image or self._release_image("backend")
+
+    @property
+    def frontend_image(self) -> str:
+        return self._release_image("frontend")
+
+    def _release_image(self, component: str) -> str:
+        """Without a registry, images are named after the app and only ever built on the host."""
+        return f"{self.registry or self.name}/{component}:${{IMAGE_TAG:-latest}}"
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .context import DeployFrontendSource, DeployPackage
+from .context import DeployFrontend, DeployPackage
 
 FRONTEND_DIR = "frontend"
 
@@ -32,8 +32,8 @@ class BundleStager:
         for package in packages:
             self.stage(package.source, package.bundle_path, f"deploy package '{package.name}'")
 
-    def frontend(self, frontend: DeployFrontendSource | None) -> None:
-        if frontend is not None:
+    def frontend(self, frontend: DeployFrontend | None) -> None:
+        if frontend is not None and frontend.source is not None:
             self.stage(frontend.source, FRONTEND_DIR, "deploy frontend source")
 
     def _service(self, name: str, config: dict) -> dict:

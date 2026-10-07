@@ -8,6 +8,11 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    location = /config.js {
+        alias /etc/nginx/conf.d/config.js;
+        add_header Cache-Control "no-store";
+    }
+
     location /api/ {
         proxy_pass ${BACKEND_URL};
         proxy_http_version 1.1;

@@ -18,10 +18,11 @@ from ..backend.builders.settings_builder import build_settings_fields
 from .context import (
     DeployContext,
     DeployDatastore,
-    DeployFrontendSource,
+    DeployFrontend,
     DeployPackage,
     DeployTarget,
     DockerDeployContext,
+    GENERATED_FRONTEND,
     SystemdDeployContext,
 )
 from .file_deployments import build_file_deployments
@@ -59,14 +60,13 @@ def build_deploy_context(
         mongo_db=mongo_db,
         env_vars=env_vars,
         has_auth=bool(ir.identityCollections),
-        has_frontend=ir.has_ui or deploy.frontend.source is not None,
         target=None if deploy.environments else target,
         datastores=datastores,
         environments=_environments(deploy, (f.env_name for f in secret_fields if f.generator)),
         processes=_processes(deploy, datastores),
         packages=tuple(_package((spec_dir / package).resolve()) for package in deploy.backend.packages),
         system_packages=deploy.backend.system_packages,
-        frontend_source=_frontend_source(deploy.frontend, spec_dir),
+        frontend=_frontend(deploy.frontend, spec_dir, ir.has_ui),
     )
 
     if deploy.runtime == "docker":
@@ -128,11 +128,11 @@ def _package(source: Path) -> DeployPackage:
     return DeployPackage(source=source, requirements=tuple(requirements))
 
 
-def _frontend_source(frontend: IRDeployFrontend, spec_dir: Path) -> DeployFrontendSource | None:
+def _frontend(frontend: IRDeployFrontend, spec_dir: Path, has_ui: bool) -> DeployFrontend | None:
     if frontend.source is None:
-        return None
+        return GENERATED_FRONTEND if has_ui else None
     source = (spec_dir / frontend.source).resolve()
-    return DeployFrontendSource(
+    return DeployFrontend(
         source=source,
         build=frontend.build,
         output=frontend.output,

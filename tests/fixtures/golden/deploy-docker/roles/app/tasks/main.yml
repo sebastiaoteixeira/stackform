@@ -1,0 +1,23 @@
+- name: Create app directory
+  file:
+    path: /opt/my-api-service
+    state: directory
+    mode: '0755'
+
+- name: Copy app files
+  synchronize:
+    src: "{{ playbook_dir }}/"
+    dest: /opt/my-api-service/
+    delete: true
+    rsync_opts:
+      - "--exclude=roles"
+      - "--exclude=playbook.yml"
+      - "--exclude=inventory.yml"
+
+
+- name: Start app
+  community.docker.docker_compose_v2:
+    project_src: /opt/my-api-service
+    state: present
+    pull: always
+    build: never

@@ -14,7 +14,6 @@ def _ctx(extra_services):
         mongo_db="testdb",
         env_vars={},
         has_auth=False,
-        has_frontend=False,
         target=DeployTarget(),
         datastores=(),
         extra_services=extra_services,

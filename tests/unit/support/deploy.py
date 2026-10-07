@@ -1,0 +1,55 @@
+"""Docker deploy bundles generated from a fixture spec with its ``deploy:`` section replaced."""
+
+import shutil
+import subprocess
+from dataclasses import dataclass, replace
+from functools import cached_property
+from pathlib import Path
+
+import pytest
+import yaml
+
+from tests.conftest import VALID_DIR
+from yaml_api_generator.generators.deploy.context_builder import build_deploy_context
+from yaml_api_generator.generators.deploy.docker.generator import DockerDeployGenerator
+from yaml_api_generator.ir import IRDeploy
+from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
+
+
+@dataclass(frozen=True)
+class DockerBundle:
+    root: Path
+
+    def read(self, path: str) -> str:
+        return (self.root / path).read_text()
+
+    @cached_property
+    def compose(self) -> dict:
+        return yaml.safe_load(self.read("docker-compose.yml"))
+
+    @property
+    def services(self) -> dict[str, dict]:
+        return self.compose["services"]
+
+
+def docker_bundle(spec_dir: Path, spec: Path = VALID_DIR / "auth-oidc.yaml", **deploy) -> DockerBundle:
+    """Generate into ``spec_dir/out`` the bundle of ``spec`` deployed with ``deploy`` on docker."""
+    ir = replace(load_and_generate_ir(str(spec)).ir, deploy=IRDeploy(runtime="docker", **deploy))
+    out = spec_dir / "out"
+    DockerDeployGenerator().generate(build_deploy_context(ir, spec_dir), out, spec_dir)
+    return DockerBundle(out)
+
+
+def compose_config(bundle: DockerBundle) -> dict:
+    """The compose file as Docker Compose resolves it; skips without the compose CLI."""
+    if not shutil.which("docker") or subprocess.run(
+        ["docker", "compose", "version"], capture_output=True, check=False
+    ).returncode:
+        pytest.skip("docker compose is not installed")
+    (bundle.root / ".env").touch()
+    result = subprocess.run(
+        ["docker", "compose", "config", "--format", "json"],
+        cwd=bundle.root, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return yaml.safe_load(result.stdout)
