@@ -6,8 +6,10 @@ app_requirements: ["requirements.txt"]
 app_packages: []
 app_units:
   - name: "{{ app_project }}"
-    command: "uvicorn app:app --host 0.0.0.0 --port 5000"
+    command: !unsafe "uvicorn app:app --host 0.0.0.0 --port 5000"
     env: {}
+# Controller-side bundle files, never copied to the host
+app_sync_excludes: [/.env, /roles, /group_vars, /playbook.yml, /inventory.yml, /ansible.cfg, /requirements.yml]
 app_generated_secrets: []
 app_defaults: {}
 app_env: {}

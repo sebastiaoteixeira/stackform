@@ -12,20 +12,13 @@
     src: "{{ playbook_dir }}/"
     dest: "{{ app_dir }}/"
     delete: true
-    rsync_opts:
-      - "--exclude=/.env"
-      - "--exclude=/venv"
-      - "--exclude=/roles"
-      - "--exclude=/group_vars"
-      - "--exclude=/playbook.yml"
-      - "--exclude=/inventory.yml"
-      - "--exclude=/ansible.cfg"
-      - "--exclude=/requirements.yml"
+    rsync_opts: "{{ (app_sync_excludes + ['/venv']) | map('regex_replace', '^', '--exclude=') | list }}"
 
 - name: Render the release environment
   ansible.builtin.template:
     src: env.j2
     dest: "{{ app_dir }}/.env"
+    owner: "{{ app_user }}"
     mode: "0600"
   diff: false
 

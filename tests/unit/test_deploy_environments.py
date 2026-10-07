@@ -16,7 +16,7 @@ def test_without_environments_the_cli_target_is_the_default_group(tmp_path):
     assert hosts == {
         "shop": {"ansible_host": "localhost", "ansible_user": "ubuntu", "ansible_ssh_private_key_file": "~/.ssh/id_rsa"}
     }
-    assert bundle.load("playbook.yml")[0]["hosts"] == "default"
+    assert bundle.load("playbook.yml")[-1]["hosts"] == "default"
     assert bundle.load("group_vars/default.yml") == {"app_project": "shop"}
 
 
@@ -27,7 +27,10 @@ def test_environments_are_groups_whose_host_comes_from_the_controller(tmp_path):
     host = groups["staging"]["hosts"]["shop-staging"]
     assert host["ansible_host"] == "{{ lookup('ansible.builtin.env', 'DEPLOY_HOST') }}"
     assert "DEPLOY_SSH_PORT" in host["ansible_port"]
-    assert bundle.load("playbook.yml")[0]["hosts"] == "{{ deploy_environment }}"
+    validate, deploy = bundle.load("playbook.yml")
+    assert validate["hosts"] == "localhost"
+    assert "deploy_environment in groups" in validate["tasks"][0]["ansible.builtin.assert"]["that"]
+    assert deploy["hosts"] == "{{ deploy_environment }}"
 
 
 def test_group_vars_hold_literal_env_and_secret_lookups(tmp_path):
@@ -38,6 +41,11 @@ def test_group_vars_hold_literal_env_and_secret_lookups(tmp_path):
         "app_secrets": {"S3_KEY": "{{ lookup('ansible.builtin.env', 'S3_KEY') }}"},
     }
     assert bundle.load("group_vars/production.yml") == {"app_project": "shop-production", "app_env": {"APP_PORT": "8000"}}
+
+
+def test_spec_values_are_never_templated_by_ansible(tmp_path):
+    bundle = deploy_bundle(tmp_path, name="shop", environments=ENVIRONMENTS)
+    assert 'BIND_ADDRESS: !unsafe "127.0.0.1"' in bundle.read("group_vars/staging.yml")
 
 
 def test_generated_secrets_are_kept_on_the_host_not_in_defaults(tmp_path):

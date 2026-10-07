@@ -27,7 +27,7 @@ def test_registry_delivery_pulls_tagged_images_between_login_and_logout(tmp_path
     defaults = bundle.load("roles/app/defaults/main.yml")
     assert (defaults["app_delivery"], defaults["app_registry"]) == ("registry", "ghcr.io")
     assert defaults["app_repositories"] == ["ghcr.io/example/shop/backend", "ghcr.io/example/shop/frontend"]
-    assert (defaults["app_pull"], defaults["app_build"]) == ("missing", "never")
+    assert defaults["app_build"] == "never"
     assert "image_tag" not in defaults
     assert _deliveries(bundle) == ["registry.yml"]
     (pull,) = bundle.load("roles/app/tasks/deliver/registry.yml")
@@ -67,6 +67,15 @@ def test_without_registry_images_are_built_on_the_host(tmp_path):
 
 
 def test_pinned_image_is_pulled_and_never_pruned(tmp_path):
-    defaults = deploy_bundle(tmp_path, docker=IRDeployDocker(image="python:3.11-slim")).load("roles/app/defaults/main.yml")
-    assert (defaults["app_pull"], defaults["app_build"]) == ("always", "never")
+    bundle = deploy_bundle(tmp_path, docker=IRDeployDocker(image="python:3.11-slim"))
+    defaults = bundle.load("roles/app/defaults/main.yml")
+    assert defaults["app_build"] == "never"
+    assert bundle.services["app"]["pull_policy"] == "always"
     assert not any(repository.endswith("/backend") for repository in defaults["app_repositories"])
+
+
+def test_pinned_image_still_builds_the_frontend_on_the_host(tmp_path, web):
+    bundle = deploy_bundle(tmp_path, docker=IRDeployDocker(image="python:3.11-slim"), frontend=web)
+    assert bundle.load("roles/app/defaults/main.yml")["app_build"] == "always"
+    assert bundle.services["app"]["pull_policy"] == "always"
+    assert "pull_policy" not in bundle.services["frontend"]

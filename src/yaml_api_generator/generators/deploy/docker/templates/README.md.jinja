@@ -6,24 +6,10 @@ This directory contains Docker deployment configuration for {{ ctx.name }}.
 
 - Docker and Docker Compose installed
 - Git (for cloning the repository)
-{% if ctx.has_frontend %}
-- Node.js and npm (for building the frontend)
-{% endif %}
 
 ## Quick Start
 
-{% if ctx.has_frontend %}
-### 1. Build the Frontend
-
-```bash
-cd frontend
-npm install
-npm run build
-cd ..
-```
-{% endif %}
-
-### {% if ctx.has_frontend %}2{% else %}1{% endif %}. Configure Environment Variables
+### 1. Configure Environment Variables
 
 Edit the `.env` file with your configuration:
 
@@ -37,7 +23,7 @@ MONGO_DB={{ ctx.mongo_db }}
 {% endif %}
 ```
 
-### {% if ctx.has_frontend %}3{% else %}2{% endif %}. Start Services
+### 2. Start Services
 
 ```bash
 docker compose up -d
@@ -45,14 +31,14 @@ docker compose up -d
 
 This will start:
 - Backend API on port {{ ctx.port }}
-{% if ctx.has_frontend %}
-- Frontend on port 3000
+{% if ctx.frontend %}
+- Frontend on port 80 (`FRONTEND_PORT`), built inside its image
 {% endif %}
 {% if ctx.mongo_local %}
 - MongoDB on internal network (not exposed externally)
 {% endif %}
 
-### {% if ctx.has_frontend %}4{% else %}3{% endif %}. Check Status
+### 3. Check Status
 
 ```bash
 docker compose ps
@@ -61,17 +47,18 @@ docker compose logs -f
 
 ## Services
 
-- **app**: Backend API service (FastAPI)
+- **{{ ctx.asgi_process.name }}**: Backend API service (FastAPI)
   - Port: {{ ctx.port }}
   - Built from: `backend/`
   {% if ctx.has_auth %}
   - Auth: Enabled
   {% endif %}
 
-{% if ctx.has_frontend %}
-- **frontend**: Frontend web application (React + Nginx)
-  - Port: 3000
-  - API proxy: `/api` -> `http://app:{{ ctx.port }}`
+{% if ctx.frontend %}
+- **frontend**: Frontend web application served by Nginx
+  - Port: 80 (`FRONTEND_PORT`)
+  - API proxy: `/api` -> `http://{{ ctx.asgi_process.name }}:{{ ctx.port }}`
+  - Runtime config: `/config.js`
 {% endif %}
 
 {% if ctx.mongo_local %}
@@ -183,7 +170,7 @@ docker compose down -v
 
 Check logs:
 ```bash
-docker compose logs app
+docker compose logs {{ ctx.asgi_process.name }}
 ```
 
 Common issues:
@@ -193,11 +180,11 @@ Common issues:
 - Missing environment variables: Check `.env` file
 - Port already in use: Change port in docker-compose.yml
 
-{% if ctx.has_frontend %}
+{% if ctx.frontend %}
 ### Frontend shows errors
 
-- Make sure you ran `npm run build` in the frontend directory
-- Check that `frontend/dist` exists and contains built files
+- Check the frontend build output: `docker compose build frontend`
+- Check that `/config.js` holds the expected values
 - Check nginx logs: `docker compose logs frontend`
 {% endif %}
 

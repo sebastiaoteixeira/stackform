@@ -8,7 +8,7 @@ RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
 RUN install -d -o app {{ vol.path }}
 {% endfor %}
 USER 10001
-{% if ctx.packages %}
+{% if ctx.packages or ctx.system_packages %}
 
 FROM generated
 USER root

@@ -5,15 +5,15 @@ from yaml_api_generator.ir import IRDeployBackend, IRDeployDocker, IRDeployProce
 from .support.deploy import compose_config, deploy_bundle
 
 _PROCESSES = (
-    IRDeployProcess(name="api", asgi="ext.main:app"),
-    IRDeployProcess(name="worker", command="python -m ext.worker", env={"QUEUE": "jobs"}),
-    IRDeployProcess(name="beat", command=("python", "-m", "ext.beat")),
+    IRDeployProcess(name="api", asgi="extensions.main:app"),
+    IRDeployProcess(name="worker", command="python -m extensions.worker", env={"QUEUE": "jobs"}),
+    IRDeployProcess(name="beat", command=("python", "-m", "extensions.beat")),
 )
 
 
 def _bundle(tmp_path, **deploy):
-    (tmp_path / "ext").mkdir()
-    return deploy_bundle(tmp_path, backend=IRDeployBackend(packages=("ext",), processes=_PROCESSES), **deploy)
+    (tmp_path / "extensions").mkdir()
+    return deploy_bundle(tmp_path, backend=IRDeployBackend(packages=("extensions",), processes=_PROCESSES), **deploy)
 
 
 def test_one_service_per_process(tmp_path):
@@ -41,8 +41,8 @@ def test_only_asgi_process_builds_publishes_and_is_probed(tmp_path):
 
 def test_command_processes_keep_their_command_form(tmp_path):
     services = _bundle(tmp_path).services
-    assert services["worker"]["command"] == "python -m ext.worker"
-    assert services["beat"]["command"] == ["python", "-m", "ext.beat"]
+    assert services["worker"]["command"] == "python -m extensions.worker"
+    assert services["beat"]["command"] == ["python", "-m", "extensions.beat"]
     assert "command" not in services["api"]
 
 
@@ -60,10 +60,10 @@ def test_registry_names_images(tmp_path):
 
 def test_backend_image_serves_asgi_process(tmp_path):
     dockerfile = _bundle(tmp_path).read("backend/Dockerfile")
-    assert dockerfile.rstrip().endswith('CMD ["uvicorn", "ext.main:app", "--host", "0.0.0.0", "--port", "8000"]')
+    assert dockerfile.rstrip().endswith('CMD ["uvicorn", "extensions.main:app", "--host", "0.0.0.0", "--port", "8000"]')
 
 
 def test_compose_resolves_processes(tmp_path):
     services = compose_config(_bundle(tmp_path))["services"]
-    assert services["worker"]["command"] == ["python", "-m", "ext.worker"]
+    assert services["worker"]["command"] == ["python", "-m", "extensions.worker"]
     assert services["api"]["healthcheck"]["test"][0] == "CMD"

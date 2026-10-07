@@ -1,5 +1,6 @@
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import asdict
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
@@ -24,9 +25,11 @@ from .context import (
     DockerDeployContext,
     GENERATED_FRONTEND,
     IMPLICIT_ENVIRONMENT,
+    NPM_MANIFESTS,
     SystemdDeployContext,
 )
 from .file_deployments import build_file_deployments
+
 
 def build_deploy_context(
     ir: IRDocument,
@@ -42,6 +45,7 @@ def build_deploy_context(
     mongo_db = ir.mongo.database
     context = build_context(ir)
     secret_fields = [f for f in build_settings_fields(context) if f.secret]
+    secret_env_names = tuple(f.env_name for f in secret_fields)
     file_deployments = build_file_deployments(context.file_stores)
     env_vars = {
         **{var: "" for var in dict.fromkeys([*deploy.env_vars, *(f.env_name for f in secret_fields)])},
@@ -60,11 +64,11 @@ def build_deploy_context(
         target=None if deploy.environments else target,
         datastores=datastores,
         environments=_environments(deploy, (f.env_name for f in secret_fields if f.generator)),
-        processes=_processes(deploy, datastores),
+        processes=_validated_processes(deploy, datastores),
         packages=tuple(_package((spec_dir / package).resolve()) for package in deploy.backend.packages),
         system_packages=deploy.backend.system_packages,
-        frontend=_frontend(deploy.frontend, spec_dir, ir.has_ui),
-        secret_env_names=tuple(f.env_name for f in secret_fields),
+        frontend=_frontend(deploy.frontend, spec_dir, ir.has_ui, secret_env_names),
+        secret_env_names=secret_env_names,
     )
 
     if deploy.runtime == "docker":
@@ -118,7 +122,8 @@ def _delivery(docker: IRDeployDocker) -> str:
     return "host" if docker.delivery == "registry" and docker.registry is None else docker.delivery
 
 
-def _processes(deploy: IRDeploy, datastores: Iterable[DeployDatastore]) -> tuple[IRDeployProcess, ...]:
+def _validated_processes(deploy: IRDeploy, datastores: Iterable[DeployDatastore]) -> tuple[IRDeployProcess, ...]:
+    """The backend processes, once none is named after a datastore service, which only the generator knows."""
     processes = deploy.backend.processes
     if clash := sorted({process.name for process in processes} & {ds.service for ds in datastores}):
         raise ValueError(f"deploy processes {clash} clash with datastore services of the same name")
@@ -130,18 +135,17 @@ def _package(source: Path) -> DeployPackage:
     return DeployPackage(source=source, requirements=tuple(requirements))
 
 
-def _frontend(frontend: IRDeployFrontend, spec_dir: Path, has_ui: bool) -> DeployFrontend | None:
+def _frontend(
+    frontend: IRDeployFrontend, spec_dir: Path, has_ui: bool, secrets: Iterable[str]
+) -> DeployFrontend | None:
+    """The frontend to deploy, once none of its public ``/config.js`` values is a backend secret."""
     if frontend.source is None:
         return GENERATED_FRONTEND if has_ui else None
-    source = (spec_dir / frontend.source).resolve()
+    if clash := sorted(set(frontend.env).intersection(secrets)):
+        raise ValueError(f"deploy frontend env {clash} would serve backend secrets to browsers in /config.js")
+    root = (spec_dir / frontend.source).resolve()
     return DeployFrontend(
-        source=source,
-        build=frontend.build,
-        output=frontend.output,
-        env=frontend.env,
-        args=frontend.args,
-        secrets=frontend.secrets,
-        locked=(source / "package-lock.json").is_file(),
+        **asdict(frontend), root=root, manifests=tuple(name for name in NPM_MANIFESTS if (root / name).is_file())
     )
 
 

@@ -1,20 +1,14 @@
-{% set builds_on_host = ctx.delivery == "host" and not ctx.image %}
-app_dir: "/opt/{{ '{{' }} app_project {{ '}}' }}"
 app_delivery: {{ ctx.delivery }}
 {% if ctx.delivery == "registry" %}
 app_registry: {{ ctx.registry_host }}
 {% endif %}
 app_repositories: {{ ctx.release_repositories | list | tojson }}
 app_retain: {{ ctx.retain }}
-app_pull: {{ "always" if ctx.image else "missing" }}
-app_build: {{ "always" if builds_on_host else "never" }}
+app_build: {{ "always" if ctx.builds_on_host else "never" }}
 {% if ctx.delivery == "host" %}
 image_tag: latest
 {% endif %}
 {% if ctx.delivery == "ssh" %}
 image_archive: "{{ '{{' }} playbook_dir {{ '}}' }}/images.tar.zst"
 {% endif %}
-app_generated_secrets: {{ ctx.secret_env_names | list | tojson }}
-app_defaults: {{ ctx.host_env | tojson }}
-app_env: {}
-app_secrets: {}
+app_frontend_env: {{ (ctx.frontend.env if ctx.frontend else ()) | list | tojson }}

@@ -4,9 +4,11 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...ir.api import FRONTEND_SERVICE
 from .context import DeployFrontend, DeployPackage
 
-FRONTEND_DIR = "frontend"
+# Local state that is either secret or built for the developer's machine; the images build their own.
+_LOCAL_STATE = shutil.ignore_patterns(".git", ".env", ".env.*", ".venv", "node_modules", "__pycache__")
 
 
 @dataclass(frozen=True)
@@ -20,8 +22,8 @@ class BundleStager:
         if not source.is_dir():
             raise ValueError(f"{owner} not found: {source}")
         if any(path.resolve().is_relative_to(source) for path in (self.spec_dir, self.output_dir)):
-            raise ValueError(f"{owner} must be a subdirectory of the spec that excludes the output: {source}")
-        shutil.copytree(source, self.output_dir / destination, dirs_exist_ok=True)
+            raise ValueError(f"{owner} must not contain the spec or the output directory: {source}")
+        shutil.copytree(source, self.output_dir / destination, dirs_exist_ok=True, ignore=_LOCAL_STATE)
         return f"./{destination}"
 
     def services(self, services: tuple[tuple[str, dict], ...]) -> tuple[tuple[str, dict], ...]:
@@ -33,8 +35,8 @@ class BundleStager:
             self.stage(package.source, package.bundle_path, f"deploy package '{package.name}'")
 
     def frontend(self, frontend: DeployFrontend | None) -> None:
-        if frontend is not None and frontend.source is not None:
-            self.stage(frontend.source, FRONTEND_DIR, "deploy frontend source")
+        if frontend is not None and frontend.root is not None:
+            self.stage(frontend.root, FRONTEND_SERVICE, "deploy frontend source")
 
     def _service(self, name: str, config: dict) -> dict:
         build = config.get("build")

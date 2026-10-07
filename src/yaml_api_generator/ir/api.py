@@ -90,6 +90,7 @@ class IRDeployProcess:
 
 
 GENERATED_ASGI_PROCESS = IRDeployProcess(name="app", asgi="app:app")
+FRONTEND_SERVICE = "frontend"
 
 
 @dataclass(frozen=True)
@@ -97,10 +98,6 @@ class IRDeployBackend:
     packages: tuple[str, ...] = ()
     system_packages: tuple[str, ...] = ()
     processes: tuple[IRDeployProcess, ...] = (GENERATED_ASGI_PROCESS,)
-
-    @property
-    def asgi_process(self) -> IRDeployProcess:
-        return next(process for process in self.processes if process.asgi)
 
 
 @dataclass(frozen=True)

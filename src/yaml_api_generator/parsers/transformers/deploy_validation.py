@@ -8,60 +8,85 @@ directory live with the deploy generator instead.
 import keyword
 from collections import Counter
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from functools import cached_property
 from itertools import chain, combinations
 from pathlib import Path
 from typing import Any
 
+from yaml_api_generator.ir.api import FRONTEND_SERVICE, GENERATED_ASGI_PROCESS
 from yaml_api_generator.parsers.errors import ConfigError
 
-GENERATED_MODULE = "app"
-FRONTEND_SERVICE = "frontend"
+GENERATED_MODULE = GENERATED_ASGI_PROCESS.asgi.partition(":")[0]
 DOCKER_ONLY_KEYS = (("docker", "registry"), ("frontend", "source"))
-
-DeployRule = Callable[[dict[str, Any], Path], Iterator[ConfigError]]
+DEPLOY_VERSIONS = ("0.3",)
+TEMPLATE_MARKERS = ("${", "{{", "{%", "{#")
 
 
 def _error(code: str, message: str, path: str, hint: str | None = None) -> ConfigError:
     return ConfigError(code=code, message=message, path=f"deploy.{path}", hint=hint)
 
 
-def _spec_subdirectory(relative: str, spec_dir: Path) -> Path | None:
-    """The resolved directory when it lies strictly below the spec directory."""
-    resolved_spec = spec_dir.resolve()
-    source = (spec_dir / relative).resolve()
-    return source if source != resolved_spec and source.is_relative_to(resolved_spec) else None
+@dataclass(frozen=True)
+class DeploySpec:
+    """The schema-valid spec whose ``deploy:`` section the rules check, and the directory it lives in."""
+
+    spec: dict[str, Any]
+    spec_dir: Path
+
+    @property
+    def deploy(self) -> dict[str, Any]:
+        return self.spec["deploy"]
+
+    @property
+    def ui(self) -> dict[str, Any]:
+        return self.spec.get("ui") or {}
+
+    @property
+    def processes(self) -> dict[str, dict[str, Any]]:
+        return self.deploy.get("backend", {}).get("processes", {})
+
+    @property
+    def environments(self) -> dict[str, dict[str, Any]]:
+        return self.deploy.get("environments", {})
+
+    def subdirectory(self, relative: str) -> Path | None:
+        """The resolved directory when it lies strictly below the spec directory."""
+        resolved_spec = self.spec_dir.resolve()
+        source = (self.spec_dir / relative).resolve()
+        return source if source != resolved_spec and source.is_relative_to(resolved_spec) else None
+
+    @cached_property
+    def package_modules(self) -> dict[int, str]:
+        """Module name, by list index, of every package placed below the spec: its directory basename."""
+        sources = (self.subdirectory(package) for package in self.deploy.get("backend", {}).get("packages", []))
+        return {index: source.name for index, source in enumerate(sources) if source is not None}
 
 
-def _processes(deploy: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return deploy.get("backend", {}).get("processes", {})
+DeployRule = Callable[[DeploySpec], Iterator[ConfigError]]
 
 
-def _package_modules(deploy: dict[str, Any], spec_dir: Path) -> dict[int, str]:
-    """Module name, by list index, of every package placed below the spec: its directory basename."""
-    sources = (_spec_subdirectory(package, spec_dir) for package in deploy.get("backend", {}).get("packages", []))
-    return {index: source.name for index, source in enumerate(sources) if source is not None}
-
-
-def _docker_only(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    if deploy["runtime"] == "docker":
+def _docker_only(spec: DeploySpec) -> Iterator[ConfigError]:
+    if spec.deploy["runtime"] == "docker":
         return
     for section, key in DOCKER_ONLY_KEYS:
-        if key in deploy.get(section, {}):
+        if key in spec.deploy.get(section, {}):
             yield _error(
                 "DEPLOY_DOCKER_ONLY", f"'{section}.{key}' requires the docker runtime", f"{section}.{key}",
                 "Set deploy.runtime to docker or remove the key",
             )
 
 
-def _image_or_registry(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    if {"image", "registry"} <= deploy.get("docker", {}).keys():
+def _image_or_registry(spec: DeploySpec) -> Iterator[ConfigError]:
+    if {"image", "registry"} <= spec.deploy.get("docker", {}).keys():
         yield _error(
             "DEPLOY_IMAGE_REGISTRY_EXCLUSIVE", "docker.image and docker.registry are mutually exclusive",
-            "docker", "docker.image is a base image; docker.registry is where built images are pushed",
+            "docker", "docker.image is a prebuilt backend image pulled as-is; docker.registry is where built images are pushed",
         )
 
 
-def _registry_required(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
+def _registry_required(spec: DeploySpec) -> Iterator[ConfigError]:
+    deploy = spec.deploy
     docker = deploy.get("docker", {})
     builds_images = (
         "packages" in deploy.get("backend", {})
@@ -81,9 +106,9 @@ def _registry_required(deploy: dict[str, Any], spec_dir: Path) -> Iterator[Confi
         )
 
 
-def _package_location(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    for index, package in enumerate(deploy.get("backend", {}).get("packages", [])):
-        source = _spec_subdirectory(package, spec_dir)
+def _package_location(spec: DeploySpec) -> Iterator[ConfigError]:
+    for index, package in enumerate(spec.deploy.get("backend", {}).get("packages", [])):
+        source = spec.subdirectory(package)
         if source is None:
             yield _error(
                 "DEPLOY_PACKAGE_OUTSIDE_SPEC", f"package '{package}' must be a subdirectory of the spec directory",
@@ -95,8 +120,8 @@ def _package_location(deploy: dict[str, Any], spec_dir: Path) -> Iterator[Config
             )
 
 
-def _package_names(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    names = _package_modules(deploy, spec_dir)
+def _package_names(spec: DeploySpec) -> Iterator[ConfigError]:
+    names = spec.package_modules
     counts = Counter(names.values())
     for index, name in names.items():
         if not name.isidentifier() or keyword.iskeyword(name) or name == GENERATED_MODULE:
@@ -111,19 +136,18 @@ def _package_names(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigErr
             )
 
 
-def _single_asgi_process(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    processes = _processes(deploy)
-    asgi = [name for name, process in processes.items() if "asgi" in process]
-    if processes and len(asgi) != 1:
+def _single_asgi_process(spec: DeploySpec) -> Iterator[ConfigError]:
+    asgi = [name for name, process in spec.processes.items() if "asgi" in process]
+    if spec.processes and len(asgi) != 1:
         yield _error(
             "DEPLOY_ASGI_PROCESS_COUNT", f"exactly one process must declare asgi, found {len(asgi)}",
             "backend.processes", "The asgi process serves HTTP; the others run a command",
         )
 
 
-def _asgi_module_known(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    modules = {GENERATED_MODULE, *_package_modules(deploy, spec_dir).values()}
-    asgi = {name: process["asgi"] for name, process in _processes(deploy).items() if "asgi" in process}
+def _asgi_module_known(spec: DeploySpec) -> Iterator[ConfigError]:
+    modules = {GENERATED_MODULE, *spec.package_modules.values()}
+    asgi = {name: process["asgi"] for name, process in spec.processes.items() if "asgi" in process}
     for name, target in asgi.items():
         root = target.partition(":")[0].partition(".")[0]
         if root not in modules:
@@ -133,20 +157,20 @@ def _asgi_module_known(deploy: dict[str, Any], spec_dir: Path) -> Iterator[Confi
             )
 
 
-def _process_names_unique(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    taken = {FRONTEND_SERVICE, *deploy.get("services", {})}
-    for name in sorted(_processes(deploy).keys() & taken):
+def _process_names_unique(spec: DeploySpec) -> Iterator[ConfigError]:
+    taken = {FRONTEND_SERVICE, *spec.deploy.get("services", {})}
+    for name in sorted(spec.processes.keys() & taken):
         yield _error(
             "DEPLOY_PROCESS_NAME_CLASH", f"process '{name}' clashes with another deploy service",
             f"backend.processes.{name}",
         )
 
 
-def _frontend_source(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    relative = deploy.get("frontend", {}).get("source")
+def _frontend_source(spec: DeploySpec) -> Iterator[ConfigError]:
+    relative = spec.deploy.get("frontend", {}).get("source")
     if relative is None:
         return
-    source = _spec_subdirectory(relative, spec_dir)
+    source = spec.subdirectory(relative)
     if source is None:
         yield _error(
             "DEPLOY_FRONTEND_OUTSIDE_SPEC", f"frontend source '{relative}' must be a subdirectory of the spec directory",
@@ -158,8 +182,8 @@ def _frontend_source(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigE
         )
 
 
-def _frontend_names_disjoint(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    frontend = deploy.get("frontend", {})
+def _frontend_names_disjoint(spec: DeploySpec) -> Iterator[ConfigError]:
+    frontend = spec.deploy.get("frontend", {})
     for first, second in combinations(("env", "args", "secrets"), 2):
         for name in sorted(set(frontend.get(first, [])) & set(frontend.get(second, []))):
             yield _error(
@@ -168,22 +192,40 @@ def _frontend_names_disjoint(deploy: dict[str, Any], spec_dir: Path) -> Iterator
             )
 
 
-def _environment_literals(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    for env_name, environment in deploy.get("environments", {}).items():
+def _environment_literals(spec: DeploySpec) -> Iterator[ConfigError]:
+    for env_name, environment in spec.environments.items():
         for key, value in environment.get("env", {}).items():
-            if "${" in value:
+            if any(marker in value for marker in TEMPLATE_MARKERS):
                 yield _error(
-                    "DEPLOY_ENV_VALUE_INTERPOLATED", f"'{key}' must be a literal value",
+                    "DEPLOY_ENV_VALUE_INTERPOLATED", f"'{key}' must be a literal value, not a template",
                     f"environments.{env_name}.env.{key}", "List values that come from CI under secrets",
                 )
 
 
-def _environment_secrets_disjoint(deploy: dict[str, Any], spec_dir: Path) -> Iterator[ConfigError]:
-    for env_name, environment in deploy.get("environments", {}).items():
+def _environment_secrets_disjoint(spec: DeploySpec) -> Iterator[ConfigError]:
+    for env_name, environment in spec.environments.items():
         for key in sorted(environment.get("env", {}).keys() & set(environment.get("secrets", []))):
             yield _error(
                 "DEPLOY_ENV_SECRET_OVERLAP", f"'{key}' is both a literal env value and a secret",
                 f"environments.{env_name}.secrets",
+            )
+
+
+def _frontend_source_without_ui(spec: DeploySpec) -> Iterator[ConfigError]:
+    if "source" in spec.deploy.get("frontend", {}) and spec.ui.get("frontend"):
+        yield _error(
+            "DEPLOY_FRONTEND_SOURCE_WITH_UI", "frontend.source and ui.frontend both define the frontend",
+            "frontend.source", "Keep the hand-written frontend or the generated one, not both",
+        )
+
+
+def _frontend_env_public(spec: DeploySpec) -> Iterator[ConfigError]:
+    public = set(spec.deploy.get("frontend", {}).get("env", []))
+    for env_name, environment in spec.environments.items():
+        for key in sorted(public & set(environment.get("secrets", []))):
+            yield _error(
+                "DEPLOY_FRONTEND_ENV_SECRET", f"'{key}' is served to browsers in /config.js but listed as a secret",
+                f"environments.{env_name}.secrets", "Values in /config.js are public: keep secrets out of frontend.env",
             )
 
 
@@ -198,6 +240,8 @@ _RULES: tuple[DeployRule, ...] = (
     _process_names_unique,
     _frontend_source,
     _frontend_names_disjoint,
+    _frontend_source_without_ui,
+    _frontend_env_public,
     _environment_literals,
     _environment_secrets_disjoint,
 )
@@ -205,10 +249,10 @@ _RULES: tuple[DeployRule, ...] = (
 
 def validate_spec_deploy(spec: dict[str, Any], spec_dir: Path) -> list[ConfigError]:
     """Every cross-key violation of the ``deploy:`` section."""
-    deploy = spec.get("deploy")
-    if not isinstance(deploy, dict):
+    if not isinstance(spec.get("deploy"), dict):
         return []
-    return list(chain.from_iterable(rule(deploy, spec_dir) for rule in _RULES))
+    deploy_spec = DeploySpec(spec, spec_dir)
+    return list(chain.from_iterable(rule(deploy_spec) for rule in _RULES))
 
 
 def _unknown_keys(node: Any, schema: dict[str, Any], defs: dict[str, Any], path: str) -> Iterator[str]:
@@ -238,3 +282,10 @@ def warn_unknown_deploy_keys(spec: dict[str, Any], schema: dict[str, Any]) -> li
         )
         for path in _unknown_keys(spec["deploy"], deploy_schema, schema.get("$defs", {}), "deploy")
     ]
+
+
+def check_spec_deploy(spec: dict[str, Any], spec_dir: Path, schema: dict[str, Any]) -> list[ConfigError]:
+    """Cross-key violations where the spec version supports ``deploy:``; warnings about the keys it ignores elsewhere."""
+    if str(spec.get("version", "")) in DEPLOY_VERSIONS:
+        return validate_spec_deploy(spec, spec_dir)
+    return warn_unknown_deploy_keys(spec, schema)

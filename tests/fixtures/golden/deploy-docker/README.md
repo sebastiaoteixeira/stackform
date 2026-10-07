@@ -9,7 +9,6 @@ This directory contains Docker deployment configuration for my-api-service.
 
 ## Quick Start
 
-
 ### 1. Configure Environment Variables
 
 Edit the `.env` file with your configuration:

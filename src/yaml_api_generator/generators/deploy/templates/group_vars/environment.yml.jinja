@@ -2,7 +2,7 @@ app_project: {{ ctx.project(environment) }}
 {% if environment.env %}
 app_env:
   {% for key, value in environment.env.items() %}
-  {{ key }}: {{ value | tojson }}
+  {{ key }}: {{ value | unsafe }}
   {% endfor %}
 {% endif %}
 {% if environment.secrets %}

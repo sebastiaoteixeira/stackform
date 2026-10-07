@@ -1,6 +1,7 @@
 """v0.3 deploy keys: backend processes and packages, hand-written frontend, environments, registry."""
 
 from dataclasses import replace
+from itertools import starmap
 from typing import Any
 
 from yaml_api_generator.ir import (
@@ -48,6 +49,10 @@ def _frontend(data: dict[str, Any]) -> IRDeployFrontend:
     )
 
 
+def _environment(name: str, data: dict[str, Any]) -> IRDeployEnvironment:
+    return IRDeployEnvironment(name=name, env=dict(data.get("env", {})), secrets=tuple(data.get("secrets", ())))
+
+
 class V03DeployTransformer(DeployTransformer):
     """Extends the v0.2 deploy IR with the v0.3 keys."""
 
@@ -59,10 +64,7 @@ class V03DeployTransformer(DeployTransformer):
             deploy,
             backend=_backend(deploy_data.get("backend", {})),
             frontend=_frontend(deploy_data.get("frontend", {})),
-            environments=tuple(
-                IRDeployEnvironment(name=name, env=dict(env.get("env", {})), secrets=tuple(env.get("secrets", ())))
-                for name, env in deploy_data.get("environments", {}).items()
-            ),
+            environments=tuple(starmap(_environment, deploy_data.get("environments", {}).items())),
         )
 
     def _docker(self, docker_data: dict[str, Any]) -> IRDeployDocker:

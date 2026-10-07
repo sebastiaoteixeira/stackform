@@ -11,9 +11,9 @@ Environment="PATH={{ app_dir }}/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH={{ app_dir }}/packages"
 {% endif %}
 {% for name, value in item.env.items() %}
-Environment="{{ name }}={{ value }}"
+Environment={{ (name ~ '=' ~ value) | unit_quote }}
 {% endfor %}
-ExecStart=/usr/bin/env {{ item.command }}
+ExecStart=/usr/bin/env {{ item.command | unit_escape }}
 Restart={{ app_restart }}
 
 [Install]

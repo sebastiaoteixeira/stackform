@@ -2,8 +2,8 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ...ir import IRDeployEnvironment, IRDeployProcess
-from ...ir.api import GENERATED_ASGI_PROCESS
+from ...ir import IRDeployEnvironment, IRDeployFrontend, IRDeployProcess
+from ...ir.api import FRONTEND_SERVICE, GENERATED_ASGI_PROCESS
 
 
 @dataclass(frozen=True)
@@ -50,18 +50,20 @@ class DeployPackage:
         return f"packages/{self.name}"
 
 
-@dataclass(frozen=True)
-class DeployFrontend:
-    """The frontend image. ``source`` is a hand-written app built in place of the generated one;
-    ``env`` names are served at runtime through ``/config.js``; ``locked`` selects ``npm ci``."""
+NPM_MANIFESTS = ("package.json", "package-lock.json", ".npmrc")
 
-    source: Path | None = None
-    build: str = "npm run build"
-    output: str = "dist"
-    env: tuple[str, ...] = ()
-    args: tuple[str, ...] = ()
-    secrets: tuple[str, ...] = ()
-    locked: bool = False
+
+@dataclass(frozen=True)
+class DeployFrontend(IRDeployFrontend):
+    """The frontend image. A hand-written ``source`` is staged from ``root`` and installed
+    from its ``manifests``, the ``NPM_MANIFESTS`` it has; a lockfile selects ``npm ci``."""
+
+    root: Path | None = None
+    manifests: tuple[str, ...] = NPM_MANIFESTS[:1]
+
+    @property
+    def locked(self) -> bool:
+        return "package-lock.json" in self.manifests
 
 
 GENERATED_FRONTEND = DeployFrontend(env=("VITE_API_BASE_URL",))
@@ -86,10 +88,6 @@ class DeployContext:
     system_packages: tuple[str, ...] = ()
     frontend: DeployFrontend | None = None
     secret_env_names: tuple[str, ...] = ()
-
-    @property
-    def has_frontend(self) -> bool:
-        return self.frontend is not None
 
     @property
     def asgi_process(self) -> IRDeployProcess:
@@ -123,12 +121,17 @@ class DockerDeployContext(DeployContext):
 
     @property
     def frontend_image(self) -> str:
-        return self._release_image("frontend")
+        return self._release_image(FRONTEND_SERVICE)
+
+    @property
+    def builds_on_host(self) -> bool:
+        """Without a registry or an SSH copy, the host builds every image not pulled as-is."""
+        return self.delivery == "host" and (self.image is None or self.frontend is not None)
 
     @property
     def release_repositories(self) -> tuple[str, ...]:
         """Repositories of the images each release tags, pruned on the host beyond ``retain``."""
-        components = (*(() if self.image else ("backend",)), *(("frontend",) if self.has_frontend else ()))
+        components = (*(() if self.image else ("backend",)), *((FRONTEND_SERVICE,) if self.frontend else ()))
         return tuple(self._repository(component) for component in components)
 
     @property

@@ -38,8 +38,8 @@ def test_default_process_serves_generated_app(tmp_path):
 
 def test_asgi_process_is_picked_among_workers(tmp_path):
     processes = (
-        IRDeployProcess(name="worker", command="python -m ext.worker"),
-        IRDeployProcess(name="api", asgi="ext.main:app"),
+        IRDeployProcess(name="worker", command="python -m extensions.worker"),
+        IRDeployProcess(name="api", asgi="extensions.main:app"),
     )
     ctx = _context(tmp_path, backend=IRDeployBackend(processes=processes))
     assert ctx.asgi_process.name == "api"
@@ -52,38 +52,44 @@ def test_process_clashing_with_datastore_service_rejected(tmp_path):
 
 
 def test_package_requirements_discovered_sorted(tmp_path):
-    for requirements in ("ext/workers/requirements.txt", "ext/requirements.txt", "ext/api/requirements.txt"):
+    for requirements in ("extensions/workers/requirements.txt", "extensions/requirements.txt", "extensions/api/requirements.txt"):
         _write(tmp_path / requirements, "httpx\n")
-    _write(tmp_path / "ext" / "main.py")
+    _write(tmp_path / "extensions" / "main.py")
 
-    (package,) = _context(tmp_path, backend=IRDeployBackend(packages=("ext",))).packages
+    (package,) = _context(tmp_path, backend=IRDeployBackend(packages=("extensions",))).packages
 
-    assert package.name == "ext"
-    assert package.bundle_path == "packages/ext"
+    assert package.name == "extensions"
+    assert package.bundle_path == "packages/extensions"
     assert package.requirements == ("api/requirements.txt", "requirements.txt", "workers/requirements.txt")
 
 
 def test_frontend_source_enables_frontend(tmp_path):
-    _write(tmp_path / "designs" / "package.json", "{}")
-    ctx = _context(tmp_path, frontend=IRDeployFrontend(source="designs", env=("VITE_API_BASE_URL",)))
+    _write(tmp_path / "web" / "package.json", "{}")
+    ctx = _context(tmp_path, frontend=IRDeployFrontend(source="web", env=("VITE_API_BASE_URL",)))
 
-    assert ctx.has_frontend
-    assert ctx.frontend.source == (tmp_path / "designs").resolve()
+    assert ctx.frontend.root == (tmp_path / "web").resolve()
     assert (ctx.frontend.build, ctx.frontend.output) == ("npm run build", "dist")
     assert ctx.frontend.env == ("VITE_API_BASE_URL",)
     assert not ctx.frontend.locked
 
 
 def test_frontend_lockfile_selects_clean_install(tmp_path):
-    _write(tmp_path / "designs" / "package.json", "{}")
-    _write(tmp_path / "designs" / "package-lock.json", "{}")
-    assert _context(tmp_path, frontend=IRDeployFrontend(source="designs")).frontend.locked
+    _write(tmp_path / "web" / "package.json", "{}")
+    _write(tmp_path / "web" / "package-lock.json", "{}")
+    assert _context(tmp_path, frontend=IRDeployFrontend(source="web")).frontend.locked
+
+
+def test_frontend_installs_from_the_npm_manifests_it_has(tmp_path):
+    _write(tmp_path / "web" / "package.json", "{}")
+    _write(tmp_path / "web" / ".npmrc", "//npm.example.com/:_authToken=${NPM_TOKEN}\n")
+    frontend = _context(tmp_path, frontend=IRDeployFrontend(source="web")).frontend
+    assert frontend.manifests == ("package.json", ".npmrc")
+    assert not frontend.locked
 
 
 def test_without_frontend_source_or_ui_no_frontend(tmp_path):
     ctx = _context(tmp_path)
     assert ctx.frontend is None
-    assert not ctx.has_frontend
 
 
 def test_without_environments_implicit_one_targets_host(tmp_path):
@@ -109,6 +115,12 @@ def test_generated_secret_in_environment_rejected(tmp_path):
         _context(tmp_path, environments=environments)
 
 
+def test_frontend_env_serving_a_backend_secret_rejected(tmp_path):
+    _write(tmp_path / "web" / "package.json", "{}")
+    with pytest.raises(ValueError, match=r"frontend env \['JWT_SECRET'\]"):
+        _context(tmp_path, frontend=IRDeployFrontend(source="web", env=("JWT_SECRET",)))
+
+
 def test_docker_delivery_settings_carried(tmp_path):
     docker = IRDeployDocker(registry="ghcr.io/acme/app", delivery="ssh", retain=5)
     ctx = _context(tmp_path, docker=docker)
@@ -122,20 +134,32 @@ def test_docker_delivery_defaults(tmp_path):
 
 def test_packages_and_frontend_source_staged_into_bundle(tmp_path):
     spec_dir = tmp_path / "spec"
-    _write(spec_dir / "ext" / "main.py", "app = None\n")
-    _write(spec_dir / "designs" / "package.json", "{}")
+    _write(spec_dir / "extensions" / "main.py", "app = None\n")
+    _write(spec_dir / "web" / "package.json", "{}")
     out = tmp_path / "out"
-    ctx = _context(spec_dir, backend=IRDeployBackend(packages=("ext",)), frontend=IRDeployFrontend(source="designs"))
+    ctx = _context(spec_dir, backend=IRDeployBackend(packages=("extensions",)), frontend=IRDeployFrontend(source="web"))
 
     DockerDeployGenerator().generate(ctx, out, spec_dir)
 
-    assert (out / "packages" / "ext" / "main.py").is_file()
+    assert (out / "packages" / "extensions" / "main.py").is_file()
     assert (out / "frontend" / "package.json").is_file()
 
 
+def test_local_state_never_reaches_the_bundle(tmp_path):
+    spec_dir = tmp_path / "spec"
+    _write(spec_dir / "extensions" / "main.py", "app = None\n")
+    for local in (".env", ".env.local", ".git/config", ".venv/pyvenv.cfg", "node_modules/x.js", "__pycache__/main.pyc"):
+        _write(spec_dir / "extensions" / local, "")
+    out = tmp_path / "out"
+
+    DockerDeployGenerator().generate(_context(spec_dir, backend=IRDeployBackend(packages=("extensions",))), out, spec_dir)
+
+    assert sorted(path.name for path in (out / "packages" / "extensions").iterdir()) == ["main.py"]
+
+
 def test_package_enclosing_output_rejected(tmp_path):
-    out = tmp_path / "ext" / "out"
+    out = tmp_path / "extensions" / "out"
     out.mkdir(parents=True)
-    ctx = _context(tmp_path, backend=IRDeployBackend(packages=("ext",)))
-    with pytest.raises(ValueError, match="excludes the output"):
+    ctx = _context(tmp_path, backend=IRDeployBackend(packages=("extensions",)))
+    with pytest.raises(ValueError, match="must not contain the spec or the output directory"):
         DockerDeployGenerator().generate(ctx, out, tmp_path)

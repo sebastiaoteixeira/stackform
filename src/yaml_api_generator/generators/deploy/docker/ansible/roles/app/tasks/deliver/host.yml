@@ -3,11 +3,4 @@
     src: "{{ playbook_dir }}/"
     dest: "{{ app_dir }}/"
     delete: true
-    rsync_opts:
-      - "--exclude=/.env"
-      - "--exclude=/roles"
-      - "--exclude=/group_vars"
-      - "--exclude=/playbook.yml"
-      - "--exclude=/inventory.yml"
-      - "--exclude=/ansible.cfg"
-      - "--exclude=/requirements.yml"
+    rsync_opts: "{{ app_sync_excludes | map('regex_replace', '^', '--exclude=') | list }}"

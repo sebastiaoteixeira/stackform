@@ -1,0 +1,8 @@
+app_dir: "/opt/{{ '{{' }} app_project {{ '}}' }}"
+{% include "roles/app/defaults/runtime.yml.jinja" %}
+# Controller-side bundle files, never copied to the host
+app_sync_excludes: [/.env, /roles, /group_vars, /playbook.yml, /inventory.yml, /ansible.cfg, /requirements.yml]
+app_generated_secrets: {{ ctx.secret_env_names | list | tojson }}
+app_defaults: {{ ctx.host_env | unsafe }}
+app_env: {}
+app_secrets: {}

@@ -5,7 +5,7 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json {% if frontend.locked %}package-lock.json {% endif %}./
+COPY {{ frontend.manifests | join(" ") }} ./
 RUN {{ mounts }}{{ "npm ci" if frontend.locked else "npm install" }}
 
 COPY . ./

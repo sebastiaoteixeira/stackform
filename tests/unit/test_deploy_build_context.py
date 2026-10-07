@@ -138,9 +138,9 @@ deploy:
 
     tasks = (out / "roles" / "app" / "tasks" / "environment.yml").read_text()
     assert "lookup('ansible.builtin.password'" in tasks
-    release = (out / "roles" / "app" / "tasks" / "release.yml").read_text()
-    assert "ansible.builtin.template:" in release
-    assert "env.j2" in release
+    start = (out / "roles" / "app" / "tasks" / "start.yml").read_text()
+    assert "ansible.builtin.template:" in start
+    assert "env.j2" in start
 
     assert not (out / ".env").exists()
     assert (out / "roles" / "app" / "templates" / "env.j2").exists()
@@ -152,6 +152,6 @@ def test_build_context_enclosing_spec_or_output_rejected(tmp_path, context):
     spec_dir.mkdir()
     out = spec_dir / "out"
     out.mkdir()
-    with pytest.raises(ValueError, match="must be a subdirectory"):
+    with pytest.raises(ValueError, match="must not contain the spec or the output directory"):
         _generate(_ctx((("frontend", {"build": {"context": context}}),)), spec_dir, out)
     assert list(out.iterdir()) == []

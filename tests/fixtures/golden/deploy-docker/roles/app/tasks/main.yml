@@ -9,6 +9,14 @@
 - name: Prepare the release environment
   ansible.builtin.import_tasks: environment.yml
 
+# nginx substitutes them into a JavaScript string literal of /config.js.
+- name: Require frontend config values that config.js can hold
+  ansible.builtin.assert:
+    that: release_values[item] | default('') is not search('["\\\\]')
+    fail_msg: "{{ item }} must not contain a double quote or a backslash: the frontend reads it from /config.js"
+    quiet: true
+  loop: "{{ app_frontend_env }}"
+
 - name: Remember the previous release
   ansible.builtin.set_fact:
     previous_tag: "{{ running_env.IMAGE_TAG | default('') }}"

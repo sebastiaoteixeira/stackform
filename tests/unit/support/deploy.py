@@ -1,11 +1,12 @@
 """Deploy bundles generated from a fixture spec with its ``deploy:`` section replaced."""
 
+import importlib.util
 import shutil
 import subprocess
 from dataclasses import dataclass, replace
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 import yaml
@@ -16,6 +17,13 @@ from yaml_api_generator.ir import IRDeploy
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 
 
+class AnsibleLoader(yaml.SafeLoader):
+    """Reads Ansible's ``!unsafe`` values as the plain strings they hold."""
+
+
+AnsibleLoader.add_constructor("!unsafe", AnsibleLoader.construct_scalar)
+
+
 @dataclass(frozen=True)
 class DeployBundle:
     root: Path
@@ -24,7 +32,15 @@ class DeployBundle:
         return (self.root / path).read_text()
 
     def load(self, path: str) -> Any:
-        return yaml.safe_load(self.read(path))
+        return yaml.load(self.read(path), AnsibleLoader)
+
+    @cached_property
+    def filters(self) -> dict[str, Callable]:
+        """The Jinja filters the app role's filter plugins add to Ansible."""
+        spec = importlib.util.spec_from_file_location("quoting", self.root / "roles/app/filter_plugins/quoting.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.FilterModule().filters()
 
     @cached_property
     def compose(self) -> dict:

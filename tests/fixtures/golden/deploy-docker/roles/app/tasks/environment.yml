@@ -19,11 +19,12 @@
   failed_when: false
   no_log: true
 
+# Read back unquoted: generated secrets and image tags never need escaping.
 - name: Parse the running release
   ansible.builtin.set_fact:
     running_env: >-
-      {{ dict((running_env_file.content | default('') | b64decode).splitlines()
-         | select('match', '^[^=]+=') | map('split', '=', 1)) }}
+      {{ dict(running_env_file.content | default('') | b64decode
+         | regex_findall('^([A-Za-z_][A-Za-z0-9_]*)="?(.*?)"?$', multiline=True)) }}
   no_log: true
 
 # Generated secrets exist only on the host: reusing them keeps sessions and data valid across releases.
@@ -33,4 +34,9 @@
       {{ generated_secrets | default({}) | combine({item: running_env[item]
          | default(lookup('ansible.builtin.password', '/dev/null', length=43, chars=['ascii_letters', 'digits']), true)}) }}
   loop: "{{ app_generated_secrets }}"
+  no_log: true
+
+- name: Assemble the release environment
+  ansible.builtin.set_fact:
+    release_values: "{{ app_defaults | combine(generated_secrets | default({}), app_env, app_secrets) }}"
   no_log: true

@@ -9,6 +9,9 @@ include:
 {% set asgi = ctx.asgi_process %}
 x-backend: &backend
   image: {{ ctx.backend_image }}
+  {% if ctx.image %}
+  pull_policy: always
+  {% endif %}
   env_file:
     - .env
   {% if ctx.app_volumes %}
