@@ -110,6 +110,8 @@ class DockerDeployContext(DeployContext):
     registry: str | None = None
     delivery: str = "host"
     retain: int = 3
+    memory_limits: dict[str, str] = field(default_factory=dict)
+    mongo_cache_gb: float | None = None
     extra_services: tuple[tuple[str, dict], ...] = field(default_factory=tuple)
     include: tuple[str, ...] = field(default_factory=tuple)
     app_environment: tuple[str, ...] = field(default_factory=tuple)

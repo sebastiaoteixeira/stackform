@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 {% set frontend = ctx.frontend %}
 {% set mounts %}{% for name in frontend.secrets %}--mount=type=secret,id={{ name | lower }},env={{ name }} {% endfor %}{% endset %}
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY . ./
 {% for name in frontend.args %}
 ARG {{ name }}
 {% endfor %}
-RUN {{ mounts }}{{ frontend.build }}
+RUN {{ frontend.build }}
 
 FROM nginx:alpine
 

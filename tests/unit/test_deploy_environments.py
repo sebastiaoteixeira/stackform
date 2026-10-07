@@ -71,3 +71,10 @@ def test_bundle_ships_ansible_config_and_collections(tmp_path):
 
 def test_playbook_passes_ansible_syntax_check(tmp_path):
     ansible_syntax_check(deploy_bundle(tmp_path, environments=ENVIRONMENTS), "deploy_environment=staging")
+
+
+def test_runtime_installation_can_be_disabled_on_preprovisioned_hosts(tmp_path):
+    play = deploy_bundle(tmp_path, environments=ENVIRONMENTS, mongo_local=True).load("playbook.yml")[-1]
+    assert play["roles"][0] == {
+        "role": "mongodb", "when": "deploy_install_runtime | default(true) | bool",
+    }

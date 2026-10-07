@@ -71,6 +71,8 @@ class IRDeployDocker:
     registry: str | None = None
     delivery: str = "registry"
     retain: int = 3
+    memory_limits: dict[str, str] = field(default_factory=dict)
+    mongo_cache_gb: float | None = None
 
 
 @dataclass(frozen=True)

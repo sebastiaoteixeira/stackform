@@ -60,10 +60,11 @@ def test_without_lockfile_plain_install(tmp_path, web):
     assert "npm ci" not in dockerfile
 
 
-def test_secrets_mounted_into_install_and_build(tmp_path, web):
+def test_secrets_mounted_only_into_install(tmp_path, web):
     bundle = _bundle(tmp_path)
     mount = "--mount=type=secret,id=npm_token,env=NPM_TOKEN"
-    assert bundle.read("frontend/Dockerfile").count(mount) == 2
+    assert bundle.read("frontend/Dockerfile").count(mount) == 1
+    assert "RUN npm run build:prod" in bundle.read("frontend/Dockerfile")
     assert bundle.services["frontend"]["build"]["secrets"] == ["npm_token"]
     assert bundle.compose["secrets"] == {"npm_token": {"environment": "NPM_TOKEN"}}
 

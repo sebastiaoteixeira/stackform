@@ -74,4 +74,6 @@ class V03DeployTransformer(DeployTransformer):
             registry=docker_data.get("registry"),
             delivery=docker_data.get("delivery", defaults.delivery),
             retain=docker_data.get("retain", defaults.retain),
+            memory_limits=dict(docker_data.get("memory_limits", {})),
+            mongo_cache_gb=docker_data.get("mongo_cache_gb"),
         )

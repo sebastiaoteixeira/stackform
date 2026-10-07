@@ -13,7 +13,8 @@ x-backend: &backend
   pull_policy: always
   {% endif %}
   env_file:
-    - .env
+    - path: .env
+      required: false
   {% if ctx.app_volumes %}
   volumes:
     {% for vol in ctx.app_volumes %}
@@ -32,6 +33,10 @@ services:
   {% for process in ctx.processes %}
   {{ process.name }}:
     <<: *backend
+    {% if process.name in ctx.memory_limits %}
+    mem_limit: {{ ctx.memory_limits[process.name] }}
+    memswap_limit: {{ ctx.memory_limits[process.name] }}
+    {% endif %}
     {% if process.asgi %}
     {% if not ctx.image %}
     build:
@@ -65,7 +70,13 @@ services:
   {% for ds in local_datastores %}
   {{ ds.service }}:
     image: {{ ds.image }}
-    {% if ds.command %}
+    {% if ds.service in ctx.memory_limits %}
+    mem_limit: {{ ctx.memory_limits[ds.service] }}
+    memswap_limit: {{ ctx.memory_limits[ds.service] }}
+    {% endif %}
+    {% if ds.type == "mongodb" and ctx.mongo_cache_gb is not none %}
+    command: ["mongod", "--wiredTigerCacheSizeGB", "{{ ctx.mongo_cache_gb }}"]
+    {% elif ds.command %}
     command: {{ ds.command }}
     {% endif %}
     {% if ds.service_env %}
@@ -84,6 +95,10 @@ services:
   {% if ctx.frontend %}
   frontend:
     image: {{ ctx.frontend_image }}
+    {% if "frontend" in ctx.memory_limits %}
+    mem_limit: {{ ctx.memory_limits["frontend"] }}
+    memswap_limit: {{ ctx.memory_limits["frontend"] }}
+    {% endif %}
     build:
       context: ./frontend
       additional_contexts:

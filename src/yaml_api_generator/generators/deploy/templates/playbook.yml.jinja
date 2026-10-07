@@ -22,7 +22,8 @@
   become: true
   roles:
     {% if ctx.mongo_local %}
-    - mongodb
+    - role: mongodb
+      when: deploy_install_runtime | default(true) | bool
     {% endif %}
     {% for role in roles %}
     - {{ role }}

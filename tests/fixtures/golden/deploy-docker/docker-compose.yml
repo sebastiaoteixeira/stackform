@@ -2,7 +2,8 @@ x-backend: &backend
   image: python:3.11-slim
   pull_policy: always
   env_file:
-    - .env
+    - path: .env
+      required: false
   restart: unless-stopped
 
 services:

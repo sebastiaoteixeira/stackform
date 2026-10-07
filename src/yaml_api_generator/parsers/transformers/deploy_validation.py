@@ -18,7 +18,7 @@ from yaml_api_generator.ir.api import FRONTEND_SERVICE, GENERATED_ASGI_PROCESS
 from yaml_api_generator.parsers.errors import ConfigError
 
 GENERATED_MODULE = GENERATED_ASGI_PROCESS.asgi.partition(":")[0]
-DOCKER_ONLY_KEYS = (("docker", "registry"), ("frontend", "source"))
+DOCKER_ONLY_KEYS = (("docker", "registry"), ("docker", "memory_limits"), ("docker", "mongo_cache_gb"), ("frontend", "source"))
 DEPLOY_VERSIONS = ("0.3",)
 TEMPLATE_MARKERS = ("${", "{{", "{%", "{#")
 

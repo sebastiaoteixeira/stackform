@@ -97,7 +97,7 @@ block. `frontend.source` replaces it with a hand-written app (docker only).
 | `output` | `dist` | Build output directory served by nginx. |
 | `env` | `[]` | Names served at runtime as `window.__CONFIG__` from `/config.js`. |
 | `args` | `[]` | Build arguments, for values that must be baked into the bundle. |
-| `secrets` | `[]` | BuildKit secrets available to install and build, such as `NPM_TOKEN`. They never reach an image layer. |
+| `secrets` | `[]` | BuildKit secrets available to dependency installation, such as `NPM_TOKEN`. Secret mounts are absent during the app build; commands must not copy credentials into output. |
 
 A name may appear in only one of `env`, `args` and `secrets`.
 
@@ -139,6 +139,36 @@ ship packages, processes or a frontend source need either `docker.registry` or
 `services` entries accept `profiles`, so local-only helpers such as a mail
 catcher start with `docker compose --profile local up` and never in a release.
 
+### Shared-host resource limits
+
+`docker.memory_limits` maps generated Compose service names (backend processes,
+`frontend`, and local datastores) to positive integer sizes such as `192m` or
+`1g`. Each sets both `mem_limit` and `memswap_limit`, preventing that container
+from using swap. Unknown service names fail generation. Extra `services` use
+Compose's native `mem_limit` and `memswap_limit` fields instead.
+
+`docker.mongo_cache_gb` sets `mongod --wiredTigerCacheSizeGB` for local MongoDB
+services. It must be between 0.256 and 10000, and requires a local MongoDB.
+The cache is only part of MongoDB's memory: leave room for connections and other
+allocations when choosing its container limit.
+
+```yaml
+  docker:
+    memory_limits: { api: 192m, worker: 128m, mongodb: 512m, frontend: 32m }
+    mongo_cache_gb: 0.256
+```
+
+These settings require the Docker runtime and are unset by default. Limits
+contain memory use; they do not establish that an application fits. Measure a
+representative workload and account for other host services before deployment.
+See [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)
+and [MongoDB WiredTiger caching](https://www.mongodb.com/docs/manual/core/wiredtiger/).
+
+Frontend images build on Node 22 Alpine. The generated Compose file permits a
+missing `.env`, so `docker buildx bake --print` and CI builds work directly from
+the bundle. Ansible still requires declared secrets and writes the runtime
+`.env` before starting containers.
+
 ## Environments
 
 Each environment is an inventory group with its own project, `<name>-<env>`,
@@ -162,6 +192,12 @@ Without `environments`, the bundle has one environment, `default`, whose host
 comes from the CLI, and keeps the `/opt/<name>` project it has always had.
 
 ## Releasing
+
+For a host where the runtime is already installed, extra vars can set
+`deploy_install_runtime: false` to skip the runtime provisioning role. With
+Docker, an account already allowed to use the daemon can also set
+`ansible_become: false` and `app_dir` to a directory it owns. Provision Docker
+and that access separately before using these overrides.
 
 ```bash
 ansible-galaxy collection install -r requirements.yml

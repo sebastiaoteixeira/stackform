@@ -67,7 +67,6 @@ def compose_config(bundle: DeployBundle) -> dict:
         ["docker", "compose", "version"], capture_output=True, check=False
     ).returncode:
         pytest.skip("docker compose is not installed")
-    (bundle.root / ".env").touch()
     result = subprocess.run(
         ["docker", "compose", "config", "--format", "json"],
         cwd=bundle.root, capture_output=True, text=True, check=False,

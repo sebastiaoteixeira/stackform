@@ -209,7 +209,7 @@ def test_v02_warns_on_v03_deploy_keys(tmp_path):
 
 def test_full_deploy_spec_builds_ir(tmp_path, extensions, web):
     deploy = {
-        "name": "trustacademy",
+        "name": "shop",
         "docker": {"registry": "ghcr.io/acme/app", "retain": 5},
         "backend": {
             "packages": [extensions],

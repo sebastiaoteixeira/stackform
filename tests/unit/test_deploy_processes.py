@@ -26,7 +26,7 @@ def test_processes_share_backend_image_and_env_file(tmp_path):
     services = _bundle(tmp_path).services
     for name in ("api", "worker", "beat"):
         assert services[name]["image"] == "app/backend:${IMAGE_TAG:-latest}"
-        assert services[name]["env_file"] == [".env"]
+        assert services[name]["env_file"] == [{"path": ".env", "required": False}]
         assert services[name]["restart"] == "unless-stopped"
 
 

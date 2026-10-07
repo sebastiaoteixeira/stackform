@@ -81,12 +81,15 @@ def build_deploy_context(
         app_environment = tuple(f"{key}=${{{key}:-{value}}}" for key, value in defaults.items()) + tuple(
             f"{f.env_name}=${{{f.env_name}}}" for f in secret_fields if f.env_name not in defaults
         )
+        _validate_memory_limits(docker, common)
         return DockerDeployContext(
             **common,
             image=docker.image,
             registry=docker.registry,
             delivery=_delivery(docker),
             retain=docker.retain,
+            memory_limits=docker.memory_limits,
+            mongo_cache_gb=docker.mongo_cache_gb,
             extra_services=deploy.extra_services,
             include=deploy.include,
             app_environment=app_environment,
@@ -102,6 +105,19 @@ def build_deploy_context(
         )
 
     raise ValueError(f"unknown runtime: {deploy.runtime}")
+
+
+def _validate_memory_limits(docker: IRDeployDocker, common: dict) -> None:
+    names = {p.name for p in common["processes"]}
+    names.update(ds.service for ds in common["datastores"] if ds.local)
+    if common["frontend"] is not None:
+        names.add("frontend")
+    if unknown := sorted(docker.memory_limits.keys() - names):
+        raise ValueError(f"docker.memory_limits names unknown generated services: {unknown}")
+    if docker.mongo_cache_gb is not None and not any(
+        ds.local and ds.type == "mongodb" for ds in common["datastores"]
+    ):
+        raise ValueError("docker.mongo_cache_gb requires a local MongoDB datastore")
 
 
 def _environments(deploy: IRDeploy, generated_secrets: Iterable[str]) -> tuple[IRDeployEnvironment, ...]:

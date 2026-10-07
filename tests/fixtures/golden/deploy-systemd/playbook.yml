@@ -2,6 +2,7 @@
   hosts: default
   become: true
   roles:
-    - mongodb
+    - role: mongodb
+      when: deploy_install_runtime | default(true) | bool
     - python
     - app

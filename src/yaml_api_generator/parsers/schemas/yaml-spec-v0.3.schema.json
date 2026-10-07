@@ -837,6 +837,17 @@
               "minimum": 0,
               "default": 3,
               "description": "Old image tags kept besides the running and previous ones."
+            },
+            "memory_limits": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "pattern": "^[1-9][0-9]*[kmg]$" },
+              "description": "Memory caps by generated Compose service name; also disables swap for those services."
+            },
+            "mongo_cache_gb": {
+              "type": "number",
+              "minimum": 0.256,
+              "maximum": 10000,
+              "description": "WiredTiger cache size for every local MongoDB service."
             }
           }
         },
