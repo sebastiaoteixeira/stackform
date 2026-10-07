@@ -299,10 +299,19 @@ def load_and_generate_ir(
     if schema_errors:
         raise ConfigErrors(schema_errors)
 
+    from .transformers.deploy_validation import validate_spec_deploy, warn_unknown_deploy_keys
+    deploy_warnings: tuple[ConfigError, ...] = ()
+    if version == "0.3":
+        deploy_errors = validate_spec_deploy(resolved, yaml_path.parent)
+        if deploy_errors:
+            raise ConfigErrors(deploy_errors)
+    else:
+        deploy_warnings = tuple(warn_unknown_deploy_keys(resolved, schema))
+
     from .transformers.registry import transform_config
 
     return ParseResult(
         ir=transform_config(resolved, yaml_path.parent),
         ui_block=ui_block,
-        warnings=trust_warnings + access_warnings,
+        warnings=trust_warnings + access_warnings + deploy_warnings,
     )

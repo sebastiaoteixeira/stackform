@@ -694,6 +694,84 @@
         }
       ]
     },
+    "EnvName": {
+      "type": "string",
+      "pattern": "^[A-Z_][A-Z0-9_]*$"
+    },
+    "EnvNames": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/EnvName" }
+    },
+    "DeployProcess": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["asgi"] },
+        { "required": ["command"] }
+      ],
+      "properties": {
+        "asgi": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$",
+          "description": "module:attribute served by uvicorn."
+        },
+        "command": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "minItems": 1, "items": { "type": "string" } }
+          ]
+        },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "DeployBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Directories, relative to the spec, staged into the image."
+        },
+        "system_packages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.+-]*$" }
+        },
+        "processes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+          "additionalProperties": { "$ref": "#/$defs/DeployProcess" }
+        }
+      }
+    },
+    "DeployFrontend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "description": "Hand-written frontend directory with a package.json." },
+        "build": { "type": "string", "minLength": 1, "default": "npm run build" },
+        "output": { "type": "string", "minLength": 1, "default": "dist" },
+        "env": { "$ref": "#/$defs/EnvNames", "description": "Rendered into /config.js at container start." },
+        "args": { "$ref": "#/$defs/EnvNames", "description": "Build-time arguments." },
+        "secrets": { "$ref": "#/$defs/EnvNames", "description": "BuildKit secrets mounted during the build." }
+      }
+    },
+    "DeployEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/EnvName" },
+          "additionalProperties": { "type": "string" }
+        },
+        "secrets": { "$ref": "#/$defs/EnvNames", "description": "Read from the Ansible controller environment." }
+      }
+    },
     "DeployConfig": {
       "type": "object",
       "required": ["runtime"],
@@ -729,7 +807,8 @@
                 { "type": "array", "items": { "type": "string" } },
                 { "type": "object" }
               ]},
-              "command": { "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}] }
+              "command": { "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}] },
+              "profiles": { "type": "array", "items": { "type": "string" } }
             }
           }
         },
@@ -746,8 +825,27 @@
         "docker": {
           "type": "object",
           "properties": {
-            "image": { "type": "string" }
+            "image": { "type": "string" },
+            "registry": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._/:-]*[a-z0-9]$",
+              "description": "Image repository prefix; images are <registry>/<service>:${IMAGE_TAG}."
+            },
+            "delivery": { "type": "string", "enum": ["registry", "ssh"], "default": "registry" },
+            "retain": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 3,
+              "description": "Old image tags kept besides the running and previous ones."
+            }
           }
+        },
+        "backend": { "$ref": "#/$defs/DeployBackend" },
+        "frontend": { "$ref": "#/$defs/DeployFrontend" },
+        "environments": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+          "additionalProperties": { "$ref": "#/$defs/DeployEnvironment" }
         },
         "systemd": {
           "type": "object",

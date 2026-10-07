@@ -13,6 +13,7 @@ from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from .access_transformer import AccessTransformer
 from .collection_transformer import CollectionTransformer
 from .datastore_transformer import parse_datastores, parse_file_datastores
+from .deploy_transformer import DeployTransformer
 from .dto_transformer import DtoTransformer
 from .file_transformer import FileStoreRegistry, FileTransformer
 from .identity_transformer import IdentityTransformer
@@ -34,6 +35,7 @@ class V02Transformer:
         self._route = RouteTransformer(self._access)
         self._policies = PoliciesTransformer()
         self._files = FileTransformer()
+        self._deploy = DeployTransformer()
 
     def transform(self, resolved: dict[str, Any]) -> IRDocument:
         """Transform v0.2 YAML specification to IR.
@@ -162,7 +164,7 @@ class V02Transformer:
             file_stores=file_stores,
             default_file_store=default_file_store,
             file_routes=file_routes,
-            deploy=self._route.build_deploy(resolved.get("deploy"), mongo_config, providers, datastores),
+            deploy=self._deploy.build(resolved.get("deploy"), mongo_config),
             repositories=repositories,
             providers=providers,
             policies=policies,
