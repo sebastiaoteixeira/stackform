@@ -1,7 +1,7 @@
 """Build contexts of deploy services are staged into the generated bundle."""
 import pytest
 
-from yaml_api_generator.generators.deploy.context import DockerDeployContext
+from yaml_api_generator.generators.deploy.context import DeployTarget, DockerDeployContext
 from yaml_api_generator.generators.deploy.docker.generator import DockerDeployGenerator
 
 
@@ -15,9 +15,7 @@ def _ctx(extra_services):
         env_vars={},
         has_auth=False,
         has_frontend=False,
-        host="localhost",
-        ssh_user="ubuntu",
-        ssh_key="~/.ssh/id_rsa",
+        target=DeployTarget(),
         datastores=(),
         extra_services=extra_services,
     )
@@ -93,7 +91,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, tmp_path)
     assert "JWT_SECRET" in ctx.secret_env_names
     assert "KEYCLOAK_CLIENT_SECRET" in ctx.secret_env_names
     assert ctx.env_vars["JWT_SECRET"] == ""
@@ -114,7 +112,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, tmp_path)
     assert "JWT_SECRET=${JWT_SECRET}" in ctx.app_environment
     assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}" in ctx.app_environment
     assert not any(":-" in v for v in ctx.app_environment if "JWT_SECRET" in v)
@@ -135,7 +133,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, tmp_path)
     out = tmp_path / "out"
     DockerDeployGenerator().generate(ctx, out, tmp_path)
 

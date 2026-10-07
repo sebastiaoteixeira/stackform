@@ -1,4 +1,3 @@
-import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -7,6 +6,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from ..base import DeployGenerator
 from ..context import DeployContext, DockerDeployContext
+from ..staging import BundleStager
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -24,10 +24,10 @@ class DockerDeployGenerator(DeployGenerator):
             v, default_flow_style=False, sort_keys=False
         ).rstrip()
         output_dir.mkdir(parents=True, exist_ok=True)
-        ctx = replace(
-            ctx,
-            extra_services=self._stage_build_contexts(ctx.extra_services, spec_dir, output_dir),
-        )
+        stager = BundleStager(spec_dir, output_dir)
+        ctx = replace(ctx, extra_services=stager.services(ctx.extra_services))
+        stager.packages(ctx.packages)
+        stager.frontend(ctx.frontend_source)
 
         always = [
             ("inventory.yml.jinja", "inventory.yml"),
@@ -56,50 +56,6 @@ class DockerDeployGenerator(DeployGenerator):
             roles_mongodb_tasks = output_dir / "roles" / "mongodb" / "tasks"
             roles_mongodb_tasks.mkdir(parents=True, exist_ok=True)
             self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongodb_tasks / "main.yml")
-
-    def _stage_build_contexts(
-        self,
-        services: tuple[tuple[str, dict], ...],
-        spec_dir: Path,
-        output_dir: Path,
-    ) -> tuple[tuple[str, dict], ...]:
-        """Copy each service's build context into the bundle so it is self-contained.
-
-        A `build:` path (string or `build.context`) is resolved relative to the
-        spec, copied into the output directory, and rewritten to a bundle-relative
-        path so `docker compose up --build` works from the generated bundle alone.
-        """
-        staged: list[tuple[str, dict]] = []
-        for name, config in services:
-            build = config.get("build")
-            if isinstance(build, str):
-                context = build
-            elif isinstance(build, dict):
-                context = build.get("context")
-            else:
-                context = None
-            if not context:
-                staged.append((name, config))
-                continue
-            source = (spec_dir / context).resolve()
-            if not source.is_dir():
-                raise ValueError(
-                    f"deploy service '{name}' build context not found: {source}"
-                )
-            if any(p.resolve().is_relative_to(source) for p in (spec_dir, output_dir)):
-                raise ValueError(
-                    f"deploy service '{name}' build context must be a subdirectory "
-                    f"of the spec that excludes the output: {source}"
-                )
-            shutil.copytree(source, output_dir / source.name, dirs_exist_ok=True)
-            local = f"./{source.name}"
-            if isinstance(build, str):
-                new_build: str | dict = local
-            else:
-                assert isinstance(build, dict)
-                new_build = {**build, "context": local}
-            staged.append((name, {**config, "build": new_build}))
-        return tuple(staged)
 
     def _render(self, env: Environment, tmpl: str, ctx: DeployContext, dest: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)

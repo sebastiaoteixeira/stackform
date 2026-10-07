@@ -54,7 +54,7 @@ def _media(name, endpoint):
 
 def _compose(tmp_path, ir):
     out = tmp_path / "deploy"
-    DockerDeployGenerator().generate(build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id"), out, tmp_path)
+    DockerDeployGenerator().generate(build_deploy_context(ir, tmp_path), out, tmp_path)
     return yaml.safe_load((out / "docker-compose.yml").read_text())
 
 
@@ -96,7 +96,7 @@ def test_remote_s3_store_adds_no_service(tmp_path):
 
 
 def test_systemd_gets_filesystem_path_env(tmp_path):
-    ctx = build_deploy_context(_ir(tmp_path, runtime="systemd"), "localhost", "ubuntu", "~/.ssh/id")
+    ctx = build_deploy_context(_ir(tmp_path, runtime="systemd"), tmp_path)
 
     assert ctx.env_vars["FILES_UPLOADS_PATH"] == "./data/uploads"
 

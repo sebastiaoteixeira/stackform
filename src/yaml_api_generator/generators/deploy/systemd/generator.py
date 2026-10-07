@@ -4,6 +4,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from ..base import DeployGenerator
 from ..context import DeployContext, SystemdDeployContext
+from ..staging import BundleStager
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -18,6 +19,7 @@ class SystemdDeployGenerator(DeployGenerator):
             lstrip_blocks=True,
         )
         output_dir.mkdir(parents=True, exist_ok=True)
+        BundleStager(spec_dir, output_dir).packages(ctx.packages)
 
         always = [
             ("inventory.yml.jinja", "inventory.yml"),
