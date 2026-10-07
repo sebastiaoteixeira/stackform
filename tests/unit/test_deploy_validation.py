@@ -240,3 +240,10 @@ def test_default_backend_serves_generated_app(tmp_path):
     assert ir.backend.processes == (IRDeployProcess(name="app", asgi="app:app"),)
     assert ir.frontend.source is None
     assert ir.environments == ()
+
+
+def test_process_dependency_requires_docker(tmp_path):
+    deploy = {"runtime": "systemd", "backend": {"processes": {
+        "api": {"asgi": "app:app", "depends_on": {"setup": "service_completed_successfully"}},
+    }}}
+    assert _codes(tmp_path, deploy) == [("DEPLOY_DOCKER_ONLY", "deploy.backend.processes.api.depends_on")]

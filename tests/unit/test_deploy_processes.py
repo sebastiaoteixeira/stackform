@@ -67,3 +67,21 @@ def test_compose_resolves_processes(tmp_path):
     services = compose_config(_bundle(tmp_path))["services"]
     assert services["worker"]["command"] == ["python", "-m", "extensions.worker"]
     assert services["api"]["healthcheck"]["test"][0] == "CMD"
+
+
+def test_process_waits_for_setup_and_retains_datastore_dependencies(tmp_path):
+    from yaml_api_generator.generators.deploy.generate import generate_deploy
+    from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
+    from .support.deploy import DeployBundle
+    from .test_deploy_validation import _write
+
+    spec = _write(tmp_path, {
+        "backend": {"processes": {"api": {
+            "asgi": "app:app", "depends_on": {"setup": "service_completed_successfully"},
+        }}},
+        "services": {"setup": {"image": "busybox", "command": ["true"]}},
+    }, datastores={"primary": {"type": "mongodb", "uri": "mongodb://localhost:27017", "database": "shop"}})
+    generate_deploy(load_and_generate_ir(spec).ir, str(tmp_path / "out"), tmp_path)
+    api = compose_config(DeployBundle(tmp_path / "out"))["services"]["api"]
+    assert api["depends_on"]["setup"]["condition"] == "service_completed_successfully"
+    assert api["depends_on"]["mongodb"]["condition"] == "service_started"

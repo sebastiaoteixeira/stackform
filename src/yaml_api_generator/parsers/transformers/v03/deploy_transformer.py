@@ -23,6 +23,7 @@ def _process(name: str, data: dict[str, Any]) -> IRDeployProcess:
         asgi=data.get("asgi"),
         command=tuple(command) if isinstance(command, list) else command,
         env=dict(data.get("env", {})),
+        depends_on=dict(data.get("depends_on", {})),
     )
 
 

@@ -143,6 +143,11 @@ def _validated_processes(deploy: IRDeploy, datastores: Iterable[DeployDatastore]
     processes = deploy.backend.processes
     if clash := sorted({process.name for process in processes} & {ds.service for ds in datastores}):
         raise ValueError(f"deploy processes {clash} clash with datastore services of the same name")
+    names = {p.name for p in processes} | {ds.service for ds in datastores if ds.local}
+    names.update(name for name, _ in deploy.extra_services)
+    for process in processes:
+        if process.name in process.depends_on or process.depends_on.keys() - names:
+            raise ValueError(f"process '{process.name}' depends on itself or an unknown service")
     return processes
 
 

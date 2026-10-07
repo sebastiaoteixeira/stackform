@@ -75,6 +75,7 @@ The long-running backend processes. Each process sets exactly one of:
 | `asgi` | `module:attribute` of an ASGI app served by uvicorn on `deploy.port`. Its module must be `app` or one of the packages. |
 | `command` | Any other command, as a string or a list of arguments. |
 | `env` | Optional environment values of this process only. |
+| `depends_on` | Docker only: service names mapped to `service_started`, `service_healthy`, or `service_completed_successfully`. Local datastore dependencies are retained. |
 
 Exactly one process declares `asgi`. Without `processes`, the backend runs one
 process, `app`, serving the generated `app:app`. Process names must not clash
@@ -84,6 +85,12 @@ with `services`, datastore services or `frontend`.
 | --- | --- |
 | docker | A compose service sharing the backend image. Only the `asgi` process builds the image, publishes the port and has a health check. |
 | systemd | A unit `<project>-<process>.service`. The generated `app` process keeps the unit `<project>.service` it has always had. |
+
+A one-shot setup service must be a dependency with
+`service_completed_successfully` of a long-running service. For example,
+`api.depends_on: { storage-init: service_completed_successfully }` waits for
+bucket creation and makes Compose's `--wait` treat its successful exit as
+expected. Self-dependencies and unknown service names fail generation.
 
 ## Frontend
 

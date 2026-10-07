@@ -33,6 +33,17 @@ services:
   {% for process in ctx.processes %}
   {{ process.name }}:
     <<: *backend
+    {% if process.depends_on %}
+    depends_on:
+      {% for ds in local_datastores if ds.service not in process.depends_on %}
+      {{ ds.service }}:
+        condition: service_started
+      {% endfor %}
+      {% for service, condition in process.depends_on.items() %}
+      {{ service }}:
+        condition: {{ condition }}
+      {% endfor %}
+    {% endif %}
     {% if process.name in ctx.memory_limits %}
     mem_limit: {{ ctx.memory_limits[process.name] }}
     memswap_limit: {{ ctx.memory_limits[process.name] }}

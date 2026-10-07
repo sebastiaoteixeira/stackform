@@ -722,7 +722,15 @@
             { "type": "array", "minItems": 1, "items": { "type": "string" } }
           ]
         },
-        "env": { "type": "object", "additionalProperties": { "type": "string" } }
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "depends_on": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["service_started", "service_healthy", "service_completed_successfully"]
+          },
+          "description": "Docker service dependency conditions, in addition to local datastores."
+        }
       }
     },
     "DeployBackend": {

@@ -69,6 +69,12 @@ DeployRule = Callable[[DeploySpec], Iterator[ConfigError]]
 def _docker_only(spec: DeploySpec) -> Iterator[ConfigError]:
     if spec.deploy["runtime"] == "docker":
         return
+    for name, process in spec.processes.items():
+        if "depends_on" in process:
+            yield _error(
+                "DEPLOY_DOCKER_ONLY", "process depends_on requires the docker runtime",
+                f"backend.processes.{name}.depends_on",
+            )
     for section, key in DOCKER_ONLY_KEYS:
         if key in spec.deploy.get(section, {}):
             yield _error(

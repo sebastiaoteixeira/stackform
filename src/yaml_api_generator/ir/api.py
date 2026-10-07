@@ -89,6 +89,7 @@ class IRDeployProcess:
     asgi: str | None = None
     command: str | tuple[str, ...] | None = None
     env: dict[str, str] = field(default_factory=dict)
+    depends_on: dict[str, str] = field(default_factory=dict)
 
 
 GENERATED_ASGI_PROCESS = IRDeployProcess(name="app", asgi="app:app")
