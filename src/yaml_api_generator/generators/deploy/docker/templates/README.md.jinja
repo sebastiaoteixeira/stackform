@@ -91,16 +91,45 @@ docker compose up -d
 
 ## Production Deployment
 
-For production deployment to a remote server:
+Install the Ansible collections once:
 
 ```bash
-ansible-playbook -i inventory.yml playbook.yml
+ansible-galaxy collection install -r requirements.yml
 ```
 
-Make sure to:
-1. Update `inventory.yml` with your server details
-2. Configure SSH keys for authentication
-3. Set production environment variables
+{% if ctx.target %}
+Set the server in `inventory.yml` and the environment values under `app_env` in
+`group_vars/{{ ctx.environments[0].name }}.yml`, then deploy:
+
+```bash
+ansible-playbook playbook.yml
+```
+{% else %}
+Each environment is an inventory group with its values in `group_vars/<environment>.yml`.
+The playbook reads the host from `DEPLOY_HOST`, `DEPLOY_USER` and `DEPLOY_SSH_PORT`,
+and every name under `app_secrets` from the variable of the same name:
+
+```bash
+DEPLOY_HOST=203.0.113.10 DEPLOY_USER=deploy \
+  ansible-playbook playbook.yml -e deploy_environment={{ ctx.environments[0].name }} -e image_tag=<tag>
+```
+{% endif %}
+{% if ctx.delivery == "registry" %}
+
+Images are pulled from `{{ ctx.registry }}`: export `REGISTRY_USERNAME` and
+`REGISTRY_PASSWORD` (a short-lived token is enough). The host logs out after pulling.
+{% elif ctx.delivery == "ssh" %}
+
+Images are copied over SSH: save them next to the playbook before deploying:
+
+```bash
+docker save {% for repository in ctx.release_repositories %}{{ repository }}:<tag> {% endfor %}| zstd > images.tar.zst
+```
+{% endif %}
+
+The release runs from `/opt/<project>`. Secrets the backend generates are created on the
+first release and reused afterwards. A failed release restores the previous image tag;
+images older than the last {{ ctx.retain }} releases are pruned.
 
 ## Hardening: encrypt secrets at rest with ansible-vault
 

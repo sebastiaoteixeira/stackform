@@ -5,6 +5,7 @@ import subprocess
 from dataclasses import dataclass, replace
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -23,9 +24,12 @@ class DockerBundle:
     def read(self, path: str) -> str:
         return (self.root / path).read_text()
 
+    def load(self, path: str) -> Any:
+        return yaml.safe_load(self.read(path))
+
     @cached_property
     def compose(self) -> dict:
-        return yaml.safe_load(self.read("docker-compose.yml"))
+        return self.load("docker-compose.yml")
 
     @property
     def services(self) -> dict[str, dict]:
@@ -53,3 +57,14 @@ def compose_config(bundle: DockerBundle) -> dict:
     )
     assert result.returncode == 0, result.stderr
     return yaml.safe_load(result.stdout)
+
+
+def ansible_syntax_check(bundle: DockerBundle, *extra_vars: str) -> None:
+    """Ansible's syntax check of the playbook; skips without ansible-playbook."""
+    if not shutil.which("ansible-playbook"):
+        pytest.skip("ansible-playbook is not installed")
+    result = subprocess.run(
+        ["ansible-playbook", "--syntax-check", "playbook.yml", *(f"-e{var}" for var in extra_vars)],
+        cwd=bundle.root, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

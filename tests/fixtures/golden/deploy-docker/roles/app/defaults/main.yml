@@ -1,0 +1,11 @@
+app_dir: "/opt/{{ app_project }}"
+app_delivery: host
+app_repositories: []
+app_retain: 3
+app_pull: always
+app_build: never
+image_tag: latest
+app_generated_secrets: []
+app_defaults: {}
+app_env: {}
+app_secrets: {}

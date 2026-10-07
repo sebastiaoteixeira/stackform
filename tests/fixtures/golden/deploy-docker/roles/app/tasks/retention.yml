@@ -1,0 +1,22 @@
+- name: List the release images
+  ansible.builtin.command:
+    argv: [docker, image, ls, --format, json, "{{ item }}"]
+  loop: "{{ app_repositories }}"
+  register: release_images
+  changed_when: false
+
+# Docker lists images newest first; the running and previous releases are always kept.
+- name: Select the releases beyond retention
+  ansible.builtin.set_fact:
+    stale_releases: >-
+      {{ stale_releases | default([]) + ((item.stdout_lines | map('from_json') | map(attribute='Tag')
+         | reject('in', ['<none>', image_tag, previous_tag]) | list)[app_retain:]
+         | map('regex_replace', '^', item.item ~ ':') | list) }}
+  loop: "{{ release_images.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Remove the releases beyond retention
+  community.docker.docker_image_remove:
+    name: "{{ item }}"
+  loop: "{{ stale_releases | default([]) }}"

@@ -1,3 +1,4 @@
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from ..context import DeployContext, DockerDeployContext
 from ..staging import BundleStager
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
+# Ansible files that never vary are shipped verbatim; the role reads the bundle's settings from its defaults.
+_ANSIBLE_DIR = Path(__file__).parent / "ansible"
 
 _BUNDLE_FILES = (
     ("inventory.yml.jinja", "inventory.yml"),
@@ -17,6 +20,7 @@ _BUNDLE_FILES = (
     ("Dockerfile.jinja", "backend/Dockerfile"),
     ("env.example.jinja", ".env.example"),
     ("README.md.jinja", "README.md"),
+    ("roles/app/defaults/main.yml.jinja", "roles/app/defaults/main.yml"),
 )
 
 # The nginx templates are rendered from the environment each time the frontend container starts.
@@ -47,20 +51,22 @@ class DockerDeployGenerator(DeployGenerator):
 
         for tmpl, out in (*_BUNDLE_FILES, *(_FRONTEND_FILES if ctx.frontend else ())):
             self._render(env, tmpl, ctx, output_dir / out)
-
-        roles_app_tasks = output_dir / "roles" / "app" / "tasks"
-        roles_app_tasks.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/app/tasks/main.yml.jinja", ctx, roles_app_tasks / "main.yml")
-
-        roles_app_templates = output_dir / "roles" / "app" / "templates"
-        roles_app_templates.mkdir(parents=True, exist_ok=True)
-        self._render(env, "roles/app/templates/env.j2.jinja", ctx, roles_app_templates / "env.j2")
-
+        for environment in ctx.environments:
+            self._render(
+                env, "group_vars/environment.yml.jinja", ctx,
+                output_dir / "group_vars" / f"{environment.name}.yml", environment=environment,
+            )
         if ctx.mongo_local:
-            roles_mongodb_tasks = output_dir / "roles" / "mongodb" / "tasks"
-            roles_mongodb_tasks.mkdir(parents=True, exist_ok=True)
-            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongodb_tasks / "main.yml")
+            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, output_dir / "roles/mongodb/tasks/main.yml")
 
-    def _render(self, env: Environment, tmpl: str, ctx: DeployContext, dest: Path) -> None:
+        shutil.copytree(_ANSIBLE_DIR, output_dir, dirs_exist_ok=True, ignore=self._other_deliveries(ctx.delivery))
+
+    @staticmethod
+    def _other_deliveries(delivery: str):
+        return lambda directory, names: [
+            name for name in names if Path(directory).name == "deliver" and name != f"{delivery}.yml"
+        ]
+
+    def _render(self, env: Environment, tmpl: str, ctx: DeployContext, dest: Path, **variables) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(env.get_template(tmpl).render(ctx=ctx))
+        dest.write_text(env.get_template(tmpl).render(ctx=ctx, **variables))

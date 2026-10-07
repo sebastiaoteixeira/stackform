@@ -1,5 +1,5 @@
 - name: Deploy my-api-service
-  hosts: app
+  hosts: default
   become: true
   # Hardening (opt-in): encrypt secrets at rest with ansible-vault.
   # Move sensitive .env values into group_vars/all/secrets.yml, then run:

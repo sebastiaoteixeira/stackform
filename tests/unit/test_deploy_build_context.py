@@ -138,8 +138,9 @@ deploy:
 
     tasks = (out / "roles" / "app" / "tasks" / "main.yml").read_text()
     assert "lookup('ansible.builtin.password'" in tasks
-    assert "template:" in tasks
-    assert "env.j2" in tasks
+    release = (out / "roles" / "app" / "tasks" / "release.yml").read_text()
+    assert "ansible.builtin.template:" in release
+    assert "env.j2" in release
 
     assert not (out / ".env").exists()
     assert (out / "roles" / "app" / "templates" / "env.j2").exists()

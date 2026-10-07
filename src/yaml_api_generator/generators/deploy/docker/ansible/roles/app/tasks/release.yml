@@ -1,0 +1,48 @@
+- name: Start the release, rolling back on failure
+  block:
+    - name: Render the release environment
+      ansible.builtin.template:
+        src: env.j2
+        dest: "{{ app_dir }}/.env"
+        mode: "0600"
+      vars:
+        release_tag: "{{ image_tag }}"
+      diff: false
+
+    - name: Start the release services
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        project_name: "{{ app_project }}"
+        state: present
+        pull: "{{ app_pull }}"
+        build: "{{ app_build }}"
+        remove_orphans: true
+        wait: true
+  rescue:
+    - name: Roll back to the previous release
+      when: previous_tag not in ['', image_tag]
+      block:
+        - name: Render the previous release environment
+          ansible.builtin.template:
+            src: env.j2
+            dest: "{{ app_dir }}/.env"
+            mode: "0600"
+          vars:
+            release_tag: "{{ previous_tag }}"
+          diff: false
+
+        - name: Restart the previous release services
+          community.docker.docker_compose_v2:
+            project_src: "{{ app_dir }}"
+            project_name: "{{ app_project }}"
+            state: present
+            pull: never
+            build: never
+            remove_orphans: true
+            wait: true
+
+    - name: Fail the release
+      ansible.builtin.fail:
+        msg: >-
+          Release {{ image_tag }} failed{{ ', rolled back to ' ~ previous_tag
+          if previous_tag not in ['', image_tag] else '' }}

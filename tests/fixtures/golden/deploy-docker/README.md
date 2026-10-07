@@ -52,16 +52,22 @@ docker compose up -d
 
 ## Production Deployment
 
-For production deployment to a remote server:
+Install the Ansible collections once:
 
 ```bash
-ansible-playbook -i inventory.yml playbook.yml
+ansible-galaxy collection install -r requirements.yml
 ```
 
-Make sure to:
-1. Update `inventory.yml` with your server details
-2. Configure SSH keys for authentication
-3. Set production environment variables
+Set the server in `inventory.yml` and the environment values under `app_env` in
+`group_vars/default.yml`, then deploy:
+
+```bash
+ansible-playbook playbook.yml
+```
+
+The release runs from `/opt/<project>`. Secrets the backend generates are created on the
+first release and reused afterwards. A failed release restores the previous image tag;
+images older than the last 3 releases are pruned.
 
 ## Hardening: encrypt secrets at rest with ansible-vault
 

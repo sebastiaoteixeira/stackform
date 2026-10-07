@@ -1,0 +1,62 @@
+- name: Validate the release
+  ansible.builtin.assert:
+    that:
+      - image_tag is defined
+      - image_tag is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')
+    fail_msg: "Pass the release image tag: -e image_tag=<tag>"
+    quiet: true
+
+- name: Require the environment secrets
+  ansible.builtin.assert:
+    that: app_secrets[item] | length > 0
+    fail_msg: "{{ item }} is empty: export it where the playbook runs"
+    quiet: true
+  loop: "{{ app_secrets | list }}"
+
+- name: Create the project directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Read the running release
+  ansible.builtin.slurp:
+    src: "{{ app_dir }}/.env"
+  register: running_env_file
+  failed_when: false
+  no_log: true
+
+- name: Parse the running release
+  ansible.builtin.set_fact:
+    running_env: >-
+      {{ dict((running_env_file.content | default('') | b64decode).splitlines()
+         | select('match', '^[^=]+=') | map('split', '=', 1)) }}
+  no_log: true
+
+- name: Remember the previous release
+  ansible.builtin.set_fact:
+    previous_tag: "{{ running_env.IMAGE_TAG | default('') }}"
+
+# Generated secrets exist only on the host: reusing them keeps sessions and data valid across releases.
+- name: Keep the generated secrets of the running release
+  ansible.builtin.set_fact:
+    generated_secrets: >-
+      {{ generated_secrets | default({}) | combine({item: running_env[item]
+         | default(lookup('ansible.builtin.password', '/dev/null', length=43, chars=['ascii_letters', 'digits']), true)}) }}
+  loop: "{{ app_generated_secrets }}"
+  no_log: true
+
+- name: Copy the compose file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/docker-compose.yml"
+    dest: "{{ app_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Deliver the release images
+  ansible.builtin.include_tasks: "deliver/{{ app_delivery }}.yml"
+
+- name: Start the release
+  ansible.builtin.include_tasks: release.yml
+
+- name: Prune old releases
+  ansible.builtin.include_tasks: retention.yml

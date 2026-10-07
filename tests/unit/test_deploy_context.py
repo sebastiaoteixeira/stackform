@@ -117,7 +117,7 @@ def test_docker_delivery_settings_carried(tmp_path):
 
 def test_docker_delivery_defaults(tmp_path):
     ctx = _context(tmp_path)
-    assert (ctx.registry, ctx.delivery, ctx.retain) == (None, "registry", 3)
+    assert (ctx.registry, ctx.delivery, ctx.retain) == (None, "host", 3)
 
 
 def test_packages_and_frontend_source_staged_into_bundle(tmp_path):

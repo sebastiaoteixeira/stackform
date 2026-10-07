@@ -65,6 +65,8 @@ class DeployFrontend:
 
 GENERATED_FRONTEND = DeployFrontend(env=("VITE_API_BASE_URL",))
 
+IMPLICIT_ENVIRONMENT = IRDeployEnvironment(name="default")
+
 
 @dataclass(frozen=True)
 class DeployContext:
@@ -77,7 +79,7 @@ class DeployContext:
     has_auth: bool
     target: DeployTarget | None
     datastores: tuple[DeployDatastore, ...] = ()
-    environments: tuple[IRDeployEnvironment, ...] = ()
+    environments: tuple[IRDeployEnvironment, ...] = (IMPLICIT_ENVIRONMENT,)
     processes: tuple[IRDeployProcess, ...] = (GENERATED_ASGI_PROCESS,)
     packages: tuple[DeployPackage, ...] = ()
     system_packages: tuple[str, ...] = ()
@@ -91,12 +93,17 @@ class DeployContext:
     def asgi_process(self) -> IRDeployProcess:
         return next(process for process in self.processes if process.asgi)
 
+    def project(self, environment: IRDeployEnvironment) -> str:
+        """The compose project and inventory host of ``environment``. A bundle without
+        environments keeps the project, and so the volumes, it has always had."""
+        return self.name if self.target else f"{self.name}-{environment.name}"
+
 
 @dataclass(frozen=True)
 class DockerDeployContext(DeployContext):
     image: str | None = None
     registry: str | None = None
-    delivery: str = "registry"
+    delivery: str = "host"
     retain: int = 3
     extra_services: tuple[tuple[str, dict], ...] = field(default_factory=tuple)
     include: tuple[str, ...] = field(default_factory=tuple)
@@ -112,9 +119,32 @@ class DockerDeployContext(DeployContext):
     def frontend_image(self) -> str:
         return self._release_image("frontend")
 
+    @property
+    def release_repositories(self) -> tuple[str, ...]:
+        """Repositories of the images each release tags, pruned on the host beyond ``retain``."""
+        components = (*(() if self.image else ("backend",)), *(("frontend",) if self.has_frontend else ()))
+        return tuple(self._repository(component) for component in components)
+
+    @property
+    def host_env(self) -> dict[str, str]:
+        """Remote environment values that neither the environments nor the host's generated secrets set."""
+        return {name: value for name, value in self.env_vars.items() if name not in self.secret_env_names}
+
+    @property
+    def registry_host(self) -> str | None:
+        """The registry to log in to; a first path component without a dot, colon or
+        ``localhost`` is a Docker Hub namespace, as Docker reads image references."""
+        if self.registry is None:
+            return None
+        host = self.registry.partition("/")[0]
+        return host if "." in host or ":" in host or host == "localhost" else "docker.io"
+
+    def _repository(self, component: str) -> str:
+        """Without a registry, images are named after the app and never leave the host they reach."""
+        return f"{self.registry or self.name}/{component}"
+
     def _release_image(self, component: str) -> str:
-        """Without a registry, images are named after the app and only ever built on the host."""
-        return f"{self.registry or self.name}/{component}:${{IMAGE_TAG:-latest}}"
+        return f"{self._repository(component)}:${{IMAGE_TAG:-latest}}"
 
 
 @dataclass(frozen=True)

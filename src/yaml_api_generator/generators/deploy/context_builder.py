@@ -23,13 +23,10 @@ from .context import (
     DeployTarget,
     DockerDeployContext,
     GENERATED_FRONTEND,
+    IMPLICIT_ENVIRONMENT,
     SystemdDeployContext,
 )
 from .file_deployments import build_file_deployments
-
-# Named after the inventory host that bundles without environments have always deployed to.
-IMPLICIT_ENVIRONMENT = IRDeployEnvironment(name="app")
-
 
 def build_deploy_context(
     ir: IRDocument,
@@ -84,7 +81,7 @@ def build_deploy_context(
             **common,
             image=docker.image,
             registry=docker.registry,
-            delivery=docker.delivery,
+            delivery=_delivery(docker),
             retain=docker.retain,
             extra_services=deploy.extra_services,
             include=deploy.include,
@@ -114,6 +111,12 @@ def _environments(deploy: IRDeploy, generated_secrets: Iterable[str]) -> tuple[I
                 "they are generated on the host, remove them from its secrets"
             )
     return deploy.environments or (IMPLICIT_ENVIRONMENT,)
+
+
+def _delivery(docker: IRDeployDocker) -> str:
+    """How release images reach the host: pulled from the registry, copied over SSH,
+    or, without a registry to pull from, built on the host from the shipped bundle."""
+    return "host" if docker.delivery == "registry" and docker.registry is None else docker.delivery
 
 
 def _processes(deploy: IRDeploy, datastores: Iterable[DeployDatastore]) -> tuple[IRDeployProcess, ...]:

@@ -1,0 +1,20 @@
+# The credentials are the deploy job's short-lived token; none are left on the host.
+- name: Pull the release images
+  block:
+    - name: Log in to the registry
+      community.docker.docker_login:
+        registry_url: "{{ app_registry }}"
+        username: "{{ lookup('ansible.builtin.env', 'REGISTRY_USERNAME') }}"
+        password: "{{ lookup('ansible.builtin.env', 'REGISTRY_PASSWORD') }}"
+      no_log: true
+
+    - name: Pull the release images
+      community.docker.docker_image_pull:
+        name: "{{ item }}"
+        tag: "{{ image_tag }}"
+      loop: "{{ app_repositories }}"
+  always:
+    - name: Log out of the registry
+      community.docker.docker_login:
+        registry_url: "{{ app_registry }}"
+        state: absent
