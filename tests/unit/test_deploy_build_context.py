@@ -146,3 +146,14 @@ deploy:
 
     assert not (out / ".env").exists()
     assert (out / "roles" / "app" / "templates" / "env.j2").exists()
+
+
+@pytest.mark.parametrize("context", [".", "..", "./out"])
+def test_build_context_enclosing_spec_or_output_rejected(tmp_path, context):
+    spec_dir = tmp_path / "spec"
+    spec_dir.mkdir()
+    out = spec_dir / "out"
+    out.mkdir()
+    with pytest.raises(ValueError, match="must be a subdirectory"):
+        _generate(_ctx((("frontend", {"build": {"context": context}}),)), spec_dir, out)
+    assert list(out.iterdir()) == []

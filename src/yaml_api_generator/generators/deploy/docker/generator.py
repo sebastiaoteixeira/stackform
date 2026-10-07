@@ -86,6 +86,11 @@ class DockerDeployGenerator(DeployGenerator):
                 raise ValueError(
                     f"deploy service '{name}' build context not found: {source}"
                 )
+            if any(p.resolve().is_relative_to(source) for p in (spec_dir, output_dir)):
+                raise ValueError(
+                    f"deploy service '{name}' build context must be a subdirectory "
+                    f"of the spec that excludes the output: {source}"
+                )
             shutil.copytree(source, output_dir / source.name, dirs_exist_ok=True)
             local = f"./{source.name}"
             if isinstance(build, str):
