@@ -1,9 +1,19 @@
+# Keep this app's short-lived registry token separate from other deployments on the account.
+- name: Create the release registry configuration directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}/.docker"
+    state: directory
+    mode: "0700"
+
 # The credentials are the deploy job's short-lived token; none are left on the host.
 - name: Pull the release images
+  environment:
+    DOCKER_CONFIG: "{{ app_dir }}/.docker"
   block:
     - name: Log in to the registry
       community.docker.docker_login:
         registry_url: "{{ app_registry }}"
+        config_path: "{{ app_dir }}/.docker/config.json"
         username: "{{ lookup('ansible.builtin.env', 'REGISTRY_USERNAME') }}"
         password: "{{ lookup('ansible.builtin.env', 'REGISTRY_PASSWORD') }}"
       no_log: true
@@ -17,4 +27,5 @@
     - name: Log out of the registry
       community.docker.docker_login:
         registry_url: "{{ app_registry }}"
+        config_path: "{{ app_dir }}/.docker/config.json"
         state: absent

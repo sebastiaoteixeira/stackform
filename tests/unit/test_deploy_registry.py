@@ -30,7 +30,12 @@ def test_registry_delivery_pulls_tagged_images_between_login_and_logout(tmp_path
     assert defaults["app_build"] == "never"
     assert "image_tag" not in defaults
     assert _deliveries(bundle) == ["registry.yml"]
-    (pull,) = bundle.load("roles/app/tasks/deliver/registry.yml")
+    directory, pull = bundle.load("roles/app/tasks/deliver/registry.yml")
+    assert directory["ansible.builtin.file"]["path"] == "{{ app_dir }}/.docker"
+    assert directory["ansible.builtin.file"]["mode"] == "0700"
+    assert pull["environment"] == {"DOCKER_CONFIG": "{{ app_dir }}/.docker"}
+    for task in [pull["block"][0], pull["always"][0]]:
+        assert task["community.docker.docker_login"]["config_path"] == "{{ app_dir }}/.docker/config.json"
     assert [task["name"] for task in pull["block"]] == ["Log in to the registry", "Pull the release images"]
     assert pull["always"][0]["community.docker.docker_login"]["state"] == "absent"
     assert bundle.services["app"]["image"] == "ghcr.io/example/shop/backend:${IMAGE_TAG:-latest}"
