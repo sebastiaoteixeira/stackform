@@ -102,9 +102,32 @@ def _build_collections(
 
 def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
     routes = [_runtime_route(route, document) for route in document.routes]
+    routes += _password_login_routes(document, routes)
     if document.session.refresh:
         routes += [_refresh_route(route) for route in routes if route.operation == "login"]
     return routes
+
+
+def _password_login_routes(
+    document: IRDocument, routes: list[RuntimeRouteDescriptor]
+) -> list[RuntimeRouteDescriptor]:
+    """A generated project serves one login route per password identity, whether or not a
+    controller declares the operation; the development server serves the same surface."""
+    declared = {route.collection for route in routes if route.operation == "login"}
+    base_path = document.api.basePath
+    if document.api.version:
+        base_path = f"{base_path}/{document.api.version}"
+    return [
+        RuntimeRouteDescriptor(
+            method="POST",
+            path=f"{base_path}/{name}/login",
+            operation="login",
+            collection=name,
+            is_public=True,
+        )
+        for name, identity in document.identityCollections.items()
+        if identity.has_password and name not in declared
+    ]
 
 
 def _runtime_route(route: IRRoute, document: IRDocument) -> RuntimeRouteDescriptor:

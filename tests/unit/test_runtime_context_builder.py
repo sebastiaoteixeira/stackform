@@ -197,3 +197,30 @@ async def test_role_based_access_rule_from_ir_is_enforced():
             url_params={"id": "item-1"},
             principal={"sub": "u1", "identity_collection": "users", "roles": ["user"], "record": {}},
         )
+
+def test_password_identity_without_declared_login_gets_one():
+    """A controller need not declare the login operation: the generated project serves it, so
+    the development server serves it too."""
+    ir = _make_ir(
+        collections={"users": _users_collection()},
+        identity={"users": IRIdentityCollection(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),))},
+        routes=[_route("create", collection="users")],
+    )
+    rc = build_runtime_context(ir)
+    login = [route for route in rc.routes if route.operation == "login"]
+    assert [(route.method, route.path, route.collection, route.is_public) for route in login] == [
+        ("POST", "/api/v1/users/login", "users", True)
+    ]
+
+
+def test_declared_login_route_is_not_duplicated():
+    ir = _make_ir(
+        collections={"users": _users_collection()},
+        identity={"users": IRIdentityCollection(name="users", bindings=(IRProviderBinding(provider="password", identifier="email"),))},
+        routes=[
+            IRRoute(method="POST", path="/api/v1/users/login", operation="login",
+                    collection="users", is_public=True),
+        ],
+    )
+    rc = build_runtime_context(ir)
+    assert [route.path for route in rc.routes if route.operation == "login"] == ["/api/v1/users/login"]
