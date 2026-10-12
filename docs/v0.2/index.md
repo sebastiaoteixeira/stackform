@@ -3,7 +3,7 @@ title: v0.2 Documentation
 description: Generate a FastAPI backend, an optional React UI, and Docker/systemd deploy artifacts from a single YAML spec.
 ---
 
-yaml-api-generator turns one declarative YAML file into a running application:
+Stackform turns one declarative YAML file into a running application:
 a FastAPI backend (entities, repositories, services, controllers, auth), an
 optional React frontend when you add a `ui:` block, and Docker or systemd deploy
 artifacts when you add a `deploy:` block.
@@ -27,7 +27,7 @@ Install from source, then run any spec on the in-process dev server:
 
 ```bash
 pip install -e .
-yaml-api run myapp.yaml
+stackform run myapp.yaml
 ```
 
 `run` serves on `http://127.0.0.1:8000` by default (change with `--host` and
@@ -45,7 +45,7 @@ To generate code instead of serving it, use `build`. The positional target is
 `all` (default), `backend`, `frontend`, or `deploy`:
 
 ```bash
-yaml-api build myapp.yaml -o ./target
+stackform build myapp.yaml -o ./target
 ```
 
 A `fastapi` backend lands in `./target/backend` and, when the spec has a `ui:`

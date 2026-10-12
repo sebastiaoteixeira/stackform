@@ -126,6 +126,6 @@ share key material.
 
 ## Testing note
 
-`yaml-api run` does not mount provider routes, so this behaviour is covered by
+`stackform run` does not mount provider routes, so this behaviour is covered by
 unit and component tests at the provider and middleware layer rather than
 through the dev server end to end.

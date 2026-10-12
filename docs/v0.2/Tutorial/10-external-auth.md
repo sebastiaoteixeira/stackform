@@ -142,7 +142,7 @@ What to notice in this spec:
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
@@ -325,7 +325,7 @@ credentials in the spec:
 export GOOGLE_CLIENT_ID=your-client-id
 export GOOGLE_CLIENT_SECRET=your-client-secret
 export FRONTEND_URL=http://localhost:5173
-yaml-api run myapp.yaml
+stackform run myapp.yaml
 ```
 
 `GOOGLE_CLIENT_ID` is interpolated into the spec during loading (`${VAR}` is a

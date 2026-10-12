@@ -1,4 +1,4 @@
-"""Tests for `yaml-api migrate` over Alembic.
+"""Tests for `stackform migrate` over Alembic.
 
 Uses a Postgres-typed datastore whose DSN points at sync SQLite, so the full
 Alembic flow runs without a Postgres server.

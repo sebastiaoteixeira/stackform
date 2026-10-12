@@ -9,7 +9,7 @@ description: Determines who is allowed to call each route, declared on controlle
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
@@ -196,7 +196,7 @@ A body binding (`request.body` or `request:<type>`) on a bodiless operation
 Request resolution is fail-safe: a missing leaf resolves to `null`, never an
 error. A typed body is validated **before** authorization — an invalid body
 returns 422 and the rule never executes. This runs identically in the generated
-FastAPI backend, the generated DRF backend, and `yaml-api run`.
+FastAPI backend, the generated DRF backend, and `stackform run`.
 
 ```mermaid
 flowchart TD
@@ -221,7 +221,7 @@ flowchart TD
 ```
 
 This evaluation runs identically in the generated FastAPI backend, the generated
-DRF backend, and `yaml-api run`.
+DRF backend, and `stackform run`.
 
 ## Controller vs Operation Precedence
 

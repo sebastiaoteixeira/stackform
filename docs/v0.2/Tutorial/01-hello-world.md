@@ -5,7 +5,7 @@ description: Minimal spec -- one entity, one repository, one controller with pub
 
 **Concept introduced:** Minimal spec -- one entity, one repository, one controller with public access.
 
-**Prerequisites:** Complete the [Getting Started](../getting-started.md) guide first. You need `yaml-api-generator` installed and MongoDB running.
+**Prerequisites:** Complete the [Getting Started](../getting-started.md) guide first. You need `stackform` installed and MongoDB running.
 
 ## The spec
 
@@ -68,7 +68,7 @@ leave out produces no route, no handler, and no UI affordance.
 ## Run it
 
 ```bash
-yaml-api run myapp.yaml
+stackform run myapp.yaml
 ```
 
 The server starts at `http://127.0.0.1:8000` (override with `--host` and
@@ -81,7 +81,7 @@ restart it to pick up spec changes.
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/notes \
   -H 'Content-Type: application/json' \
-  -d '{"title": "First note", "body": "Hello from yaml-api-generator"}'
+  -d '{"title": "First note", "body": "Hello from Stackform"}'
 ```
 
 The `id` field is server-generated (uuidv7 by default). You never send it in the

@@ -1,4 +1,4 @@
-# YAML API Generator
+# Stackform
 
 A YAML-driven REST API engine that generates fully functional CRUD APIs backed by MongoDB. Define your data model, authentication, and access rules in a declarative YAML spec — get a running FastAPI server, a compiled standalone project, and an optional React frontend with zero hand-written code.
 
@@ -17,7 +17,7 @@ pip install -e .
 Start MongoDB locally:
 
 ```bash
-docker run -d --name yaml-api-mongodb -p 27017:27017 mongo:8
+docker run -d --name stackform-mongodb -p 27017:27017 mongo:8
 ```
 
 ## Usage
@@ -27,7 +27,7 @@ docker run -d --name yaml-api-mongodb -p 27017:27017 mongo:8
 Run a live FastAPI server directly from a YAML spec:
 
 ```bash
-yaml-api run spec.yaml
+stackform run spec.yaml
 ```
 
 Options:
@@ -43,7 +43,7 @@ Options:
 Generate a full project (backend, frontend, and deploy artifacts):
 
 ```bash
-yaml-api build spec.yaml --output ./target
+stackform build spec.yaml --output ./target
 ```
 
 The positional `what` argument selects what to build — `all` (default), `backend`, `frontend`, or `deploy`. With `all`, the frontend is built when the spec has a `ui:` block and deploy artifacts when it has a `deploy:` block.
@@ -78,7 +78,7 @@ npm run dev
 ### Generate frontend only
 
 ```bash
-yaml-api build spec.yaml frontend --output ./target
+stackform build spec.yaml frontend --output ./target
 ```
 
 The React app is written to `target/frontend/`.
@@ -88,7 +88,7 @@ The React app is written to `target/frontend/`.
 Try the blog example (backend + frontend):
 
 ```bash
-yaml-api build examples/v02/api-with-ui.yaml
+stackform build examples/v02/api-with-ui.yaml
 cd target/backend && pip install -r requirements.txt && python app.py &
 cd target/frontend && npm install && npm run dev
 ```
@@ -96,7 +96,7 @@ cd target/frontend && npm install && npm run dev
 Or the admin panel example:
 
 ```bash
-yaml-api build examples/v02/api-with-admin.yaml
+stackform build examples/v02/api-with-admin.yaml
 cd target/backend && pip install -r requirements.txt && python app.py &
 cd target/frontend && npm install && npm run dev
 ```

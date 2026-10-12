@@ -3,7 +3,7 @@
 A generated target imports a vendored package by name because its source tree
 was copied next to the generated code. The development server runs against the
 spec in place, so the same package name is bound to the declared source
-directory through a meta path finder, which gives ``yaml-api run`` the import
+directory through a meta path finder, which gives ``stackform run`` the import
 graph the generated target has.
 """
 

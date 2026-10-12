@@ -1,4 +1,4 @@
-"""`yaml-api run --raw` refuses specs with file fields."""
+"""`stackform run --raw` refuses specs with file fields."""
 
 import pytest
 

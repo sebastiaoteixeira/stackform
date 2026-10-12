@@ -47,7 +47,7 @@ targets: each receives `backend/<package>/` and the merged `requirements.txt`.
 Both the repository-operation handler form and the service handler form resolve
 to the vendored package in all three.
 
-`yaml-api run` serves the spec in place and never writes a target, so it binds
+`stackform run` serves the spec in place and never writes a target, so it binds
 each declared `package` name to its source directory through an import finder.
 A vendored handler therefore resolves under the development server exactly as it
 does in a generated target.

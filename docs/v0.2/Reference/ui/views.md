@@ -8,7 +8,7 @@ page in the generated React app: a route in the app shell, a sidebar nav item, a
 one or more page files under `src/pages/`.
 
 The whole `ui` block is free-form in the JSON schema; everything below is validated
-at generate time (`yaml-api build <file> frontend` or `... all`), not against the
+at generate time (`stackform build <file> frontend` or `... all`), not against the
 schema. The only built-in pack is `generic`, so all component names refer to that
 pack.
 
@@ -146,7 +146,7 @@ at `/auth/exchange`. See
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied

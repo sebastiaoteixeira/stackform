@@ -1,4 +1,4 @@
-"""`yaml-api run` serves file fields over HTTP against a real filesystem store."""
+"""`stackform run` serves file fields over HTTP against a real filesystem store."""
 
 import json
 import textwrap

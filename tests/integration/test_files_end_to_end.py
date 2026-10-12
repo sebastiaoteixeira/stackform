@@ -1,4 +1,4 @@
-"""The files example over real HTTP, on `yaml-api run` and on its generated FastAPI app.
+"""The files example over real HTTP, on `stackform run` and on its generated FastAPI app.
 
 Records live in MongoDB, documents' files on the filesystem and assets' files in MinIO;
 every assertion is on HTTP responses or on what the stores hold.

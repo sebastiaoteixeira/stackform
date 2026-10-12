@@ -3,8 +3,8 @@ title: Troubleshooting
 description: Common build, run, and request errors and how to fix them.
 ---
 
-Errors fall into three groups: build/validation errors (raised by `yaml-api build` and
-`yaml-api run` while reading your spec), runtime startup errors (MongoDB, environment
+Errors fall into three groups: build/validation errors (raised by `stackform build` and
+`stackform run` while reading your spec), runtime startup errors (MongoDB, environment
 variables), and HTTP responses from the generated app. The examples below assume this
 `api:` block, so the URLs are reproducible:
 
@@ -20,7 +20,7 @@ Omit `version` and the segment disappears (`/api/notes`); omit the whole `api:` 
 
 ## Build and validation errors
 
-`yaml-api build` and `yaml-api run` validate your spec before generating or serving
+`stackform build` and `stackform run` validate your spec before generating or serving
 anything. By default errors print in GCC style to stderr and exit with code 1:
 
 ```text
@@ -101,7 +101,7 @@ pymongo.errors.ServerSelectionTimeoutError: localhost:27017: [Errno 111] Connect
 
 MongoDB is not reachable. Fix it depending on how you are running the app:
 
-- `yaml-api run` (dev server): start MongoDB yourself, then re-run. The dev server reads
+- `stackform run` (dev server): start MongoDB yourself, then re-run. The dev server reads
   `YAML_API_MONGO_URI` (default `mongodb://localhost:27017`) and `YAML_API_MONGO_DB`
   (default `yaml_api`).
 - Generated deploy: run the Ansible playbook from the generated `deploy/`
@@ -159,7 +159,7 @@ Service-layer validation returns a flat message instead:
 ```
 
 You may also see `{"detail": "Password must be a non-empty string"}` for password auth,
-and (on the `yaml-api run` dev server) `{"detail": "Unknown fields: foo"}` for fields not
+and (on the `stackform run` dev server) `{"detail": "Unknown fields: foo"}` for fields not
 declared on the entity, or `{"detail": "Field 'status' must be one of: draft, published"}`
 for an enum value outside the declared `values`.
 
@@ -224,7 +224,7 @@ Check the access rules on the controller for that operation.
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
@@ -233,7 +233,7 @@ Check the access rules on the controller for that operation.
 
 ## JWT_SECRET warning
 
-The `yaml-api run` dev server falls back to an insecure default
+The `stackform run` dev server falls back to an insecure default
 (`yaml-api-dev-secret-change-me`) when `JWT_SECRET` is unset. A generated backend
 bundle instead ships a `.env` with a unique generated value, so it runs as-is -- but
 that value is for development only. In production, always set `JWT_SECRET` to a strong
@@ -242,12 +242,12 @@ random value. Related auth env vars: `JWT_EXPIRATION_HOURS` (default 24) and
 
 ```bash
 export JWT_SECRET=$(openssl rand -hex 32)
-yaml-api run myapp.yaml
+stackform run myapp.yaml
 ```
 
 ## Frontend or deploy build fails
 
-`yaml-api build <file> frontend` and `yaml-api build <file> deploy` require the matching
+`stackform build <file> frontend` and `stackform build <file> deploy` require the matching
 block in the spec, and exit 1 with one of:
 
 - `Error: No 'ui' block found in the YAML spec.` -- add a `ui:` block (or run a plain

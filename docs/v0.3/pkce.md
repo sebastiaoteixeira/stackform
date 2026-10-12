@@ -23,7 +23,7 @@ providers:
     pkce: true
 ```
 
-PKCE is supported by `yaml-api run` and generated FastAPI backends. DRF and raw
+PKCE is supported by `stackform run` and generated FastAPI backends. DRF and raw
 ASGI builds reject PKCE at build time because those targets do not implement
 OIDC client routes.
 

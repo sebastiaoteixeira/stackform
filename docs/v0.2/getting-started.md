@@ -19,7 +19,7 @@ cd yaml-framework
 pip install -e .
 ```
 
-A published package (`pip install yaml-api-generator`) will be available once released; until then use the source install above.
+A published package (`pip install stackform`) will be available once released; until then use the source install above.
 
 ## First run
 
@@ -78,7 +78,7 @@ Or ensure a local MongoDB is running on `localhost:27017`.
 3. Run the server:
 
 ```bash
-yaml-api run myapp.yaml
+stackform run myapp.yaml
 ```
 
 `run` serves the app in-process; it binds `127.0.0.1:8000` by default. Use `--host 0.0.0.0` and `-p`/`--port` to change that, `--raw` to use the raw ASGI runner, and `--json` for machine-readable errors. Pass `-r`/`--reload` to rebuild the app automatically when the spec changes; otherwise restart it to pick up edits.
@@ -108,7 +108,7 @@ As soon as your spec declares a `type: auth` entity, every non-public route requ
 `run` is for local development. To emit a standalone project you can deploy, use `build`:
 
 ```bash
-yaml-api build myapp.yaml -o ./target
+stackform build myapp.yaml -o ./target
 ```
 
 The positional argument after the file selects what to build: `all` (default), `backend`, `frontend`, or `deploy`. Pick the backend framework with `-t`/`--target` (`fastapi` (default), `drf`, or `raw`); choose the output directory with `-o`/`--output` (default `./target`; frontend-only builds use `ui.frontend.output` or `./frontend`); supply an external JSON schema with `-s`/`--schema`; add `--json` for machine-readable errors.

@@ -7,9 +7,9 @@ A record datastore (`mongodb`, `postgres`) holds records. A **file datastore**
 holds the bytes of uploaded files. Records only keep each file's metadata, so a
 `document` row in PostgreSQL can point at a PDF that lives in an S3 bucket.
 
-File datastores are v0.3 behavior. They are implemented by `yaml-api run` and by
+File datastores are v0.3 behavior. They are implemented by `stackform run` and by
 the generated FastAPI backend. The DRF and raw ASGI targets, and
-`yaml-api run --raw`, reject specs with file fields (see
+`stackform run --raw`, reject specs with file fields (see
 [Supported targets](#supported-targets)).
 
 ## Declaring file datastores
@@ -104,9 +104,9 @@ entity without file fields ignores it.
 
 ## Environment variables
 
-### `yaml-api run`
+### `stackform run`
 
-`yaml-api run` reads the spec values as written, after interpolation. Use
+`stackform run` reads the spec values as written, after interpolation. Use
 `${VAR:-default}` in the spec to make them configurable, as in the example
 above.
 
@@ -133,7 +133,7 @@ is used.
 
 ### Docker deploy
 
-`yaml-api build ... deploy` wires file datastores into `docker-compose.yml`:
+`stackform build ... deploy` wires file datastores into `docker-compose.yml`:
 
 - **filesystem:** a named volume `files_<name>` is mounted in the app at
   `/data/files/<name>`, and `FILES_<NAME>_PATH` points at it.
@@ -149,9 +149,9 @@ systemd deploys receive `FILES_<NAME>_PATH` for filesystem datastores.
 
 | Target | File datastores |
 | --- | --- |
-| `yaml-api run` | Yes |
+| `stackform run` | Yes |
 | Generated FastAPI | Yes |
-| `yaml-api run --raw`, DRF, raw ASGI | No: `BACKEND_FEATURE_UNSUPPORTED`, "file fields are not supported by target '<target>'" |
+| `stackform run --raw`, DRF, raw ASGI | No: `BACKEND_FEATURE_UNSUPPORTED`, "file fields are not supported by target '<target>'" |
 
 ## Diagnostics
 

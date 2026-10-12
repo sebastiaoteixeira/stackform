@@ -58,7 +58,7 @@ Type: integer (1-65535). Default: `8000`.
 
 The port baked into the generated FastAPI app. It can be overridden at runtime with the `PORT` environment variable. This field is read only for `version: "0.2"` specs.
 
-For the `yaml-api run` dev server the port comes from the `-p`/`--port` flag (default 8000), not from this field.
+For the `stackform run` dev server the port comes from the `-p`/`--port` flag (default 8000), not from this field.
 
 ### `cors`
 

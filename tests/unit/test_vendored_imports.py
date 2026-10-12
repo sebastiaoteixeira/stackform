@@ -4,7 +4,7 @@ Under v0.3 an ``imports`` entry vendors a package into the generated backend:
 the source directory is copied whole into ``backend/<package>``, emitted code
 imports the vendored package, its ``requires`` land in the manifest, and the
 development server binds the same package name to the declared source so
-``yaml-api run`` has the import graph the generated target has.
+``stackform run`` has the import graph the generated target has.
 """
 
 import json

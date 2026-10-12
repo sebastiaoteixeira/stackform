@@ -3,10 +3,10 @@
 Start MongoDB, then create and apply the first native revision:
 
 ```bash
-yaml-api migrate new examples/v03/mongo-migrations/spec.yaml --message baseline
-yaml-api migrate history examples/v03/mongo-migrations/spec.yaml
-yaml-api migrate up examples/v03/mongo-migrations/spec.yaml
-yaml-api migrate status examples/v03/mongo-migrations/spec.yaml
+stackform migrate new examples/v03/mongo-migrations/spec.yaml --message baseline
+stackform migrate history examples/v03/mongo-migrations/spec.yaml
+stackform migrate up examples/v03/mongo-migrations/spec.yaml
+stackform migrate status examples/v03/mongo-migrations/spec.yaml
 ```
 
 The first `up` safely stamps a schema that already has the declared unique
@@ -14,7 +14,7 @@ index. Later revisions apply index changes and record them in the migration
 ledger. To reverse all applied revisions:
 
 ```bash
-yaml-api migrate down examples/v03/mongo-migrations/spec.yaml --to base
+stackform migrate down examples/v03/mongo-migrations/spec.yaml --to base
 ```
 
 After creating `mongo_migrations/`, regenerate deployed backends so index

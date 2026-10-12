@@ -200,7 +200,7 @@ v0.2 -- use `auth.roles: <enumFieldName>` instead.
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
@@ -212,7 +212,7 @@ v0.2 -- use `auth.roles: <enumFieldName>` instead.
 Save the spec as `todo.yaml` and run it with the in-process dev server:
 
 ```sh
-yaml-api run todo.yaml
+stackform run todo.yaml
 ```
 
 The dev server reads its database connection from `YAML_API_MONGO_URI` and
@@ -222,7 +222,7 @@ for the OpenAPI UI.
 To generate a deployable FastAPI backend instead:
 
 ```sh
-yaml-api build todo.yaml -o ./target
+stackform build todo.yaml -o ./target
 ```
 
 The backend lands in `./target/backend/`. The generated backend reads
@@ -233,8 +233,8 @@ plus the auth settings below.
 | ---------------------- | --------------------- | -------------------------------- |
 | `MONGO_URI`            | generated backend     | `mongodb://localhost:27017`      |
 | `MONGO_DB`             | generated backend     | `yaml_api`                       |
-| `YAML_API_MONGO_URI`   | `yaml-api run`        | the spec's `mongo.uri`           |
-| `YAML_API_MONGO_DB`    | `yaml-api run`        | the spec's `mongo.database`      |
+| `YAML_API_MONGO_URI`   | `stackform run`        | the spec's `mongo.uri`           |
+| `YAML_API_MONGO_DB`    | `stackform run`        | the spec's `mongo.database`      |
 | `JWT_SECRET`           | both                  | dev placeholder (set in prod)    |
 | `JWT_EXPIRATION_HOURS` | both                  | `24`                             |
 | `PASSWORD_HASH_ROUNDS` | both                  | `390000`                         |

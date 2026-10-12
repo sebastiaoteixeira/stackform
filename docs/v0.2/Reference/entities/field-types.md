@@ -44,7 +44,7 @@ These options apply to all field types.
 
 The generated FastAPI backend builds your request body with `payload.model_dump(exclude_unset=True)` before inserting. So a `default:` you declare is present on the model, but if the client omits the field, it is stripped from the document and never written. The default surfaces only if you want a value echoed when constructing the model directly; it does not act as a server-side fill-in on create.
 
-The `yaml-api run` dev server does no default-filling at all and treats `required` strictly, so behavior matches: omit a field and it stays absent.
+The `stackform run` dev server does no default-filling at all and treats `required` strictly, so behavior matches: omit a field and it stays absent.
 
 ### How `readonly` behaves
 

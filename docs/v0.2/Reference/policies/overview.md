@@ -13,7 +13,7 @@ top-level `policies:` block and reference it as a term inside any access rule's
 > expanded into the referencing rule's `when:` AST before any backend is
 > generated, so the resulting rule looks exactly as if you had written the
 > expanded expression by hand. The generated FastAPI backend, the generated DRF
-> backend, and the `yaml-api run` dev server need no policy-aware runtime: they
+> backend, and the `stackform run` dev server need no policy-aware runtime: they
 > evaluate the already-expanded rule. There is no new runtime primitive.
 
 ## Why policies exist

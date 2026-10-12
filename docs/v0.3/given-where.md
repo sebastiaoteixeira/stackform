@@ -125,8 +125,8 @@ record, so the same symbol name may be bound differently in two rules without
 collision. An unauthenticated request fetches nothing and is rejected with `401`
 as usual.
 
-These semantics apply equally to `yaml-api run` and to standalone FastAPI, raw
-ASGI and Django REST Framework backends produced by `yaml-api build`. Generated
+These semantics apply equally to `stackform run` and to standalone FastAPI, raw
+ASGI and Django REST Framework backends produced by `stackform build`. Generated
 routes retain the binding's collection and complete predicate, inject or create
 that collection's repository, and perform the lookup before evaluating the rule.
 Generated applications do not import the generator package at runtime.

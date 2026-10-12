@@ -24,7 +24,7 @@ providers:
 ```
 
 `dpop` and `pkce` are independent and may be combined on the same provider.
-DPoP is supported by `yaml-api run` and generated FastAPI backends. DRF and raw
+DPoP is supported by `stackform run` and generated FastAPI backends. DRF and raw
 ASGI builds reject it because those targets do not implement OIDC client routes.
 It is also rejected with `trust: idp`, where the application verifies incoming
 tokens rather than acting as the OAuth client that obtains them.
@@ -35,7 +35,7 @@ Each DPoP provider requires `<PROVIDER>_DPOP_PRIVATE_KEY`, an EC P-256 private
 key in PEM form. Generated FastAPI projects create this secret once in `.env`
 and expose a placeholder in `.env.example`. Every worker loads the same key, so
 token binding remains valid across worker and process restarts. For
-`yaml-api run`, set the environment variable before startup; `\\n`-escaped PEM
+`stackform run`, set the environment variable before startup; `\\n`-escaped PEM
 values are accepted.
 
 ## What the client emits

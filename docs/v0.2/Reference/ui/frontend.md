@@ -12,8 +12,8 @@ A frontend is emitted only when the spec has a `ui:` block and you build the
 frontend target:
 
 ```bash
-yaml-api build myapp.yaml frontend   # frontend only
-yaml-api build myapp.yaml all        # backend + frontend + deploy
+stackform build myapp.yaml frontend   # frontend only
+stackform build myapp.yaml all        # backend + frontend + deploy
 ```
 
 ## ui.frontend options
@@ -37,16 +37,16 @@ ui:
     app_name: My App
 ```
 
-If `pack` is missing or blank, `yaml-api build <file> frontend` exits 1 with
+If `pack` is missing or blank, `stackform build <file> frontend` exits 1 with
 `Error: ui.frontend.pack is required.`. If the spec has no `ui:` block at all,
-`yaml-api build <file> frontend` exits 1 with
-`Error: No 'ui' block found in the YAML spec.`. (During `yaml-api build <file> all`
+`stackform build <file> frontend` exits 1 with
+`Error: No 'ui' block found in the YAML spec.`. (During `stackform build <file> all`
 a missing `ui:` block is simply skipped rather than an error.)
 
 ### Output location
 
-- `yaml-api build <file> all -o ./target` writes the frontend to `./target/frontend`.
-- `yaml-api build <file> frontend -o ./web` writes to `./web`.
+- `stackform build <file> all -o ./target` writes the frontend to `./target/frontend`.
+- `stackform build <file> frontend -o ./web` writes to `./web`.
 - Without `-o`, a frontend-only build uses `ui.frontend.output`; if that is
   absent it writes to `./frontend`.
 

@@ -79,7 +79,7 @@ output.
 ## Fetch and mutation semantics
 
 The route-derived predicate applies consistently to `get`, `update`, `replace`,
-and `delete` in both `yaml-api run` and generated FastAPI, DRF, and raw ASGI
+and `delete` in both `stackform run` and generated FastAPI, DRF, and raw ASGI
 backends. Scoped writes are a single repository operation: the complete parent
 and id predicate is applied by `update_by`, `replace_by`, or `delete_by`. The
 implementation does not fetch by scope and then mutate by id, so a concurrent

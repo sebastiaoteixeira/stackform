@@ -70,7 +70,7 @@ comes from.
 | `fastapi` | `routes/jwks.py`, mounted on the app root | the generated environment file is seeded with a fresh 2048-bit key; the example file carries a `<jwt_private_key>` placeholder |
 | `drf` | `api/views/jwks.py`, wired in the project `urls.py` | `JWT_PRIVATE_KEY` must be supplied by the environment |
 | `raw` | `routes/jwks.py`, registered in `app.py` | `JWT_PRIVATE_KEY` must be supplied by the environment |
-| `yaml-api run` | injected into the runtime route table | `JWT_PRIVATE_KEY` from the environment; otherwise an ephemeral key, see below |
+| `stackform run` | injected into the runtime route table | `JWT_PRIVATE_KEY` from the environment; otherwise an ephemeral key, see below |
 
 Only the `fastapi` target emits environment files, so only it can seed a key at
 generation time. For `drf` and `raw` the key is a deployment input: with
@@ -79,7 +79,7 @@ startup instead of serving traffic.
 
 ## The dev server
 
-`yaml-api run` honours `session.algorithm` too. With `RS256` it mounts the same
+`stackform run` honours `session.algorithm` too. With `RS256` it mounts the same
 `/.well-known/jwks.json` route and mints `kid`-stamped RS256 tokens.
 
 If `JWT_PRIVATE_KEY` is set it is used; PEM newlines may be escaped as `\n`, as

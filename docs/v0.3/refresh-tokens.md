@@ -64,6 +64,6 @@ revocation of a whole family.
 ## Scope
 
 Rotation is generated for the FastAPI backend, whose login flow is MongoDB-backed;
-the refresh store uses the same database. The `yaml-api run` dev server does not
+the refresh store uses the same database. The `stackform run` dev server does not
 mount these generated auth routes, so refresh rotation is exercised at the
 generation and unit layers.

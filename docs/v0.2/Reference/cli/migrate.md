@@ -1,9 +1,9 @@
 ---
-title: "`yaml-api migrate`"
+title: "`stackform migrate`"
 description: Manage versioned schema migrations for relational datastores using Alembic.
 ---
 
-`yaml-api migrate` manages versioned schema migrations for a relational (PostgreSQL) datastore. By default a relational datastore creates its tables on connect; `migrate` graduates a project to versioned migrations once you need reproducible, reviewable schema evolution.
+`stackform migrate` manages versioned schema migrations for a relational (PostgreSQL) datastore. By default a relational datastore creates its tables on connect; `migrate` graduates a project to versioned migrations once you need reproducible, reviewable schema evolution.
 
 The same subcommands drive a MongoDB datastore through a native driver; this page describes the relational Alembic flow, and [MongoDB migrations](../../../v0.3/mongo-migrations.md) describes the document-store one.
 
@@ -27,12 +27,12 @@ On the first `migrate new`, the Alembic environment is scaffolded next to the sp
 
 ```bash
 # graduate and apply
-yaml-api migrate new my-spec.yaml -m "initial schema"
-yaml-api migrate up my-spec.yaml
+stackform migrate new my-spec.yaml -m "initial schema"
+stackform migrate up my-spec.yaml
 
 # evolve: change the spec, then
-yaml-api migrate new my-spec.yaml -m "add column"
-yaml-api migrate up my-spec.yaml
+stackform migrate new my-spec.yaml -m "add column"
+stackform migrate up my-spec.yaml
 ```
 
 ## Targets
@@ -40,8 +40,8 @@ yaml-api migrate up my-spec.yaml
 `--to` accepts any Alembic target: `head`, `base`, a revision id, or relative forms like `+1` / `-1`.
 
 ```bash
-yaml-api migrate up my-spec.yaml --to head
-yaml-api migrate down my-spec.yaml --to -1
+stackform migrate up my-spec.yaml --to head
+stackform migrate down my-spec.yaml --to -1
 ```
 
 ## See Also

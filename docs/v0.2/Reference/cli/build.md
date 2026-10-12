@@ -1,5 +1,5 @@
 ---
-title: "`yaml-api build`"
+title: "`stackform build`"
 description: Builds a standalone project from a YAML spec -- backend (FastAPI, DRF, or raw ASGI), React frontend, deployment artifacts, or all three.
 ---
 
@@ -8,7 +8,7 @@ Builds a standalone project from a YAML spec. A single invocation can produce th
 ## Usage
 
 ```bash
-yaml-api build <file.yaml> [all|backend|frontend|deploy] [options]
+stackform build <file.yaml> [all|backend|frontend|deploy] [options]
 ```
 
 ## Arguments
@@ -80,9 +80,9 @@ ui:
 
 Behavior:
 
-- `yaml-api build app.yaml frontend` writes the project to `ui.frontend.output`, or `./frontend` when it is omitted.
-- `yaml-api build app.yaml frontend -o ./web` overrides the spec output.
-- `yaml-api build app.yaml all` writes the frontend to `<output>/frontend` alongside the backend.
+- `stackform build app.yaml frontend` writes the project to `ui.frontend.output`, or `./frontend` when it is omitted.
+- `stackform build app.yaml frontend -o ./web` overrides the spec output.
+- `stackform build app.yaml all` writes the frontend to `<output>/frontend` alongside the backend.
 - `overwrite: never` (the default) preserves files you have edited and only refreshes the generated zones; `overwrite: always` rewrites everything.
 
 Failure modes for the standalone `frontend` build (each exits with status 1):
@@ -96,19 +96,19 @@ See [UI / Frontend](../ui/frontend.md) for the `ui` block reference.
 
 ```bash
 # Build everything the spec describes (backend, plus frontend/deploy if present)
-yaml-api build myapp.yaml
+stackform build myapp.yaml
 
 # Backend only, to a custom directory, targeting DRF
-yaml-api build myapp.yaml backend -t drf -o ./my-django-api
+stackform build myapp.yaml backend -t drf -o ./my-django-api
 
 # Frontend only, to a custom directory
-yaml-api build myapp.yaml frontend -o ./web
+stackform build myapp.yaml frontend -o ./web
 
 # Deployment artifacts only
-yaml-api build myapp.yaml deploy -o ./deploy
+stackform build myapp.yaml deploy -o ./deploy
 
 # Validate against an explicit schema, JSON error output
-yaml-api build myapp.yaml -s ./custom-schema.json --json
+stackform build myapp.yaml -s ./custom-schema.json --json
 ```
 
 ## Environment variables
@@ -118,7 +118,7 @@ yaml-api build myapp.yaml -s ./custom-schema.json --json
 ```bash
 export MONGO_URI=mongodb://localhost:27017
 export MONGO_DB=myapp
-yaml-api build myapp.yaml
+stackform build myapp.yaml
 ```
 
 Secrets are the exception to build-time baking: a confidential OIDC `client_secret` and `JWT_SECRET` are runtime `SecretStr` settings read from `<PROVIDER>_CLIENT_SECRET` / `JWT_SECRET` env vars, never baked as literals. The backend build also emits `.env` (real generated values) and `.env.example` (placeholders); a `deploy` build never bakes a secret into the bundle and instead generates secrets at deploy time via Ansible.

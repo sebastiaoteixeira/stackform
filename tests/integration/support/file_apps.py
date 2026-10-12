@@ -1,4 +1,4 @@
-"""The files example served over real HTTP by `yaml-api run` and by the FastAPI app it generates."""
+"""The files example served over real HTTP by `stackform run` and by the FastAPI app it generates."""
 
 import os
 import subprocess
@@ -17,7 +17,7 @@ from .network import free_port, wait_until
 
 SPEC = Path(__file__).parents[3] / "examples" / "v03" / "files" / "spec.yaml"
 CLIENT_ID = "files-demo"
-YAML_API = str(Path(sys.executable).with_name("yaml-api"))
+YAML_API = str(Path(sys.executable).with_name("stackform"))
 
 
 @dataclass(frozen=True)

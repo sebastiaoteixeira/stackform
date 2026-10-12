@@ -1,9 +1,9 @@
 ---
 title: Concepts
-description: How yaml-api-generator turns one YAML spec into a running API, frontend, and deployment.
+description: How Stackform turns one YAML spec into a running API, frontend, and deployment.
 ---
 
-This page explains the architecture of yaml-api-generator for newcomers: the YAML spec, the four layers it describes, how a request is authenticated and authorized, and what the tool generates.
+This page explains the architecture of Stackform for newcomers: the YAML spec, the four layers it describes, how a request is authenticated and authorized, and what the tool generates.
 
 ## The YAML spec
 
@@ -25,7 +25,7 @@ From one spec the tool can generate several outputs:
 - a React frontend, when the spec has a `ui:` block,
 - deployment artifacts (Docker Compose or systemd), when the spec has a `deploy:` block.
 
-You can also serve the spec directly with `yaml-api run myapp.yaml`, an in-process dev server that needs no code generation.
+You can also serve the spec directly with `stackform run myapp.yaml`, an in-process dev server that needs no code generation.
 
 ## The four layers
 
@@ -119,7 +119,7 @@ Ownership and conditional access use `when` rules. Every root the `when` referen
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
