@@ -2,9 +2,9 @@
 #
 # Posts and authors live in MongoDB; page-view events live in PostgreSQL and are
 # queried with a parameterized SQL custom operation. Run with:
-#   yaml-api run examples/polyglot.yaml
+#   stackform run examples/polyglot.yaml
 # The relational datastore creates its tables on connect; to graduate to
-# versioned migrations: yaml-api migrate new examples/polyglot.yaml
+# versioned migrations: stackform migrate new examples/polyglot.yaml
 #
 # Note: the SQL custom-operation route (events.forPost) is served by the run
 # server (`run`). Generating it into a standalone backend (`build`) is a known
@@ -85,7 +85,7 @@ controllers:
       create:  { service: events, method: POST, path: "", access: public }
       forPost: { service: eventsForPost, method: GET, path: "/for-post/{id}", access: public }
 
-# `yaml-api build examples/polyglot.yaml deploy` generates a docker-compose.yml
+# `stackform build examples/polyglot.yaml deploy` generates a docker-compose.yml
 # with the app plus a MongoDB and a PostgreSQL service, one per datastore.
 deploy:
   runtime: docker

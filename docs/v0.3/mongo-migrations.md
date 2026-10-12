@@ -3,17 +3,17 @@ title: MongoDB migrations
 description: Versioned schema evolution for MongoDB datastores, and exactly which runtimes stop creating indexes on connect once a spec graduates.
 ---
 
-`yaml-api migrate` manages versioned schema evolution for both relational and
+`stackform migrate` manages versioned schema evolution for both relational and
 MongoDB datastores through one command tree. The subcommands are identical
 across backends; the driver is selected from the datastore kind, so nothing new
 has to be learned to migrate a document store.
 
 ```
-yaml-api migrate new     spec.yaml [-m MESSAGE] [--datastore NAME]
-yaml-api migrate up      spec.yaml [--to REVISION] [--datastore NAME]
-yaml-api migrate down    spec.yaml [--to REVISION] [--datastore NAME]
-yaml-api migrate status  spec.yaml [--datastore NAME]
-yaml-api migrate history spec.yaml [--datastore NAME]
+stackform migrate new     spec.yaml [-m MESSAGE] [--datastore NAME]
+stackform migrate up      spec.yaml [--to REVISION] [--datastore NAME]
+stackform migrate down    spec.yaml [--to REVISION] [--datastore NAME]
+stackform migrate status  spec.yaml [--datastore NAME]
+stackform migrate history spec.yaml [--datastore NAME]
 ```
 
 ## Choosing the datastore
@@ -71,7 +71,7 @@ A revision is a list of operations applied in order on `up` and in reverse on
   silently skipping the step.
 
   The dotted path resolves against the installed environment and against the
-  directory holding the spec, the way `yaml-api run` resolves service handlers,
+  directory holding the spec, the way `stackform run` resolves service handlers,
   so a `handlers.py` next to the spec is named `handlers.backfill`. A path that
   cannot be imported, or that names something which is not callable, stops the
   run and names the revision.
@@ -96,9 +96,9 @@ or the id of a revision already in the chain. Anything else is rejected. On
 named revision is the floor and is left applied.
 
 ```bash
-yaml-api migrate up   my-spec.yaml --to +1
-yaml-api migrate down my-spec.yaml --to -1
-yaml-api migrate down my-spec.yaml --to base
+stackform migrate up   my-spec.yaml --to +1
+stackform migrate down my-spec.yaml --to -1
+stackform migrate down my-spec.yaml --to base
 ```
 
 ## Applied history
@@ -143,7 +143,7 @@ Where MongoDB graduation takes effect:
 
 | Runtime | On-connect unique-index creation |
 | --- | --- |
-| `yaml-api run` (development server, FastAPI and `--raw` ASGI) | Runs when no `mongo_migrations/` sits next to the spec; skipped once it does. |
+| `stackform run` (development server, FastAPI and `--raw` ASGI) | Runs when no `mongo_migrations/` sits next to the spec; skipped once it does. |
 | Generated FastAPI backend | Emitted only when `mongo_migrations/` was absent at generation time; a graduated spec generates an app whose startup makes no index-creation call. |
 | Generated DRF backend | Runs from `AppConfig.ready()` when no `mongo_migrations/` tree exists; skipped once it does. |
 | Generated raw ASGI backend | Runs during ASGI lifespan startup when no `mongo_migrations/` tree exists; skipped once it does. |
@@ -167,7 +167,7 @@ without rebuilding what is already there.
 
 ## See also
 
-- [`yaml-api migrate`](../v0.2/Reference/cli/migrate.md) — the command reference,
+- [`stackform migrate`](../v0.2/Reference/cli/migrate.md) — the command reference,
   including the relational Alembic flow
 - [Unique violations and `409 Conflict`](./conflict-status.md) — what a `unique`
   field means at request time, whichever way its index was created

@@ -8,12 +8,12 @@ not overlap:
 
 1. **Spec interpolation (build time).** `${VAR}` or `${VAR:-default}` inside any
    string value in the YAML spec is a build-time macro. It is resolved by the parser
-   from the environment when the spec is loaded -- for both `yaml-api build` and
-   `yaml-api run` -- and the resolved value is baked into the output. Most fields are
+   from the environment when the spec is loaded -- for both `stackform build` and
+   `stackform run` -- and the resolved value is baked into the output. Most fields are
    baked this way, with one exception: a provider's `client_secret` is never baked as
    a code literal. The generator routes it to a per-provider runtime setting
    (`<PROVIDER>_CLIENT_SECRET`) instead (see the **Secrets** note below).
-2. **Runtime variables.** The generated backend, the `yaml-api run` dev server, and
+2. **Runtime variables.** The generated backend, the `stackform run` dev server, and
    a generated Docker deploy read a fixed set of variables (listed under
    [Runtime variables](#runtime-variables)) directly from the process environment at
    run time. These are read by the generated *code*, not by spec interpolation, and
@@ -112,7 +112,7 @@ api:
 These variables are read directly from the process environment by the running code,
 not via spec interpolation. They are grouped by who reads them.
 
-### Generated backend (`yaml-api build`, fastapi/raw targets)
+### Generated backend (`stackform build`, fastapi/raw targets)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -136,9 +136,9 @@ with a unique generated value (see [Generated `.env` /
 manual setup -- but that value is meant for development. Set a strong random value
 (for example `openssl rand -hex 32`) for any non-development deployment. A generated
 Docker deploy never bakes a secret into the bundle; it generates one at deploy time
-(see [Docker deploy](#docker-deploy-yaml-api-build--deploy)).
+(see [Docker deploy](#docker-deploy-stackform-build--deploy)).
 
-### `yaml-api run` dev server
+### `stackform run` dev server
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -157,10 +157,10 @@ come from the `--host` / `-p` flags, not from `HOST` / `PORT`.
 YAML_API_MONGO_URI=mongodb://localhost:27017 \
 YAML_API_MONGO_DB=myapp \
 JWT_SECRET=$(openssl rand -hex 32) \
-yaml-api run myapp.yaml --host 0.0.0.0 -p 8000
+stackform run myapp.yaml --host 0.0.0.0 -p 8000
 ```
 
-### Docker deploy (`yaml-api build ... deploy`)
+### Docker deploy (`stackform build ... deploy`)
 
 The generated `docker-compose.yml` exposes these for `docker compose`:
 
@@ -200,7 +200,7 @@ list and emitted with an empty default for you to fill.
 
 ### Backend bundle
 
-A plain backend build (`yaml-api build`, fastapi target) -- with or without a
+A plain backend build (`stackform build`, fastapi target) -- with or without a
 `deploy:` block -- writes both files next to the backend:
 
 - `.env` lists every runtime setting with real values: secret-typed settings

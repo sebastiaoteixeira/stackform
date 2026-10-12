@@ -1,5 +1,5 @@
 ---
-title: "`yaml-api run`"
+title: "`stackform run`"
 description: Serves an application directly from a YAML spec, with no build step. The server is rebuilt from the spec on each start.
 ---
 
@@ -10,7 +10,7 @@ By default the app is assembled from the spec once, when the process starts. Pas
 ## Usage
 
 ```bash
-yaml-api run <file.yaml> [options]
+stackform run <file.yaml> [options]
 ```
 
 ## Arguments
@@ -36,19 +36,19 @@ The host and port come from `--host` and `-p`/`--port` only; they are not read f
 
 ```bash
 # Start on the default host/port (127.0.0.1:8000)
-yaml-api run myapp.yaml
+stackform run myapp.yaml
 
 # Expose on all interfaces, port 3000
-yaml-api run myapp.yaml --host 0.0.0.0 -p 3000
+stackform run myapp.yaml --host 0.0.0.0 -p 3000
 
 # Reload the app whenever the spec changes
-yaml-api run myapp.yaml --reload
+stackform run myapp.yaml --reload
 
 # Serve the raw-ASGI variant
-yaml-api run myapp.yaml --raw
+stackform run myapp.yaml --raw
 
 # Validate against an explicit schema, JSON error output
-yaml-api run myapp.yaml -s ./custom-schema.json --json
+stackform run myapp.yaml -s ./custom-schema.json --json
 ```
 
 ## Auto-generated docs
@@ -68,7 +68,7 @@ The dev server reads its MongoDB connection from environment variables, falling 
 | `YAML_API_MONGO_URI` | `mongo.uri` from the spec | MongoDB connection string for the dev server. |
 | `YAML_API_MONGO_DB` | `mongo.database` from the spec | MongoDB database name for the dev server. |
 
-These are specific to `yaml-api run`. A built backend produced by `yaml-api build` reads `MONGO_URI` / `MONGO_DB` instead -- see [Environment variables](../configuration/environment-variables.md).
+These are specific to `stackform run`. A built backend produced by `stackform build` reads `MONGO_URI` / `MONGO_DB` instead -- see [Environment variables](../configuration/environment-variables.md).
 
 Authentication is configured through the same variables the built backend uses:
 
@@ -90,7 +90,7 @@ FastAPI modes. For an auth collection named `users` with
 export YAML_API_MONGO_URI=mongodb://localhost:27017
 export YAML_API_MONGO_DB=myapp
 export JWT_SECRET=change-me
-yaml-api run myapp.yaml
+stackform run myapp.yaml
 ```
 
 ## Starting MongoDB

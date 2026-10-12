@@ -115,7 +115,7 @@ async def publish(request):
     return {"id": entity_id, "published": True}
 ```
 
-The handler does its own data access and owns its response; an uncaught exception becomes a 500. The `yaml-api run` dev server uses a different handler shape (a request-context pipeline step). Both contracts are documented in [Custom operations](custom-operations.md) and [Handler context](handler-context.md).
+The handler does its own data access and owns its response; an uncaught exception becomes a 500. The `stackform run` dev server uses a different handler shape (a request-context pipeline step). Both contracts are documented in [Custom operations](custom-operations.md) and [Handler context](handler-context.md).
 
 ## Top-level `handler` vs per-operation `handler`
 

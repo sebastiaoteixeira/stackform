@@ -1,11 +1,13 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "yaml-api-generator"
+name = "stackform"
 version = "0.1.0"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE.txt"]
 dependencies = [
   "pyyaml",
   "jsonschema",
@@ -36,7 +38,7 @@ dependencies = [
 dev = ["pytest"]
 
 [project.scripts]
-yaml-api = "yaml_api_generator.cli:cli"
+stackform = "yaml_api_generator.cli:cli"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -166,8 +166,8 @@ routes under the entity's collection (the full path is
 These routes exist only when an entity actually binds the provider; a declared but
 unbound provider emits nothing.
 
-Both `yaml-api build` and the `yaml-api run` dev server mount these OIDC routes.
-SAML routes are currently only mounted by `yaml-api build`; SAML SSO under the dev
+Both `stackform build` and the `stackform run` dev server mount these OIDC routes.
+SAML routes are currently only mounted by `stackform build`; SAML SSO under the dev
 server is not yet implemented.
 
 The runtime compatibility suite drives this entire OIDC path against a live

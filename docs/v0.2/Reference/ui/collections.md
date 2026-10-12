@@ -7,8 +7,8 @@ description: Presentation-level views over your entities, validated and type-res
 collection field maps a display name to a value pulled from an entity, following
 declared `ref` fields to reach data on related entities.
 
-Collections are validated and type-resolved when you run `yaml-api build` (or
-`yaml-api run`): every `from:` path is checked against the entity schema and its
+Collections are validated and type-resolved when you run `stackform build` (or
+`stackform run`): every `from:` path is checked against the entity schema and its
 value type is resolved from that schema. They are not a runtime join layer -- the
 generated backend does not denormalize or pre-compute collection rows, and the
 built-in `generic` pack derives its table columns and detail/form fields from the

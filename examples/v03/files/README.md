@@ -16,7 +16,7 @@ provider whose tokens carry `email` and `role` claims, and run it:
 ```bash
 docker compose up -d mongodb minio
 export OIDC_DISCOVERY_URL=https://idp.example/realms/files/.well-known/openid-configuration
-yaml-api run examples/v03/files/spec.yaml
+stackform run examples/v03/files/spec.yaml
 ```
 
 The `media` datastore's bucket (`files-demo`, override with `S3_BUCKET`) is
@@ -46,7 +46,7 @@ curl -X POST http://127.0.0.1:8000/api/documents \
 Generate the same API as a FastAPI app:
 
 ```bash
-yaml-api build examples/v03/files/spec.yaml backend --target fastapi --output /tmp/yaml-v03-files
+stackform build examples/v03/files/spec.yaml backend --target fastapi --output /tmp/yaml-v03-files
 ```
 
 The generated app reads its datastores from `FILES_DISK_PATH` and
@@ -54,5 +54,5 @@ The generated app reads its datastores from `FILES_DISK_PATH` and
 The DRF and raw ASGI targets reject this spec with `BACKEND_FEATURE_UNSUPPORTED`.
 
 `tests/integration/test_files_end_to_end.py` and
-`tests/integration/test_files_security.py` run this spec on both `yaml-api run`
+`tests/integration/test_files_security.py` run this spec on both `stackform run`
 and the generated app, against real MongoDB, MinIO and a live OIDC issuer.

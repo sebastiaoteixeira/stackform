@@ -1,4 +1,4 @@
-"""Native MongoDB migrations driven through `yaml-api migrate`.
+"""Native MongoDB migrations driven through `stackform migrate`.
 
 No async-capable Mongo double exists for ``pymongo.AsyncMongoClient`` (mongomock
 and mongomock_motor target the synchronous client and Motor), so a fake async

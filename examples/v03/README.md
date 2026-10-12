@@ -17,19 +17,19 @@ states which generated backends implement them.
 Validate any example without contacting its datastore:
 
 ```bash
-yaml-api build examples/v03/access-bindings/spec.yaml --target fastapi --output /tmp/yaml-v03-build
+stackform build examples/v03/access-bindings/spec.yaml --target fastapi --output /tmp/yaml-v03-build
 ```
 
 Run the SQLite example directly:
 
 ```bash
-yaml-api run examples/v03/crud-pagination/spec.yaml
+stackform run examples/v03/crud-pagination/spec.yaml
 ```
 
 Exercise password login and role authorization without MongoDB:
 
 ```bash
-yaml-api run examples/v03/password-role/spec.yaml
+stackform run examples/v03/password-role/spec.yaml
 
 curl -X POST http://127.0.0.1:8000/api/v1/users/register \
   -H 'content-type: application/json' \
@@ -53,7 +53,7 @@ discovery URL, client secret, and one persistent DPoP key to every app worker:
 export OIDC_DISCOVERY_URL=https://idp.example/realms/example/.well-known/openid-configuration
 export OIDC_CLIENT_SECRET=replace-with-provider-secret
 export IDENTITY_DPOP_PRIVATE_KEY="$(python -c 'from yaml_api_generator.runtime.dpop import generate_private_key_pem; print(generate_private_key_pem())')"
-yaml-api run examples/v03/oidc-pkce-dpop/spec.yaml
+stackform run examples/v03/oidc-pkce-dpop/spec.yaml
 ```
 
 `tests/integration/test_live_auth_flows.py` exercises that same flow against a

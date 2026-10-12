@@ -3,8 +3,8 @@ title: "Full Spec"
 description: "The complete, reproducible blog YAML spec, with notes on what each block does and how it is enforced."
 ---
 
-This is the full blog spec. It compiles with `yaml-api build` and runs with
-`yaml-api run`. Copy it verbatim and follow the run notes at the bottom to
+This is the full blog spec. It compiles with `stackform build` and runs with
+`stackform run`. Copy it verbatim and follow the run notes at the bottom to
 reproduce every URL shown in the rest of this track.
 
 The `api:` block below sets `basePath: /api` and `version: v1`, so every route
@@ -15,7 +15,7 @@ those two values and all URLs shift accordingly.
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
@@ -212,7 +212,7 @@ controllers:
   (`method` and `path` are required for a custom op). At runtime the handler is
   your own module: provide a `blog.py` next to the spec exposing
   `async def publish_post(request)`. The FastAPI, DRF, and raw-ASGI build targets
-  all emit the custom route; `yaml-api run` invokes the same declaration through
+  all emit the custom route; `stackform run` invokes the same declaration through
   its `RequestContext` handler contract.
 
 - Unique fields. `unique: true` on `email` drives the UI and creates a MongoDB
@@ -232,13 +232,13 @@ auto-reload on restart):
 ```bash
 YAML_API_MONGO_URI=mongodb://localhost:27017 \
 YAML_API_MONGO_DB=blog \
-yaml-api run blog.yaml
+stackform run blog.yaml
 ```
 
 Generate a standalone FastAPI backend instead:
 
 ```bash
-yaml-api build blog.yaml backend -o ./target
+stackform build blog.yaml backend -o ./target
 ```
 
 The dev server reads `YAML_API_MONGO_URI` / `YAML_API_MONGO_DB`; the generated

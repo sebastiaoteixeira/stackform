@@ -60,7 +60,7 @@ and the default assigned on create come from that field's `values:` and `default
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
@@ -155,7 +155,7 @@ The resolved principal exposes:
   or `role` field if `auth.roles` is unset).
 - `principal.record` -- the matched record. Stored fields are referenced in `when` rules
   as `principal.record.<field>`. In the generated FastAPI/DRF backends this is the raw
-  MongoDB document (including the internal `_auth` namespace); the `yaml-api run` dev
+  MongoDB document (including the internal `_auth` namespace); the `stackform run` dev
   server passes a sanitized record.
 
 ## Internal Storage

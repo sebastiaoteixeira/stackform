@@ -72,7 +72,7 @@ the cookie from cross-site sub-requests.
 
 ## Runtime and generated clients
 
-Cookie delivery is implemented by both `yaml-api run` and generated FastAPI
+Cookie delivery is implemented by both `stackform run` and generated FastAPI
 backends. Generated DRF and raw backends reject this delivery mode at build
 time rather than emitting a partial authentication implementation.
 

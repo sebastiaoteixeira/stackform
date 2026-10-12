@@ -8,7 +8,7 @@ description: Paged list responses declared at the controller, with implicit repo
 Pagination is decomposed across three layers and declared **explicitly only at
 the controller**. The repository exposes generic primitives implicitly; the
 service maps the request onto them implicitly. All pagination behavior is gated
-on `version: "0.3"`. It is implemented by `yaml-api run` and by generated
+on `version: "0.3"`. It is implemented by `stackform run` and by generated
 FastAPI, DRF, and raw ASGI backends.
 
 ## The three layers

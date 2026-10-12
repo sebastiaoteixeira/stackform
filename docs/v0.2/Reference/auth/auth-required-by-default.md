@@ -69,7 +69,7 @@ flowchart TD
   P3 -- "yes, role match" --> OK
 ```
 
-The default FastAPI build, the DRF build, and `yaml-api run` all follow this same
+The default FastAPI build, the DRF build, and `stackform run` all follow this same
 resolution. A request with no credentials on a protected route stops at the "401
 if no principal" node; an authenticated request that does not satisfy the role or
 `<entity>:*` scope gets 403.
@@ -127,7 +127,7 @@ controllers:
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied

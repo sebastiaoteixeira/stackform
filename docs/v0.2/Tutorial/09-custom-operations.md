@@ -142,7 +142,7 @@ The handler signature depends on the target you generate or run. Write the versi
 
 ### Generated backends: request object
 
-`yaml-api build myapp.yaml backend` emits a route that awaits the handler with
+`stackform build myapp.yaml backend` emits a route that awaits the handler with
 the target's request object. FastAPI supplies `fastapi.Request`, DRF supplies its
 request, and raw-ASGI supplies a request-compatible object with `path_params`,
 `body`, `headers`, and `state`. Read inputs from that object and return a
@@ -174,7 +174,7 @@ async def publish(request: Request):
 
 Raise `HTTPException` for controlled error responses. Any other uncaught exception becomes a 500. The custom-op route on the FastAPI backend does not run the CRUD access pipeline, so if the action must be restricted, enforce it inside the handler (resolve the principal and check it yourself).
 
-### `yaml-api run` dev server: `context: RequestContext`
+### `stackform run` dev server: `context: RequestContext`
 
 The in-process dev server invokes the handler as a pipeline step. It receives and returns a `RequestContext`: read inputs from the context, set `context.response`, and return the context.
 
@@ -213,7 +213,7 @@ There is no `context.now()`; build timestamps yourself. Raise `NotFoundError` (i
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
@@ -253,7 +253,7 @@ Custom-operation routes are emitted by the FastAPI, DRF, and raw-ASGI targets.
 
 - `handler:` on a service operation points to `<alias>.<function>`, resolved through `imports:`.
 - Custom operations require `method` and `path` on the controller operation; there is no inference.
-- Generated targets pass their request object; `yaml-api run` passes a `RequestContext`.
+- Generated targets pass their request object; `stackform run` passes a `RequestContext`.
 - For a plain parameterized read, prefer a repository `query` operation over a handler.
 - Custom operations participate in the same access vocabulary as CRUD; under `run` and `drf` the rules are enforced for custom routes, while the FastAPI custom route leaves enforcement to your handler.
 

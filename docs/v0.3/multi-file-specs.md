@@ -113,7 +113,7 @@ cannot see. Expect two classes of false positives:
 - **VS Code's YAML extension** (redhat.vscode-yaml): "Unresolved alias
   reference" (squiggly underline) on any cross-file `*alias`. This is a
   single-file limitation of the extension's YAML language server, not a build
-  error -- `yaml-api build`/`run` resolve the alias correctly regardless. There
+  error -- `stackform build`/`run` resolve the alias correctly regardless. There
   is no per-line suppression for it; either ignore the warning for files under
   `templates:`/`include:` globs, or fold the shared block back into a single
   file (dropping `templates:`) where the anchor and alias stay in one

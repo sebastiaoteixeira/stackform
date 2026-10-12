@@ -124,22 +124,22 @@ variants) is referenced by the kebab-case names shown in the pack. See
 
 ## Generation
 
-There is no `frontend` or `compile` command. Generate the UI with `yaml-api build`:
+There is no `frontend` or `compile` command. Generate the UI with `stackform build`:
 
 ```bash
 # Frontend only (uses ui.frontend.output, then ./frontend)
-yaml-api build myapp.yaml frontend
+stackform build myapp.yaml frontend
 
 # Everything: backend, frontend, and deploy artifacts
-yaml-api build myapp.yaml all -o ./target
+stackform build myapp.yaml all -o ./target
 ```
 
 Output paths:
 
-- `yaml-api build myapp.yaml frontend -o ./web` writes the frontend to `./web`.
+- `stackform build myapp.yaml frontend -o ./web` writes the frontend to `./web`.
 - Without `-o`, a frontend-only build uses `ui.frontend.output`, then
   `./frontend` when the spec does not declare an output.
-- `yaml-api build myapp.yaml all -o ./target` writes the frontend to
+- `stackform build myapp.yaml all -o ./target` writes the frontend to
   `target/frontend` (and the backend to `target/backend`).
 
 If the spec has no `ui:` block, a frontend-only build prints

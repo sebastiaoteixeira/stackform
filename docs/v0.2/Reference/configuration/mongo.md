@@ -65,10 +65,10 @@ database: ${MONGO_DB:-yaml_api}
 The values here are compile-time defaults only. The running app reads its
 connection from the environment and falls back to these defaults:
 
-- Generated backend (`yaml-api build`): reads `MONGO_URI` and `MONGO_DB`. If
+- Generated backend (`stackform build`): reads `MONGO_URI` and `MONGO_DB`. If
   those are unset, it uses `mongodb://localhost:27017` and `yaml_api` (the same
   defaults as this block), not the spec values.
-- Dev server (`yaml-api run`): reads `YAML_API_MONGO_URI` and `YAML_API_MONGO_DB`,
+- Dev server (`stackform run`): reads `YAML_API_MONGO_URI` and `YAML_API_MONGO_DB`,
   falling back to the `mongo.uri` / `mongo.database` values from the spec.
 
 This means you can ship one spec and point each environment at a different
@@ -76,7 +76,7 @@ database without editing the YAML.
 
 ## Deployment
 
-When you generate a deploy bundle (`yaml-api build myapp.yaml deploy`), the
+When you generate a deploy bundle (`stackform build myapp.yaml deploy`), the
 `mongo.uri` decides whether MongoDB is bundled:
 
 - If `uri` is omitted or points at `localhost` / `127.0.0.1`, the generated

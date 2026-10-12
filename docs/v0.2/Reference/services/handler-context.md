@@ -1,12 +1,12 @@
 ---
 title: "Handler Context"
-description: Custom operation handlers run under two contracts. Generated backends pass a target request object; the yaml-api run dev server passes a RequestContext pipeline object. This page documents both.
+description: Custom operation handlers run under two contracts. Generated backends pass a target request object; the stackform run dev server passes a RequestContext pipeline object. This page documents both.
 ---
 
 A custom operation runs different code depending on how you execute your spec. The
 generated backends invoke your handler with their target request object. The
 raw-ASGI target supplies a compatible request facade.
-The `yaml-api run` dev server invokes your handler as a pipeline step that receives a
+The `stackform run` dev server invokes your handler as a pipeline step that receives a
 `RequestContext` and returns it. Write your handler for the target you intend to run;
 the two contracts are not interchangeable.
 
@@ -41,7 +41,7 @@ authentication or authorization pipeline: the generated route invokes your handl
 directly, with no `require_principal` and no access-rule check, even when neighboring
 CRUD routes on the same controller are protected. If the action must be restricted,
 read the `Authorization` / `X-API-Key` header and verify the caller inside your
-handler. (The `yaml-api run` dev server differs: there a custom handler runs after the
+handler. (The `stackform run` dev server differs: there a custom handler runs after the
 route's authenticate and authorize steps, and the resolved caller is available as
 `context.principal` -- see below.)
 
@@ -61,9 +61,9 @@ async def publish(request: Request):
     ...
 ```
 
-## `run` dev server handler (`yaml-api run`)
+## `run` dev server handler (`stackform run`)
 
-Under `yaml-api run`, a handler is a pipeline step. It receives the request
+Under `stackform run`, a handler is a pipeline step. It receives the request
 `RequestContext`, mutates it, and returns it:
 
 ```python

@@ -63,7 +63,7 @@ flowchart TD
 
 - **Build time:** The `id` field is excluded from every request model (create, update, replace). It is never accepted in request bodies.
 - **Runtime:** The server generates the UUID on create. The value is returned in all responses and used as the document identifier in the URL path parameter, which is always literal `{id}` (for example `GET /api/v1/my-collection/{id}`).
-- **Lookup:** A path lookup matches the value against the entity's id field. The `yaml-api run` dev server additionally tries the MongoDB `_id` (as a string or `ObjectId`), so a record can be fetched by either its id field or its raw `_id`.
+- **Lookup:** A path lookup matches the value against the entity's id field. The `stackform run` dev server additionally tries the MongoDB `_id` (as a string or `ObjectId`), so a record can be fetched by either its id field or its raw `_id`.
 
 ### `pk: fieldName`
 

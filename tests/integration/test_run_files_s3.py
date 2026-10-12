@@ -1,4 +1,4 @@
-"""`yaml-api run` uploads to and downloads from a real MinIO bucket."""
+"""`stackform run` uploads to and downloads from a real MinIO bucket."""
 
 import textwrap
 from uuid import uuid4

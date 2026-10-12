@@ -26,7 +26,7 @@ The matched deny above returns:
 { "detail": "Only the owner may modify this post." }
 ```
 
-The behavior is the same in `yaml-api run` and in generated FastAPI, Django
+The behavior is the same in `stackform run` and in generated FastAPI, Django
 REST Framework, and raw ASGI backends. It applies to rules evaluated before a
 record fetch and to document-scoped rules evaluated after the record is loaded.
 

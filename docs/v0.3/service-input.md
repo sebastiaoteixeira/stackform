@@ -87,7 +87,7 @@ silently discarding a value.
 For custom handlers, resolved values are exposed without changing the handler
 signature:
 
-- `yaml-api run`: `context.service_inputs`
+- `stackform run`: `context.service_inputs`
 - generated FastAPI and raw-ASGI: `request.state.service_inputs`
 - generated DRF: `request.service_inputs`
 

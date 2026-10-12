@@ -8,9 +8,9 @@ auth entities (password users and API-key clients), org ownership, and per-opera
 ownership rules. Build it with:
 
 ```bash
-yaml-api build saas.yaml backend -o ./target
+stackform build saas.yaml backend -o ./target
 # or run it directly against a local MongoDB:
-yaml-api run saas.yaml
+stackform run saas.yaml
 ```
 
 The `api:` block below sets `basePath: /api` and `version: v1`, so every route is
@@ -22,7 +22,7 @@ inline defaults used when those variables are unset.
 >
 > Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `yaml-api run` dev server alike. A request that fails a rule gets 401 (missing or
+> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
 > invalid credentials), 403 (authenticated but not allowed), or 404 (record not
 > found, checked before ownership). Two current limitations: role hierarchy (for
 > example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
