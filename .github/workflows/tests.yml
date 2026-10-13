@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --python ${{ matrix.python-version }}
+
+      - name: Run the unit suite
+        run: uv run --python ${{ matrix.python-version }} pytest -m "not integration" -q
