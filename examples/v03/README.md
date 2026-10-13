@@ -8,6 +8,7 @@ states which generated backends implement them.
 | --- | --- | --- |
 | `crud-pagination` | SQLite CRUD, unique-conflict responses, offset and keyset pagination, and a generated React view | `run`, FastAPI, frontend |
 | `password-role` | SQLite-backed password registration/login and role-protected access at `/api/v1` | `run`, FastAPI |
+| `access-control` | A role hierarchy, per-operation role access, and `given`/`when` document rules over MongoDB | `build`, FastAPI |
 | `access-bindings` | `where` bindings, free route slugs, denial reasons, service `input`/`with`, and access-rule `bind` | `run`, FastAPI, DRF, raw ASGI |
 | `secure-session` | RS256 app sessions, rotating refresh tokens, and BFF cookie delivery | `run` except refresh routes, FastAPI |
 | `oidc-pkce-dpop` | OIDC authorization-code login with PKCE and DPoP | `run`, FastAPI |

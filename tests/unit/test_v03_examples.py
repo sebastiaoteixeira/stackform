@@ -21,6 +21,7 @@ _UNDEFINED_SENTINEL = re.compile(r"\bUndefined\b")
         ("crud-pagination", "fastapi"),
         ("password-role", "fastapi"),
         ("access-bindings", "fastapi"),
+        ("access-control", "fastapi"),
         ("access-bindings", "drf"),
         ("access-bindings", "raw"),
         ("secure-session", "fastapi"),
@@ -58,3 +59,18 @@ def test_files_example_is_refused_by_targets_without_file_datastores(tmp_path, t
         )
 
     assert [error.code for error in raised.value.errors] == ["BACKEND_FEATURE_UNSUPPORTED"]
+
+
+def test_access_control_example_keeps_roles_out_of_the_request_surface(tmp_path):
+    compile_project(
+        yaml_file=str(_EXAMPLES / "access-control" / "spec.yaml"),
+        output_dir=str(tmp_path),
+        target="fastapi",
+    )
+
+    backend = tmp_path / "backend"
+    payloads = (backend / "models" / "users.py").read_text()
+    assert "role" not in payloads
+
+    hierarchies = (backend / "dependencies" / "authorization.py").read_text()
+    assert "{'viewer', 'editor'}" in hierarchies or "{'editor', 'viewer'}" in hierarchies
