@@ -1,0 +1,23 @@
+# Services pull per their compose pull_policy: only a pinned docker.image is pulled on every release.
+- name: Start the release, rolling back on failure
+  block:
+    - name: Start the release
+      ansible.builtin.include_tasks: start.yml
+      vars:
+        release_tag: "{{ image_tag }}"
+        release_pull: policy
+        release_build: "{{ app_build }}"
+  rescue:
+    - name: Roll back to the previous release
+      ansible.builtin.include_tasks: start.yml
+      vars:
+        release_tag: "{{ previous_tag }}"
+        release_pull: never
+        release_build: never
+      when: previous_tag not in ['', image_tag]
+
+    - name: Fail the release
+      ansible.builtin.fail:
+        msg: >-
+          Release {{ image_tag }} failed{{ ', rolled back to ' ~ previous_tag
+          if previous_tag not in ['', image_tag] else '' }}

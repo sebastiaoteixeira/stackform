@@ -1,0 +1,146 @@
+# Builds a spec's deploy bundle and its images, then releases them to one environment.
+#
+# Call it from the application repository, with the environment's secrets
+# (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS, and those the
+# spec lists) stored in the GitHub environment of the same name:
+#
+#   jobs:
+#     deploy:
+#       uses: sebastiaoteixeira/yaml-framework/.github/workflows/pipeline.yml@main
+#       with: { spec: config.yaml, environment: staging }
+#       secrets: inherit
+#       permissions: { contents: read, packages: write }
+name: Deploy pipeline
+
+on:
+  workflow_call:
+    inputs:
+      spec:
+        description: Spec file, relative to the repository root
+        type: string
+        required: true
+      environment:
+        description: Deploy environment of the spec; empty only builds
+        type: string
+        default: ""
+      framework-ref:
+        description: Generator version, as a ref of the framework repository
+        type: string
+        default: feat/deploy-pipeline
+  # Self-test of the branch on the bundled example: builds without pushing or deploying.
+  push:
+    branches: [feat/deploy-pipeline]
+
+env:
+  SPEC: ${{ inputs.spec || 'examples/valid/deploy-extension.yaml' }}
+  GENERATOR: ${{ inputs.spec && format('git+https://github.com/sebastiaoteixeira/yaml-framework@{0}', inputs.framework-ref) || '.' }}
+  PUBLISH: ${{ inputs.spec != '' }}
+  IMAGE_TAG: ${{ github.sha }}
+  DEFAULTS: bundle/roles/app/defaults/main.yml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Generate the deploy bundle
+        run: uvx --from "$GENERATOR" yaml-api build "$SPEC" deploy -o bundle
+
+      - name: Read the image delivery
+        id: delivery
+        run: yq '"mode=" + (.app_delivery // "none"), "registry=" + (.app_registry // "")' "$DEFAULTS" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+        if: contains(fromJSON('["registry", "ssh"]'), steps.delivery.outputs.mode)
+
+      - name: Log in to the registry
+        if: steps.delivery.outputs.mode == 'registry' && env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.delivery.outputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
+
+      - name: Expose the build secrets
+        if: contains(fromJSON('["registry", "ssh"]'), steps.delivery.outputs.mode)
+        env:
+          SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          yq '(.secrets // {})[].environment' bundle/docker-compose.yml \
+            | jq -Rr --argjson secrets "$SECRETS" '. as $name | $secrets[$name] // empty | "\($name)<<EOF_\($name)\n\(.)\nEOF_\($name)"' \
+            >> "$GITHUB_ENV"
+
+      - name: Build the release images
+        if: contains(fromJSON('["registry", "ssh"]'), steps.delivery.outputs.mode)
+        working-directory: bundle
+        run: docker buildx bake -f docker-compose.yml ${{ steps.delivery.outputs.mode == 'registry' && env.PUBLISH == 'true' && '--push' || '--load' }}
+
+      - name: Archive the release images
+        if: steps.delivery.outputs.mode == 'ssh'
+        run: |
+          docker save $(yq '.app_repositories[] + ":" + strenv(IMAGE_TAG)' "$DEFAULTS") \
+            | zstd > bundle/images.tar.zst
+
+      - uses: actions/upload-artifact@v4
+        if: env.PUBLISH == 'true'
+        with:
+          name: deploy-bundle
+          path: bundle
+          include-hidden-files: true
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: inputs.environment != ''
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency: deploy-${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD || github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deploy-bundle
+          path: bundle
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install Ansible
+        working-directory: bundle
+        run: |
+          uv tool install ansible-core
+          ansible-galaxy collection install -r requirements.yml
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust the deploy host
+        env:
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: install -m 600 /dev/stdin ~/.ssh/known_hosts <<< "$KNOWN_HOSTS"
+
+      - name: Expose the environment secrets
+        env:
+          SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          yq '.app_secrets // {} | keys | .[]' "bundle/group_vars/${{ inputs.environment }}.yml" \
+            | jq -Rr --argjson secrets "$SECRETS" '. as $name | $secrets[$name] // empty | "\($name)<<EOF_\($name)\n\(.)\nEOF_\($name)"' \
+            >> "$GITHUB_ENV"
+
+      - name: Release
+        working-directory: bundle
+        run: ansible-playbook playbook.yml -e "deploy_environment=${{ inputs.environment }}" -e "image_tag=$IMAGE_TAG"

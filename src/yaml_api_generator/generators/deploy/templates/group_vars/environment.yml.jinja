@@ -1,0 +1,13 @@
+app_project: {{ ctx.project(environment) }}
+{% if environment.env %}
+app_env:
+  {% for key, value in environment.env.items() %}
+  {{ key }}: {{ value | unsafe }}
+  {% endfor %}
+{% endif %}
+{% if environment.secrets %}
+app_secrets:
+  {% for name in environment.secrets %}
+  {{ name }}: "{{ '{{' }} lookup('ansible.builtin.env', '{{ name }}') {{ '}}' }}"
+  {% endfor %}
+{% endif %}

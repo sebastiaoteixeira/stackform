@@ -1,7 +1,7 @@
 """Build contexts of deploy services are staged into the generated bundle."""
 import pytest
 
-from yaml_api_generator.generators.deploy.context import DockerDeployContext
+from yaml_api_generator.generators.deploy.context import DeployTarget, DockerDeployContext
 from yaml_api_generator.generators.deploy.docker.generator import DockerDeployGenerator
 
 
@@ -14,10 +14,7 @@ def _ctx(extra_services):
         mongo_db="testdb",
         env_vars={},
         has_auth=False,
-        has_frontend=False,
-        host="localhost",
-        ssh_user="ubuntu",
-        ssh_key="~/.ssh/id_rsa",
+        target=DeployTarget(),
         datastores=(),
         extra_services=extra_services,
     )
@@ -93,7 +90,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, tmp_path)
     assert "JWT_SECRET" in ctx.secret_env_names
     assert "KEYCLOAK_CLIENT_SECRET" in ctx.secret_env_names
     assert ctx.env_vars["JWT_SECRET"] == ""
@@ -114,7 +111,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, tmp_path)
     assert "JWT_SECRET=${JWT_SECRET}" in ctx.app_environment
     assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}" in ctx.app_environment
     assert not any(":-" in v for v in ctx.app_environment if "JWT_SECRET" in v)
@@ -135,14 +132,15 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, tmp_path)
     out = tmp_path / "out"
     DockerDeployGenerator().generate(ctx, out, tmp_path)
 
-    tasks = (out / "roles" / "app" / "tasks" / "main.yml").read_text()
+    tasks = (out / "roles" / "app" / "tasks" / "environment.yml").read_text()
     assert "lookup('ansible.builtin.password'" in tasks
-    assert "template:" in tasks
-    assert "env.j2" in tasks
+    start = (out / "roles" / "app" / "tasks" / "start.yml").read_text()
+    assert "ansible.builtin.template:" in start
+    assert "env.j2" in start
 
     assert not (out / ".env").exists()
     assert (out / "roles" / "app" / "templates" / "env.j2").exists()
@@ -154,6 +152,6 @@ def test_build_context_enclosing_spec_or_output_rejected(tmp_path, context):
     spec_dir.mkdir()
     out = spec_dir / "out"
     out.mkdir()
-    with pytest.raises(ValueError, match="must be a subdirectory"):
+    with pytest.raises(ValueError, match="must not contain the spec or the output directory"):
         _generate(_ctx((("frontend", {"build": {"context": context}}),)), spec_dir, out)
     assert list(out.iterdir()) == []

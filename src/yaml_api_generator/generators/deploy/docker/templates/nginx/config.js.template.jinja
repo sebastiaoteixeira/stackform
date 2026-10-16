@@ -1,0 +1,5 @@
+window.__CONFIG__ = {
+{% for name in ctx.frontend.env %}
+  "{{ name }}": "{{ '${%s}' | format(name) }}",
+{% endfor %}
+};

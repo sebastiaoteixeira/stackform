@@ -3,6 +3,7 @@ from typing import Type
 
 from ...ir import IRDocument
 from .base import DeployGenerator
+from .context import DeployTarget
 from .context_builder import build_deploy_context
 from .docker.generator import DockerDeployGenerator
 from .systemd.generator import SystemdDeployGenerator
@@ -15,13 +16,11 @@ _BACKENDS: dict[str, Type[DeployGenerator]] = {
 
 def generate_deploy(
     ir: IRDocument,
-    host: str,
-    ssh_user: str,
-    ssh_key: str,
     output_dir: str,
     spec_dir: str | Path,
+    target: DeployTarget = DeployTarget(),
 ) -> None:
-    ctx = build_deploy_context(ir, host, ssh_user, ssh_key)
+    ctx = build_deploy_context(ir, Path(spec_dir), target)
     backend_cls = _BACKENDS.get(ctx.runtime)
     if backend_cls is None:
         raise ValueError(f"no backend for runtime: {ctx.runtime}")

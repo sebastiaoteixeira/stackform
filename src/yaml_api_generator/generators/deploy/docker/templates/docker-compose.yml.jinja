@@ -5,40 +5,89 @@ include:
   {% endfor %}
 
 {% endif %}
+{% set local_datastores = ctx.datastores | selectattr("local") | list %}
+{% set asgi = ctx.asgi_process %}
+x-backend: &backend
+  image: {{ ctx.backend_image }}
+  {% if ctx.image %}
+  pull_policy: always
+  {% endif %}
+  env_file:
+    - path: .env
+      required: false
+  {% if ctx.app_volumes %}
+  volumes:
+    {% for vol in ctx.app_volumes %}
+    - {{ vol.name }}:{{ vol.path }}
+    {% endfor %}
+  {% endif %}
+  restart: unless-stopped
+  {% if local_datastores %}
+  depends_on:
+    {% for ds in local_datastores %}
+    - {{ ds.service }}
+    {% endfor %}
+  {% endif %}
+
 services:
-  app:
-    {% if ctx.image %}
-    image: {{ ctx.image }}
+  {% for process in ctx.processes %}
+  {{ process.name }}:
+    <<: *backend
+    {% if process.depends_on %}
+    depends_on:
+      {% for ds in local_datastores if ds.service not in process.depends_on %}
+      {{ ds.service }}:
+        condition: service_started
+      {% endfor %}
+      {% for service, condition in process.depends_on.items() %}
+      {{ service }}:
+        condition: {{ condition }}
+      {% endfor %}
+    {% endif %}
+    {% if process.name in ctx.memory_limits %}
+    mem_limit: {{ ctx.memory_limits[process.name] }}
+    memswap_limit: {{ ctx.memory_limits[process.name] }}
+    {% endif %}
+    {% if process.asgi %}
+    {% if not ctx.image %}
+    build:
+      context: ./backend
+      {% if ctx.packages %}
+      additional_contexts:
+        {% for package in ctx.packages %}
+        {{ package.name }}: ./{{ package.bundle_path }}
+        {% endfor %}
+      {% endif %}
+    {% endif %}
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-{{ ctx.port }}}:{{ ctx.port }}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', {{ ctx.port }}), 2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     {% else %}
-    build: ./backend
+    command: {{ process.command | tojson }}
     {% endif %}
     environment:
       {% for line in ctx.app_environment %}
       - {{ line }}
       {% endfor %}
-    ports:
-      - "${APP_PORT:-{{ ctx.port }}}:{{ ctx.port }}"
-    env_file:
-      - .env
-    {% if ctx.app_volumes %}
-    volumes:
-      {% for vol in ctx.app_volumes %}
-      - {{ vol.name }}:{{ vol.path }}
+      {% for key, value in process.env.items() %}
+      - {{ key }}={{ value }}
       {% endfor %}
-    {% endif %}
-    restart: unless-stopped
-    {% set local_datastores = ctx.datastores | selectattr("local") | list %}
-    {% if local_datastores %}
-    depends_on:
-      {% for ds in local_datastores %}
-      - {{ ds.service }}
-      {% endfor %}
-    {% endif %}
 
+  {% endfor %}
   {% for ds in local_datastores %}
   {{ ds.service }}:
     image: {{ ds.image }}
-    {% if ds.command %}
+    {% if ds.service in ctx.memory_limits %}
+    mem_limit: {{ ctx.memory_limits[ds.service] }}
+    memswap_limit: {{ ctx.memory_limits[ds.service] }}
+    {% endif %}
+    {% if ds.type == "mongodb" and ctx.mongo_cache_gb is not none %}
+    command: ["mongod", "--wiredTigerCacheSizeGB", "{{ ctx.mongo_cache_gb }}"]
+    {% elif ds.command %}
     command: {{ ds.command }}
     {% endif %}
     {% if ds.service_env %}
@@ -54,16 +103,39 @@ services:
     restart: unless-stopped
   {% endfor %}
 
-  {% if ctx.has_frontend %}
+  {% if ctx.frontend %}
   frontend:
+    image: {{ ctx.frontend_image }}
+    {% if "frontend" in ctx.memory_limits %}
+    mem_limit: {{ ctx.memory_limits["frontend"] }}
+    memswap_limit: {{ ctx.memory_limits["frontend"] }}
+    {% endif %}
     build:
       context: ./frontend
+      additional_contexts:
+        nginx: ./nginx
+      {% if ctx.frontend.args %}
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:{{ ctx.port }}/api/v1}
+        {% for name in ctx.frontend.args %}
+        {{ name }}: {{ '${%s:-}' | format(name) }}
+        {% endfor %}
+      {% endif %}
+      {% if ctx.frontend.secrets %}
+      secrets:
+        {% for name in ctx.frontend.secrets %}
+        - {{ name | lower }}
+        {% endfor %}
+      {% endif %}
+    environment:
+      - BACKEND_URL=http://{{ asgi.name }}:{{ ctx.port }}
+      {% for name in ctx.frontend.env %}
+      - {{ name }}={{ '${%s:-}' | format(name) }}
+      {% endfor %}
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "${BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-80}:80"
     depends_on:
-      - app
+      {{ asgi.name }}:
+        condition: service_healthy
     restart: unless-stopped
   {% endif %}
 
@@ -72,6 +144,14 @@ services:
 {{ svc_config | to_yaml | indent(4, first=True) }}
   {% endfor %}
 
+{% if ctx.frontend and ctx.frontend.secrets %}
+secrets:
+  {% for name in ctx.frontend.secrets %}
+  {{ name | lower }}:
+    environment: {{ name }}
+  {% endfor %}
+
+{% endif %}
 {% set extra_volumes = [] %}
 {% for _, svc_config in ctx.extra_services %}
 {% for vol in svc_config.get("volumes", []) %}

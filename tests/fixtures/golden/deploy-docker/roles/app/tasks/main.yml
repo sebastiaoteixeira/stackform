@@ -1,0 +1,37 @@
+- name: Validate the release
+  ansible.builtin.assert:
+    that:
+      - image_tag is defined
+      - image_tag is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')
+    fail_msg: "Pass the release image tag: -e image_tag=<tag>"
+    quiet: true
+
+- name: Prepare the release environment
+  ansible.builtin.import_tasks: environment.yml
+
+# nginx substitutes them into a JavaScript string literal of /config.js.
+- name: Require frontend config values that config.js can hold
+  ansible.builtin.assert:
+    that: release_values[item] | default('') is not search('["\\\\]')
+    fail_msg: "{{ item }} must not contain a double quote or a backslash: the frontend reads it from /config.js"
+    quiet: true
+  loop: "{{ app_frontend_env }}"
+
+- name: Remember the previous release
+  ansible.builtin.set_fact:
+    previous_tag: "{{ running_env.IMAGE_TAG | default('') }}"
+
+- name: Copy the compose file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/docker-compose.yml"
+    dest: "{{ app_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Deliver the release images
+  ansible.builtin.include_tasks: "deliver/{{ app_delivery }}.yml"
+
+- name: Start the release
+  ansible.builtin.include_tasks: release.yml
+
+- name: Prune old releases
+  ansible.builtin.include_tasks: retention.yml

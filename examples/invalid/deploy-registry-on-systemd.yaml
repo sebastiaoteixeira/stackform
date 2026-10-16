@@ -1,0 +1,32 @@
+# A registry only means something to the docker runtime.
+version: "0.3"
+
+api:
+  basePath: /api
+  version: v1
+
+deploy:
+  name: shop
+  runtime: systemd
+  docker:
+    registry: ghcr.io/example/shop
+
+entities:
+  product:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+
+repositories:
+  products:
+    entity: product
+
+services:
+  products:
+    repository: products
+
+controllers:
+  products:
+    service: products
+    base_path: /products
+    access: public

@@ -86,9 +86,6 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | 
             else:
                 generate_deploy(
                     ir=result.ir,
-                    host="localhost",
-                    ssh_user="ubuntu",
-                    ssh_key="~/.ssh/id_rsa",
                     output_dir=artifact_output,
                     spec_dir=Path(yaml_file).parent,
                 )

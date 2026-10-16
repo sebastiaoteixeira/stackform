@@ -1,0 +1,30 @@
+{% if not ctx.target %}
+- name: Validate the deploy environment
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require one environment of the inventory
+      ansible.builtin.assert:
+        that:
+          - deploy_environment is defined
+          - deploy_environment in groups
+          - deploy_environment not in ['all', 'ungrouped']
+        fail_msg: "Pass one environment: -e deploy_environment={{ ctx.environments | join('|', attribute='name') }}"
+        quiet: true
+
+{% endif %}
+- name: Deploy {{ ctx.name }}
+{% if ctx.target %}
+  hosts: {{ ctx.environments[0].name }}
+{% else %}
+  hosts: "{{ '{{' }} deploy_environment {{ '}}' }}"
+{% endif %}
+  become: true
+  roles:
+    {% if ctx.mongo_local %}
+    - role: mongodb
+      when: deploy_install_runtime | default(true) | bool
+    {% endif %}
+    {% for role in roles %}
+    - {{ role }}
+    {% endfor %}

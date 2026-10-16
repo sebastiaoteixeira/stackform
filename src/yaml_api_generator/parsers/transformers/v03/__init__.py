@@ -15,6 +15,7 @@ from typing import Any
 from ..v02 import V02Transformer
 from ..v02.access_transformer import AccessTransformer
 from ..v02.route_transformer import RouteTransformer
+from .deploy_transformer import V03DeployTransformer
 from .pagination import parse_pagination
 from .vendored_imports import process_vendored_imports
 
@@ -27,6 +28,7 @@ class V03Transformer(V02Transformer):
         self._spec_dir = spec_dir
         self._access = AccessTransformer(allow_where=True)
         self._route = RouteTransformer(self._access, allow_service_inputs=True)
+        self._deploy = V03DeployTransformer()
 
     def _process_imports(
         self, resolved: dict[str, Any]

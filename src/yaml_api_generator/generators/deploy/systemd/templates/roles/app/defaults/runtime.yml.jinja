@@ -1,0 +1,11 @@
+app_user: {{ ctx.user }}
+app_restart: {{ ctx.restart }}
+app_system_packages: {{ ctx.system_packages | list | tojson }}
+app_requirements: {{ ctx.requirements | list | tojson }}
+app_packages: {{ ctx.packages | map(attribute="name") | list | tojson }}
+app_units:
+{% for process in ctx.processes %}
+  - name: "{{ '{{' }} app_project {{ '}}' }}{{ ctx.unit_suffix(process) }}"
+    command: {{ ctx.command(process) | unsafe }}
+    env: {{ process.env | unsafe }}
+{% endfor %}

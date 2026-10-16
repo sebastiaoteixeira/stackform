@@ -6,24 +6,10 @@ This directory contains Docker deployment configuration for {{ ctx.name }}.
 
 - Docker and Docker Compose installed
 - Git (for cloning the repository)
-{% if ctx.has_frontend %}
-- Node.js and npm (for building the frontend)
-{% endif %}
 
 ## Quick Start
 
-{% if ctx.has_frontend %}
-### 1. Build the Frontend
-
-```bash
-cd frontend
-npm install
-npm run build
-cd ..
-```
-{% endif %}
-
-### {% if ctx.has_frontend %}2{% else %}1{% endif %}. Configure Environment Variables
+### 1. Configure Environment Variables
 
 Edit the `.env` file with your configuration:
 
@@ -37,7 +23,7 @@ MONGO_DB={{ ctx.mongo_db }}
 {% endif %}
 ```
 
-### {% if ctx.has_frontend %}3{% else %}2{% endif %}. Start Services
+### 2. Start Services
 
 ```bash
 docker compose up -d
@@ -45,14 +31,14 @@ docker compose up -d
 
 This will start:
 - Backend API on port {{ ctx.port }}
-{% if ctx.has_frontend %}
-- Frontend on port 3000
+{% if ctx.frontend %}
+- Frontend on port 80 (`FRONTEND_PORT`), built inside its image
 {% endif %}
 {% if ctx.mongo_local %}
 - MongoDB on internal network (not exposed externally)
 {% endif %}
 
-### {% if ctx.has_frontend %}4{% else %}3{% endif %}. Check Status
+### 3. Check Status
 
 ```bash
 docker compose ps
@@ -61,17 +47,18 @@ docker compose logs -f
 
 ## Services
 
-- **app**: Backend API service (FastAPI)
+- **{{ ctx.asgi_process.name }}**: Backend API service (FastAPI)
   - Port: {{ ctx.port }}
   - Built from: `backend/`
   {% if ctx.has_auth %}
   - Auth: Enabled
   {% endif %}
 
-{% if ctx.has_frontend %}
-- **frontend**: Frontend web application (React + Nginx)
-  - Port: 3000
-  - API proxy: `/api` -> `http://app:{{ ctx.port }}`
+{% if ctx.frontend %}
+- **frontend**: Frontend web application served by Nginx
+  - Port: 80 (`FRONTEND_PORT`)
+  - API proxy: `/api` -> `http://{{ ctx.asgi_process.name }}:{{ ctx.port }}`
+  - Runtime config: `/config.js`
 {% endif %}
 
 {% if ctx.mongo_local %}
@@ -91,16 +78,45 @@ docker compose up -d
 
 ## Production Deployment
 
-For production deployment to a remote server:
+Install the Ansible collections once:
 
 ```bash
-ansible-playbook -i inventory.yml playbook.yml
+ansible-galaxy collection install -r requirements.yml
 ```
 
-Make sure to:
-1. Update `inventory.yml` with your server details
-2. Configure SSH keys for authentication
-3. Set production environment variables
+{% if ctx.target %}
+Set the server in `inventory.yml` and the environment values under `app_env` in
+`group_vars/{{ ctx.environments[0].name }}.yml`, then deploy:
+
+```bash
+ansible-playbook playbook.yml
+```
+{% else %}
+Each environment is an inventory group with its values in `group_vars/<environment>.yml`.
+The playbook reads the host from `DEPLOY_HOST`, `DEPLOY_USER` and `DEPLOY_SSH_PORT`,
+and every name under `app_secrets` from the variable of the same name:
+
+```bash
+DEPLOY_HOST=203.0.113.10 DEPLOY_USER=deploy \
+  ansible-playbook playbook.yml -e deploy_environment={{ ctx.environments[0].name }} -e image_tag=<tag>
+```
+{% endif %}
+{% if ctx.delivery == "registry" %}
+
+Images are pulled from `{{ ctx.registry }}`: export `REGISTRY_USERNAME` and
+`REGISTRY_PASSWORD` (a short-lived token is enough). The host logs out after pulling.
+{% elif ctx.delivery == "ssh" %}
+
+Images are copied over SSH: save them next to the playbook before deploying:
+
+```bash
+docker save {% for repository in ctx.release_repositories %}{{ repository }}:<tag> {% endfor %}| zstd > images.tar.zst
+```
+{% endif %}
+
+The release runs from `/opt/<project>`. Secrets the backend generates are created on the
+first release and reused afterwards. A failed release restores the previous image tag;
+images older than the last {{ ctx.retain }} releases are pruned.
 
 ## Hardening: encrypt secrets at rest with ansible-vault
 
@@ -154,7 +170,7 @@ docker compose down -v
 
 Check logs:
 ```bash
-docker compose logs app
+docker compose logs {{ ctx.asgi_process.name }}
 ```
 
 Common issues:
@@ -164,11 +180,11 @@ Common issues:
 - Missing environment variables: Check `.env` file
 - Port already in use: Change port in docker-compose.yml
 
-{% if ctx.has_frontend %}
+{% if ctx.frontend %}
 ### Frontend shows errors
 
-- Make sure you ran `npm run build` in the frontend directory
-- Check that `frontend/dist` exists and contains built files
+- Check the frontend build output: `docker compose build frontend`
+- Check that `/config.js` holds the expected values
 - Check nginx logs: `docker compose logs frontend`
 {% endif %}
 

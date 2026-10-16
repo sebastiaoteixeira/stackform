@@ -1,0 +1,8 @@
+- name: Deploy backend-service
+  hosts: default
+  become: true
+  roles:
+    - role: mongodb
+      when: deploy_install_runtime | default(true) | bool
+    - python
+    - app

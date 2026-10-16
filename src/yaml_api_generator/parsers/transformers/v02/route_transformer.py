@@ -1,6 +1,6 @@
 """Route, service, and config transformation to IR.
 
-Builds routes from controllers, services, API, MongoDB, and deploy configurations.
+Builds routes from controllers, services, API, and MongoDB configurations.
 """
 
 from typing import Any
@@ -8,12 +8,7 @@ from typing import Any
 from yaml_api_generator.ir import (
     IRApi,
     IRCors,
-    IRDatastore,
-    IRDeploy,
-    IRDeployDocker,
-    IRDeploySystemd,
     IRMongo,
-    IRProvider,
     IRRoute,
     IRService,
 )
@@ -298,92 +293,6 @@ class RouteTransformer:
             uri=mongo_data.get("uri", "mongodb://localhost:27017"),
             database=mongo_data.get("database", "yaml_api"),
         )
-
-    def build_deploy(
-        self,
-        deploy_data: Any,
-        mongo_config: dict[str, Any],
-        providers: dict[str, IRProvider],
-        datastores: dict[str, IRDatastore],
-    ) -> IRDeploy | None:
-        """Build deployment configuration IR.
-
-        Args:
-            deploy_data: Raw deployment configuration from YAML.
-            mongo_config: MongoDB configuration to determine if local.
-            providers: Already-built provider IR objects (env vars resolved at build time).
-            datastores: Already-built datastore IR objects (env vars resolved at build time).
-
-        Returns:
-            Deploy IR object or None if no deployment configured.
-        """
-        if not isinstance(deploy_data, dict):
-            return None
-        runtime = deploy_data.get("runtime")
-        if not runtime:
-            return None
-
-        docker_data = deploy_data.get("docker")
-        docker = IRDeployDocker(image=docker_data.get("image")) if isinstance(docker_data, dict) else None
-        systemd_data = deploy_data.get("systemd")
-        systemd = (
-            IRDeploySystemd(
-                user=systemd_data.get("user", "ubuntu"),
-                restart=systemd_data.get("restart", "on-failure"),
-            )
-            if isinstance(systemd_data, dict)
-            else None
-        )
-
-        mongo_uri = mongo_config.get("uri", "mongodb://localhost:27017")
-        mongo_local = not mongo_config or "localhost" in mongo_uri or "127.0.0.1" in mongo_uri
-
-        env_vars = self._collect_env_vars(deploy_data, providers, datastores)
-
-        extra_services = tuple(
-            (name, config) for name, config in deploy_data.get("services", {}).items()
-        )
-        include = tuple(deploy_data.get("include", []))
-
-        return IRDeploy(
-            runtime=str(runtime),
-            name=deploy_data.get("name"),
-            port=int(deploy_data.get("port", 8000)),
-            mongo_local=mongo_local,
-            env_vars=tuple(env_vars),
-            docker=docker,
-            systemd=systemd,
-            extra_services=extra_services,
-            include=include,
-        )
-
-    def _collect_env_vars(
-        self,
-        deploy_data: dict[str, Any],
-        providers: dict[str, IRProvider],
-        datastores: dict[str, IRDatastore],
-    ) -> list[str]:
-        """Collect env var names for the .env.example from the deploy subtree."""
-        return sorted(self._scan_deploy_token_refs(deploy_data))
-
-    def _scan_deploy_token_refs(self, deploy_data: dict[str, Any]) -> set[str]:
-        """Scan raw deploy config strings for leftover ${VAR} tokens."""
-        import re
-        pattern = re.compile(r'\$\{([A-Z_][A-Z0-9_]*)(?::-[^}]*)?\}')
-
-        def _walk(obj: Any, result: set[str]) -> None:
-            if isinstance(obj, str):
-                result.update(pattern.findall(obj))
-            elif isinstance(obj, dict):
-                for v in obj.values():
-                    _walk(v, result)
-            elif isinstance(obj, list):
-                for item in obj:
-                    _walk(item, result)
-
-        refs: set[str] = set()
-        _walk(deploy_data, refs)
-        return refs
 
     def _resolve_imports(self, imports: dict[str, str]) -> dict[str, str]:
         return dict(imports)

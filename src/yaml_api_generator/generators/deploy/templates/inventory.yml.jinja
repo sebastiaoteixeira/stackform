@@ -1,0 +1,18 @@
+all:
+  children:
+    {% for environment in ctx.environments %}
+    {{ environment.name }}:
+      hosts:
+        {{ ctx.project(environment) }}:
+          {% if ctx.target %}
+          ansible_host: {{ ctx.target.host }}
+          ansible_user: {{ ctx.target.user }}
+          ansible_ssh_private_key_file: {{ ctx.target.ssh_key }}
+          {% else %}
+          {% raw %}
+          ansible_host: "{{ lookup('ansible.builtin.env', 'DEPLOY_HOST') }}"
+          ansible_user: "{{ lookup('ansible.builtin.env', 'DEPLOY_USER') }}"
+          ansible_port: "{{ lookup('ansible.builtin.env', 'DEPLOY_SSH_PORT') | default(22, true) }}"
+          {% endraw %}
+          {% endif %}
+    {% endfor %}

@@ -1,0 +1,18 @@
+- name: Render the release environment
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    mode: "0600"
+  vars:
+    release_env: { IMAGE_TAG: "{{ release_tag }}" }
+  diff: false
+
+- name: Start the release services
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    project_name: "{{ app_project }}"
+    state: present
+    pull: "{{ release_pull }}"
+    build: "{{ release_build }}"
+    remove_orphans: true
+    wait: true

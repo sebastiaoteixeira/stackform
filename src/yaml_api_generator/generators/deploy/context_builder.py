@@ -1,20 +1,42 @@
 from collections import Counter
+from collections.abc import Iterable
+from dataclasses import asdict
+from pathlib import Path
 
 from sqlalchemy.engine import make_url
 
-from ...ir import IRDocument, IRPostgres
+from ...ir import (
+    IRDeploy,
+    IRDeployDocker,
+    IRDeployEnvironment,
+    IRDeployFrontend,
+    IRDeployProcess,
+    IRDocument,
+    IRPostgres,
+)
 from ..backend.builders import build_context
 from ..backend.builders.settings_builder import build_settings_fields
-from .context import DeployContext, DeployDatastore, DockerDeployContext, SystemdDeployContext
+from .context import (
+    DeployContext,
+    DeployDatastore,
+    DeployFrontend,
+    DeployPackage,
+    DeployTarget,
+    DockerDeployContext,
+    GENERATED_FRONTEND,
+    IMPLICIT_ENVIRONMENT,
+    NPM_MANIFESTS,
+    SystemdDeployContext,
+)
 from .file_deployments import build_file_deployments
 
 
 def build_deploy_context(
     ir: IRDocument,
-    host: str,
-    ssh_user: str,
-    ssh_key: str,
+    spec_dir: Path,
+    target: DeployTarget = DeployTarget(),
 ) -> DeployContext:
+    """``target`` is the host of a bundle without environments; environments ignore it."""
     if ir.deploy is None:
         raise ValueError("spec has no 'deploy:' section")
 
@@ -23,6 +45,7 @@ def build_deploy_context(
     mongo_db = ir.mongo.database
     context = build_context(ir)
     secret_fields = [f for f in build_settings_fields(context) if f.secret]
+    secret_env_names = tuple(f.env_name for f in secret_fields)
     file_deployments = build_file_deployments(context.file_stores)
     env_vars = {
         **{var: "" for var in dict.fromkeys([*deploy.env_vars, *(f.env_name for f in secret_fields)])},
@@ -38,16 +61,18 @@ def build_deploy_context(
         mongo_db=mongo_db,
         env_vars=env_vars,
         has_auth=bool(ir.identityCollections),
-        has_frontend=ir.has_ui,
-        host=host,
-        ssh_user=ssh_user,
-        ssh_key=ssh_key,
+        target=None if deploy.environments else target,
         datastores=datastores,
+        environments=_environments(deploy, (f.env_name for f in secret_fields if f.generator)),
+        processes=_validated_processes(deploy, datastores),
+        packages=tuple(_package((spec_dir / package).resolve()) for package in deploy.backend.packages),
+        system_packages=deploy.backend.system_packages,
+        frontend=_frontend(deploy.frontend, spec_dir, ir.has_ui, secret_env_names),
+        secret_env_names=secret_env_names,
     )
 
     if deploy.runtime == "docker":
-        image = deploy.docker.image if deploy.docker else None
-        secret_env_names = tuple(f.env_name for f in secret_fields)
+        docker = deploy.docker or IRDeployDocker()
         defaults = {
             **{key: value for source in (*datastores, *file_deployments) for key, value in source.app_env.items()},
             "PORT": str(deploy.port),
@@ -56,13 +81,18 @@ def build_deploy_context(
         app_environment = tuple(f"{key}=${{{key}:-{value}}}" for key, value in defaults.items()) + tuple(
             f"{f.env_name}=${{{f.env_name}}}" for f in secret_fields if f.env_name not in defaults
         )
+        _validate_memory_limits(docker, common)
         return DockerDeployContext(
             **common,
-            image=image,
+            image=docker.image,
+            registry=docker.registry,
+            delivery=_delivery(docker),
+            retain=docker.retain,
+            memory_limits=docker.memory_limits,
+            mongo_cache_gb=docker.mongo_cache_gb,
             extra_services=deploy.extra_services,
             include=deploy.include,
             app_environment=app_environment,
-            secret_env_names=secret_env_names,
             app_volumes=tuple(fd.volume for fd in file_deployments if fd.volume),
         )
 
@@ -75,6 +105,69 @@ def build_deploy_context(
         )
 
     raise ValueError(f"unknown runtime: {deploy.runtime}")
+
+
+def _validate_memory_limits(docker: IRDeployDocker, common: dict) -> None:
+    names = {p.name for p in common["processes"]}
+    names.update(ds.service for ds in common["datastores"] if ds.local)
+    if common["frontend"] is not None:
+        names.add("frontend")
+    if unknown := sorted(docker.memory_limits.keys() - names):
+        raise ValueError(f"docker.memory_limits names unknown generated services: {unknown}")
+    if docker.mongo_cache_gb is not None and not any(
+        ds.local and ds.type == "mongodb" for ds in common["datastores"]
+    ):
+        raise ValueError("docker.mongo_cache_gb requires a local MongoDB datastore")
+
+
+def _environments(deploy: IRDeploy, generated_secrets: Iterable[str]) -> tuple[IRDeployEnvironment, ...]:
+    """The spec's environments, or the implicit one. Generated secrets are made on the host, never by CI."""
+    generated = set(generated_secrets)
+    for environment in deploy.environments:
+        if clash := sorted(generated.intersection(environment.secrets)):
+            raise ValueError(
+                f"deploy environment '{environment.name}' lists generated secrets {clash}: "
+                "they are generated on the host, remove them from its secrets"
+            )
+    return deploy.environments or (IMPLICIT_ENVIRONMENT,)
+
+
+def _delivery(docker: IRDeployDocker) -> str:
+    """How release images reach the host: pulled from the registry, copied over SSH,
+    or, without a registry to pull from, built on the host from the shipped bundle."""
+    return "host" if docker.delivery == "registry" and docker.registry is None else docker.delivery
+
+
+def _validated_processes(deploy: IRDeploy, datastores: Iterable[DeployDatastore]) -> tuple[IRDeployProcess, ...]:
+    """The backend processes, once none is named after a datastore service, which only the generator knows."""
+    processes = deploy.backend.processes
+    if clash := sorted({process.name for process in processes} & {ds.service for ds in datastores}):
+        raise ValueError(f"deploy processes {clash} clash with datastore services of the same name")
+    names = {p.name for p in processes} | {ds.service for ds in datastores if ds.local}
+    names.update(name for name, _ in deploy.extra_services)
+    for process in processes:
+        if process.name in process.depends_on or process.depends_on.keys() - names:
+            raise ValueError(f"process '{process.name}' depends on itself or an unknown service")
+    return processes
+
+
+def _package(source: Path) -> DeployPackage:
+    requirements = sorted(path.relative_to(source).as_posix() for path in source.rglob("requirements.txt"))
+    return DeployPackage(source=source, requirements=tuple(requirements))
+
+
+def _frontend(
+    frontend: IRDeployFrontend, spec_dir: Path, has_ui: bool, secrets: Iterable[str]
+) -> DeployFrontend | None:
+    """The frontend to deploy, once none of its public ``/config.js`` values is a backend secret."""
+    if frontend.source is None:
+        return GENERATED_FRONTEND if has_ui else None
+    if clash := sorted(set(frontend.env).intersection(secrets)):
+        raise ValueError(f"deploy frontend env {clash} would serve backend secrets to browsers in /config.js")
+    root = (spec_dir / frontend.source).resolve()
+    return DeployFrontend(
+        **asdict(frontend), root=root, manifests=tuple(name for name in NPM_MANIFESTS if (root / name).is_file())
+    )
 
 
 def _build_datastores(ir: IRDocument) -> tuple[DeployDatastore, ...]:

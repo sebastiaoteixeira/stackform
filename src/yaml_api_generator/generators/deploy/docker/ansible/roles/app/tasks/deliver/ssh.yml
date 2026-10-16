@@ -1,0 +1,16 @@
+- name: Load the release images
+  block:
+    - name: Copy the image archive
+      ansible.builtin.copy:
+        src: "{{ image_archive }}"
+        dest: "{{ app_dir }}/images.tar.zst"
+        mode: "0600"
+
+    - name: Load the image archive
+      community.docker.docker_image_load:
+        path: "{{ app_dir }}/images.tar.zst"
+  always:
+    - name: Remove the image archive
+      ansible.builtin.file:
+        path: "{{ app_dir }}/images.tar.zst"
+        state: absent

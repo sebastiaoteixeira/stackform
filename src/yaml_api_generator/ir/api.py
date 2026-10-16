@@ -68,12 +68,58 @@ IRProvider = IROIDCProvider | IRSAMLProvider
 @dataclass(frozen=True)
 class IRDeployDocker:
     image: str | None = None
+    registry: str | None = None
+    delivery: str = "registry"
+    retain: int = 3
+    memory_limits: dict[str, str] = field(default_factory=dict)
+    mongo_cache_gb: float | None = None
 
 
 @dataclass(frozen=True)
 class IRDeploySystemd:
     user: str = "ubuntu"
     restart: str = "on-failure"
+
+
+@dataclass(frozen=True)
+class IRDeployProcess:
+    """One long-running backend process; ``asgi`` serves HTTP, ``command`` runs anything else."""
+
+    name: str
+    asgi: str | None = None
+    command: str | tuple[str, ...] | None = None
+    env: dict[str, str] = field(default_factory=dict)
+    depends_on: dict[str, str] = field(default_factory=dict)
+
+
+GENERATED_ASGI_PROCESS = IRDeployProcess(name="app", asgi="app:app")
+FRONTEND_SERVICE = "frontend"
+
+
+@dataclass(frozen=True)
+class IRDeployBackend:
+    packages: tuple[str, ...] = ()
+    system_packages: tuple[str, ...] = ()
+    processes: tuple[IRDeployProcess, ...] = (GENERATED_ASGI_PROCESS,)
+
+
+@dataclass(frozen=True)
+class IRDeployFrontend:
+    """A hand-written frontend; ``env`` names are served at runtime through ``/config.js``."""
+
+    source: str | None = None
+    build: str = "npm run build"
+    output: str = "dist"
+    env: tuple[str, ...] = ()
+    args: tuple[str, ...] = ()
+    secrets: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IRDeployEnvironment:
+    name: str
+    env: dict[str, str] = field(default_factory=dict)
+    secrets: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +133,9 @@ class IRDeploy:
     systemd: IRDeploySystemd | None = None
     extra_services: tuple[tuple[str, dict], ...] = field(default_factory=tuple)
     include: tuple[str, ...] = field(default_factory=tuple)
+    backend: IRDeployBackend = field(default_factory=IRDeployBackend)
+    frontend: IRDeployFrontend = field(default_factory=IRDeployFrontend)
+    environments: tuple[IRDeployEnvironment, ...] = ()
 
 
 @dataclass(frozen=True)

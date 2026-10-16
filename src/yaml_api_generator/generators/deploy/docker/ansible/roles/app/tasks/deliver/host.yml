@@ -1,0 +1,6 @@
+- name: Ship the build contexts
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/"
+    dest: "{{ app_dir }}/"
+    delete: true
+    rsync_opts: "{{ app_sync_excludes | map('regex_replace', '^', '--exclude=') | list }}"

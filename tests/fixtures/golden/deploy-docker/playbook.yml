@@ -1,0 +1,5 @@
+- name: Deploy my-api-service
+  hosts: default
+  become: true
+  roles:
+    - app
