@@ -165,3 +165,17 @@ Example packs in `examples/packs/` (the only pack bundled with the generator is 
 
 - `blog` — grid/card/article/form layout for content sites
 - `admin` — PocketBase-style admin panel with sidebar, table, and modals
+
+## Documentation
+
+The manual is published at <https://sebastiaoteixeira.github.io/yaml-framework-docs/>, with a page
+per specification version.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the test suite, and what a change
+to the specification language has to carry.
+
+## Licence
+
+MIT — see [LICENSE.txt](LICENSE.txt).
