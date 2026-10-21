@@ -874,8 +874,6 @@
       },
       "else": {
         "properties": {
-          "access": false,
-          "operations": false,
           "routes": {
             "additionalProperties": {
               "$ref": "#/$defs/RouteConfig"
