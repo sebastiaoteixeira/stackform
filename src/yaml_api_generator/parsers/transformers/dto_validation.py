@@ -7,7 +7,7 @@ the spec forbids:
 
 - DTO_FORBIDS_PERSISTENCE_ATTR: a DTO field declares ``type: id``, ``unique`` or
   ``format``.
-- DTO_NOT_FOUND: a DTO field references a type that is neither a declared entity
+- DTO_NOT_FOUND: a DTO field, at any nesting depth, references a type that is neither a declared entity
   nor a declared DTO.
 - FILE_FIELD_CONTEXT_INVALID: a DTO field is, or contains, a ``type: file`` node.
 """
@@ -15,6 +15,7 @@ the spec forbids:
 from typing import Any
 
 from yaml_api_generator.parsers.transformers.file_validation import file_context_errors
+from yaml_api_generator.parsers.transformers.ref_validation import field_refs
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
 _FORBIDDEN_ATTRS = ("unique", "format")
@@ -37,13 +38,15 @@ def validate_spec_dtos(spec: dict[str, Any]) -> list[ConfigError]:
             for attr in _FORBIDDEN_ATTRS:
                 if attr in field:
                     errors.append(_forbidden(attr, f"{base}.{attr}"))
-            ref = field.get("ref")
-            if field.get("type") == "ref" and ref is not None and ref not in known_refs:
-                errors.append(ConfigError(
-                    code="DTO_NOT_FOUND",
-                    message=f"DTO field references undeclared type '{ref}'",
-                    path=f"{base}.ref",
-                ))
+        errors.extend(
+            ConfigError(
+                code="DTO_NOT_FOUND",
+                message=f"DTO field references undeclared type '{target}'",
+                path=path,
+            )
+            for path, target in field_refs(dto.get("fields") or {}, f"dto.{dto_name}.fields")
+            if target not in known_refs
+        )
     return errors
 
 

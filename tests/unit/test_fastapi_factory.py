@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.server.fastapi.factory import (
@@ -117,12 +117,20 @@ def test_field_type_mapping_string():
     assert _field_annotation({"type": "string"}) is str
 
 
-def test_field_type_mapping_number():
-    assert _field_annotation({"type": "number"}) is float
+@pytest.mark.parametrize("value", ["3", True])
+def test_number_field_is_never_coerced(value):
+    number = TypeAdapter(_field_annotation({"type": "number"}))
+    assert number.validate_python(3) == 3.0
+    with pytest.raises(ValidationError):
+        number.validate_python(value)
 
 
-def test_field_type_mapping_boolean():
-    assert _field_annotation({"type": "boolean"}) is bool
+@pytest.mark.parametrize("value", ["true", 1])
+def test_boolean_field_is_never_coerced(value):
+    boolean = TypeAdapter(_field_annotation({"type": "boolean"}))
+    assert boolean.validate_python(True) is True
+    with pytest.raises(ValidationError):
+        boolean.validate_python(value)
 
 
 def test_field_type_mapping_datetime():

@@ -250,7 +250,7 @@ class PipelineBuilder:
     def _validate_body_step(self, route: RuntimeRouteDescriptor) -> Step:
         collection = self._ctx.collections[route.collection]
         identity_collection = self._ctx.auth.identity_collections.get(route.collection)
-        return ValidateBodyStep(collection, route.operation, identity_collection)
+        return ValidateBodyStep(collection, route.operation, identity_collection, route.body_dto)
 
     def _service_input_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         if route.service_input is None and not route.service_forwarding:

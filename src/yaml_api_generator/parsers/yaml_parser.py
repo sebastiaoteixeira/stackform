@@ -225,6 +225,11 @@ def load_and_generate_ir(
         if name_errors:
             raise ConfigErrors(name_errors)
 
+        from .transformers.ref_validation import validate_spec_refs
+        ref_errors = validate_spec_refs(resolved)
+        if ref_errors:
+            raise ConfigErrors(ref_errors)
+
         from .transformers.constraint_validation import validate_spec_constraints
         constraint_errors = validate_spec_constraints(resolved)
         if constraint_errors:

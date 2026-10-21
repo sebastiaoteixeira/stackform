@@ -3,7 +3,10 @@ from pathlib import Path
 
 from jinja2 import Environment
 
-from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.generators.backend.compile_context import (
+    CompileContext,
+    IdentityCollectionDescriptor,
+)
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
@@ -72,15 +75,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             env.get_template("conflicts.py.jinja").render()
         )
 
-        self._render_single_file(
-            env,
-            context,
-            output_dir,
-            SingleFileRenderConfig(
-                template_name="service_inputs.py.jinja",
-                output_path="service_inputs.py",
-            ),
-        )
+        self._render_service_inputs(env, output_dir, "")
         (output_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )
@@ -143,9 +138,10 @@ class RawASGIGenerator(TemplateBasedGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        all_models = []
-        for col_data in collections_by_name.values():
-            all_models.extend(col_data["models"])
+        models = [
+            *(model for col_data in collections_by_name.values() for model in col_data["models"]),
+            *context.dto_models,
+        ]
 
         self._render_single_file(
             env, context, output_dir,
@@ -153,7 +149,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 template_name="validation.py.jinja",
                 output_path="validation.py",
                 context_builder=lambda ctx: {
-                    "models": all_models,
+                    "models": models,
                     "auth": ctx.auth,
                 },
             )

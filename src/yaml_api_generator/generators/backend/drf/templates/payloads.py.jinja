@@ -1,0 +1,25 @@
+"""Serializers that check request data against spec field configs."""
+
+from typing import Any
+
+from rest_framework import serializers
+
+from .fields import conform_object
+
+
+class PayloadSerializer(serializers.Serializer):
+    """Subclasses declare ``properties``; ``partial=True`` accepts any subset of them."""
+
+    properties: dict[str, dict[str, Any]] = {}
+    omittable = False
+
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
+        try:
+            return conform_object(self.properties, data, partial=self.partial or self.omittable)
+        except ValueError as error:
+            raise serializers.ValidationError({"detail": str(error)}) from error
+
+
+def partial(serializer: type[PayloadSerializer], name: str) -> type[PayloadSerializer]:
+    """``serializer`` accepting any subset of its properties."""
+    return type(name, (serializer,), {"omittable": True})

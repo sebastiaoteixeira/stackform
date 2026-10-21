@@ -1,129 +1,36 @@
-from datetime import datetime
+from typing import Any, NamedTuple
+
+from fields import conform_object
 
 
-def _check_string(value, field_name, constraints=None):
-    if not isinstance(value, str):
-        return f"{field_name} must be a string"
-    if constraints:
-        if "minLength" in constraints and len(value) < constraints["minLength"]:
-            return f"{field_name} must be at least {constraints['minLength']} characters"
-        if "maxLength" in constraints and len(value) > constraints["maxLength"]:
-            return f"{field_name} must be at most {constraints['maxLength']} characters"
-    return None
+class _Payload(NamedTuple):
+    base: str | None
+    properties: dict[str, dict[str, Any]]
+    partial: bool = False
 
 
-def _check_number(value, field_name, constraints=None):
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        return f"{field_name} must be a number"
-    if constraints:
-        if "min" in constraints and value < constraints["min"]:
-            return f"{field_name} must be >= {constraints['min']}"
-        if "max" in constraints and value > constraints["max"]:
-            return f"{field_name} must be <= {constraints['max']}"
-    return None
-
-
-def _check_boolean(value, field_name):
-    if not isinstance(value, bool):
-        return f"{field_name} must be a boolean"
-    return None
-
-
-def _check_datetime(value, field_name):
-    if not isinstance(value, str):
-        return f"{field_name} must be an ISO 8601 datetime string"
-    try:
-        datetime.fromisoformat(value)
-    except (ValueError, TypeError):
-        return f"{field_name} must be a valid ISO 8601 datetime"
-    return None
-
-
-def _check_enum(value, field_name, allowed):
-    if value not in allowed:
-        return f"{field_name} must be one of: {', '.join(str(v) for v in allowed)}"
-    return None
-
-
-def _check_array(value, field_name):
-    if not isinstance(value, list):
-        return f"{field_name} must be an array"
-    return None
-
-
-def _check_object(value, field_name):
-    if not isinstance(value, dict):
-        return f"{field_name} must be an object"
-    return None
-
-
+_PAYLOADS = {
 {% for model in models %}
-def validate_{{ model.collection }}_{{ model.operation }}(body: dict) -> dict:
-    """Validate and return cleaned data for {{ model.collection }} {{ model.operation }}."""
-    if not isinstance(body, dict):
-        raise ValueError("Request body must be a JSON object")
-
-    known_fields = { {{ model.fields | map(attribute='name') | map('tojson') | join(', ') }} }
-    unknown = set(body.keys()) - known_fields
-    if unknown:
-        raise ValueError(f"Unknown fields: {', '.join(sorted(unknown))}")
-
-{% if model.operation in ("create",) %}
-{% for field in model.fields %}
-{% if field.required %}
-    if {{ field.name | tojson }} not in body:
-        raise ValueError("Missing required field: {{ field.name }}")
+    {{ model.name | tojson }}: _Payload(
+        {{ model.base | tojson if model.base else "None" }},
+        {{ "{" }}{% for field in model.fields %}{{ field.name | tojson }}: {{ field.config | py_literal }}{{ ", " if not loop.last }}{% endfor %}{{ "}" }},
+{% if model.operation == "update" %}
+        partial=True,
 {% endif %}
+    ),
 {% endfor %}
-{% endif %}
+}
 
-    errors = []
-{% for field in model.fields %}
-    if {{ field.name | tojson }} in body:
-{% if field.type == "string" or field.type == "ref" %}
-        err = _check_string(body[{{ field.name | tojson }}], {{ field.name | tojson }}{% if field.constraints %}, {{ field.constraints }}{% endif %})
-        if err:
-            errors.append(err)
-{% elif field.type == "number" %}
-        err = _check_number(body[{{ field.name | tojson }}], {{ field.name | tojson }}{% if field.constraints %}, {{ field.constraints }}{% endif %})
-        if err:
-            errors.append(err)
-{% elif field.type == "boolean" %}
-        err = _check_boolean(body[{{ field.name | tojson }}], {{ field.name | tojson }})
-        if err:
-            errors.append(err)
-{% elif field.type == "datetime" %}
-        err = _check_datetime(body[{{ field.name | tojson }}], {{ field.name | tojson }})
-        if err:
-            errors.append(err)
-{% elif field.type == "enum" %}
-        err = _check_enum(body[{{ field.name | tojson }}], {{ field.name | tojson }}, {{ field.enum_values | tojson }})
-        if err:
-            errors.append(err)
-{% elif field.type == "array" %}
-        err = _check_array(body[{{ field.name | tojson }}], {{ field.name | tojson }})
-        if err:
-            errors.append(err)
-{% elif field.type == "object" %}
-        err = _check_object(body[{{ field.name | tojson }}], {{ field.name | tojson }})
-        if err:
-            errors.append(err)
-{% endif %}
-{% endfor %}
 
-    if errors:
-        raise ValueError("; ".join(errors))
+def _properties(model: str) -> dict[str, dict[str, Any]]:
+    payload = _PAYLOADS[model]
+    return {**(_properties(payload.base) if payload.base else {}), **payload.properties}
 
-    data = {k: v for k, v in body.items() if k in known_fields}
-{% for field in model.fields %}
-{% if field.default is not none and field.name != "password" %}
-    if {{ field.name | tojson }} not in data:
-        data[{{ field.name | tojson }}] = {{ field.default | tojson }}
-{% endif %}
-{% endfor %}
-    return data
 
-{% endfor %}
+def validate(model: str, body: Any) -> dict[str, Any]:
+    """``body`` checked against the payload model ``model``."""
+    return conform_object(_properties(model), body, partial=_PAYLOADS[model].partial)
+
 {% for identity in auth.identity_collections %}
 {% if identity.has_password and identity.identifier %}
 def validate_{{ identity.name }}_login(body: dict) -> dict:

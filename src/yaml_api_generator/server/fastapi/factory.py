@@ -2,8 +2,7 @@ import os
 import re
 import secrets
 from collections.abc import Callable, Mapping
-from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
@@ -12,6 +11,13 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, create_model
 
 from yaml_api_generator.runtime.dpop import DPoPProofFactory
+from yaml_api_generator.runtime.payloads import (
+    CONSTRAINTS,
+    SCALAR_TYPES,
+    STRICT_TYPES,
+    Payload,
+    partial,
+)
 from yaml_api_generator.runtime.files import FileError, RecordFiles
 from yaml_api_generator.runtime.file_requests import (
     json_request_body,
@@ -20,7 +26,8 @@ from yaml_api_generator.runtime.file_requests import (
     upload_request_body,
 )
 from yaml_api_generator.runtime.multipart import file_download_responses, file_upload_body
-from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
+from yaml_api_generator.ir import writable_fields
+from yaml_api_generator.ir.api import IRDto, IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..common.auth import oidc
 from ..common.auth.login_codes import login_codes
@@ -39,6 +46,7 @@ from ..common.repositories import BaseRepository, RepositoryRegistry
 from ..common.request_body import RecordBody, RequestBody
 from ..common.request_context import RequestContext
 from ..common.steps import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
+from ..common.steps.validation import credential_properties, login_properties
 from .session_cookie import clear_session_cookies, issue_csrf_token, set_session_cookies
 
 
@@ -55,96 +63,60 @@ _UPLOAD_BODIES = {
 }
 
 
+def _model_field(config: dict[str, Any]) -> tuple[Any, Any]:
+    annotation = _field_annotation(config)
+    constraints = {CONSTRAINTS[key]: config[key] for key in CONSTRAINTS if key in config}
+    if config.get("required"):
+        return annotation, Field(config.get("default", ...), **constraints)
+    return annotation | None, Field(config.get("default"), **constraints)
+
+
 def create_pydantic_model_fields(
-    collection: RuntimeCollectionDescriptor,
-    operation: str,
-    identity_collection: RuntimeIdentityDescriptor | None = None,
+    properties: dict[str, dict[str, Any]],
 ) -> dict[str, tuple[Any, Any]]:
-    make_optional = operation == "update"
-    fields: dict[str, tuple[Any, Any]] = {}
-
-    for field_name, raw_config in collection.fields.items():
-        if not isinstance(raw_config, dict):
-            continue
-        if raw_config.get("type") == "id":
-            continue
-        if field_name == "_auth" or field_name in collection.files:
-            continue
-
-        annotation = _field_annotation(raw_config)
-        required = bool(raw_config.get("required", False))
-        has_default = "default" in raw_config
-        default_value: Any
-
-        if make_optional:
-            annotation = annotation | None
-            default_value = raw_config.get("default", None)
-        elif has_default:
-            default_value = raw_config["default"]
-        elif required:
-            default_value = ...
-        else:
-            annotation = annotation | None
-            default_value = None
-
-        field_kwargs: dict[str, Any] = {}
-        if raw_config.get("min") is not None:
-            field_kwargs["ge"] = raw_config["min"]
-        if raw_config.get("max") is not None:
-            field_kwargs["le"] = raw_config["max"]
-        if raw_config.get("minLength") is not None:
-            field_kwargs["min_length"] = raw_config["minLength"]
-        if raw_config.get("maxLength") is not None:
-            field_kwargs["max_length"] = raw_config["maxLength"]
-
-        default: Any = (
-            Field(default_value, **field_kwargs) if field_kwargs else default_value
-        )
-        fields[field_name] = (annotation, default)
-
-    if (
-        identity_collection is not None
-        and operation == "create"
-        and identity_collection.has_password
-        and "password" not in fields
-    ):
-        fields["password"] = (str, Field(..., min_length=1))
-
-    return fields
+    return {name: _model_field(config) for name, config in properties.items()}
 
 
 def create_pydantic_model(
     collection: RuntimeCollectionDescriptor,
     operation: str,
     identity_collection: RuntimeIdentityDescriptor | None = None,
+    dto: IRDto | None = None,
 ) -> type[BaseModel] | None:
+    """The body model of ``operation``; nested objects and formats are left to ``ValidateBodyStep``."""
+    model_name = to_pascal_case(collection.name)
     if operation == "login" and identity_collection is not None:
-        pw_binding = identity_collection.get_binding("password")
-        identifier_field = pw_binding.identifier if pw_binding else "identifier"
-        fields = {
-            identifier_field: (str, Field(..., min_length=1)),
-            "password": (str, Field(..., min_length=1)),
-        }
-        model_name = to_pascal_case(collection.name)
-        return create_model(f"{model_name}LoginPayload", **fields)
-
+        return create_model(
+            f"{model_name}LoginPayload",
+            __base__=Payload,
+            **create_pydantic_model_fields(login_properties(identity_collection)),
+        )
     if operation == "refresh":
         return create_model(
-            f"{to_pascal_case(collection.name)}RefreshPayload",
+            f"{model_name}RefreshPayload",
+            __base__=Payload,
             refresh_token=(str, Field(..., min_length=1)),
         )
-
     if operation not in WRITE_OPERATIONS:
         return None
-
-    model_fields = create_pydantic_model_fields(
-        collection,
-        operation,
-        identity_collection,
+    if dto is not None:
+        return create_model(
+            to_pascal_case(dto.name),
+            __base__=Payload,
+            **create_pydantic_model_fields(writable_fields(dto.fields)),
+        )
+    fields = create_model(
+        f"{model_name}Fields",
+        __base__=Payload,
+        **create_pydantic_model_fields(writable_fields(collection.fields, collection.files)),
     )
-    operation_suffix = operation.capitalize()
-    model_name = to_pascal_case(collection.name)
-    return create_model(f"{model_name}{operation_suffix}Payload", **model_fields)
+    if operation == "update":
+        return partial(fields, f"{model_name}UpdatePayload")
+    return create_model(
+        f"{model_name}{operation.capitalize()}Payload",
+        __base__=fields,
+        **create_pydantic_model_fields(credential_properties(operation, identity_collection)),
+    )
 
 
 def register_fastapi_routes(
@@ -169,6 +141,7 @@ def register_fastapi_routes(
                 collection,
                 route.operation,
                 identity_collection,
+                route.body_dto,
             )
             if ctx.session.uses_cookie and route.operation == "refresh":
                 body_model = None
@@ -592,30 +565,16 @@ def _logout_endpoint():
     return endpoint
 
 
-def _field_annotation(field_config: dict[str, Any]) -> Any:
-    field_type = field_config.get("type")
-
-    if field_type in {"string", "id", "ref"}:
-        return str
-    if field_type == "number":
-        return float
-    if field_type == "boolean":
-        return bool
-    if field_type == "datetime":
-        return datetime
-    if field_type == "enum":
-        values = field_config.get("values")
-        if isinstance(values, list) and values:
-            return Literal[tuple(values)]
-        return str
-    if field_type == "array":
-        item_config = field_config.get("items")
-        if isinstance(item_config, dict):
-            return list[_field_annotation(item_config)]
-        return list[Any]
-    if field_type == "object":
+def _field_annotation(config: dict[str, Any]) -> Any:
+    kind = config.get("type", "string")
+    if kind == "enum":
+        return Literal[tuple(config["values"])]
+    if kind == "array":
+        return list[_field_annotation(config["items"])] if "items" in config else list[Any]
+    if kind == "object":
         return dict[str, Any]
-    return Any
+    scalar = SCALAR_TYPES[kind]
+    return Annotated[scalar, Field(strict=True)] if scalar in STRICT_TYPES else scalar
 
 
 def _build_endpoint(
