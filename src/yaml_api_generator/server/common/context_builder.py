@@ -141,7 +141,7 @@ def _runtime_route(route: IRRoute, document: IRDocument) -> RuntimeRouteDescript
                 request_symbols=rule.request_symbols,
                 when=rule.when,
                 effect=rule.effect,
-                reason=rule.reason if document.version == "0.3" else None,
+                reason=rule.reason,
                 bind=rule.bind,
             )
             for rule in route.access_rules

@@ -41,7 +41,6 @@ def _document_descriptors(rule) -> list[DocumentBindingDescriptor]:
         DocumentBindingDescriptor(
             name=name,
             collection=binding.collection,
-            id_param=binding.id_param,
             where={conjunct.field: _rhs_config(conjunct.rhs) for conjunct in binding.where},
         )
         for name, binding in rule.document_symbols.items()
@@ -106,7 +105,7 @@ class RouteBuilder:
                         request_symbols=_request_descriptors(rule),
                         when=rule.when,
                         effect=rule.effect,
-                        reason=rule.reason if document.version == "0.3" else None,
+                        reason=rule.reason,
                         bind={name: _rhs_config(rhs) for name, rhs in rule.bind.items()},
                     )
                     for rule in ir_route.access_rules

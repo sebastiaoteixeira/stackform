@@ -56,7 +56,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["pagination_config"] = pagination_config
-        env.filters["rule_to_python"] = access_filters.rule_to_python
+        env.filters["rule_to_predicate"] = access_filters.rule_to_predicate
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.tests["unconditional"] = access_filters.is_unconditional
@@ -81,9 +81,8 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 output_path="service_inputs.py",
             ),
         )
-        (output_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
+        for module in ("access", "pagination"):
+            (output_dir / f"{module}.py").write_text(runtime_module_source(module))
 
         collections_by_name = group_by_collection(context)
 
@@ -190,6 +189,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             "import_prefix": "repositories",
             "auth_import_prefix": "dependencies.auth",
             "service_import_prefix": "services",
+            "access_import": "access",
         }
 
     def _render_repositories(
@@ -212,6 +212,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     "custom_operations": ctx.repository_operations.get(col_name, []),
                     "conflict_import": "conflicts",
                     "pagination_import": "pagination",
+                    "access_import": "access",
                 },
             )
         )

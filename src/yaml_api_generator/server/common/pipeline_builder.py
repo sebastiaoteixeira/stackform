@@ -37,6 +37,7 @@ from .steps.files import (
     remove_file,
     replace_file,
 )
+from .steps.authorization import Admission, admit_record, admit_rows, screen_record
 from .steps.repositories import RecordLocator, record_locator
 
 
@@ -240,7 +241,9 @@ class PipelineBuilder:
             steps.append(ResolveWhereBindingsStep(route.access_rules))
 
         if not route.is_public:
-            steps.append(AuthorizeRouteStep(route.access_rules, self._ctx.auth))
+            steps.append(
+                AuthorizeRouteStep(route.access_rules, self._ctx.auth, self._admission(route))
+            )
 
         if not route.is_public and _has_access_bind(route):
             steps.append(ResolveAccessBindStep(route.access_rules))
@@ -262,6 +265,13 @@ class PipelineBuilder:
         if identity_collection is None or route.operation != "create":
             return None
         return ValidateIdentityCreateStep(identity_collection)
+
+    def _admission(self, route: RuntimeRouteDescriptor) -> Admission:
+        if route.operation == "list":
+            return admit_rows
+        if self._post_fetch_authorize_step(route) is not None:
+            return screen_record
+        return admit_record
 
     def _post_fetch_authorize_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         if route.is_public or not route.access_rules:

@@ -13,6 +13,7 @@ from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from .access_transformer import AccessTransformer
 from .collection_transformer import CollectionTransformer
 from .datastore_transformer import parse_datastores, parse_file_datastores
+from .document_lookup import desugar_document_lookups
 from .dto_transformer import DtoTransformer
 from .file_transformer import FileStoreRegistry, FileTransformer
 from .identity_transformer import IdentityTransformer
@@ -126,7 +127,10 @@ class V02Transformer:
         if policy_errors:
             raise ConfigErrors(policy_errors)
 
-        routes = self._expand_route_policies(routes, policies, entity_to_collection)
+        routes = desugar_document_lookups(
+            self._expand_route_policies(routes, policies, entity_to_collection),
+            collections,
+        )
         file_routes, file_route_errors = self._files.derive(collections, routes)
         if file_route_errors:
             raise ConfigErrors(file_route_errors)

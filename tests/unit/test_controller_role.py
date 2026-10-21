@@ -8,19 +8,21 @@ import pytest
 import yaml
 
 from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
-from yaml_api_generator.generators.backend.fastapi.access_filters import rule_to_python
+from yaml_api_generator.generators.backend.fastapi.access_filters import rule_to_predicate
+from yaml_api_generator.runtime import access
+from yaml_api_generator.runtime.access import EVERY_ROW, NO_ROW
 from yaml_api_generator.parsers.transformers.access_validation import validate_spec_access
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 
 
 def test_role_compiles_to_a_principal_role_guard():
-    condition = rule_to_python(
+    condition = rule_to_predicate(
         AccessRuleDescriptor(principal="identity:users", required_role="org-admin")
     )
-    assert condition == (
-        'principal.get("identity_collection") == "users" '
-        'and _principal_has_role(principal, "org-admin")'
-    )
+    scope = {**vars(access), "_principal_has_role": lambda principal, role: role in principal["roles"]}
+    assert eval(condition, {**scope, "principal": {"identity_collection": "users", "roles": ["org-admin"]}}) == EVERY_ROW
+    assert eval(condition, {**scope, "principal": {"identity_collection": "users", "roles": []}}) == NO_ROW
+    assert eval(condition, {**scope, "principal": {"identity_collection": "admins", "roles": ["org-admin"]}}) == NO_ROW
 
 
 _SPEC = """

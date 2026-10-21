@@ -35,6 +35,7 @@ from api.authentication.mongodb import get_database
 {% set needs_auth = routes | selectattr("needs_auth") | list %}
 {% if needs_auth %}
 from api.authentication.auth import resolve_principal, _principal_has_role
+from api.access import AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, row_filter, value_at
 {% endif %}
 
 {% set class_name = collection_name | capitalize_collection %}
@@ -80,6 +81,7 @@ from api.authentication.auth import resolve_principal, _principal_has_role
         if _resolved_principal is None:
             return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
 {% if route.access_rules %}
+        principal = _resolved_principal
 {% set ns = namespace(identity_symbols=[]) %}
 {% for rule in route.access_rules %}
 {% for symbol in rule.identity_symbols %}
@@ -92,39 +94,37 @@ from api.authentication.auth import resolve_principal, _principal_has_role
         {{ symbol }} = _resolved_principal
 {% endfor %}
         _access_bindings = {}
-{% if not (route is needs_post_fetch) %}
+{% if route.operation == "list" %}
+{{ authorize_rules(route, "Field(())", rows=true) }}
+{% elif not (route is needs_post_fetch) %}
 {{ authorize_rules(route, "None") }}
 {% endif %}
 {% endif %}
 {% endif %}
 {% endmacro %}
 
-{% macro authorize_rules(route, current_document) %}
-        _access_granted = False
+{% macro authorize_rules(route, current_document, rows=false) %}
+        _decisions = []
 {% for rule in route.access_rules %}
-        if not _access_granted:
 {% for binding in rule.document_bindings %}
 {% if binding.uses_where %}
-            {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
-                resolve_access_bind({{ binding.where | py_literal }}, {**path_params, **locals()})
-            )
+        {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
+            resolve_access_bind({{ binding.where | py_literal }}, {**path_params, **locals()})
+        )
 {% else %}
-            {{ binding.name }} = {{ current_document }}
+        {{ binding.name }} = {{ current_document }}
 {% endif %}
 {% endfor %}
-{% if rule is needs_current_document_rule %}
-            document = {{ current_document }}
-{% endif %}
-            if {% for binding in rule.document_bindings if binding.uses_where %}{{ binding.name }} is not None and {% endfor %}{% if rule is needs_current_document_rule %}{{ current_document }} is not None and {% endif %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-                return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
-{% else %}
-                _access_granted = True
-                _access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+        _decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-        if not _access_granted:
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+{% if rows %}
+            _row_filter = row_filter(_decisions)
+{% else %}
+            _access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(_decisions)]
+{% endif %}
+        except AccessDenied as exc:
+            return Response({"detail": exc.reason}, status=status.HTTP_403_FORBIDDEN)
 {% endmacro %}
 
 {% macro post_fetch_check(route, doc_var) %}
@@ -152,13 +152,14 @@ class {{ class_name }}ListView(APIView):
         try:
             prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
 {% if route.operation == "list" %}
+{% set row_filter_arg = ", _row_filter" if auth.enabled and route.needs_auth and route.access_rules else "" %}
 {% if route.pagination %}
             pagination_config = {{ route.pagination | pagination_config | py_literal }}
             pagination_query = dict(request.query_params)
-            page = await service.list(map_request(pagination_config, pagination_query))
+            page = await service.list(map_request(pagination_config, pagination_query){{ row_filter_arg }})
             return Response(build_response(pagination_config, page, pagination_query))
 {% else %}
-            documents = await service.list()
+            documents = await service.list({{ "None" ~ row_filter_arg if row_filter_arg }})
             return Response(documents)
 {% endif %}
 {% elif route.operation == "create" %}

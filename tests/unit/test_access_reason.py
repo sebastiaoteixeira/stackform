@@ -100,18 +100,16 @@ def _load(tmp_path, version="0.3"):
         pytest.fail("\n".join(f"{error.code}: {error.message}" for error in exc.errors))
 
 
-def test_reason_is_enabled_only_for_v03_contexts(tmp_path):
-    v03 = _load(tmp_path, "0.3")
-    v02 = _load(tmp_path, "0.2")
+@pytest.mark.parametrize("version", ["0.2", "0.3"])
+def test_reason_is_carried_in_every_version(tmp_path, version):
+    ir = _load(tmp_path, version)
 
-    assert build_runtime_context(v03).routes[0].access_rules[0].reason == (
+    assert build_runtime_context(ir).routes[0].access_rules[0].reason == (
         "Blocked accounts cannot create posts."
     )
-    assert build_context(v03).routes[0].access_rules[0].reason == (
+    assert build_context(ir).routes[0].access_rules[0].reason == (
         "Blocked accounts cannot create posts."
     )
-    assert build_runtime_context(v02).routes[0].access_rules[0].reason is None
-    assert build_context(v02).routes[0].access_rules[0].reason is None
 
 
 def test_post_fetch_deny_surfaces_only_the_matching_rule_reason():

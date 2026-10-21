@@ -1,5 +1,6 @@
 from typing import Any
 
+from dependencies.access import EVERY_ROW, Predicate
 from services.exceptions import NotFoundError, ValidationError
 {% if auth.has_password_auth %}
 from dependencies.auth import hash_password
@@ -56,12 +57,12 @@ class ServiceBase:
 
 
 class ListSvc:
-    async def list(self, primitives: Any = None) -> Any:
+    async def list(self, primitives: Any = None, predicate: Predicate = EVERY_ROW) -> Any:
         if primitives is None:
-            documents = await self._repo.list()
+            documents = await self._repo.list(predicate)
             await self._after_list(documents)
             return documents
-        page = await self._repo.paginate(primitives)
+        page = await self._repo.paginate(primitives, predicate)
         await self._after_list(page.rows)
         return page
 

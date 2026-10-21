@@ -56,7 +56,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["pagination_config"] = pagination_config
         env.filters["sql_column"] = sql_filters.sql_column
         env.filters["py_constructor"] = py_constructor
-        env.filters["rule_to_python"] = access_filters.rule_to_python
+        env.filters["rule_to_predicate"] = access_filters.rule_to_predicate
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
@@ -440,9 +440,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
-        (deps_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
+        for module in ("access", "pagination"):
+            (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
         if any(context.repository_operations.values()):

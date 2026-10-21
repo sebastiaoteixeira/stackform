@@ -184,7 +184,6 @@ class ModelDescriptor:
 class DocumentBindingDescriptor:
     name: str
     collection: str
-    id_param: str | None = None
     where: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property

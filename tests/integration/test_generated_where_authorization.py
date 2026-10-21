@@ -176,8 +176,8 @@ def test_generated_fastapi_enforces_where_per_rule(tmp_path):
         class Reports:
             organization_id = "org-1"
 
-            async def list(self):
-                return [{{"id": "r1", "title": "visible"}}]
+            async def list(self, primitives, predicate):
+                return [row for row in [{{"id": "r1", "title": "visible"}}] if predicate.matches(row)]
 
             async def get(self, record_id):
                 return {{"id": record_id, "organizationId": "org-1", "title": "visible"}}
@@ -297,8 +297,9 @@ def test_where_example_logs_in_and_authorizes_without_identity_list(tmp_path):
                 return {{"id": "org-1", "ownerId": "u1", "name": "Example"}}
 
         class ReportsService:
-            async def list(self):
-                return [{{"id": "report-1", "organizationId": "org-1", "title": "Observed"}}]
+            async def list(self, primitives, predicate):
+                rows = [{{"id": "report-1", "organizationId": "org-1", "title": "Observed"}}]
+                return [row for row in rows if predicate.matches(row)]
 
         users = UsersRepository()
         app = FastAPI()

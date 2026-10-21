@@ -147,12 +147,12 @@ def RepositoryListStep(
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
         if pagination is None:
-            result = await _repository(ctx).list(collection_name)
+            result = await _repository(ctx).list(collection_name, ctx.row_filter)
             ctx.response = _inject_canonical_id_list(result, id_field)
             return ctx
         query = ctx.query or {}
         primitives = map_request(pagination, query)
-        page = await _repository(ctx).paginate(collection_name, primitives)
+        page = await _repository(ctx).paginate(collection_name, primitives, ctx.row_filter)
         canonical = Page(
             rows=_inject_canonical_id_list(page.rows, id_field),
             total=page.total,

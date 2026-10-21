@@ -15,7 +15,8 @@ from dependencies.repositories import get_{{ where_collection }}_repository
 from dependencies.auth import require_principal
 {% endif %}
 {% if routes | selectattr("access_rules") | list %}
-from dependencies.authorization import _principal_has_role, _values_equal
+from dependencies.access import AccessDenied, Decision, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, value_at
+from dependencies.authorization import _principal_has_role
 {% endif %}
 
 
@@ -52,25 +53,19 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
 {% for symbol in ns_symbols.request %}
     {{ symbol | request_symbol_binding }}
 {% endfor %}
-    _access_granted = False
-    _access_bindings = {}
+    _decisions = []
 {% for rule in route.access_rules %}
-    if not _access_granted:
 {% for binding in rule.document_bindings %}
-        {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
-            resolve_access_bind({{ binding.where | py_literal }}, {**dict(request.path_params), **locals()})
-        )
+    {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
+        resolve_access_bind({{ binding.where | py_literal }}, {**dict(request.path_params), **locals()})
+    )
 {% endfor %}
-        if {% for binding in rule.document_bindings %}{{ binding.name }} is not None and {% endfor %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
-{% else %}
-            _access_granted = True
-            _access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+    _decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-    if not _access_granted:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        _access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(_decisions)]
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail=exc.reason) from exc
     bound_inputs = resolve_access_bind(_access_bindings, locals())
 {% else %}
     bound_inputs = {}

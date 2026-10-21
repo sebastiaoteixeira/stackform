@@ -60,7 +60,8 @@ from dependencies.repositories import get_{{ where_collection }}_repository
 from dependencies.auth import require_principal
 {% endif %}
 {% if auth.enabled and ns_auth.needs_role %}
-from dependencies.authorization import _principal_has_role, _values_equal
+from dependencies.access import AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, row_filter, value_at
+from dependencies.authorization import _principal_has_role
 {% endif %}
 {% set ns = namespace(model_imports=[]) %}
 {% for route in crud_routes %}
@@ -196,35 +197,34 @@ _files = record_files[{{ collection_name | tojson }}]
 {% endfor %}
 {% endmacro %}
 
-{% macro authorize_rules(route, current_document) %}
+{# Collects one decision per rule, then admits a record or filters rows #}
+{% macro authorize_rules(route, current_document, rows=false) %}
 {% if auth.enabled and route.needs_auth and route.access_rules %}
 {{ identity_locals(route) }}
-    _access_granted = False
-    _access_bindings = {}
+    _decisions = []
 {% for rule in route.access_rules %}
-    if not _access_granted:
 {% for binding in rule.document_bindings %}
 {% if binding.uses_where %}
-        {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
-            resolve_access_bind({{ binding.where | py_literal }}, locals())
-        )
+    {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
+        resolve_access_bind({{ binding.where | py_literal }}, locals())
+    )
 {% else %}
-        {{ binding.name }} = {{ current_document }}
+    {{ binding.name }} = {{ current_document }}
 {% endif %}
 {% endfor %}
-{% if rule is needs_current_document_rule %}
-        document = {{ current_document }}
-{% endif %}
-        if {% for binding in rule.document_bindings if binding.uses_where %}{{ binding.name }} is not None and {% endfor %}{% if rule is needs_current_document_rule %}{{ current_document }} is not None and {% endif %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
-{% else %}
-            _access_granted = True
-            _access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+    _decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-    if not _access_granted:
-        raise HTTPException(status_code=403, detail="Forbidden")
+{% if rows %}
+    _access_bindings = {}
+{% endif %}
+    try:
+{% if rows %}
+        _row_filter = row_filter(_decisions)
+{% else %}
+        _access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(_decisions)]
+{% endif %}
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail=exc.reason) from exc
 {% endif %}
 {% endmacro %}
 
@@ -246,23 +246,24 @@ _files = record_files[{{ collection_name | tojson }}]
 {% set body_expr = "upload.payload" if files else 'payload.model_dump(mode="json"' ~ (", exclude_unset=True" if partial else "") ~ ")" %}
 {% set record_expr = "upload.record" if files else body_expr %}
 {% if route.operation == "list" %}
+{% set row_filter_arg = ", _row_filter" if auth.enabled and route.needs_auth and route.access_rules else "" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 {% set list_prefix = (extra_path_params(route) ~ request_param(route) ~ auth_param(route)) | trim(chars=", ") %}
 async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{{ where_repo_params(route) }}{% if route.pagination %}, limit: int | None = None{% if route.pagination.strategy == "offset" %}, offset: int | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
 {{ request_locals(route, "None") }}
-{{ pre_fetch_guard(route) }}
+{{ authorize_rules(route, "Field(())", rows=true) }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), "None") }}
 {% if route.pagination %}
     _pagination_config = {{ route.pagination | pagination_config | py_literal }}
     _pagination_query = {"limit": limit{% if route.pagination.strategy == "offset" %}, "offset": offset{% else %}, "after": after{% endif %}}
     try:
-        _page = await svc.list(map_request(_pagination_config, _pagination_query))
+        _page = await svc.list(map_request(_pagination_config, _pagination_query){{ row_filter_arg }})
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return build_response(_pagination_config, _page, _pagination_query)
 {% else %}
-    return await svc.list()
+    return await svc.list({{ "None" ~ row_filter_arg if row_filter_arg }})
 {% endif %}
 
 

@@ -77,33 +77,6 @@ def test_principal_has_role_wrong_collection(authz):
     assert authz._principal_has_role({"identity_collection": "users", "roles": ["super_admin"]}, "admin") is False
 
 
-def test_rule_to_python_role_only():
-    from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
-    rule = AccessRuleDescriptor(principal="identity:admins", required_role="admin")
-    assert access_filters.rule_to_python(rule) == (
-        'principal.get("identity_collection") == "admins" and '
-        '_principal_has_role(principal, "admin")'
-    )
-
-
-def test_rule_to_python_unconditional():
-    from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
-    rule = AccessRuleDescriptor(principal="identity:admins")
-    assert access_filters.rule_to_python(rule) == (
-        'principal.get("identity_collection") == "admins"'
-    )
-
-
-def test_rule_to_python_when_equals():
-    from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
-    from yaml_api_generator.ir.when import Equals, FieldRef
-    rule = AccessRuleDescriptor(
-        principal="identity:users",
-        when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("created_by",))),
-    )
-    assert '_values_equal(principal.get("sub"), document.get("created_by"))' in access_filters.rule_to_python(rule)
-
-
 def test_is_unconditional_true():
     from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
     rule = AccessRuleDescriptor(principal="")
