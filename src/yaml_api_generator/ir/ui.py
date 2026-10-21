@@ -106,5 +106,4 @@ class GeneratorContext:
     pack_config: dict[str, Any]
     entities: dict[str, EntityInfo]
     identity_entities: list[str]
-    role_hierarchies: dict[str, dict[str, list[str]]]
     session_delivery: str = "token-url"

@@ -60,7 +60,7 @@ def test_principal_includes_roles_extraction(tmp_path):
     auth_module = (tmp_path / "dependencies" / "auth.py").read_text()
     assert "_extract_roles" in auth_module
     assert '"roles": _extract_roles(' in auth_module
-    assert "_extract_roles(doc, 'role', False)" in auth_module
+    assert "_extract_roles(doc, 'role', True)" in auth_module
 
 
 def test_roles_field_default_emits_python_none(tmp_path):

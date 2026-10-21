@@ -47,8 +47,8 @@ def _codes(errors):
 # --- transformer ----------------------------------------------------------
 
 
-def _parse(rule, allow_where=True):
-    return AccessTransformer(allow_where=allow_where)._parse_access_rule_object(
+def _parse(rule):
+    return AccessTransformer(allow_where=True)._parse_access_rule_object(
         rule, "p", {"user"}, {"user": "users"}
     )
 
@@ -66,12 +66,6 @@ def test_bind_symbol_and_literal_reach_ir():
         "kind": IRLiteralRef("post"),
         "audit": IRLiteralRef(True),
     }
-
-
-def test_bind_rejected_without_v03_feature_gate():
-    rule, errors = _parse({"then": "allow", "bind": {"userId": "$principal.sub"}}, allow_where=False)
-    assert rule is None
-    assert [error.code for error in errors] == ["BIND_UNSUPPORTED"]
 
 
 # --- build-time symbol resolution -----------------------------------------
@@ -182,7 +176,6 @@ def test_bind_rejects_where_document_rule_on_same_route():
 _SPEC = """
 version: "0.3"
 api:
-  name: test
   basePath: /api
 entities:
   user:
@@ -292,7 +285,7 @@ def test_v02_bind_aborts_end_to_end(tmp_path):
     with pytest.raises(ConfigErrors) as exc_info:
         load_and_generate_ir(str(spec))
 
-    assert {error.code for error in exc_info.value.errors} == {"BIND_UNSUPPORTED"}
+    assert {error.code for error in exc_info.value.errors} == {"SCHEMA_VALIDATION_ERROR"}
 
 
 @pytest.mark.parametrize(

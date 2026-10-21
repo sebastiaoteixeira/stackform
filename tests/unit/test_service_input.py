@@ -209,7 +209,6 @@ def test_repository_forwarding_rejects_unused_target():
 _SPEC = """
 version: "0.3"
 api:
-  name: test
   basePath: /api
 entities:
   post:
@@ -270,7 +269,7 @@ def test_v02_rejects_service_input_syntax(tmp_path):
     with pytest.raises(ConfigErrors) as exc_info:
         _load(tmp_path, _SPEC.replace('version: "0.3"', 'version: "0.2"'))
 
-    assert any(e.code == "SERVICE_INPUT_UNSUPPORTED" for e in exc_info.value.errors)
+    assert any(e.code == "SCHEMA_VALIDATION_ERROR" for e in exc_info.value.errors)
 
 
 # --- runtime step ---------------------------------------------------------

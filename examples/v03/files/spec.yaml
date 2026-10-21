@@ -1,7 +1,6 @@
 version: "0.3"
 
 api:
-  name: v03-files
   basePath: /api
   files:
     maxSize: 3KB
@@ -96,20 +95,18 @@ controllers:
         path: /{id}
         access:
           - given: { principal: "identity:user", document: documents }
-            role: editor
             when: document.ownerId equals principal.sub
           - then: deny
-            reason: Only an editor who owns the document may change it.
+            reason: Only the owner may change the document.
       delete:
         service: documents
         method: DELETE
         path: /{id}
         access:
           - given: { principal: "identity:user", document: documents }
-            role: editor
             when: document.ownerId equals principal.sub
           - then: deny
-            reason: Only an editor who owns the document may delete it.
+            reason: Only the owner may delete the document.
   assets:
     base_path: /assets
     routes:

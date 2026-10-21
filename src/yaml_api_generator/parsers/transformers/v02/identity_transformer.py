@@ -135,40 +135,6 @@ class IdentityTransformer:
                 )
         return errors
 
-    def parse_role_hierarchies(
-        self,
-        roles_data: dict[str, Any],
-        auth_entities: set[str],
-    ) -> tuple[dict[str, dict[str, list[str]]], list[ConfigError]]:
-        """Parse role hierarchy definitions.
-
-        Args:
-            roles_data: Raw role hierarchy configurations from YAML
-            auth_entities: Set of entity names marked as auth type
-
-        Returns:
-            Tuple of (role hierarchies dict, validation errors)
-        """
-        errors: list[ConfigError] = []
-        hierarchies: dict[str, dict[str, list[str]]] = {}
-        for entity_name, role_map in roles_data.items():
-            if entity_name not in auth_entities:
-                errors.append(
-                    ConfigError(
-                        code="ROLES_UNKNOWN_ENTITY",
-                        message=f"Role hierarchy references unknown auth entity '{entity_name}'",
-                        path=f"roles.{entity_name}",
-                    )
-                )
-                continue
-            if not isinstance(role_map, dict):
-                continue
-            hierarchies[entity_name] = {
-                role: list(includes) if isinstance(includes, list) else []
-                for role, includes in role_map.items()
-            }
-        return hierarchies, errors
-
     def _build_roles_config(
         self, entity_name: str, roles_data: Any
     ) -> tuple[IRRolesConfig | None, list[ConfigError]]:

@@ -266,15 +266,7 @@ def _check_rule_list(
                  and v.startswith("identity:")),
                 "",
             )
-            role = item.get("role")
-            if isinstance(role, str) and principal:
-                _check_role_declared(
-                    role, principal.removeprefix("identity:"), declared_roles,
-                    f"{item_path}.role", errors,
-                )
-            _track_contradiction(
-                (principal, role, expr), effect, item_path, seen, errors
-            )
+            _track_contradiction((principal, expr), effect, item_path, seen, errors)
 
 
 def _track_contradiction(
@@ -316,12 +308,7 @@ def _is_always_allow_rule(rule: Any) -> bool:
         return False
     given = rule.get("given")
     when = rule.get("when")
-    return (
-        not given
-        and when is None
-        and rule.get("role") is None
-        and rule.get("then", "allow") == "allow"
-    )
+    return not given and when is None and rule.get("then", "allow") == "allow"
 
 
 def _warn_access_rules(

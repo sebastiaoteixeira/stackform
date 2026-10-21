@@ -1,11 +1,14 @@
 version: "0.1"
 ui:
-  dashboard:
-    title: My Dashboard
-    widgets:
-      - type: chart
-      - type: table
-  theme: dark
+  frontend:
+    pack: generic
+  config:
+    dashboard:
+      title: My Dashboard
+      widgets:
+        - type: chart
+        - type: table
+    theme: dark
 collections:
   posts:
     fields:

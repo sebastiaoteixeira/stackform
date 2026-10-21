@@ -70,7 +70,7 @@ def test_pkce_is_rejected_for_idp_trust(tmp_path):
     with pytest.raises(ConfigErrors) as raised:
         load_and_generate_ir(str(path))
 
-    assert "TRUST_IDP_APP_FIELD_FORBIDDEN" in {
+    assert "SCHEMA_VALIDATION_ERROR" in {
         error.code for error in raised.value.errors
     }
 

@@ -68,10 +68,8 @@ def test_abstract_entity_not_in_collections() -> None:
 
 def test_roles_hierarchy_in_ir() -> None:
     ir = load_and_generate_ir(str(VALID_DIR / "roles-access.yaml")).ir
-    assert "user" in ir.role_hierarchies
-    user_h = ir.role_hierarchies["user"]
-    assert "admin" in user_h
-    assert "moderator" in user_h["admin"]
+    hierarchy = ir.identityCollections["users"].roles.hierarchy
+    assert hierarchy["admin"] == ("moderator",)
 
 
 def test_access_rules_on_routes() -> None:
@@ -523,8 +521,8 @@ def test_schema_validation_failure_multiple_errors() -> None:
 def test_ui_block_extracted_and_preserved() -> None:
     result = load_and_generate_ir(str(VALID_DIR / "ui-block.yaml"))
     assert result.ui_block is not None
-    assert "dashboard" in result.ui_block
-    assert result.ui_block["theme"] == "dark"
+    assert "dashboard" in result.ui_block["config"]
+    assert result.ui_block["config"]["theme"] == "dark"
 
 
 # --- Test 29: No UI block → ui_block=None ---

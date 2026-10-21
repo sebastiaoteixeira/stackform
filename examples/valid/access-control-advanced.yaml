@@ -52,11 +52,6 @@ entities:
       confidential_info: { type: string }
       owner_id: { type: string, required: true }
 
-roles:
-  user:
-    admin: [editor]
-    editor: [viewer]
-
 repositories:
   users:
     entity: user

@@ -1,7 +1,6 @@
 version: "0.3"
 
 api:
-  name: v03-oidc-pkce-dpop
   basePath: /api
 
 providers:

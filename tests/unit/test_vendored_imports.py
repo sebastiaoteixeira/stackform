@@ -286,7 +286,7 @@ def test_handler_referencing_undeclared_package_raises(tmp_path):
 
 def test_v03_bare_string_import_rejected(tmp_path):
     spec = _minimal(tmp_path, "vend: some.author.module", handler="vend.route")
-    assert _codes(spec) == ["IMPORT_BARE_STRING"]
+    assert _codes(spec) == ["SCHEMA_VALIDATION_ERROR"]
 
 
 def test_source_escaping_the_spec_directory_is_rejected(tmp_path):

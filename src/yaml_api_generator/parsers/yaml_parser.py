@@ -16,8 +16,10 @@ Environment variable interpolation:
 - Nested and default-with-reference forms resolve via a fixed-point loop
 - Literal braces in a default are escaped as \\{ and \\}
 - Env vars expanded before schema validation
+- The resolved spec is schema-validated before any other check runs
 """
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -26,7 +28,8 @@ from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError, best_match
+from jsonschema.exceptions import best_match
+from referencing import Registry, Resource
 
 from ..ir import IRDocument
 from .errors import ConfigError, ConfigErrors, join_path
@@ -36,6 +39,11 @@ INTERPOLATION_PATTERN = re.compile(r"\$\{([^{}]*?)\}")
 INTERPOLATION_TOKEN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$", re.DOTALL)
 INTERPOLATION_MAX_DEPTH = 10
 _BRACE_ESCAPES = ((r"\{", "\x00"), (r"\}", "\x01"))
+SCHEMA_DIR = Path(__file__).parent / "schemas"
+SCHEMA_REGISTRY: Registry = Registry().with_resources(
+    (path.name, Resource.from_contents(json.loads(path.read_text(encoding="utf-8"))))
+    for path in SCHEMA_DIR.glob("*.schema.json")
+)
 
 __all__ = ["ConfigError", "ConfigErrors", "ParseResult", "load_and_generate_ir"]
 
@@ -146,7 +154,7 @@ def _load_schema(schema_file: Path) -> dict[str, Any]:
 
 
 def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
-    validator = Draft202012Validator(schema)
+    validator = Draft202012Validator(schema, registry=SCHEMA_REGISTRY)
     errors = sorted(
         validator.iter_errors(config),
         key=lambda item: (item.json_path, item.message),
@@ -154,22 +162,11 @@ def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
     return [
         ConfigError(
             code="SCHEMA_VALIDATION_ERROR",
-            message=_describe_error(error),
+            message=best_match([error]).message,
             path=join_path(tuple(str(part) for part in error.path)),
         )
         for error in errors
     ]
-
-
-def _describe_error(error: ValidationError) -> str:
-    """Surface the most specific reason for combinator failures.
-
-    ``oneOf``/``anyOf`` produce an opaque "is not valid under any of the given
-    schemas"; the actual cause lives in the deepest sub-error.
-    """
-    if error.context:
-        return best_match(error.context).message
-    return error.message
 
 
 _VERSION_SCHEMA_MAP: dict[str, str] = {
@@ -196,7 +193,7 @@ def _resolve_schema_path(
                 )
             ]
         )
-    return Path(__file__).parent / "schemas" / schema_name
+    return SCHEMA_DIR / schema_name
 
 
 def load_and_generate_ir(
@@ -212,15 +209,17 @@ def load_and_generate_ir(
         raise ConfigErrors(interpolation_errors)
 
     version = str(resolved.get("version", "0.1"))
+    schema_errors = _validate_schema(
+        resolved, _load_schema(_resolve_schema_path(version, schema_file))
+    )
+    if schema_errors:
+        raise ConfigErrors(schema_errors)
+
+    ui_block = resolved.get("ui")
     trust_warnings: tuple[ConfigError, ...] = ()
     access_warnings: tuple[ConfigError, ...] = ()
 
     if version in ("0.2", "0.3"):
-        from .transformers.shape_validation import validate_spec_shape
-        shape_errors = validate_spec_shape(resolved)
-        if shape_errors:
-            raise ConfigErrors(shape_errors)
-
         from .transformers.name_validation import validate_spec_names
         name_errors = validate_spec_names(resolved)
         if name_errors:
@@ -269,11 +268,7 @@ def load_and_generate_ir(
             raise ConfigErrors(binding_errors)
 
         from .transformers.trust_validation import validate_spec_trust
-        trust_results = validate_spec_trust(resolved)
-        trust_errors = [e for e in trust_results if e.severity == "error"]
-        trust_warnings = tuple(e for e in trust_results if e.severity == "warning")
-        if trust_errors:
-            raise ConfigErrors(trust_errors)
+        trust_warnings = tuple(validate_spec_trust(resolved))
 
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
@@ -287,17 +282,6 @@ def load_and_generate_ir(
         request_path_errors = validate_spec_request_paths(resolved)
         if request_path_errors:
             raise ConfigErrors(request_path_errors)
-
-    ui_block = resolved.get("ui", None)
-
-    schema_path = _resolve_schema_path(version, schema_file)
-
-    schema = _load_schema(schema_path)
-
-    config_for_validation = {k: v for k, v in resolved.items() if k != "ui"}
-    schema_errors = _validate_schema(config_for_validation, schema)
-    if schema_errors:
-        raise ConfigErrors(schema_errors)
 
     from .transformers.registry import transform_config
 

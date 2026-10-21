@@ -300,7 +300,6 @@ class FileRouteDescriptor:
     field: IRFileField
     item: bool
     source: RouteDescriptor
-    writable: bool = True
 
     @property
     def handler_name(self) -> str:

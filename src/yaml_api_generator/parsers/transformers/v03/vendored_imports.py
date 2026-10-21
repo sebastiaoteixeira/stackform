@@ -54,15 +54,6 @@ def process_vendored_imports(
 
     for alias, entry in entries.items():
         path = f"imports.{alias}"
-        if isinstance(entry, str):
-            errors.append(ConfigError(
-                code="IMPORT_BARE_STRING",
-                message=f"Import '{alias}' uses the bare dotted-string form, which v0.3 does not accept",
-                path=path,
-                hint="Vendor the package with an object: { path: ./src/handlers, package: name, requires: [...] }",
-            ))
-            continue
-
         package = entry["package"]
         if package in package_owner:
             errors.append(ConfigError(

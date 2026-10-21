@@ -24,7 +24,6 @@ from yaml_api_generator.server.common.steps.authorization import (
 _SPEC = """
 version: "{version}"
 api:
-  name: access-reason
   basePath: /api
 mongo:
   uri: mongodb://localhost:27017

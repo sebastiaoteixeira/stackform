@@ -18,7 +18,7 @@ from typing import Any
 
 {% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
 {% set needs_request = custom_routes or repo_op_routes or (crud_routes | selectattr("needs_request") | list) or (file_routes | selectattr("action", "equalto", "replace") | list) %}
-from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes or (file_routes | rejectattr("writable") | list) %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
+from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
 
 {% if ns_service_input.enabled or ns_where.collections %}
 from dependencies.service_inputs import {% if ns_service_input.enabled %}prepare_service_inputs{% endif %}{% if ns_service_input.enabled and (ns_service_input.access_bind or ns_where.collections) %}, {% endif %}{% if ns_service_input.access_bind or ns_where.collections %}resolve_access_bind{% endif +%}
@@ -331,15 +331,11 @@ async def delete_{{ collection_name }}({{ route.record_id_param }}: str{{ extra_
 {% set file_id = ", fileId" if file_route.item else "" %}
 @router.{{ file_route.method | lower }}("{{ file_route.relative_path }}"{{ openapi_extra(source, none if file_route.action != "replace" else "file_upload_body(_files.fields[" ~ field_name ~ "], item=" ~ (file_route.item | py_bool) ~ ")") }}{% if file_route.action == "download" %}, responses=file_download_responses(){% endif %})
 async def {{ file_route.handler_name }}({{ source.record_id_param }}: str{{ extra_path_params(source) }}{% if file_route.item %}, fileId: str{% endif %}{% if file_route.action == "replace" or source.needs_request %}, request: Request{% endif %}{{ auth_param(source) }}, {{ svc_dep() }}{{ where_repo_params(source) }}) -> Any:
-{% if not file_route.writable %}
-    raise HTTPException(status_code=403, detail="Forbidden")
-{% else %}
 {{ request_locals(source, "None") }}
 {{ pre_fetch_guard(source) }}
     existing = await {{ record_call(source, "get") }}
 {{ post_fetch_guard(source, "existing") }}
 {{ file_actions[file_route.action](source, field_name, file_id) }}
-{% endif %}
 
 
 {% endfor %}

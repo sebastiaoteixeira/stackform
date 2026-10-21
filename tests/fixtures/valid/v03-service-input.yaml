@@ -1,6 +1,5 @@
 version: "0.3"
 api:
-  name: service-input
   basePath: /api
 entities:
   post:

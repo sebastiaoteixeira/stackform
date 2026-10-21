@@ -26,7 +26,7 @@ class V03Transformer(V02Transformer):
         super().__init__()
         self._spec_dir = spec_dir
         self._access = AccessTransformer(allow_where=True)
-        self._route = RouteTransformer(self._access, allow_service_inputs=True)
+        self._route = RouteTransformer(self._access)
 
     def _process_imports(
         self, resolved: dict[str, Any]

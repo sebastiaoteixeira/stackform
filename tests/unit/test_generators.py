@@ -462,7 +462,7 @@ def test_public_only_routes_omit_dead_auth_imports(tmp_path):
 
 def test_build_settings_fields_skips_saml_provider_client_secret():
     oidc = IROIDCProvider(name="keycloak", client_id="app", client_secret="s3cr3t", trust="app")
-    saml = IRSAMLProvider(name="corp-saml", trust="app")
+    saml = IRSAMLProvider(name="corp-saml")
     auth = AuthConfig(
         enabled=True,
         identity_collections=[],

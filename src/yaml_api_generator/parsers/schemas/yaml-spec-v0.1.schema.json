@@ -4,134 +4,95 @@
   "title": "YAML API Generator Structure Spec v0.1",
   "type": "object",
   "required": ["version", "collections"],
+  "additionalProperties": false,
   "properties": {
     "version": {
-      "type": "string"
+      "type": "string",
+      "const": "0.1"
     },
     "api": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "basePath": {
-          "type": "string"
-        },
-        "version": {
-          "type": "string"
-        },
+        "basePath": { "type": "string" },
+        "version": { "type": "string" },
         "pagination": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
-            "defaultPageSize": {
-              "type": "integer"
-            },
-            "maxPageSize": {
-              "type": "integer"
-            }
+            "defaultPageSize": { "type": "integer" },
+            "maxPageSize": { "type": "integer" }
           }
         },
         "operations": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
-            "defaults": {
-              "$ref": "#/$defs/OperationFlags"
-            }
+            "defaults": { "$ref": "#/$defs/OperationFlags" }
           }
         }
       }
     },
     "security": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "cors": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
-            "allowedOrigins": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "allowCredentials": {
-              "type": "boolean"
-            },
-            "allowedMethods": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
+            "allowedOrigins": { "$ref": "#/$defs/StringList" },
+            "allowCredentials": { "type": "boolean" },
+            "allowedMethods": { "$ref": "#/$defs/StringList" }
           }
         },
         "headers": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
-            "enableStandard": {
-              "type": "boolean"
-            }
-          }
-        },
-        "redaction": {
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "keys": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
+            "enableStandard": { "type": "boolean" }
           }
         }
       }
     },
     "collections": {
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/CollectionConfig"
-      }
+      "additionalProperties": { "$ref": "#/$defs/CollectionConfig" }
     },
     "providers": {
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/ProviderConfig"
+      "additionalProperties": { "$ref": "#/$defs/ProviderConfig" }
+    },
+    "mongo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uri": { "type": "string" },
+        "database": { "type": "string" }
       }
     },
-    "options": {
-      "type": "object",
-      "properties": {
-        "strict": {
-          "type": "boolean"
-        }
-      }
-    }
+    "ui": { "$ref": "ui.schema.json" }
   },
   "$defs": {
+    "StringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "OperationFlags": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "list": {
-          "type": "boolean"
-        },
-        "get": {
-          "type": "boolean"
-        },
-        "create": {
-          "type": "boolean"
-        },
-        "update": {
-          "type": "boolean"
-        },
-        "replace": {
-          "type": "boolean"
-        },
-        "delete": {
-          "type": "boolean"
-        }
+        "list": { "type": "boolean" },
+        "get": { "type": "boolean" },
+        "create": { "type": "boolean" },
+        "update": { "type": "boolean" },
+        "replace": { "type": "boolean" },
+        "delete": { "type": "boolean" }
       }
     },
     "CollectionConfig": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["fields"],
       "properties": {
         "type": {
@@ -141,239 +102,131 @@
         },
         "fields": {
           "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/FieldConfig"
-          }
+          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
         },
-        "auth": {
-          "$ref": "#/$defs/AuthCollectionConfig"
-        },
-        "roles": {
-          "$ref": "#/$defs/RolesConfig"
-        },
-        "operations": {
-          "$ref": "#/$defs/OperationFlags"
-        },
+        "auth": { "$ref": "#/$defs/AuthCollectionConfig" },
+        "roles": { "$ref": "#/$defs/RolesConfig" },
+        "operations": { "$ref": "#/$defs/OperationFlags" },
         "access": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
-            "list": {
-              "$ref": "#/$defs/AccessOperationConfig"
-            },
-            "get": {
-              "$ref": "#/$defs/AccessOperationConfig"
-            },
-            "create": {
-              "$ref": "#/$defs/AccessOperationConfig"
-            },
-            "update": {
-              "$ref": "#/$defs/AccessOperationConfig"
-            },
-            "replace": {
-              "$ref": "#/$defs/AccessOperationConfig"
-            },
-            "delete": {
-              "$ref": "#/$defs/AccessOperationConfig"
-            }
+            "list": { "$ref": "#/$defs/AccessOperationConfig" },
+            "get": { "$ref": "#/$defs/AccessOperationConfig" },
+            "create": { "$ref": "#/$defs/AccessOperationConfig" },
+            "update": { "$ref": "#/$defs/AccessOperationConfig" },
+            "replace": { "$ref": "#/$defs/AccessOperationConfig" },
+            "delete": { "$ref": "#/$defs/AccessOperationConfig" }
           }
         },
-        "softDelete": {
-          "type": "boolean"
-        },
-        "indexes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/IndexConfig"
-          }
-        }
+        "softDelete": { "type": "boolean" }
       },
       "allOf": [
         {
           "if": {
-            "properties": {
-              "type": {
-                "const": "auth"
-              }
-            },
+            "properties": { "type": { "const": "auth" } },
             "required": ["type"]
           },
-          "then": {
-            "required": ["auth"]
-          }
+          "then": { "required": ["auth"] }
         }
       ]
     },
     "AuthCollectionConfig": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["identifier", "via"],
       "properties": {
-        "identifier": {
-          "type": "string"
-        },
+        "identifier": { "type": "string" },
         "via": {
           "oneOf": [
             { "type": "string" },
-            {
-              "type": "array",
-              "items": { "type": "string" }
-            }
+            { "$ref": "#/$defs/StringList" }
           ]
-        },
-        "claim_mapping": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "auto_provision": { "type": "boolean" }
+        }
       }
     },
     "ProviderConfig": {
-      "oneOf": [
-        { "$ref": "#/$defs/OIDCProviderConfig" },
-        { "$ref": "#/$defs/SAMLProviderConfig" }
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["oidc", "saml"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "oidc" } } },
+          "then": { "$ref": "#/$defs/OIDCProviderConfig" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "saml" } } },
+          "then": { "$ref": "#/$defs/SAMLProviderConfig" }
+        }
       ]
     },
     "OIDCProviderConfig": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["type", "client_id", "client_secret"],
       "properties": {
-        "type": { "type": "string", "const": "oidc" },
+        "type": { "const": "oidc" },
         "client_id": { "type": "string" },
-        "client_secret": { "type": "string" },
-        "discovery_url": { "type": "string" }
-      },
-      "additionalProperties": false
+        "client_secret": { "type": "string" }
+      }
     },
     "SAMLProviderConfig": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["type", "idp_metadata_url", "sp_entity_id"],
       "properties": {
-        "type": { "type": "string", "const": "saml" },
+        "type": { "const": "saml" },
         "idp_metadata_url": { "type": "string" },
         "sp_entity_id": { "type": "string" }
-      },
-      "additionalProperties": false
+      }
     },
     "FieldConfig": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["type"],
       "properties": {
         "type": {
           "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref", "id"]
         },
-        "required": {
-          "type": "boolean"
-        },
+        "required": { "type": "boolean" },
         "default": {},
-        "unique": {
-          "type": "boolean"
-        },
-        "min": {
-          "type": "number"
-        },
-        "max": {
-          "type": "number"
-        },
-        "minLength": {
-          "type": "integer"
-        },
-        "maxLength": {
-          "type": "integer"
-        },
+        "unique": { "type": "boolean" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "minLength": { "type": "integer" },
+        "maxLength": { "type": "integer" },
         "format": {
           "enum": ["email", "e164", "uri", "uuidv7", "uuidv4"]
         },
-        "values": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "items": {
-          "$ref": "#/$defs/FieldConfigLite"
-        },
+        "values": { "$ref": "#/$defs/StringList" },
+        "items": { "$ref": "#/$defs/FieldConfig" },
         "properties": {
           "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/FieldConfig"
-          }
+          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
         },
-        "additionalProperties": {
-          "type": "boolean"
-        },
-        "ref": {
-          "type": "string"
-        },
-        "store": {
-          "enum": ["id", "embed"]
-        },
-        "expand": {
-          "type": "object",
-          "properties": {
-            "allowed": {
-              "type": "boolean"
-            },
-            "always": {
-              "type": "boolean"
-            },
-            "fields": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "maxDepth": {
-              "type": "integer"
-            }
-          }
-        }
+        "additionalProperties": { "type": "boolean" },
+        "ref": { "type": "string" }
       },
       "allOf": [
         {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "enum"
-              }
-            },
-            "required": ["type"]
-          },
-          "then": {
-            "required": ["values"]
-          }
+          "if": { "properties": { "type": { "const": "enum" } }, "required": ["type"] },
+          "then": { "required": ["values"] }
         },
         {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "array"
-              }
-            },
-            "required": ["type"]
-          },
-          "then": {
-            "required": ["items"]
-          }
+          "if": { "properties": { "type": { "const": "array" } }, "required": ["type"] },
+          "then": { "required": ["items"] }
         },
         {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "ref"
-              }
-            },
-            "required": ["type"]
-          },
-          "then": {
-            "required": ["ref"]
-          }
+          "if": { "properties": { "type": { "const": "ref" } }, "required": ["type"] },
+          "then": { "required": ["ref"] }
         }
       ]
     },
-    "FieldConfigLite": {
-      "$ref": "#/$defs/FieldConfig"
-    },
     "RolesConfig": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["values", "default"],
       "properties": {
         "values": {
@@ -384,111 +237,35 @@
         "default": { "type": "string" },
         "hierarchy": {
           "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
+          "additionalProperties": { "$ref": "#/$defs/StringList" }
         }
-      },
-      "additionalProperties": false
+      }
+    },
+    "Principal": {
+      "anyOf": [
+        { "type": "string", "enum": ["public", "*"] },
+        { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*:(?:[A-Za-z_][A-Za-z0-9_]*|\\*)$" },
+        { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+      ]
     },
     "AccessRule": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["principal"],
       "properties": {
-        "principal": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": ["public", "*"]
-            },
-            {
-              "type": "string",
-              "pattern": "^[A-Za-z_][A-Za-z0-9_]*:(?:[A-Za-z_][A-Za-z0-9_]*|\\*)$"
-            },
-            {
-              "type": "string",
-              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-            }
-          ]
-        },
-        "when": {
-          "type": "string"
-        },
-        "filter": {
-          "type": "string"
-        },
-        "writeFields": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "reason": {
-          "type": "string"
-        }
+        "principal": { "$ref": "#/$defs/Principal" },
+        "when": { "type": "string" },
+        "reason": { "type": "string" }
       }
     },
     "AccessOperationConfig": {
       "anyOf": [
         {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/AccessRule"
-          }
+          "items": { "$ref": "#/$defs/AccessRule" }
         },
-        {
-          "type": "string",
-          "enum": ["public", "*"]
-        },
-        {
-          "type": "string",
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*:(?:[A-Za-z_][A-Za-z0-9_]*|\\*)$"
-        },
-        {
-          "type": "string",
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-        }
+        { "$ref": "#/$defs/Principal" }
       ]
-    },
-    "IndexConfig": {
-      "type": "object",
-      "required": ["fields"],
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "fields": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/IndexField"
-          }
-        },
-        "unique": {
-          "type": "boolean"
-        },
-        "sparse": {
-          "type": "boolean"
-        },
-        "ttlSeconds": {
-          "type": "integer"
-        },
-        "text": {
-          "type": "boolean"
-        }
-      }
-    },
-    "IndexField": {
-      "type": "object",
-      "required": ["field"],
-      "properties": {
-        "field": {
-          "type": "string"
-        },
-        "order": {
-          "enum": ["asc", "desc"]
-        }
-      }
     }
   }
 }

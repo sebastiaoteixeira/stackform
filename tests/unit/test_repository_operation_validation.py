@@ -23,7 +23,7 @@ _GENERATORS = (FastAPIGenerator, DRFGenerator, RawASGIGenerator)
 
 _SPEC = {
     "version": "0.3",
-    "api": {"name": "undeclared-operation", "basePath": "/api"},
+    "api": {"basePath": "/api"},
     "entities": {
         "post": {
             "fields": {

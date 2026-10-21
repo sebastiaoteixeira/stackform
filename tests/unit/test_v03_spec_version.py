@@ -1,9 +1,8 @@
 """Foundational v0.3 spec-version gate.
 
 v0.3 is a superset of v0.2. These tests pin the scaffold behavior: a v0.2-shaped
-spec at version 0.3 produces the same IR, dispatch routes to V03Transformer, the
-schema accepts the new v0.3 constructs syntactically, and the reserved where
-operators are documented. Semantics of the new constructs land in later issues.
+spec at version 0.3 produces the same IR, dispatch routes to V03Transformer, and
+the schema accepts the new v0.3 constructs syntactically.
 """
 import json
 import textwrap
@@ -13,7 +12,11 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+from yaml_api_generator.parsers.yaml_parser import (
+    SCHEMA_REGISTRY,
+    ConfigErrors,
+    load_and_generate_ir,
+)
 from yaml_api_generator.parsers.transformers.registry import _TRANSFORMERS
 from yaml_api_generator.parsers.transformers.v02 import V02Transformer
 from yaml_api_generator.parsers.transformers.v03 import V03Transformer
@@ -82,7 +85,6 @@ def test_unsupported_version_still_raises(tmp_path):
 def test_schema_accepts_new_v03_constructs():
     spec = {
         "version": "0.3",
-        "input": ["orgId"],
         "api": {"basePath": "/api", "version": "v1"},
         "entities": {
             "post": {
@@ -111,13 +113,5 @@ def test_schema_accepts_new_v03_constructs():
             }
         },
     }
-    errors = list(Draft202012Validator(_schema()).iter_errors(spec))
+    errors = list(Draft202012Validator(_schema(), registry=SCHEMA_REGISTRY).iter_errors(spec))
     assert errors == []
-
-
-def test_reserved_where_operators_are_documented():
-    operator = _schema()["$defs"]["WhereOperator"]
-    assert set(operator["enum"]) == {"=", "and", "!=", "<", "<=", ">", ">=", "in"}
-    assert "=" in operator["enum"]
-    assert "and" in operator["enum"]
-    assert "Reserved" in operator["description"]

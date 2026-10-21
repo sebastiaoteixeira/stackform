@@ -19,7 +19,6 @@ _EXAMPLE = Path(__file__).parents[2] / "examples" / "v03" / "where-authorization
 _SPEC = """
 version: "0.3"
 api:
-  name: generated-where
   basePath: /api
 mongo:
   uri: mongodb://localhost:27017

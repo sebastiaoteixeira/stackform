@@ -50,7 +50,6 @@ def _make_ir(collections=None, identity=None, routes=None, cors=None, repositori
         collections=cols,
         routes=routes or [],
         identityCollections=identity or {},
-        role_hierarchies={},
         mongo=IRMongo(),
         repositories=repos,
     )

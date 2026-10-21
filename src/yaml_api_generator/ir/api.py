@@ -22,7 +22,7 @@ eliminating repeated YAML parsing and validation.
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from .when import WhenExpr
@@ -51,15 +51,9 @@ class IROIDCProvider:
 class IRSAMLProvider:
     name: str
     type: str = "saml"
-    trust: str = "app"
     idp_metadata_url: str | None = None
     sp_entity_id: str | None = None
-    issuer: str | None = None
-    audience: str | None = None
-
-    @property
-    def is_idp(self) -> bool:
-        return self.trust == "idp"
+    is_idp: ClassVar[bool] = False
 
 
 IRProvider = IROIDCProvider | IRSAMLProvider
@@ -328,8 +322,6 @@ class IRAccessRule:
     request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
-    filter: str | None = None
-    write_fields: list[str] = field(default_factory=list)
     reason: str | None = None
     bind: dict[str, WhereRhs] = field(default_factory=dict)
 
@@ -471,7 +463,6 @@ class IRDocument:
     identityCollections: dict[str, IRIdentityCollection]
     dtos: dict[str, IRDto] = field(default_factory=dict)
     services: dict[str, IRService] = field(default_factory=dict)
-    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
     datastores: dict[str, IRDatastore] = field(default_factory=dict)

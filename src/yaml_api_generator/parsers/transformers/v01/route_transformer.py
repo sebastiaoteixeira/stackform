@@ -175,7 +175,7 @@ class RouteTransformer:
             if when_raw is not None:
                 when_expr, when_errors = parse_when_expr(when_raw, f"{item_path}.when")
                 errors.extend(when_errors)
-            if self._is_bare_authenticated(resolved, when_expr, extras):
+            if self._is_bare_authenticated(resolved, when_expr):
                 continue
             rules.append(
                 IRAccessRule(
@@ -188,16 +188,10 @@ class RouteTransformer:
         return is_public, rules, errors
 
     @staticmethod
-    def _is_bare_authenticated(resolved, when_expr, extras: dict[str, Any]) -> bool:
+    def _is_bare_authenticated(resolved, when_expr) -> bool:
         """A plain 'authenticated' principal carries no identity, role, or constraint,
         so it adds nothing beyond requiring authentication; no rule is emitted."""
-        return (
-            resolved.principal is None
-            and resolved.required_role is None
-            and when_expr is None
-            and not extras.get("filter")
-            and not extras.get("write_fields")
-        )
+        return resolved.principal is None and resolved.required_role is None and when_expr is None
 
     @staticmethod
     def _unpack_item(item: Any) -> tuple[str | None, str | None, dict[str, Any]]:
@@ -205,10 +199,6 @@ class RouteTransformer:
             return item, None, {}
         if isinstance(item, dict):
             principal = item.get("principal")
-            extras = {
-                "filter": item.get("filter"),
-                "write_fields": item.get("writeFields", []),
-                "reason": item.get("reason"),
-            }
+            extras = {"reason": item.get("reason")}
             return (principal if isinstance(principal, str) else None), item.get("when"), extras
         return None, None, {}

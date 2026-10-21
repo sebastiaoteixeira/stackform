@@ -54,7 +54,6 @@ class V02Transformer:
         repos_data: dict[str, Any] = resolved.get("repositories", {})
         services_data: dict[str, Any] = resolved.get("services", {})
         controllers_data: dict[str, Any] = resolved.get("controllers", {})
-        roles_data: dict[str, Any] = resolved.get("roles", {})
         providers_data: dict[str, Any] = resolved.get("providers", {})
         dtos_data: dict[str, Any] = resolved.get("dto", {})
         policies_data: dict[str, Any] = resolved.get("policies", {})
@@ -108,14 +107,6 @@ class V02Transformer:
         if field_errors:
             raise ConfigErrors(field_errors)
 
-        role_hierarchies: dict[str, dict[str, list[str]]] = {}
-        if roles_data:
-            role_hierarchies, role_errors = self._identity.parse_role_hierarchies(
-                roles_data, auth_entities
-            )
-            if role_errors:
-                raise ConfigErrors(role_errors)
-
         services = self._route.transform_services(
             services_data, repo_entity_map, import_map, dtos_data
         )
@@ -155,7 +146,6 @@ class V02Transformer:
             identityCollections=identity_collections,
             dtos=dtos,
             services=services,
-            role_hierarchies=role_hierarchies,
             mongo=self._route.build_mongo(mongo_config),
             datastores=datastores,
             default_datastore=default_datastore,

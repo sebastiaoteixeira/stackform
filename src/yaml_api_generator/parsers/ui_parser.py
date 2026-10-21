@@ -28,15 +28,6 @@ def build_generator_context(
     ui_block: dict[str, Any],
     manifest: PackManifest,
 ) -> GeneratorContext:
-    frontend_config = ui_block.get("frontend", {}) or {}
-    pack_config = {
-        k: v
-        for k, v in frontend_config.items()
-        if k not in ("pack", "output", "overwrite", "generate")
-    }
-    if "config" in ui_block:
-        pack_config.update(ui_block["config"])
-
     entities = _build_entities(ir)
     identity_entities = [
         ir.collections[k].entity_name for k in ir.identityCollections.keys()
@@ -61,10 +52,9 @@ def build_generator_context(
         views=views,
         pack_components=pack_components,
         pack_scaffold=manifest.scaffold,
-        pack_config=pack_config,
+        pack_config=ui_block.get("config", {}),
         entities=entities,
         identity_entities=identity_entities,
-        role_hierarchies=ir.role_hierarchies,
         session_delivery=ir.session.delivery,
     )
 

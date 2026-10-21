@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ui.schema.json",
+  "title": "YAML API Generator UI block",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["frontend"],
+  "properties": {
+    "frontend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pack"],
+      "properties": {
+        "pack": { "type": "string", "minLength": 1 },
+        "output": { "type": "string" },
+        "overwrite": { "enum": ["never", "always"], "default": "never" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "description": "Pack-defined settings, passed to the pack templates as pack_config."
+    },
+    "collections": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fields"],
+        "properties": {
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from"],
+              "properties": {
+                "from": { "type": "string", "minLength": 1 },
+                "format": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["render"],
+        "properties": {
+          "props": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "required": { "type": "boolean" }
+              }
+            }
+          },
+          "render": { "$ref": "#/$defs/ComponentNode" }
+        }
+      }
+    },
+    "views": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "component"],
+        "properties": {
+          "path": { "type": "string" },
+          "component": { "type": "string" },
+          "props": { "type": "object" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "ComponentNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component"],
+      "properties": {
+        "component": { "type": "string", "minLength": 1 },
+        "props": { "type": "object" }
+      }
+    }
+  }
+}
