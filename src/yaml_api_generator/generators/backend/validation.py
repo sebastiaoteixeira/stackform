@@ -106,6 +106,23 @@ def reject_session_refresh(context: CompileContext, backend: str) -> None:
     )
 
 
+def reject_session_refresh_without_mongo(context: CompileContext) -> None:
+    """Reject rotation when every collection is SQL, leaving no MongoDB store for refresh records."""
+    collection_types = {context.collection_datastore_type(name) for name in context.collections}
+    if not (context.session.refresh and collection_types and collection_types <= _SQL_DATASTORES):
+        return
+    raise ConfigErrors(
+        [
+            ConfigError(
+                code="BACKEND_FEATURE_UNSUPPORTED",
+                message="session.refresh keeps refresh records in MongoDB, but no collection uses it",
+                path="session.refresh",
+                hint="Declare a MongoDB datastore, or drop session.refresh",
+            )
+        ]
+    )
+
+
 def reject_cookie_delivery(context: CompileContext, backend: str) -> None:
     if not context.session.uses_cookie:
         return

@@ -15,6 +15,7 @@ from ..utils import (
     write_environment_files,
 )
 from ..validation import (
+    reject_session_refresh_without_mongo,
     reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
@@ -43,6 +44,7 @@ def _crud_operations(col_data: dict) -> list[str]:
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "fastapi")
+        reject_session_refresh_without_mongo(context)
         reject_unsigned_session_algorithm(context)
         reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
@@ -443,6 +445,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
         (deps_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )
+        if context.app.security_headers:
+            (deps_dir / "security_headers.py").write_text(runtime_module_source("security_headers"))
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
         if any(context.repository_operations.values()):

@@ -241,7 +241,7 @@ class TestResolvePrincipalStep:
                     {
                         "id": "c1",
                         "clientId": "myclient",
-                        "_auth": {"apiKey": "ak123"},
+                        "apiKey": "ak123",
                     }
                 ]
             }
@@ -272,7 +272,7 @@ class TestResolvePrincipalStep:
                     {
                         "id": "c1",
                         "clientId": "myclient",
-                        "_auth": {"apiKey": "ak123"},
+                        "apiKey": "ak123",
                     }
                 ]
             }
@@ -487,7 +487,7 @@ class TestResolvePrincipalStep:
                 "clients": [
                     {
                         "id": "c1",
-                        "_auth": {"apiKey": "ak123"},
+                        "apiKey": "ak123",
                     }
                 ]
             }

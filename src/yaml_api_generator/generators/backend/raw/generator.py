@@ -84,6 +84,8 @@ class RawASGIGenerator(TemplateBasedGenerator):
         (output_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )
+        if context.app.security_headers:
+            (output_dir / "security_headers.py").write_text(runtime_module_source("security_headers"))
 
         collections_by_name = group_by_collection(context)
 

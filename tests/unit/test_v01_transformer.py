@@ -1,9 +1,13 @@
 import pathlib
 
 import pytest
+from starlette.testclient import TestClient
 
+from yaml_api_generator.ir import IRCors, IRPageSize, IRRolesConfig
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+from yaml_api_generator.server import build_app
 from tests.conftest import INVALID_DIR, VALID_DIR
+from tests.unit.support.generated_apps import write_spec
 
 EXAMPLES_DIR = pathlib.Path(__file__).parent.parent.parent / "examples" / "valid"
 
@@ -139,3 +143,86 @@ def test_v01_password_hash_field_forbidden() -> None:
         load_and_generate_ir(str(INVALID_DIR / "v01-password-field-forbidden.yaml"))
     codes = {e.code for e in exc_info.value.errors}
     assert "AUTH_PASSWORD_HASH_FIELD_FORBIDDEN" in codes
+
+
+_PLATFORM_SPEC = """
+version: "0.1"
+{top}
+collections:
+  users:
+    type: auth
+    auth: {{ identifier: email, via: password }}
+    {roles}
+    fields:
+      id: {{ type: id }}
+      email: {{ type: string, required: true, unique: true }}
+  posts:
+    fields:
+      id: {{ type: id }}
+      {field}: {{ type: string, minLength: {min_length} }}
+"""
+
+
+def _platform_ir(tmp_path, top="", roles="", field="title", min_length=1):
+    spec = write_spec(tmp_path, _PLATFORM_SPEC.format(top=top, roles=roles, field=field, min_length=min_length))
+    return load_and_generate_ir(str(spec)).ir
+
+
+def _platform_errors(tmp_path, **parts) -> list[tuple[str, str]]:
+    with pytest.raises(ConfigErrors) as exc_info:
+        _platform_ir(tmp_path, **parts)
+    return [(e.code, e.path) for e in exc_info.value.errors]
+
+
+def _list_page_size(ir) -> IRPageSize:
+    return next(r.pagination.size for r in ir.routes if r.collection == "posts" and r.operation == "list")
+
+
+@pytest.mark.parametrize(
+    ("pagination", "size"),
+    [
+        ("", IRPageSize(default=20, max=100)),
+        ("api: { pagination: { defaultPageSize: 5, maxPageSize: 50 } }", IRPageSize(default=5, max=50)),
+        ("api: { pagination: { maxPageSize: 10 } }", IRPageSize(default=10, max=10)),
+    ],
+    ids=["defaults", "explicit", "max-below-default"],
+)
+def test_v01_pagination_sizes_list_routes(tmp_path, pagination, size) -> None:
+    assert _list_page_size(_platform_ir(tmp_path, top=pagination)) == size
+
+
+def test_v01_security_block_reaches_api_ir(tmp_path) -> None:
+    security = (
+        "security:\n"
+        "  cors: { allowedOrigins: [\"https://app.example\"], allowedMethods: [GET], allowCredentials: true }\n"
+        "  headers: { enableStandard: false }"
+    )
+    api = _platform_ir(tmp_path, top=security).api
+    assert (api.cors, api.security_headers) == (
+        IRCors(origins=["https://app.example"], methods=["GET"], credentials=True),
+        False,
+    )
+
+
+def test_v01_roles_parsed_into_identity_collection(tmp_path) -> None:
+    roles = "roles: { values: [reader, editor], default: reader, hierarchy: { editor: [reader] } }"
+    assert _platform_ir(tmp_path, roles=roles).identityCollections["users"].roles == IRRolesConfig(
+        values=("reader", "editor"), default="reader", hierarchy={"editor": ("reader",)}
+    )
+
+
+def test_v01_roles_hierarchy_unknown_role_rejected(tmp_path) -> None:
+    roles = "roles: { values: [reader], default: reader, hierarchy: { admin: [reader] } }"
+    assert _platform_errors(tmp_path, roles=roles) == [
+        ("ROLES_HIERARCHY_UNKNOWN_ROLE", "collections.users.roles.hierarchy")
+    ]
+
+
+def test_v01_shared_validators_check_collections(tmp_path) -> None:
+    assert _platform_errors(tmp_path, field="class") == [("INVALID_FIELD_NAME", "collections.posts.fields.class")]
+    assert [code for code, _ in _platform_errors(tmp_path, min_length=-1)] == ["FIELD_CONSTRAINT_INVALID"]
+
+
+def test_v01_example_serves_on_dev_server() -> None:
+    client = TestClient(build_app(str(EXAMPLES_DIR / "blog.yaml")))
+    assert "/api/posts" in client.get("/openapi.json").json()["paths"]

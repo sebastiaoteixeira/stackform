@@ -162,6 +162,24 @@ class ASGIApp:
 
 
 app = ASGIApp()
+{% if ctx.app.cors %}
+
+from starlette.middleware.cors import CORSMiddleware
+
+app = CORSMiddleware(
+    app,
+    allow_origins={{ ctx.app.cors.origins }},
+    allow_methods={{ ctx.app.cors.methods }},
+    allow_headers={{ ctx.app.cors.headers }},
+    allow_credentials={{ ctx.app.cors.credentials }},
+)
+{% endif %}
+{% if ctx.app.security_headers %}
+
+from security_headers import SecurityHeadersMiddleware
+
+app = SecurityHeadersMiddleware(app)
+{% endif %}
 
 if __name__ == "__main__":
     import uvicorn

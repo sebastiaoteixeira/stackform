@@ -77,13 +77,12 @@ def build_settings_fields(ctx: CompileContext) -> list[SettingField]:
                 add(SettingField("JWT_RETIRED_PUBLIC_KEY", "str", ""))
             else:
                 add(SettingField("JWT_SECRET", "str", None, secret=True, generator=_token))
-            if ctx.session.refresh:
-                add(SettingField(
-                    "JWT_ACCESS_TTL_SECONDS", "int", str(ctx.session.ttl or 900)
-                ))
-                add(SettingField("JWT_REFRESH_TTL_SECONDS", "int", "2592000"))
-            else:
+            if ctx.session.ttl is None:
                 add(SettingField("JWT_EXPIRATION_HOURS", "int", "24"))
+            else:
+                add(SettingField("JWT_ACCESS_TTL_SECONDS", "int", str(ctx.session.ttl)))
+            if ctx.session.refresh:
+                add(SettingField("JWT_REFRESH_TTL_SECONDS", "int", "2592000"))
 
         if ctx.auth.has_app_oidc_auth:
             add(SettingField("FRONTEND_URL", "str", ""))

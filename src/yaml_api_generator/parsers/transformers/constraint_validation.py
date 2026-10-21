@@ -169,15 +169,15 @@ def _coerces_to(field_type: str, value: str) -> bool:
     return False
 
 
-def validate_spec_constraints(spec: dict[str, Any]) -> list[ConfigError]:
-    """Validate field-constraint coherence across every entity in the spec."""
+def validate_spec_constraints(spec: dict[str, Any], section: str = "entities") -> list[ConfigError]:
+    """Validate field-constraint coherence across every model of ``section``."""
     errors: list[ConfigError] = []
-    for entity_name, entity in (spec.get("entities") or {}).items():
-        if not isinstance(entity, dict):
+    for model_name, model in (spec.get(section) or {}).items():
+        if not isinstance(model, dict):
             continue
-        for field_name, field in (entity.get("fields") or {}).items():
+        for field_name, field in (model.get("fields") or {}).items():
             if isinstance(field, dict):
                 _check_field(
-                    field, f"entities.{entity_name}.fields.{field_name}", errors
+                    field, f"{section}.{model_name}.fields.{field_name}", errors
                 )
     return errors

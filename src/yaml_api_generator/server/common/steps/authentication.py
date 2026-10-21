@@ -227,7 +227,7 @@ async def _resolve_identity_for_collection(
             return await _find_principal(
                 repository,
                 collection_name=identity.name,
-                field_name="_auth.apiKey",
+                field_name="apiKey",
                 field_value=token,
                 id_field=id_field,
                 identity=identity,

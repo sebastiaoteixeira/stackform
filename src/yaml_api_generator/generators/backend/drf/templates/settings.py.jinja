@@ -15,12 +15,32 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "rest_framework",
     "drf_spectacular",
+{% if ctx.app.cors %}
+    "corsheaders",
+{% endif %}
     "api",
 ]
 
 MIDDLEWARE = [
+{% if ctx.app.security_headers %}
+    "api.security_headers.DjangoSecurityHeadersMiddleware",
+{% endif %}
+{% if ctx.app.cors %}
+    "corsheaders.middleware.CorsMiddleware",
+{% endif %}
     "django.middleware.common.CommonMiddleware",
 ]
+{% if ctx.app.cors %}
+
+{% if "*" in ctx.app.cors.origins %}
+CORS_ALLOW_ALL_ORIGINS = True
+{% else %}
+CORS_ALLOWED_ORIGINS = {{ ctx.app.cors.origins }}
+{% endif %}
+CORS_ALLOW_METHODS = {{ ctx.app.cors.methods }}
+CORS_ALLOW_HEADERS = {{ ctx.app.cors.headers }}
+CORS_ALLOW_CREDENTIALS = {{ ctx.app.cors.credentials }}
+{% endif %}
 
 ROOT_URLCONF = "project.urls"
 

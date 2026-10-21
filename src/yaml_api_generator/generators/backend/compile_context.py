@@ -404,6 +404,7 @@ class AppConfig:
     api_version: str | None
     cors: CorsConfig | None = None
     port: int = 8000
+    security_headers: bool = True
 
 
 @dataclass(frozen=True)

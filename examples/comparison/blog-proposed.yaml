@@ -2,7 +2,7 @@ version: "0.2"
 
 api:
   operations:
-    defaults: [list, get, create, update, delete]
+    defaults: { list: true, get: true, create: true, update: true, delete: true }
 
 # Entities: data shape only. No operations, no HTTP.
 entities:
@@ -47,9 +47,10 @@ repositories:
   posts:
     entity: post
     operations:
-      by-author:
-        base: list
-        filter: { authorId: $param.authorId }
+      by_author:
+        query:
+          command: find
+          filter: { authorId: "{{authorId}}" }
 
   users:
     entity: user
@@ -57,34 +58,34 @@ repositories:
 # Services: business operations. Each one delegates to a repo op or runs custom logic.
 # Controllers can only reference services, never repositories directly.
 services:
-  list-posts:   { repository: posts, operation: list }
-  get-post:     { repository: posts, operation: get }
-  create-post:  { repository: posts, operation: create }
-  update-post:  { repository: posts, operation: update }
-  delete-post:  { repository: posts, operation: delete }
+  list_posts:   { repository: posts, operation: list }
+  get_post:     { repository: posts, operation: get }
+  create_post:  { repository: posts, operation: create }
+  update_post:  { repository: posts, operation: update }
+  delete_post:  { repository: posts, operation: delete }
 
-  list-users:   { repository: users, operation: list }
-  get-user:     { repository: users, operation: get }
-  create-user:  { repository: users, operation: create }
-  update-user:  { repository: users, operation: update }
-  delete-user:  { repository: users, operation: delete }
+  list_users:   { repository: users, operation: list }
+  get_user:     { repository: users, operation: get }
+  create_user:  { repository: users, operation: create }
+  update_user:  { repository: users, operation: update }
+  delete_user:  { repository: users, operation: delete }
 
 # Controllers: HTTP binding. References services only.
 controllers:
   posts:
     base_path: /posts
     routes:
-      list:   { service: list-posts,   method: GET,    path: /,     access: public }
-      get:    { service: get-post,     method: GET,    path: /{id}, access: public }
-      create: { service: create-post,  method: POST,   path: /,     access: public }
-      update: { service: update-post,  method: PATCH,  path: /{id}, access: public }
-      delete: { service: delete-post,  method: DELETE, path: /{id}, access: public }
+      list:   { service: list_posts,   method: GET,    path: /,     access: public }
+      get:    { service: get_post,     method: GET,    path: "/{id}", access: public }
+      create: { service: create_post,  method: POST,   path: /,     access: public }
+      update: { service: update_post,  method: PATCH,  path: "/{id}", access: public }
+      delete: { service: delete_post,  method: DELETE, path: "/{id}", access: public }
 
   users:
     base_path: /users
     routes:
-      list:   { service: list-users,   method: GET,    path: /,     access: public }
-      get:    { service: get-user,     method: GET,    path: /{id}, access: public }
-      create: { service: create-user,  method: POST,   path: /,     access: public }
-      update: { service: update-user,  method: PATCH,  path: /{id}, access: public }
-      delete: { service: delete-user,  method: DELETE, path: /{id}, access: public }
+      list:   { service: list_users,   method: GET,    path: /,     access: public }
+      get:    { service: get_user,     method: GET,    path: "/{id}", access: public }
+      create: { service: create_user,  method: POST,   path: /,     access: public }
+      update: { service: update_user,  method: PATCH,  path: "/{id}", access: public }
+      delete: { service: delete_user,  method: DELETE, path: "/{id}", access: public }

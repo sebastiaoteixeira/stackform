@@ -18,12 +18,6 @@ SCHEMAS = PACKAGE / "parsers" / "schemas"
 
 # Accepted by the schema but read by no consumer yet.
 UNENFORCED = {
-    "allowCredentials": "0.1 security.cors",
-    "allowedMethods": "0.1 security.cors",
-    "allowedOrigins": "0.1 security.cors",
-    "defaultPageSize": "0.1 api.pagination",
-    "maxPageSize": "0.1 api.pagination",
-    "enableStandard": "0.1 security.headers (D16)",
     "softDelete": "0.1 collections (D19)",
     "additionalProperties": "object field option",
 }

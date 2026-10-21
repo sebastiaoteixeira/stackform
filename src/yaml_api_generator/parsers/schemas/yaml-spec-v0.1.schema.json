@@ -44,7 +44,9 @@
             "allowedOrigins": { "$ref": "#/$defs/StringList" },
             "allowCredentials": { "type": "boolean" },
             "allowedMethods": { "$ref": "#/$defs/StringList" }
-          }
+          },
+          "if": { "properties": { "allowCredentials": { "const": true } }, "required": ["allowCredentials"] },
+          "then": { "properties": { "allowedOrigins": { "not": { "contains": { "const": "*" } } } } }
         },
         "headers": {
           "type": "object",

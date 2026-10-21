@@ -18,6 +18,7 @@ import pytest
 from fastapi import APIRouter
 
 from yaml_api_generator.cli.compiler import compile_project
+from yaml_api_generator.runtime import security_headers
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from yaml_api_generator.server.common.loader import SchemaManagement, create_repositories
 from yaml_api_generator.server.common.repositories import MongoRepository
@@ -157,6 +158,7 @@ def _generated_app_dependencies(initialize_indexes) -> dict[str, types.ModuleTyp
         "dependencies.postgres": _stub(
             "dependencies.postgres", connect_db=_noop, close_db=_noop
         ),
+        "dependencies.security_headers": security_headers,
         "conflicts": _stub("conflicts", ConflictError=_Conflict),
         "services": _stub("services"),
         "services.exceptions": _stub(

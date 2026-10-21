@@ -2,7 +2,7 @@ from collections import Counter
 
 from sqlalchemy.engine import make_url
 
-from ...ir import IRDocument, IRPostgres
+from ...ir import IRDocument, IRMongo, IRPostgres
 from ..backend.builders import build_context
 from ..backend.builders.settings_builder import build_settings_fields
 from .context import DeployContext, DeployDatastore, DockerDeployContext, SystemdDeployContext
@@ -89,7 +89,7 @@ def _build_datastores(ir: IRDocument) -> tuple[DeployDatastore, ...]:
         service = base if type_counts[base] == 1 else f"{base}-{name}"
         result.append(
             _postgres_datastore(service, ds) if isinstance(ds, IRPostgres)
-            else _mongo_datastore(service, ds)
+            else _mongo_datastore(service, ds, ir.deploy.mongo_local)
         )
     return tuple(result)
 
@@ -112,8 +112,7 @@ def _postgres_datastore(service: str, ds: IRPostgres) -> DeployDatastore:
     )
 
 
-def _mongo_datastore(service: str, ds) -> DeployDatastore:
-    local = "localhost" in ds.uri or "127.0.0.1" in ds.uri
+def _mongo_datastore(service: str, ds: IRMongo, local: bool) -> DeployDatastore:
     return DeployDatastore(
         service=service,
         type="mongodb",

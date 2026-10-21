@@ -94,6 +94,8 @@ class DRFGenerator(TemplateBasedGenerator):
         (api_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )
+        if context.app.security_headers:
+            (api_dir / "security_headers.py").write_text(runtime_module_source("security_headers"))
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)

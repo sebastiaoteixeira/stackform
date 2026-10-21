@@ -52,6 +52,7 @@ class ContextBuilder:
             api_version=document.api.version,
             cors=cors,
             port=document.api.port,
+            security_headers=document.api.security_headers,
         )
 
         identity_map = document.identityCollections
@@ -109,7 +110,7 @@ class ContextBuilder:
             collections=raw_collections,
             session=SessionConfig(
                 algorithm=document.session.algorithm,
-                ttl=document.session.ttl,
+                ttl=document.session.access_ttl,
                 refresh=document.session.refresh,
                 delivery=document.session.delivery,
             ),

@@ -71,6 +71,12 @@ REJECTED = {
         "'bindings' was unexpected",
     ),
     "import-string-form": (("0.3",), ("imports", "helpers"), "helpers.py", "is not of type 'object'"),
+    "cors-credentials-any-origin": (
+        ("0.1",),
+        ("security", "cors"),
+        {"allowedOrigins": ["*"], "allowCredentials": True},
+        "should not be valid under",
+    ),
     "typo-root": (("0.1", "0.2", "0.3"), ("colections",), {}, "'colections' was unexpected"),
     "typo-field": (("0.2", "0.3"), ("entities", "post", *TITLE, "requird"), True, "'requird' was unexpected"),
 }
@@ -122,6 +128,24 @@ def test_schema_rejects_unknown_or_removed_key(tmp_path, version, path, value, f
     errors = _load_errors(tmp_path, spec)
     assert {error.code for error in errors} == {"SCHEMA_VALIDATION_ERROR"}
     assert any(fragment in error.message for error in errors)
+
+
+MONGO = {"uri": "mongodb://localhost:27017", "database": "blog"}
+POSTGRES = {"type": "postgres", "dsn": "postgresql+asyncpg://localhost/blog", "default": True}
+FILESYSTEM = {"type": "filesystem", "path": "./uploads"}
+
+
+@pytest.mark.parametrize("version", ["0.2", "0.3"])
+def test_mongo_block_beside_record_datastores_rejected(tmp_path, version):
+    spec = {**BASE_SPECS[version], "mongo": MONGO, "datastores": {"main": POSTGRES}}
+    errors = _load_errors(tmp_path, spec)
+    assert [(error.code, error.path) for error in errors] == [("SCHEMA_VALIDATION_ERROR", "mongo")]
+
+
+def test_mongo_block_beside_file_datastores_accepted(tmp_path):
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump({**BASE_SPECS["0.3"], "mongo": MONGO, "datastores": {"disk": FILESYSTEM}}))
+    assert load_and_generate_ir(str(path)).ir.mongo.database == "blog"
 
 
 @pytest.mark.parametrize("spec,path", WRONG_SHAPES.values(), ids=list(WRONG_SHAPES))

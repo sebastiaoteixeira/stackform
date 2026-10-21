@@ -9,6 +9,38 @@
     "entities"
   ],
   "additionalProperties": false,
+  "if": {
+    "$comment": "A record datastore replaces the mongo block, so declaring both is ambiguous",
+    "required": [
+      "datastores"
+    ],
+    "properties": {
+      "datastores": {
+        "not": {
+          "additionalProperties": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "filesystem",
+                  "s3"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "mongo": {
+        "not": {}
+      }
+    }
+  },
   "properties": {
     "version": {
       "type": "string",
@@ -50,6 +82,9 @@
               "minimum": 1
             }
           }
+        },
+        "securityHeaders": {
+          "type": "boolean"
         }
       }
     },

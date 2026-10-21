@@ -219,17 +219,23 @@ def load_and_generate_ir(
     trust_warnings: tuple[ConfigError, ...] = ()
     access_warnings: tuple[ConfigError, ...] = ()
 
+    model_section = "collections" if version == "0.1" else "entities"
+    from .transformers.name_validation import validate_spec_names
+    name_errors = validate_spec_names(resolved, model_section)
+    if name_errors:
+        raise ConfigErrors(name_errors)
+
+    from .transformers.constraint_validation import validate_spec_constraints
+    constraint_errors = validate_spec_constraints(resolved, model_section)
+    if constraint_errors:
+        raise ConfigErrors(constraint_errors)
+
+    from .transformers.auth_validation import validate_spec_auth
+    auth_errors = validate_spec_auth(resolved, model_section)
+    if auth_errors:
+        raise ConfigErrors(auth_errors)
+
     if version in ("0.2", "0.3"):
-        from .transformers.name_validation import validate_spec_names
-        name_errors = validate_spec_names(resolved)
-        if name_errors:
-            raise ConfigErrors(name_errors)
-
-        from .transformers.constraint_validation import validate_spec_constraints
-        constraint_errors = validate_spec_constraints(resolved)
-        if constraint_errors:
-            raise ConfigErrors(constraint_errors)
-
         from .transformers.file_validation import validate_spec_files
         file_errors = validate_spec_files(resolved)
         if file_errors:
@@ -256,11 +262,6 @@ def load_and_generate_ir(
             symbol_errors = validate_spec_symbols(resolved)
             if symbol_errors:
                 raise ConfigErrors(symbol_errors)
-
-        from .transformers.auth_validation import validate_spec_auth
-        auth_errors = validate_spec_auth(resolved)
-        if auth_errors:
-            raise ConfigErrors(auth_errors)
 
         from .transformers.binding_validation import validate_spec_bindings
         binding_errors = validate_spec_bindings(resolved)

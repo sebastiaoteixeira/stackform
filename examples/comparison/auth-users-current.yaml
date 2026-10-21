@@ -17,8 +17,8 @@ collections:
       update: authenticated
       replace: authenticated
       delete:
-        - principal: identity:users
-          when: "principal.sub == document.id"
+        - principal: "users:*"
+          when: "principal.sub equals document.id"
     fields:
       id:
         type: id
@@ -42,10 +42,10 @@ collections:
       get: public
       update: authenticated
       delete:
-        - principal: identity:users
-          when: "principal.sub == document.authorId"
-        - principal: identity:users
-          when: "principal.record.role == 'moderator'"
+        - principal: "users:*"
+          when: "principal.sub equals document.authorId"
+        - principal: "users:*"
+          when: "principal.record.role equals 'moderator'"
     fields:
       id:
         type: id
@@ -57,10 +57,4 @@ collections:
       authorId:
         type: ref
         ref: users
-    operations:
-      my-posts:
-        base: list
-        path: /posts/mine
-        access: authenticated
-        filter:
-          authorId: $principal
+    # v0.1 has no custom operations, so a "my posts" listing cannot be declared.
