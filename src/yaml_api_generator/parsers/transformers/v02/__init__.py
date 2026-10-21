@@ -113,6 +113,7 @@ class V02Transformer:
         routes = self._route.transform_routes(
             controllers_data,
             services,
+            repositories,
             api_data,
             repo_entity_map,
             auth_entities,

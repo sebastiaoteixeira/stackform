@@ -14,6 +14,7 @@ from yaml_api_generator.ir import (
     IRDeploySystemd,
     IRMongo,
     IRProvider,
+    IRRepository,
     IRRoute,
     IRService,
 )
@@ -21,6 +22,43 @@ from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
 from .access_transformer import AccessTransformer
 from .file_transformer import LimitLayer
+
+
+_SESSION_OPERATIONS = frozenset({"login"})
+
+
+def _provides(repository: IRRepository | None, operation: str, declared) -> bool:
+    if repository is None:
+        return False
+    return (
+        operation in repository.crud
+        or operation in _SESSION_OPERATIONS
+        or (declared is not None and declared.query is not None)
+    )
+
+
+def _undeclared_operation(route_path: str, collection: str | None, operation: str) -> ConfigError:
+    return ConfigError(
+        code="REPOSITORY_OPERATION_UNDECLARED",
+        message=(
+            f"Route calls operation '{operation}', which no handler implements "
+            f"and repository '{collection}' does not provide"
+        ),
+        path=f"{route_path}.service",
+        hint=(
+            "Declare the operation under the repository's operations, list it in "
+            "the repository's crud, or give the service a handler"
+        ),
+    )
+
+
+def _unpaginated(route_path: str, operation: str) -> ConfigError:
+    return ConfigError(
+        code="PAGINATION_UNSUPPORTED",
+        message=f"Operation '{operation}' does not paginate; only a repository list does",
+        path=f"{route_path}.pagination",
+        hint="Remove pagination from this route",
+    )
 
 
 class RouteTransformer:
@@ -111,6 +149,7 @@ class RouteTransformer:
         self,
         controllers_data: dict[str, Any],
         services: dict[str, IRService],
+        repositories: dict[str, IRRepository],
         api_data: dict[str, Any],
         repo_entity_map: dict[str, str],
         auth_entities: set[str],
@@ -119,9 +158,14 @@ class RouteTransformer:
     ) -> list[IRRoute]:
         """Transform controller routes to IR.
 
+        A route whose service names a repository handler operation dispatches to
+        that handler. Every other route must reach an operation its repository
+        provides.
+
         Args:
             controllers_data: Raw controller configurations from YAML
             services: Already-built service IR objects
+            repositories: Already-built repository IR objects
             api_data: API configuration data
             repo_entity_map: Repository name to entity name mapping
             auth_entities: Set of entity names marked as auth type
@@ -131,7 +175,8 @@ class RouteTransformer:
             List of route IR objects
 
         Raises:
-            ConfigErrors: If access rule parsing fails
+            ConfigErrors: If access rule parsing fails, a route reaches no
+                operation, or a route paginates anything but a repository list
         """
         base_path = api_data.get("basePath", "/api")
         version = api_data.get("version", "")
@@ -172,9 +217,18 @@ class RouteTransformer:
                 )
                 all_errors.extend(access_errors)
 
-                handler = service.handler
                 collection = service.repository
                 operation = service.operation or route_name
+                repository = repositories.get(collection)
+                declared = repository.operations.get(operation) if repository else None
+                handler = service.handler or (declared.handler if declared else None)
+                route_path = f"controllers.{ctrl_name}.routes.{route_name}"
+                if handler is None and not _provides(repository, operation, declared):
+                    all_errors.append(_undeclared_operation(route_path, collection, operation))
+                    continue
+                if route_cfg.get("pagination") is not None and (handler or operation != "list"):
+                    all_errors.append(_unpaginated(route_path, operation))
+                    continue
 
                 pagination = None
                 if pagination_parser is not None:

@@ -339,16 +339,11 @@ def test_runtime_ill_typed_input_is_422():
 @pytest.mark.asyncio
 async def test_runtime_repository_operation_receives_forwarded_values():
     class RecordingRepository:
-        def __init__(self):
-            self.bindings = None
+        async def run_operation(self, collection, query):
+            return query["filter"]
 
-        async def run_operation(self, collection, query, bindings):
-            self.bindings = bindings
-            return {"id": bindings["lookup"], "state": bindings["state"]}
-
-    repository = RecordingRepository()
     ctx = _ctx({"postId": "p1"})
-    ctx.repository = repository
+    ctx.repository = RecordingRepository()
     ctx = ServiceInputStep(
         {"postId": {"type": "string"}},
         {
@@ -359,14 +354,8 @@ async def test_runtime_repository_operation_receives_forwarded_values():
 
     result = await RepositoryOperationStep(
         "posts",
-        {"command": "findOne", "filter": {"id": "$lookup"}},
+        {"command": "findOne", "filter": {"id": "$lookup", "state": "$params.state"}},
         "id",
     )(ctx)
 
-    assert repository.bindings["lookup"] == "p1"
-    assert repository.bindings["params"] == {
-        "postId": "p1",
-        "lookup": "p1",
-        "state": "archived",
-    }
     assert result.response == {"id": "p1", "state": "archived"}

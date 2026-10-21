@@ -12,8 +12,9 @@ from ..utils import (
     find_identity,
     group_by_collection,
     pagination_config,
-    runtime_module_source,
+    MONGO_RUNTIME_MODULES,
     write_environment_files,
+    write_runtime_modules,
 )
 from ..validation import (
     reject_cookie_delivery,
@@ -22,7 +23,6 @@ from ..validation import (
     reject_idp_trust,
     reject_pkce,
     reject_session_refresh,
-    reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -49,7 +49,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
         reject_session_refresh(context, "raw")
         reject_pkce(context, "raw")
         reject_unsigned_session_algorithm(context)
-        reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.globals["settings_module"] = "settings"
         env.filters["path_to_regex"] = _path_to_regex
@@ -81,9 +80,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 output_path="service_inputs.py",
             ),
         )
-        (output_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
+        write_runtime_modules(output_dir, MONGO_RUNTIME_MODULES)
 
         collections_by_name = group_by_collection(context)
 
@@ -210,8 +207,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
-                    "conflict_import": "conflicts",
-                    "pagination_import": "pagination",
+                    "module_prefix": "",
                 },
             )
         )
@@ -238,10 +234,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 collection_name=col_name,
                 routes=col_data["routes"],
                 needs_auth=needs_auth,
-                repo_queries={
-                    op["name"]: op["query"]
-                    for op in context.repository_operations.get(col_name, [])
-                },
                 auth=context.auth,
             )
             (routes_dir / f"{col_name}.py").write_text(content)

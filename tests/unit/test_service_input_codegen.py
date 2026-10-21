@@ -76,8 +76,8 @@ def test_fastapi_emits_repository_and_handler_forwarding(tmp_path):
     repository_route = (tmp_path / "routes/posts.py").read_text()
     handler_route = (tmp_path / "routes/_handlers.py").read_text()
     assert "'state': {'literal': 'archived'}" in repository_route
-    assert '_bindings = {**_params' in repository_route
-    assert "request.state.service_inputs = service_inputs" in handler_route
+    assert "operation_bindings({**_path, **_service_inputs}" in repository_route
+    assert "inputs=service_inputs" in handler_route
 
 
 def test_fastapi_generated_routes_forward_values_end_to_end(tmp_path):
@@ -97,14 +97,20 @@ def test_fastapi_generated_routes_forward_values_end_to_end(tmp_path):
         handler_module = types.ModuleType("tests.support.service_input_handler")
 
         async def notify(request):
-            return request.state.service_inputs
+            return request.inputs
 
         handler_module.notify = notify
         sys.modules[handler_module.__name__] = handler_module
 
-        class RecordingRepository:
-            async def archive(self, **kwargs):
-                return kwargs
+        from dependencies.operations import resolve
+        from repositories.posts import PostsRepository
+
+        class RecordingRepository(PostsRepository):
+            def __init__(self):
+                pass
+
+            async def run_operation(self, query, bindings):
+                return {{"filter": resolve(query["filter"], bindings)}}
 
         app = FastAPI()
         app.include_router(posts_router)
@@ -130,8 +136,8 @@ def test_raw_emits_repository_and_handler_forwarding(tmp_path):
 
     repository_route = (tmp_path / "routes/posts.py").read_text()
     handler_route = (tmp_path / "routes/handlers.py").read_text()
-    assert "resolve_bindings" in repository_route
-    assert "request = RawRequest(" in handler_route
+    assert "repo.archive(operation_bindings({**url_params, **service_inputs}" in repository_route
+    assert "inputs=service_inputs" in handler_route
 
 
 def test_drf_emits_repository_and_handler_forwarding(tmp_path):
@@ -139,5 +145,5 @@ def test_drf_emits_repository_and_handler_forwarding(tmp_path):
 
     repository_route = (tmp_path / "api/views/posts.py").read_text()
     handler_route = (tmp_path / "api/views/_handlers.py").read_text()
-    assert "await repo.archive(**kwargs)" in repository_route
-    assert "request.service_inputs = prepare_service_inputs" in handler_route
+    assert "repo.archive(operation_bindings({**path_params, **service_inputs}" in repository_route
+    assert "inputs=service_inputs" in handler_route

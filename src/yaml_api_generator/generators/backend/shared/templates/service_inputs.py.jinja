@@ -1,31 +1,5 @@
 from datetime import datetime
-from types import SimpleNamespace
 from typing import Any
-
-
-class RawRequest:
-    def __init__(
-        self,
-        path_params: dict[str, str],
-        body: dict[str, Any] | None,
-        headers: dict[str, str],
-        principal: dict[str, Any] | None,
-        service_inputs: dict[str, Any],
-        query_params: dict[str, Any] | None = None,
-        cookies: dict[str, str] | None = None,
-    ) -> None:
-        self.path_params = path_params
-        self.body = body
-        self.headers = headers
-        self.query_params = query_params or {}
-        self.cookies = cookies or {}
-        self.state = SimpleNamespace(
-            principal=principal,
-            service_inputs=service_inputs,
-        )
-
-    async def json(self) -> dict[str, Any]:
-        return self.body or {}
 
 
 def prepare_service_inputs(
@@ -52,16 +26,6 @@ def resolve_access_bind(
     namespace: dict[str, Any],
 ) -> dict[str, Any]:
     return {name: _resolve(binding, namespace) for name, binding in bindings.items()}
-
-
-def resolve_bindings(value: Any, bindings: dict[str, Any]) -> Any:
-    if isinstance(value, str) and value.startswith("$"):
-        return _resolve_path(value[1:].split("."), bindings)
-    if isinstance(value, dict):
-        return {key: resolve_bindings(item, bindings) for key, item in value.items()}
-    if isinstance(value, list):
-        return [resolve_bindings(item, bindings) for item in value]
-    return value
 
 
 def _resolve(binding: dict[str, Any], values: dict[str, Any]) -> Any:

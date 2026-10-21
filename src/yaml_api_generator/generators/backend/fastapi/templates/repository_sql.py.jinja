@@ -1,8 +1,21 @@
+{% from "repository_class.jinja" import repository_class with context %}
 {% set class_name = collection_name | capitalize_collection %}
+{% set is_abstract = abstract | default(false) %}
+{% if custom_operations %}
+from typing import Any
+
+{% endif %}
+{% if not is_abstract %}
 import sqlalchemy as sa
 
 from dependencies.postgres import metadata
 from ._sql_ops import SQLRepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
+
+{% endif %}
+{% if generated_base %}
+from {{ generated_base.module }} import {{ generated_base.class_name }}
+{% endif %}
+{% if not is_abstract %}
 
 
 {{ collection_name }}_table = sa.Table(
@@ -15,10 +28,7 @@ from ._sql_ops import SQLRepositoryBase{% for op in operations %}, {{ op | capit
     sa.Column("_auth", sa.JSON(), nullable=True),
 {% endif %}
 )
+{% endif %}
 
 
-class {{ class_name }}Repository({% for op in operations %}{{ op | capitalize }}Op, {% endfor %}SQLRepositoryBase):
-    COLLECTION = "{{ collection_name }}"
-    ID_FIELD = "{{ id_field }}"
-    ID_FORMAT = "{{ id_field_format }}"
-    TABLE = {{ collection_name }}_table
+{{ repository_class(class_name, "SQLRepositoryBase", operations, generated_base, is_abstract, custom_operations) }}

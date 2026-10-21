@@ -10,7 +10,8 @@ from ..utils import (
     find_identity,
     group_by_collection,
     pagination_config,
-    runtime_module_source,
+    MONGO_RUNTIME_MODULES,
+    write_runtime_modules,
 )
 from ..validation import (
     reject_cookie_delivery,
@@ -19,7 +20,6 @@ from ..validation import (
     reject_idp_trust,
     reject_pkce,
     reject_session_refresh,
-    reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -58,7 +58,6 @@ class DRFGenerator(TemplateBasedGenerator):
         reject_session_refresh(context, "drf")
         reject_pkce(context, "drf")
         reject_unsigned_session_algorithm(context)
-        reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.globals["settings_module"] = f"{self.dir_prefix}.settings"
         env.filters["drf_field"] = type_mapper.drf_field
@@ -91,9 +90,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_serializers(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_service_inputs(env, context, output_dir)
-        (api_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
+        write_runtime_modules(api_dir, MONGO_RUNTIME_MODULES)
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
@@ -226,10 +223,6 @@ class DRFGenerator(TemplateBasedGenerator):
                     "collection_name": col_name,
                     "routes": col_data["routes"],
                     "model_index": {m.name: m for m in col_data["models"]},
-                    "repo_queries": {
-                        op["name"]: op["query"]
-                        for op in ctx.repository_operations.get(col_name, [])
-                    },
                     "auth": ctx.auth,
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
@@ -275,8 +268,7 @@ class DRFGenerator(TemplateBasedGenerator):
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
-                    "conflict_import": "api.conflicts",
-                    "pagination_import": "api.pagination",
+                    "module_prefix": "api.",
                 },
             )
         )

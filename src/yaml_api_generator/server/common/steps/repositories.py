@@ -5,6 +5,12 @@ from typing import Any, cast
 from ..auth import hash_password
 from ..request_context import RequestContext
 from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
+from yaml_api_generator.runtime.operations import (
+    operation_bindings,
+    present,
+    present_document as _inject_canonical_id,
+    resolve,
+)
 from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
 from ..utils.ids import generate_id as _generate_id
@@ -78,22 +84,6 @@ def _payload(ctx: RequestContext) -> dict[str, Any]:
     if not isinstance(ctx.body, dict):
         raise ValueError(_REQUEST_BODY_MESSAGE)
     return cast(dict[str, Any], ctx.body)
-
-
-def _inject_canonical_id(
-    document: dict[str, Any] | None,
-    id_field: str,
-) -> dict[str, Any] | None:
-    if document is None:
-        return None
-    normalized = dict(document)
-    if id_field not in normalized and normalized.get("_id") is not None:
-        normalized[id_field] = str(normalized["_id"])
-    if id_field != "_id":
-        normalized.pop("_id", None)
-    normalized.pop("_auth", None)
-    normalized.pop("password", None)
-    return normalized
 
 
 def _inject_canonical_id_list(
@@ -281,25 +271,11 @@ def RepositoryOperationStep(
     id_field: str,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        params = {**ctx.url_params, **(ctx.service_inputs or {})}
-        bindings = {
-            **params,
-            "principal": ctx.principal or {},
-            "params": params,
-            "body": ctx.body or {},
-        }
-        result = await _repository(ctx).run_operation(collection_name, query, bindings)
-        ctx.response = _normalize_operation_result(result, id_field)
+        bindings = operation_bindings(
+            {**ctx.url_params, **(ctx.service_inputs or {})}, ctx.principal, ctx.body
+        )
+        result = await _repository(ctx).run_operation(collection_name, resolve(query, bindings))
+        ctx.response = present(result, id_field)
         return ctx
 
     return step
-
-
-def _normalize_operation_result(result: Any, id_field: str) -> Any:
-    if isinstance(result, list):
-        if all(isinstance(item, dict) for item in result):
-            return _inject_canonical_id_list(result, id_field)
-        return result
-    if isinstance(result, dict):
-        return _inject_canonical_id(result, id_field)
-    return result

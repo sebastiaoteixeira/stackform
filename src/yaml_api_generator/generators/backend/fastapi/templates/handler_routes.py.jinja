@@ -1,8 +1,9 @@
-from importlib import import_module
+{% from "handler_call.jinja" import invoke_handler %}
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from dependencies.handler_requests import HandlerRequest, invoke
 from dependencies.service_inputs import prepare_service_inputs, resolve_access_bind
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}{% for where_collection in route.where_collections %}
@@ -85,9 +86,6 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    request.state.service_inputs = service_inputs
-    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
-    return await getattr(import_module(module_path), function_name)(request)
-
+{{ invoke_handler(route.handler, "principal" if route.needs_auth else "None", "body", "service_inputs") }}
 
 {% endfor %}

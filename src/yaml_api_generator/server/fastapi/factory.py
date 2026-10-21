@@ -618,6 +618,13 @@ def _field_annotation(field_config: dict[str, Any]) -> Any:
     return Any
 
 
+async def _json_body(request: Request) -> Any:
+    try:
+        return await request.json()
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 def _build_endpoint(
     pipeline: Pipeline,
     body_model: type[BaseModel] | None,
@@ -634,7 +641,7 @@ def _build_endpoint(
                 return await _run_pipeline(
                     pipeline=pipeline,
                     request=request,
-                    body=None,
+                    body=await _json_body(request),
                     url_params={"id": id},
                     uses_cookie=uses_cookie,
                     operation=route.operation,
@@ -646,7 +653,7 @@ def _build_endpoint(
             return await _run_pipeline(
                 pipeline=pipeline,
                 request=request,
-                body=None,
+                body=await _json_body(request),
                 url_params={},
                 uses_cookie=uses_cookie,
                 operation=route.operation,

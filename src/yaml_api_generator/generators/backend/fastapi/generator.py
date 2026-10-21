@@ -13,9 +13,9 @@ from ..utils import (
     pagination_config,
     runtime_module_source,
     write_environment_files,
+    write_runtime_modules,
 )
 from ..validation import (
-    reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -44,7 +44,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "fastapi")
         reject_unsigned_session_algorithm(context)
-        reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.filters["python_type"] = type_mapper.python_type
         env.filters["python_annotation"] = type_mapper.python_annotation
@@ -227,11 +226,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "service_groups": service_groups,
             "routes": col_data["routes"],
             "model_index": {m.name: m for m in col_data["models"]},
-            "repo_queries": {
-                op["name"]: op["query"]
-                for op in ctx.repository_operations.get(col_name, [])
-            },
-            "datastore_type": ctx.collection_datastore_type(col_name),
             "auth": ctx.auth,
             "files": ctx.file_fields.get(col_name, {}),
             "file_routes": [route for route in ctx.file_routes if route.collection == col_name],
@@ -354,6 +348,13 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 return None
             return {"module": f".{base}", "class_name": f"{to_pascal_case(base)}Repository"}
 
+        def own_queries(name: str) -> list[dict]:
+            inherited = context.repository_operations.get(context.repository_inherits.get(name), [])
+            return [
+                op for op in context.repository_operations.get(name, [])
+                if op["query"] is not None and op not in inherited
+            ]
+
         # Abstract base repositories render as inheritable classes (no collection).
         for base_name, ds_type in context.repository_abstract.items():
             is_sql = ds_type in ("postgres", "postgresql")
@@ -362,7 +363,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 abstract=True,
                 collection_name=base_name,
                 operations=[],
-                custom_operations=context.repository_operations.get(base_name, []),
+                custom_operations=own_queries(base_name),
                 generated_base=generated_base(base_name),
             ))
             init_imports.append(f"from .{base_name} import {to_pascal_case(base_name)}Repository")
@@ -379,7 +380,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "id_field_format": meta["id_format"],
                 "collection_type": meta["type"],
                 "fields": meta["fields"],
-                "custom_operations": ctx_ops if (ctx_ops := context.repository_operations.get(col_name, [])) else [],
+                "custom_operations": own_queries(col_name),
                 "generated_base": generated_base(col_name),
             }
             template = sql_template if is_sql else mongo_template
@@ -440,15 +441,15 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
-        (deps_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
-        if any(context.repository_operations.values()):
-            (deps_dir / "bindings.py").write_text(
-                (_STATIC_DIR / "bindings.py").read_text()
-            )
+        write_runtime_modules(deps_dir, (
+            "pagination",
+            "operations",
+            "handler_requests",
+            *(("mongo_operations",) if uses_mongo else ()),
+            *(("sql_operations",) if uses_sql else ()),
+        ))
         self._render_file_dependencies(env, context, deps_dir)
 
         init_imports: list[str] = []

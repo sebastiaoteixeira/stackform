@@ -1,12 +1,4 @@
-"""Routes dispatching to an undeclared repository operation are rejected.
-
-A route whose operation is neither built in nor a custom handler is emitted as a
-call into its repository, filtered by the query that operation declares. When no
-repository declares it there is no query to emit, and the backends used to
-render the Jinja undefined sentinel into the generated source as the bare name
-``Undefined`` -- syntactically valid Python that byte-compiles, passes every
-syntax-level check, and raises ``NameError`` only once the route is called.
-"""
+"""Routes must reach an operation their repository provides or a handler."""
 import copy
 
 import pytest
@@ -59,16 +51,39 @@ def _context(tmp_path, *, declare_operation):
     return build_context(load_and_generate_ir(str(path)).ir)
 
 
-@pytest.mark.parametrize("generator", _GENERATORS)
-def test_undeclared_repository_operation_is_rejected(tmp_path, generator):
-    context = _context(tmp_path, declare_operation=False)
-
+def _errors(tmp_path, spec):
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump(spec))
     with pytest.raises(ConfigErrors) as excinfo:
-        generator().generate(context, tmp_path / "out")
+        load_and_generate_ir(str(path))
+    return excinfo.value.errors
 
-    [error] = excinfo.value.errors
+
+def test_undeclared_repository_operation_is_rejected(tmp_path):
+    [error] = _errors(tmp_path, _SPEC)
     assert error.code == "REPOSITORY_OPERATION_UNDECLARED"
     assert "recent" in error.message
+
+
+def test_operation_excluded_from_crud_is_rejected(tmp_path):
+    spec = copy.deepcopy(_SPEC)
+    spec["repositories"]["posts"]["crud"] = ["list", "get"]
+    spec["controllers"]["posts"]["routes"] = {
+        "delete": {"service": "posts", "method": "DELETE", "path": "/{id}"}
+    }
+    [error] = _errors(tmp_path, spec)
+    assert error.code == "REPOSITORY_OPERATION_UNDECLARED"
+    assert "delete" in error.message
+
+
+def test_pagination_outside_a_list_is_rejected(tmp_path):
+    spec = copy.deepcopy(_SPEC)
+    spec["repositories"]["posts"]["operations"] = _OPERATION
+    spec["controllers"]["posts"]["routes"]["recent"]["pagination"] = {
+        "strategy": "offset", "size": {"default": 10, "max": 50}
+    }
+    [error] = _errors(tmp_path, spec)
+    assert error.code == "PAGINATION_UNSUPPORTED"
 
 
 @pytest.mark.parametrize("generator", _GENERATORS)

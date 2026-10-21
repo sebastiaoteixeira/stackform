@@ -1,3 +1,4 @@
+{% from "handler_call.jinja" import invoke_handler %}
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
 {% set crud_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("handler") | selectattr("operation", "in", crud_op_names) | list %}
 {% set custom_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("handler") | list %}
@@ -16,9 +17,8 @@
 {% set pagination_routes = routes | selectattr("pagination") | list %}
 from typing import Any
 
-{% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
 {% set needs_request = custom_routes or repo_op_routes or (crud_routes | selectattr("needs_request") | list) or (file_routes | selectattr("action", "equalto", "replace") | list) %}
-from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
+from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes or custom_routes %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
 
 {% if ns_service_input.enabled or ns_where.collections %}
 from dependencies.service_inputs import {% if ns_service_input.enabled %}prepare_service_inputs{% endif %}{% if ns_service_input.enabled and (ns_service_input.access_bind or ns_where.collections) %}, {% endif %}{% if ns_service_input.access_bind or ns_where.collections %}resolve_access_bind{% endif +%}
@@ -38,9 +38,11 @@ from dependencies.file_requests import RecordUpload, carried_files, discard_on_e
 from dependencies.file_stores import record_files
 {% endif %}
 
-{% if repo_op_routes and is_mongo %}
-from fastapi.encoders import jsonable_encoder
-from dependencies.bindings import resolve_filter
+{% if custom_routes %}
+from dependencies.handler_requests import HandlerRequest, invoke
+{% endif %}
+{% if repo_op_routes %}
+from dependencies.operations import operation_bindings
 {% endif %}
 {% for group in service_groups %}
 from dependencies.services import get_{{ group }}_service
@@ -354,16 +356,10 @@ async def {{ handler_name }}(request: Request{% for name in route.path_params %}
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, "dict(request.path_params)", "_body") }}
-    request.state.service_inputs = _service_inputs
-    from importlib import import_module
-    module_path, func_name = "{{ route.handler }}".rsplit(".", 1)
-    module = import_module(module_path)
-    return await getattr(module, func_name)(request)
+{{ invoke_handler(route.handler, "principal" if auth.enabled and route.needs_auth else "None", "_body", "_service_inputs") }}
 {% endfor %}
-{% if is_mongo %}
 {% for route in repo_op_routes %}
 {% set handler_name = route.operation ~ "_" ~ collection_name %}
-{% set query = repo_queries[route.operation] %}
 
 
 @router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"]{{ openapi_extra(route) }})
@@ -383,9 +379,5 @@ async def {{ handler_name }}(request: Request{{ auth_param(route) }}, repo=Depen
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, "_path", "_body") }}
-    _params = {**_path, **_service_inputs}
-    _bindings = {**_params, "principal": _principal, "params": _params, "body": _body}
-    _resolved = resolve_filter({{ query | py_literal }}, _bindings)
-    return jsonable_encoder(await repo.{{ route.operation }}(**{k: v for k, v in _resolved.items() if k != "command"}))
+    return await repo.{{ route.operation }}(operation_bindings({**_path, **_service_inputs}, _principal, _body))
 {% endfor %}
-{% endif %}

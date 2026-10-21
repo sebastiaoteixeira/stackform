@@ -1,0 +1,11 @@
+{% macro invoke_handler(handler) %}
+            return Response(await invoke({{ handler | py_literal }}, HandlerRequest(
+                params=path_params,
+                query=dict(request.query_params),
+                headers={key.lower(): value for key, value in request.headers.items()},
+                cookies=dict(request.COOKIES),
+                body=body,
+                principal=_resolved_principal,
+                inputs=service_inputs,
+            )))
+{% endmacro %}

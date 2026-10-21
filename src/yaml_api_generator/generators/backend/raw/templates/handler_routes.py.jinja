@@ -1,8 +1,9 @@
-from importlib import import_module
+{% from "handler_call.jinja" import invoke_handler %}
 from typing import Any
 from uuid import UUID
 
-from service_inputs import RawRequest, prepare_service_inputs, resolve_access_bind
+from handler_requests import HandlerRequest, invoke
+from service_inputs import prepare_service_inputs, resolve_access_bind
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}{% for where_collection in route.where_collections %}
 {% if where_collection not in ns_where.collections %}{% set _ = ns_where.collections.append(where_collection) %}{% endif %}
@@ -110,18 +111,6 @@ async def handle_custom_{{ loop.index }}(
         {{ route.service_forwarding | py_literal }},
         bound_inputs,
     )
-    request = RawRequest(
-        url_params,
-        body,
-        headers,
-        principal,
-        service_inputs,
-        query,
-        cookies,
-    )
-    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
-    result = await getattr(import_module(module_path), function_name)(request)
-    return 200, result
-
+{{ invoke_handler(route.handler) }}
 
 {% endfor %}

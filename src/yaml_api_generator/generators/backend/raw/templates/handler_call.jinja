@@ -1,0 +1,11 @@
+{% macro invoke_handler(handler) %}
+    return 200, await invoke({{ handler | py_literal }}, HandlerRequest(
+        params=url_params,
+        query=query or {},
+        headers=headers,
+        cookies=cookies or {},
+        body=body or {},
+        principal=principal,
+        inputs=service_inputs,
+    ))
+{% endmacro %}
