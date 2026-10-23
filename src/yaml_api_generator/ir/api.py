@@ -441,10 +441,21 @@ class IRIdentityCollection:
     bindings: tuple[IRProviderBinding, ...]
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
+    login: bool = True
 
     @property
     def has_password(self) -> bool:
         return any(b.provider == "password" for b in self.bindings)
+
+    @property
+    def serves_login(self) -> bool:
+        return self.login and self.has_password
+
+    def default_role(self, collection: IRCollection) -> str | None:
+        """The role of a record whose creator may not choose one."""
+        if self.roles is not None:
+            return self.roles.default
+        return collection.fields[self.roles_field].get("default") if self.roles_field else None
 
     @property
     def has_api_key(self) -> bool:

@@ -63,14 +63,7 @@ def create_pydantic_model_fields(
     make_optional = operation == "update"
     fields: dict[str, tuple[Any, Any]] = {}
 
-    for field_name, raw_config in collection.fields.items():
-        if not isinstance(raw_config, dict):
-            continue
-        if raw_config.get("type") == "id":
-            continue
-        if field_name == "_auth" or field_name in collection.files:
-            continue
-
+    for field_name, raw_config in collection.writable_fields.items():
         annotation = _field_annotation(raw_config)
         required = bool(raw_config.get("required", False))
         has_default = "default" in raw_config

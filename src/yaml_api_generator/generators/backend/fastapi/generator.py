@@ -191,7 +191,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "operations": _crud_operations(col_data),
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
-            "default_role": identity.roles.default if is_identity and identity.roles else None,
             "identity_fields": extract_identity_fields(context, col_name),
         }
 
@@ -233,6 +232,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             },
             "datastore_type": ctx.collection_datastore_type(col_name),
             "auth": ctx.auth,
+            "identity": find_identity(ctx, col_name),
             "files": ctx.file_fields.get(col_name, {}),
             "file_routes": [route for route in ctx.file_routes if route.collection == col_name],
         }
@@ -284,7 +284,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
             auth_imports.append("from ._handlers import router as handlers_router")
 
-        if context.auth.has_password_auth:
+        if context.auth.login_identities:
             (routes_dir / "login.py").write_text(
                 env.get_template("login_routes.py.jinja").render(
                     auth=context.auth, ctx=context

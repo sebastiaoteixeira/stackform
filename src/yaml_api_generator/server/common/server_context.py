@@ -12,6 +12,7 @@ from yaml_api_generator.ir import (
 )
 from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
+from yaml_api_generator.runtime.access import Roles
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,19 @@ class RuntimeCollectionDescriptor:
     fields: dict[str, Any]
     datastore: str | None = None
     files: Mapping[str, IRFileField] = field(default_factory=dict)
+
+    @property
+    def writable_fields(self) -> dict[str, dict[str, Any]]:
+        """The fields a client may send: not the id, a readonly or file field, nor ``_auth``."""
+        return {
+            name: config
+            for name, config in self.fields.items()
+            if isinstance(config, dict)
+            and config.get("type") != "id"
+            and not config.get("readonly", False)
+            and name != "_auth"
+            and name not in self.files
+        }
 
 
 @dataclass(frozen=True)
@@ -39,6 +53,11 @@ class RuntimeIdentityDescriptor:
     id_field: str
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
+    default_role: str | None = None
+
+    @property
+    def role_store(self) -> Roles:
+        return Roles(self.roles_field, self.default_role)
 
     @property
     def has_password(self) -> bool:

@@ -89,7 +89,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_settings(env, context, output_dir)
         write_environment_files(env, context, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
-        if context.auth.has_password_auth:
+        if context.auth.login_identities:
             self._render_login_routes(env, context, output_dir)
         if context.session.uses_asymmetric:
             self._render_single_file(
@@ -244,6 +244,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     for op in context.repository_operations.get(col_name, [])
                 },
                 auth=context.auth,
+                identity=find_identity(context, col_name),
             )
             (routes_dir / f"{col_name}.py").write_text(content)
 

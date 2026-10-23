@@ -18,7 +18,7 @@ from routes.{{ col_name }} import *
 {% if handler_routes %}
 from routes.handlers import *
 {% endif %}
-{% if ctx.auth.has_password_auth %}
+{% if ctx.auth.login_identities %}
 from routes.login import *
 {% endif %}
 {% if ctx.session.uses_asymmetric %}
@@ -41,17 +41,14 @@ def _path_to_regex(path: str) -> str:
 ROUTES: dict[str, list[tuple[re.Pattern[str], Any]]] = {}
 {% for route in crud_routes %}
 {% if route.collection %}
-{% set handler_name = "handle_" ~ route.operation ~ "_" ~ route.collection %}
-ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ handler_name }}))
+ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ route.handler_name }}))
 {% endif %}
 {% endfor %}
 {% for route in handler_routes %}
 ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), handle_custom_{{ loop.index }}))
 {% endfor %}
-{% for identity in ctx.auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
+{% for identity in ctx.auth.login_identities %}
 ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}))
-{% endif %}
 {% endfor %}
 {% if ctx.session.uses_asymmetric %}
 ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), handle_jwks))

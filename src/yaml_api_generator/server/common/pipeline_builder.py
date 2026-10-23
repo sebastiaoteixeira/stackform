@@ -1,4 +1,5 @@
 import importlib
+from functools import partial
 from collections.abc import Iterator, Mapping
 
 from yaml_api_generator.ir import IRDocumentBinding
@@ -304,13 +305,13 @@ class PipelineBuilder:
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field, self._locator(route))
         if operation == "create":
-            roles_config = identity_collection.roles if identity_collection is not None else None
+            grant = (
+                partial(identity_collection.role_store.granted, assignable=not route.is_public)
+                if identity_collection is not None
+                else dict
+            )
             return RepositoryCreateStep(
-                collection_name,
-                id_field,
-                collection.id_format,
-                uses_password,
-                roles_config=roles_config,
+                collection_name, id_field, collection.id_format, uses_password, grant
             )
         if operation == "update":
             return RepositoryUpdateStep(

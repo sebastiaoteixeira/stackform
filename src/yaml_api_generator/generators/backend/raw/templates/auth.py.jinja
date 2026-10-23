@@ -4,6 +4,7 @@ import hmac
 import secrets
 from typing import Any
 
+from access import Roles
 from settings import settings
 {% if auth.uses_jwt %}
 from dependencies.jwt_utils import decode_jwt_token
@@ -91,7 +92,7 @@ async def resolve_principal(headers: dict[str, str], db) -> dict[str, Any] | Non
 {% for identity in auth.identity_collections %}
 {% if identity.issues_jwt %}
                     if collection_name == "{{ identity.name }}" and str(doc.get("{{ identity.id_field }}", "")) == sub:
-                        return {"sub": sub, "identity_collection": collection_name, "record": doc}
+                        return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": {{ identity.role_store | py_literal }}.of(doc)}
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -109,7 +110,7 @@ async def resolve_principal(headers: dict[str, str], db) -> dict[str, Any] | Non
             if str(doc.get("apiKey", "")) == token:
                 subject = doc.get("{{ identity.id_field }}")
                 if subject is not None:
-                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc}
+                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": {{ identity.role_store | py_literal }}.of(doc)}
 {% endif %}
 {% if identity.has_password and identity.identifier %}
     credentials = _extract_basic_credentials(headers)
@@ -128,7 +129,7 @@ async def resolve_principal(headers: dict[str, str], db) -> dict[str, Any] | Non
                 continue
             subject = doc.get("{{ identity.id_field }}")
             if subject is not None:
-                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc}
+                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": {{ identity.role_store | py_literal }}.of(doc)}
 {% endif %}
 {% endfor %}
 

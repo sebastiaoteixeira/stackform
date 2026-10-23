@@ -101,7 +101,8 @@ class V02Transformer:
             raise ConfigErrors(binding_errors)
 
         identity_collections = self._identity.transform(
-            entities_data, collections, repo_entity_map
+            entities_data, collections, repo_entity_map,
+            _login_collections(api_data, services_data, repo_entity_map),
         )
 
         field_errors = self._identity.validate_auth_fields(collections, identity_collections)
@@ -228,3 +229,17 @@ class V02Transformer:
                 kwargs["audiences"] = tuple(kwargs["audiences"])
             providers[name] = ctor(name=name, **kwargs)
         return providers
+
+
+def _login_collections(
+    api_data: dict[str, Any], services_data: dict[str, Any], repo_entity_map: dict[str, str]
+) -> set[str]:
+    """Every collection serves login unless `api.operations.auth.login` is false; then only
+    collections with an explicit login service do."""
+    if api_data.get("operations", {}).get("auth", {}).get("login") is not False:
+        return set(repo_entity_map)
+    return {
+        service["repository"]
+        for service in services_data.values()
+        if isinstance(service, dict) and service.get("operation") == "login"
+    }

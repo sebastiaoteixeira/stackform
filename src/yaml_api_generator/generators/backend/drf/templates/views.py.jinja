@@ -27,6 +27,9 @@ from api.repositories.{{ where_collection }} import {{ where_collection | capita
 {% endfor %}
 from api.services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from api.services.exceptions import NotFoundError, ValidationError
+{% if identity %}
+from api.access import Roles
+{% endif %}
 from api.service_inputs import prepare_service_inputs, resolve_access_bind, resolve_bindings
 {% if routes | selectattr("pagination") | list %}
 from api.pagination import build_response, map_request
@@ -39,8 +42,6 @@ from api.access import AccessDenied, Decision, Field, all_of, conjoin, constant,
 {% endif %}
 
 {% set class_name = collection_name | capitalize_collection %}
-{% set list_routes = crud_routes | selectattr("has_id_param", "false") | list %}
-{% set detail_routes = crud_routes | selectattr("has_id_param") | list %}
 {% set custom_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("operation", "in", crud_op_names) | list %}
 {% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": {{ param }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 
@@ -133,52 +134,6 @@ from api.access import AccessDenied, Decision, Field, all_of, conjoin, constant,
 {% endif %}
 {% endmacro %}
 
-{% if list_routes %}
-class {{ class_name }}ListView(APIView):
-{% for route in list_routes %}
-
-{{ security_decorator(route) }}
-    async def {{ route.method | lower }}(self, request, **path_params):
-{% for name in route.path_params %}
-        {{ name }} = path_params["{{ name }}"]
-{% endfor %}
-        db = get_database()
-        repo = {{ class_name }}Repository(db)
-        service = {{ class_name }}Service(repo)
-        body = request.data if isinstance(request.data, dict) else {}
-{{ request_locals(route) }}
-{{ pre_fetch_check(route) }}
-{{ bind_inputs(route) }}
-        try:
-            prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-{% if route.operation == "list" %}
-{% set row_filter_arg = ", _row_filter" if auth.enabled and route.needs_auth and route.access_rules else "" %}
-{% if route.pagination %}
-            pagination_config = {{ route.pagination | pagination_config | py_literal }}
-            pagination_query = dict(request.query_params)
-            page = await service.list(map_request(pagination_config, pagination_query){{ row_filter_arg }})
-            return Response(build_response(pagination_config, page, pagination_query))
-{% else %}
-            documents = await service.list({{ "None" ~ row_filter_arg if row_filter_arg }})
-            return Response(documents)
-{% endif %}
-{% elif route.operation == "create" %}
-            serializer = {{ route.body_model }}(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            data = serializer.validated_data
-            document = await service.create(data)
-            return Response(document, status=status.HTTP_201_CREATED)
-{% endif %}
-        except NotFoundError:
-            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-        except ConflictError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        except (ValidationError, ValueError) as exc:
-            detail = exc.message if isinstance(exc, ValidationError) else str(exc)
-            return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-{% endfor %}
-{% endif %}
-
 {% for route in custom_routes %}
 {% set custom_class = class_name ~ (route.operation | capitalize_collection) ~ "View" %}
 class {{ custom_class }}(APIView):
@@ -222,9 +177,9 @@ class {{ custom_class }}(APIView):
 
 {% endfor %}
 
-{% if detail_routes %}
-class {{ class_name }}DetailView(APIView):
-{% for route in detail_routes %}
+{% for _, path_routes in crud_routes | groupby("relative_path") %}
+class {{ path_routes[0].view_name }}(APIView):
+{% for route in path_routes %}
 
 {{ security_decorator(route) }}
     async def {{ route.method | lower }}(self, request, **path_params):
@@ -240,7 +195,27 @@ class {{ class_name }}DetailView(APIView):
 {{ bind_inputs(route) }}
         try:
             prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-{% if route.operation == "get" %}
+{% if route.operation == "list" %}
+{% set row_filter_arg = ", _row_filter" if auth.enabled and route.needs_auth and route.access_rules else "" %}
+{% if route.pagination %}
+            pagination_config = {{ route.pagination | pagination_config | py_literal }}
+            pagination_query = dict(request.query_params)
+            page = await service.list(map_request(pagination_config, pagination_query){{ row_filter_arg }})
+            return Response(build_response(pagination_config, page, pagination_query))
+{% else %}
+            documents = await service.list({{ "None" ~ row_filter_arg if row_filter_arg }})
+            return Response(documents)
+{% endif %}
+{% elif route.operation == "create" %}
+            serializer = {{ route.body_model }}(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+{% if identity %}
+            data = {{ identity.role_store | py_literal }}.granted(dict(data), assignable={{ route.needs_auth | py_literal }})
+{% endif %}
+            document = await service.create(data)
+            return Response(document, status=status.HTTP_201_CREATED)
+{% elif route.operation == "get" %}
 {% if route.record_parent_params %}
             result = await service.get_by({{ record_criteria(route) }})
 {% else %}
@@ -308,4 +283,6 @@ class {{ class_name }}DetailView(APIView):
             detail = exc.message if isinstance(exc, ValidationError) else str(exc)
             return Response({"detail": detail}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 {% endfor %}
-{% endif %}
+
+
+{% endfor %}

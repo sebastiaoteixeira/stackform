@@ -217,12 +217,13 @@ class DRFGenerator(TemplateBasedGenerator):
                         for op in ctx.repository_operations.get(col_name, [])
                     },
                     "auth": ctx.auth,
+                    "identity": find_identity(ctx, col_name),
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
             )
         )
 
-        if context.auth.has_password_auth:
+        if context.auth.login_identities:
             views_dir = output_dir / self.dir_prefix / "views"
             login_template = env.get_template("login_views.py.jinja")
             login_content = login_template.render(auth=context.auth)

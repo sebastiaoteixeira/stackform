@@ -79,7 +79,7 @@ def validate_{{ model.collection }}_{{ model.operation }}(body: dict) -> dict:
 
     errors = []
 {% for field in model.fields %}
-    if {{ field.name | tojson }} in body:
+    if {% if field.required %}{{ field.name | tojson }} in body{% else %}body.get({{ field.name | tojson }}) is not None{% endif %}:
 {% if field.type == "string" or field.type == "ref" %}
         err = _check_string(body[{{ field.name | tojson }}], {{ field.name | tojson }}{% if field.constraints %}, {{ field.constraints }}{% endif %})
         if err:

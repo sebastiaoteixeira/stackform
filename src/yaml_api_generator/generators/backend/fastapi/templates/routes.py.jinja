@@ -59,6 +59,9 @@ from dependencies.repositories import get_{{ where_collection }}_repository
 {% if auth.enabled and ns_auth.needs_require %}
 from dependencies.auth import require_principal
 {% endif %}
+{% if identity %}
+from dependencies.access import Roles
+{% endif %}
 {% if auth.enabled and ns_auth.needs_role %}
 from dependencies.access import AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, row_filter, value_at
 from dependencies.authorization import _principal_has_role
@@ -292,7 +295,11 @@ async def create_{{ collection_name }}({{ (payload_param(body_model) ~ extra_pat
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), body_expr) }}
+{% if identity %}
+    return await svc.create({{ identity.role_store | py_literal }}.granted({{ record_expr }}, assignable={{ route.needs_auth | py_literal }}))
+{% else %}
     return await svc.create({{ record_expr }})
+{% endif %}
 
 
 {% elif route.operation in ("update", "replace") %}

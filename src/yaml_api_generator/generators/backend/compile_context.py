@@ -20,6 +20,7 @@ from typing import Any, ClassVar
 
 from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
+from ...runtime.access import Roles
 from ...utils.strings import to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
@@ -283,6 +284,16 @@ class RouteDescriptor:
         return [*parents, (self.id_field, self.record_id_param)]
 
     @property
+    def handler_name(self) -> str:
+        """A module-unique symbol: routes may share an operation and a collection, never a method and a path."""
+        return f"handle_{self.method.lower()}{to_py_identifier(self.relative_path)}"
+
+    @property
+    def view_name(self) -> str:
+        """The class serving every method of this route's path."""
+        return f"View{to_py_identifier(self.relative_path)}"
+
+    @property
     def django_path(self) -> str:
         path = self.relative_path.lstrip("/")
         return re.sub(r"\{(\w+)\}", r"<str:\1>", path)
@@ -316,6 +327,8 @@ class IdentityCollectionDescriptor:
     issues_jwt: bool = False
     datastore_type: str = "mongodb"
     id_format: str = "uuidv7"
+    login: bool = True
+    default_role: str | None = None
 
     @property
     def is_sql(self) -> bool:
@@ -333,6 +346,14 @@ class IdentityCollectionDescriptor:
     def identifier(self) -> str | None:
         password_binding = self.get_binding("password")
         return password_binding.identifier if password_binding else None
+
+    @property
+    def serves_login(self) -> bool:
+        return self.login and bool(self.identifier)
+
+    @property
+    def role_store(self) -> Roles:
+        return Roles(self.roles_field, self.default_role)
 
     def get_binding(self, provider: str) -> "ProviderBindingDescriptor | None":
         return next((b for b in self.bindings if b.provider == provider), None)
@@ -362,6 +383,10 @@ class AuthConfig:
     idp_providers: list[IdpProviderDescriptor] = field(default_factory=list)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
+
+    @property
+    def login_identities(self) -> list[IdentityCollectionDescriptor]:
+        return [identity for identity in self.identity_collections if identity.serves_login]
 
     @property
     def uses_jwt(self) -> bool:

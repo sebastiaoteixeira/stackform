@@ -162,8 +162,6 @@ class IdentityFieldsMixin:
 
 
 class PasswordMixin:
-    DEFAULT_ROLE: str | None = None
-
     async def _before_write(self, data: dict) -> None:
         raw_password = data.pop("password", None)
         if raw_password is None:
@@ -174,7 +172,5 @@ class PasswordMixin:
         if not isinstance(auth_data, dict):
             auth_data = {}
         auth_data["passwordHash"] = hash_password(raw_password)
-        if self.DEFAULT_ROLE is not None:
-            auth_data.setdefault("roles", self.DEFAULT_ROLE)
         data["_auth"] = auth_data
 {% endif %}

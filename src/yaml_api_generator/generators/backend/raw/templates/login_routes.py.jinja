@@ -5,8 +5,7 @@ from dependencies.jwt_utils import create_jwt_token
 import validation
 
 
-{% for identity in ctx.auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
+{% for identity in ctx.auth.login_identities %}
 async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
     if body is None:
         return 422, {"detail": "Request body is required"}
@@ -41,5 +40,4 @@ async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, 
 
     return 401, {"detail": "Invalid credentials"}
 
-{% endif %}
 {% endfor %}

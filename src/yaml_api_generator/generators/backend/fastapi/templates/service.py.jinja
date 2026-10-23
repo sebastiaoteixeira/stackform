@@ -14,9 +14,6 @@ from services._ops import ServiceBase{% for op in svc_mixins %}, {{ op }}Svc{% e
 class {{ class_name }}Service({% for op in svc_mixins %}{{ op }}Svc, {% endfor %}{% for mixin in identity_mixins %}{{ mixin }}, {% endfor %}ServiceBase):
 {% if is_identity_collection %}
     IDENTITY_FIELDS = ({% for field_name in identity_fields %}"{{ field_name }}", {% endfor %})
-{% if password_via %}
-    DEFAULT_ROLE = {{ default_role | py_literal }}
-{% endif %}
 {% else %}
     pass
 {% endif %}

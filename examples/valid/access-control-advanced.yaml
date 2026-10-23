@@ -14,6 +14,7 @@ entities:
     auth:
       identifier: email
       via: password
+      roles: role
     roles:
       values: [admin, editor, viewer]
       default: viewer

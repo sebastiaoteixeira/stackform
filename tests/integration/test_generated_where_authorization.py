@@ -409,7 +409,7 @@ def test_generated_raw_asgi_enforces_where_per_rule(tmp_path):
         sys.modules["app.handlers"] = handlers_module
 
         async def verify():
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body
@@ -430,27 +430,27 @@ def test_generated_raw_asgi_enforces_where_per_rule(tmp_path):
             assert status == 200, body
             assert body == {{"authorized": True}}
 
-            status, body = await routes.handle_get_reports(
+            status, body = await routes.handle_get_reports__organizationId___id_(
                 {{"organizationId": "org-1", "id": "r1"}}, None, {{}}, db
             )
             assert status == 200, body
             assert body["organizationId"] == "org-1"
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "other"}}]
-            status, body = await routes.handle_get_reports(
+            status, body = await routes.handle_get_reports__organizationId___id_(
                 {{"organizationId": "org-1", "id": "r1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = []
             db["teams"].documents = []
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body
@@ -582,7 +582,7 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         sys.modules["app.handlers"] = handlers_module
 
         async def verify():
-            response = await views.ReportsListView().get(
+            response = await views.View_reports__organizationId_().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data
@@ -601,27 +601,27 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
             assert response.status_code == 200, response.data
             assert response.data == {{"authorized": True}}
 
-            response = await views.ReportsDetailView().get(
+            response = await views.View_reports__organizationId___id_().get(
                 request, organizationId="org-1", id="r1"
             )
             assert response.status_code == 200, response.data
             assert response.data["organizationId"] == "org-1"
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "other"}}]
-            response = await views.ReportsDetailView().get(
+            response = await views.View_reports__organizationId___id_().get(
                 request, organizationId="org-1", id="r1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = []
             db["teams"].documents = []
-            response = await views.ReportsListView().get(
+            response = await views.View_reports__organizationId_().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            response = await views.ReportsListView().get(
+            response = await views.View_reports__organizationId_().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data

@@ -9,7 +9,7 @@ clause.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial, reduce
 from operator import eq
@@ -325,3 +325,34 @@ def row_filter(decisions: list[Decision]) -> Predicate:
     if predicate == NO_ROW:
         decide(decisions)
     return predicate
+
+
+def role_names(held: Any) -> list[str]:
+    """Roles held as one name or a list of names, as a list of names."""
+    return [held] if isinstance(held, str) else [str(role) for role in held or ()]
+
+
+@dataclass(frozen=True)
+class Roles:
+    """Where an identity record keeps its roles: its ``field``, or the managed store under
+    ``_auth`` when it declares none, and the role a new record gets when its creator may
+    not choose one."""
+
+    field: str | None = None
+    default: str | None = None
+
+    def of(self, document: Mapping[str, Any]) -> list[str]:
+        return role_names(
+            document.get(self.field) if self.field else (document.get("_auth") or {}).get("roles")
+        )
+
+    def granted(self, payload: dict[str, Any], assignable: bool) -> dict[str, Any]:
+        """``payload`` of a new record, keeping the roles it names only when ``assignable``."""
+        if assignable and self.field in payload:
+            return payload
+        record = {key: value for key, value in payload.items() if key != self.field}
+        if self.default is None:
+            return record
+        if self.field:
+            return {**record, self.field: self.default}
+        return {**record, "_auth": {**record.get("_auth", {}), "roles": self.default}}

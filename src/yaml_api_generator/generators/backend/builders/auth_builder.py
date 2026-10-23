@@ -86,6 +86,8 @@ class AuthBuilder:
                     roles_field=identity.roles_field,
                     issues_jwt=issues_jwt,
                     datastore_type=datastore_types.get(name, "mongodb"),
+                    login=identity.login,
+                    default_role=identity.default_role(col),
                 )
             )
             if identity.has_password:

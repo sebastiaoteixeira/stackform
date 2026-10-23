@@ -15,7 +15,7 @@ from dependencies.session_cookie import issue_csrf_token, refresh_token_from_req
 from dependencies.session_cookie import issue_csrf_token, set_session_cookies
 {% endif %}
 {% endif %}
-{% for identity in auth.identity_collections if identity.has_password %}
+{% for identity in auth.login_identities %}
 from dependencies.repositories import get_{{ identity.name }}_repository
 {% endfor %}
 {% if ctx.session.refresh %}
@@ -32,20 +32,18 @@ class RefreshPayload(BaseModel):
     refresh_token: str = Field(..., min_length=1)
 
 {% endif %}
-{% for identity in auth.identity_collections %}
-{% set pw_binding = identity.bindings | selectattr('provider', 'equalto', 'password') | first | default(none) %}
-{% if pw_binding %}
+{% for identity in auth.login_identities %}
 {% set class_name = identity.name | capitalize_collection %}
 
 class {{ class_name }}LoginPayload(BaseModel):
-    {{ pw_binding.identifier }}: str = Field(..., min_length=1)
+    {{ identity.identifier }}: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
 
 
 @router.post("/{{ identity.name }}/login", tags=["{{ identity.name | capitalize_collection }}"])
 async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if ctx.session.uses_cookie %}, request: Request{% endif %}, repository=Depends(get_{{ identity.name }}_repository)) -> Any:
     doc = await repository.find_by(
-        "{{ pw_binding.identifier }}", payload.{{ pw_binding.identifier }}
+        "{{ identity.identifier }}", payload.{{ identity.identifier }}
     )
     if doc is not None:
         auth_data = doc.get("_auth")
@@ -93,7 +91,6 @@ async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     return rotated
 
-{% endif %}
 {% endif %}
 {% endif %}
 {% endfor %}

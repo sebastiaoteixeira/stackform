@@ -32,14 +32,7 @@ def _build_field_schemas(
     schemas: list[_FieldSchema] = []
     make_optional = operation == "update"
 
-    for field_name, raw_config in collection.fields.items():
-        if not isinstance(raw_config, dict):
-            continue
-        if raw_config.get("type") == "id":
-            continue
-        if field_name == "_auth" or field_name in collection.files:
-            continue
-
+    for field_name, raw_config in collection.writable_fields.items():
         required = not make_optional and bool(raw_config.get("required", False))
         schemas.append(
             _FieldSchema(

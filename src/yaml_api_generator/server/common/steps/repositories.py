@@ -1,10 +1,11 @@
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
 from ..auth import hash_password
 from ..request_context import RequestContext
-from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
+from yaml_api_generator.ir.api import IRPagination
 from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
 from ..utils.ids import generate_id as _generate_id
@@ -106,18 +107,8 @@ def _inject_canonical_id_list(
     ]
 
 
-def _prepare_payload(
-    payload: dict[str, Any],
-    *,
-    password_via: bool,
-    roles_config: IRRolesConfig | None = None,
-    is_create: bool = False,
-) -> dict[str, Any]:
+def _prepare_payload(payload: dict[str, Any], *, password_via: bool) -> dict[str, Any]:
     normalized = dict(payload)
-
-    # Roles are managed exclusively through _auth namespace — never writable via CRUD
-    normalized.pop("roles", None)
-    normalized.pop("role", None)
 
     if password_via:
         raw_password = normalized.pop("password", None)
@@ -129,13 +120,6 @@ def _prepare_payload(
                 auth_data = {}
             auth_data["passwordHash"] = hash_password(raw_password)
             normalized["_auth"] = auth_data
-
-    if is_create and roles_config is not None:
-        auth_data = normalized.get("_auth", {})
-        if not isinstance(auth_data, dict):
-            auth_data = {}
-        auth_data["roles"] = roles_config.default
-        normalized["_auth"] = auth_data
 
     return normalized
 
@@ -183,15 +167,12 @@ def RepositoryCreateStep(
     id_field: str,
     id_format: str,
     password_via: bool,
-    roles_config: IRRolesConfig | None = None,
+    grant: Callable[[dict[str, Any]], dict[str, Any]] = dict,
 ) -> Step:
+    """``grant`` sets the roles of a new identity record."""
+
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(
-            _payload(ctx),
-            password_via=password_via,
-            roles_config=roles_config,
-            is_create=True,
-        )
+        payload = _prepare_payload(grant(_payload(ctx)), password_via=password_via)
         if id_format != "natural":
             payload[id_field] = _generate_id(id_format)
         result = await _repository(ctx).create(collection_name, payload)

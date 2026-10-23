@@ -111,8 +111,8 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
 def _password_login_routes(
     document: IRDocument, routes: list[RuntimeRouteDescriptor]
 ) -> list[RuntimeRouteDescriptor]:
-    """A generated project serves one login route per password identity, whether or not a
-    controller declares the operation; the development server serves the same surface."""
+    """A generated project serves one login route per identity that serves login, whether or
+    not a controller declares the operation; the development server serves the same surface."""
     declared = {route.collection for route in routes if route.operation == "login"}
     base_path = document.api.basePath
     if document.api.version:
@@ -126,7 +126,7 @@ def _password_login_routes(
             is_public=True,
         )
         for name, identity in document.identityCollections.items()
-        if identity.has_password and name not in declared
+        if identity.serves_login and name not in declared
     ]
 
 
@@ -213,6 +213,7 @@ def _build_auth_config(
             id_field=id_field,
             roles=identity.roles,
             roles_field=identity.roles_field,
+            default_role=identity.default_role(collection),
         )
 
         identity_id_fields[name] = id_field

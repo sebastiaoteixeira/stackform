@@ -3,6 +3,7 @@
 Validates auth entities, role hierarchies, and implicit auth fields.
 """
 
+from collections.abc import Container
 from typing import Any, cast
 
 from yaml_api_generator.ir import (
@@ -25,6 +26,7 @@ class IdentityTransformer:
         entities_data: dict[str, Any],
         collections: dict[str, IRCollection],
         repo_entity_map: dict[str, str],
+        login_collections: Container[str],
     ) -> dict[str, IRIdentityCollection]:
         """Transform auth entities to identity collections.
 
@@ -32,6 +34,7 @@ class IdentityTransformer:
             entities_data: Raw entity configurations from YAML
             collections: Already-built collection IR objects
             repo_entity_map: Repository name to entity name mapping
+            login_collections: Collections whose password identities serve a login route
 
         Returns:
             Dictionary of identity collections
@@ -93,6 +96,7 @@ class IdentityTransformer:
                 bindings=bindings,
                 roles=roles_config,
                 roles_field=roles_field,
+                login=repo_name in login_collections,
             )
         return identity_collections
 

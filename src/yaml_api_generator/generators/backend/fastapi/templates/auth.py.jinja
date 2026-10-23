@@ -13,6 +13,7 @@ from dependencies.mongodb import get_database
 {% for identity in auth.identity_collections %}
 from dependencies.repositories import get_{{ identity.name }}_repository
 {% endfor %}
+from dependencies.access import Roles, role_names
 from settings import settings
 
 {% if auth.uses_jwt %}
@@ -92,29 +93,9 @@ def _extract_bearer_token(headers: dict[str, str]) -> str | None:
     return None
 
 
-def _extract_roles(
-    doc: dict[str, Any], roles_field: str | None, managed_roles: bool = False
-) -> list[str]:
-    roles = doc.get(roles_field) if roles_field else (doc.get("roles") or doc.get("role"))
-    if roles is None and managed_roles:
-        # The identity declares no role field of its own, so the managed store holds them.
-        auth_data = doc.get("_auth")
-        roles = auth_data.get("roles") if isinstance(auth_data, dict) else None
-    if isinstance(roles, list):
-        return [str(role) for role in roles]
-    if isinstance(roles, str):
-        return [roles]
-    return []
-
-
 {% if auth.has_idp_auth %}
 def _roles_from_claims(claims: dict[str, Any], claim_path: str | None) -> list[str]:
-    roles = resolve_claim_path(claims, claim_path) if claim_path else None
-    if isinstance(roles, list):
-        return [str(role) for role in roles]
-    if isinstance(roles, str):
-        return [roles]
-    return []
+    return role_names(resolve_claim_path(claims, claim_path) if claim_path else None)
 {% endif %}
 
 
@@ -261,7 +242,7 @@ async def resolve_principal(
                 if collection_name == "{{ identity.name }}" and repository is not None:
                     doc = await repository.find_by("{{ identity.id_field }}", sub)
                     if doc is not None:
-                        return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
+                        return {"sub": sub, "identity_collection": collection_name, "record": doc, "roles": {{ identity.role_store | py_literal }}.of(doc)}
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -274,7 +255,7 @@ async def resolve_principal(
         if doc is not None:
             subject = doc.get("{{ identity.id_field }}")
             if subject is not None:
-                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
+                return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": {{ identity.role_store | py_literal }}.of(doc)}
 {% endif %}
 {% set pw_binding = identity.bindings | selectattr('provider', 'equalto', 'password') | first | default(none) %}
 {% if pw_binding %}
@@ -290,7 +271,7 @@ async def resolve_principal(
             if isinstance(stored_hash, str) and verify_password(password, stored_hash):
                 subject = doc.get("{{ identity.id_field }}")
                 if subject is not None:
-                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": _extract_roles(doc, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }})}
+                    return {"sub": str(subject), "identity_collection": "{{ identity.name }}", "record": doc, "roles": {{ identity.role_store | py_literal }}.of(doc)}
 {% endif %}
 {% endfor %}
 
