@@ -19,8 +19,8 @@ from fastapi.testclient import TestClient
 from tests.unit.support.payload_requests import (
     EXPECTED,
     JWT_SECRET,
-    MONGO_STORE,
     SQL_STORE,
+    mongo_store,
     scenario,
     spec,
 )
@@ -80,7 +80,7 @@ def test_generated_fastapi_validates_payloads(spec_file):
 @pytest.fixture
 def mongo_spec_file(tmp_path):
     path = tmp_path / "mongo-spec.yaml"
-    path.write_text(spec(MONGO_STORE))
+    path.write_text(spec(mongo_store()))
     return str(path)
 
 

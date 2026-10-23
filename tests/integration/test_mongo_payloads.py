@@ -1,4 +1,4 @@
-"""A generated raw-ASGI app validates the shared payload scenario against a real MongoDB."""
+"""Development servers and a generated raw-ASGI app validate the shared payload scenario against a real MongoDB."""
 
 import json
 import os
@@ -8,9 +8,11 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from starlette.testclient import TestClient
 
-from tests.unit.support.payload_requests import EXPECTED, JWT_SECRET, MONGO_STORE, spec
+from tests.unit.support.payload_requests import EXPECTED, JWT_SECRET, mongo_store, scenario, spec
 from yaml_api_generator.cli.compiler import compile_project
+from yaml_api_generator.server import build_app, build_raw_app
 
 
 ROOT = Path(__file__).parents[2]
@@ -27,10 +29,23 @@ with TestClient(app.app) as client:
 """
 
 
+@pytest.fixture
+def spec_file(tmp_path, mongo_uri):
+    path = tmp_path / "spec.yaml"
+    path.write_text(spec(mongo_store(mongo_uri, f"payloads_{uuid4().hex}")))
+    return path
+
+
 @pytest.mark.integration
-def test_generated_raw_validates_payloads(tmp_path, mongo_uri):
-    spec_file = tmp_path / "spec.yaml"
-    spec_file.write_text(spec(MONGO_STORE))
+@pytest.mark.parametrize("build", [build_app, build_raw_app], ids=["fastapi", "raw"])
+def test_dev_server_validates_payloads(spec_file, build, monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
+    with TestClient(build(str(spec_file))) as client:
+        assert scenario(client) == EXPECTED
+
+
+@pytest.mark.integration
+def test_generated_raw_validates_payloads(spec_file, tmp_path, mongo_uri):
     compile_project(yaml_file=str(spec_file), output_dir=str(tmp_path / "raw"), target="raw")
     result = subprocess.run(
         [sys.executable, "-c", _RUNNER],

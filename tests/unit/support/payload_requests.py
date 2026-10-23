@@ -18,11 +18,14 @@ datastores:
     default: true
 """
 
-MONGO_STORE = """
+
+def mongo_store(uri: str = "mongodb://localhost:27017", database: str = "payloads") -> str:
+    return f"""
 mongo:
-  uri: mongodb://localhost:27017
-  database: payloads
+  uri: {uri}
+  database: {database}
 """
+
 
 JWT_SECRET = "payload-scenario-secret-of-at-least-32-bytes"
 
@@ -63,6 +66,13 @@ entities:
           color: { type: string, required: true }
           size: { type: number, min: 1 }
         additionalProperties: false
+      points:
+        type: array
+        items:
+          type: object
+          properties:
+            x: { type: number, required: true }
+            label: { type: object, properties: { contact: { type: string, format: email } } }
   note:
     fields:
       id: { type: id, format: uuidv4 }
@@ -104,6 +114,11 @@ CREATES = [
     ({"name": "ab", "meta": {"size": 2}}, 422),
     ({"name": "ab", "meta": {"color": "r", "size": 0}}, 422),
     ({"name": "ab", "meta": {"color": "r", "size": "2"}}, 422),
+    ({"name": "ab", "points": [{"x": 1, "label": {"contact": "a@b.co"}}]}, 200),
+    ({"name": "ab", "points": [{}]}, 422),
+    ({"name": "ab", "points": [{"x": 1, "y": 2}]}, 422),
+    ({"name": "ab", "points": [{"x": 1, "label": {"contact": "x"}}]}, 422),
+    ({"name": "ab", "points": [{"x": 1, "label": {"other": 1}}]}, 422),
     ({"name": "ab", "rank": "3"}, 422),
     ({"name": "ab", "active": "true"}, 422),
     ({"name": "ab", "active": 1}, 422),
