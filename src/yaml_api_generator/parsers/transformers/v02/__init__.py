@@ -147,6 +147,7 @@ class V02Transformer:
             identityCollections=identity_collections,
             dtos=dtos,
             services=services,
+            service_bases=self._route.transform_service_bases(services_data, import_map),
             mongo=self._route.build_mongo(mongo_config),
             datastores=datastores,
             default_datastore=default_datastore,

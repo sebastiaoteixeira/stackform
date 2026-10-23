@@ -1,14 +1,16 @@
-{% macro invoke_handler(handler, principal, body, inputs) %}
+{# Runs `call`, an awaitable over `_request`; a ValueError it raises answers 422 #}
+{% macro call_with_request(call, principal, body, inputs) %}
+    _request = HandlerRequest(
+        params=dict(request.path_params),
+        query=dict(request.query_params),
+        headers=dict(request.headers),
+        cookies=dict(request.cookies),
+        body={{ body }},
+        principal={{ principal }},
+        inputs={{ inputs }},
+    )
     try:
-        return await invoke({{ handler | py_literal }}, HandlerRequest(
-            params=dict(request.path_params),
-            query=dict(request.query_params),
-            headers=dict(request.headers),
-            cookies=dict(request.cookies),
-            body={{ body }},
-            principal={{ principal }},
-            inputs={{ inputs }},
-        ))
+        return await {{ call }}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 {% endmacro %}

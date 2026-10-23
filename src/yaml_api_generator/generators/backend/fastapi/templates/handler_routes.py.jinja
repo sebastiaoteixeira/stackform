@@ -1,4 +1,4 @@
-{% from "handler_call.jinja" import invoke_handler %}
+{% from "handler_call.jinja" import call_with_request %}
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -86,6 +86,6 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-{{ invoke_handler(route.handler, "principal" if route.needs_auth else "None", "body", "service_inputs") }}
+{{ call_with_request("invoke(" ~ (route.handler | py_literal) ~ ", _request)", "principal" if route.needs_auth else "None", "body", "service_inputs") }}
 
 {% endfor %}

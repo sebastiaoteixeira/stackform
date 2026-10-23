@@ -1,4 +1,4 @@
-{% from "handler_call.jinja" import invoke_handler %}
+{% from "handler_call.jinja" import run_operation %}
 from typing import Any
 from uuid import UUID
 
@@ -111,6 +111,6 @@ async def handle_custom_{{ loop.index }}(
         {{ route.service_forwarding | py_literal }},
         bound_inputs,
     )
-{{ invoke_handler(route.handler) }}
+{{ run_operation(route) }}
 
 {% endfor %}

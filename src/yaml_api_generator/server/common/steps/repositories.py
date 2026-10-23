@@ -6,7 +6,6 @@ from ..auth import hash_password
 from ..request_context import RequestContext
 from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
 from yaml_api_generator.runtime.operations import (
-    operation_bindings,
     present,
     present_document as _inject_canonical_id,
     resolve,
@@ -15,6 +14,7 @@ from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
 from ..utils.ids import generate_id as _generate_id
 from . import NotFoundError, Step
+from .handlers import handler_request
 
 
 _PATH_TOKEN = re.compile(r"\{(\w+)\}")
@@ -271,9 +271,7 @@ def RepositoryOperationStep(
     id_field: str,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        bindings = operation_bindings(
-            {**ctx.url_params, **(ctx.service_inputs or {})}, ctx.principal, ctx.body
-        )
+        bindings = handler_request(ctx).bindings
         result = await _repository(ctx).run_operation(collection_name, resolve(query, bindings))
         ctx.response = present(result, id_field)
         return ctx

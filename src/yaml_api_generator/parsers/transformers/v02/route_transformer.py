@@ -17,7 +17,9 @@ from yaml_api_generator.ir import (
     IRRepository,
     IRRoute,
     IRService,
+    IRServiceBase,
 )
+from yaml_api_generator.constants import CRUD_OPERATIONS
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
 from .access_transformer import AccessTransformer
@@ -92,31 +94,40 @@ class RouteTransformer:
         services: dict[str, IRService] = {}
         errors: list[ConfigError] = []
         for svc_name, svc_cfg in services_data.items():
-            if not isinstance(svc_cfg, dict):
+            if not isinstance(svc_cfg, dict) or svc_cfg.get("abstract"):
                 continue
             input_ir, forwarding = self._transform_input(svc_name, svc_cfg, dtos_data, errors)
             handler_ref = svc_cfg.get("handler")
-            inherits = svc_cfg.get("_inherits")
-            if handler_ref is not None:
-                services[svc_name] = IRService(
-                    name=svc_name,
-                    handler=self._resolve_handler_path(handler_ref, import_map),
-                    inherits=inherits,
-                    input=input_ir,
-                    forwarding=forwarding,
-                )
-            else:
-                services[svc_name] = IRService(
-                    name=svc_name,
-                    repository=svc_cfg.get("repository"),
-                    operation=svc_cfg.get("operation"),
-                    inherits=inherits,
-                    input=input_ir,
-                    forwarding=forwarding,
-                )
+            services[svc_name] = IRService(
+                name=svc_name,
+                repository=svc_cfg.get("repository"),
+                operation=svc_cfg.get("operation"),
+                handler=None if handler_ref is None else self._resolve_handler_path(handler_ref, import_map),
+                inherits=svc_cfg.get("_inherits"),
+                input=input_ir,
+                forwarding=forwarding,
+            )
         if errors:
             raise ConfigErrors(errors)
         return services
+
+    def transform_service_bases(
+        self, services_data: dict[str, Any], import_map: dict[str, str]
+    ) -> dict[str, IRServiceBase]:
+        """Build the abstract services that concrete services inherit as generated classes."""
+        return {
+            name: IRServiceBase(
+                name=name,
+                operations={
+                    operation: None if value is True else self._resolve_handler_path(value["handler"], import_map)
+                    for operation, value in cfg["operations"].items()
+                    if isinstance(value, dict) or (value is True and operation not in CRUD_OPERATIONS)
+                },
+                inherits=cfg.get("_inherits"),
+            )
+            for name, cfg in services_data.items()
+            if isinstance(cfg, dict) and cfg.get("abstract")
+        }
 
     def _transform_input(
         self,

@@ -1,0 +1,11 @@
+{% macro operation_methods(operations) %}
+{% for name, handler in operations.items() %}
+
+    async def {{ name }}(self, request: HandlerRequest) -> Any:
+{% if handler %}
+        return await invoke({{ handler | py_literal }}, request)
+{% else %}
+        return await self._repo.{{ name }}(request.bindings)
+{% endif %}
+{% endfor %}
+{% endmacro %}

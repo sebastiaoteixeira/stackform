@@ -1,7 +1,8 @@
-"""The contract every backend uses to call a user handler.
+"""The request every backend passes to a user handler or a repository operation.
 
 A handler is a sync or async callable that receives one ``HandlerRequest`` and
-returns the JSON response body. Raising ``ValueError`` answers 422.
+returns the JSON response body. Raising ``ValueError`` answers 422. A repository
+operation resolves its query's ``$`` references against ``bindings``.
 """
 
 from dataclasses import dataclass, field
@@ -19,6 +20,11 @@ class HandlerRequest:
     body: Any = None
     principal: dict[str, Any] | None = None
     inputs: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def bindings(self) -> dict[str, Any]:
+        params = {**self.params, **self.inputs}
+        return {**params, "principal": self.principal or {}, "params": params, "body": self.body or {}}
 
 
 async def invoke(handler: str, request: HandlerRequest) -> Any:

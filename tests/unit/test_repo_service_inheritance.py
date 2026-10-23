@@ -168,3 +168,67 @@ def test_concrete_repo_inherits_generated_base(tmp_path):
     assert "from .countable import CountableRepository" in repo_src
     assert "CountableRepository, RepositoryBase" in repo_src
     assert "async def countAll" not in repo_src  # inherited, not redefined
+
+
+def test_abstract_service_bound_to_controller_raises():
+    config = _base_config()
+    config["services"]["base"] = {"abstract": True, "operations": {"delete": False}}
+    config["controllers"]["posts"]["service"] = "base"
+    with pytest.raises(ConfigErrors) as exc_info:
+        desugar_v02(config)
+    assert any(e.code == "DESUGAR_ABSTRACT_SERVICE_BOUND" for e in exc_info.value.errors)
+
+
+def test_repository_extends_merges_inherited_and_own_operations():
+    config = _base_config()
+    config["repositories"]["base"] = {"abstract": True, "operations": {"countAll": {"query": {"command": "estimatedDocumentCount"}}}}
+    config["repositories"]["posts"] |= {"extends": "base", "operations": {"byTitle": {"query": {"command": "find"}}}}
+    operations = desugar_v02(config)["repositories"]["posts"]["operations"]
+    assert set(operations) == {"countAll", "byTitle"}
+
+
+def test_service_extends_merges_inherited_and_own_operations():
+    config = _base_config()
+    config["repositories"]["posts"]["operations"] = {"countAll": {"query": {"command": "estimatedDocumentCount"}}}
+    config["services"]["base"] = {"abstract": True, "operations": {"delete": False, "countAll": True}}
+    config["services"]["posts"] |= {"extends": "base", "operations": {"update": False}}
+    config["controllers"]["posts"]["operations"] = {"countAll": {"method": "GET", "path": "/count"}}
+    services = desugar_v02(config)["services"]
+    assert {"countAll-posts", "list-posts", "get-posts", "create-posts"} <= set(services)
+    assert not {"delete-posts", "update-posts"} & set(services)
+    assert services["countAll-posts"]["_inherits"] == "base"
+
+
+_SERVICE_FIXTURE = _FIXTURE.replace(
+    """    services:
+      posts:
+        repository: posts
+""",
+    """    services:
+      auditable:
+        abstract: true
+        operations:
+          countAll: true
+          summary: { handler: hooks.summary }
+      posts:
+        repository: posts
+        extends: auditable
+""",
+).replace("        access: public\n", "        access: public\n        operations:\n          countAll: { method: GET, path: /count }\n          summary: { method: GET, path: /summary }\n")
+
+
+def test_abstract_service_is_a_base_in_ir(tmp_path):
+    ir = _parse(_SERVICE_FIXTURE, tmp_path)
+    assert ir.service_bases["auditable"].operations == {"countAll": None, "summary": "hooks.summary"}
+    assert "auditable" not in ir.services
+    assert ir.services["countAll-posts"].inherits == "auditable"
+
+
+def test_abstract_service_generates_a_base_class_its_services_extend(tmp_path):
+    FastAPIGenerator().generate(build_context(_parse(_SERVICE_FIXTURE, tmp_path)), tmp_path / "out")
+    base_src = (tmp_path / "out" / "services" / "auditable.py").read_text()
+    service_src = (tmp_path / "out" / "services" / "posts.py").read_text()
+    assert "class AuditableService(ServiceBase)" in base_src
+    assert "async def countAll" in base_src and "async def summary" in base_src
+    assert "from services.auditable import AuditableService" in service_src
+    assert "async def countAll" not in service_src

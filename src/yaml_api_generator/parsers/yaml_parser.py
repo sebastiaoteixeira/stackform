@@ -251,12 +251,6 @@ def load_and_generate_ir(
             raise ConfigErrors(access_errors)
         access_warnings = tuple(warn_public_routes(resolved))
 
-        if version == "0.3":
-            from .transformers.symbol_validation import validate_spec_symbols
-            symbol_errors = validate_spec_symbols(resolved)
-            if symbol_errors:
-                raise ConfigErrors(symbol_errors)
-
         from .transformers.auth_validation import validate_spec_auth
         auth_errors = validate_spec_auth(resolved)
         if auth_errors:
@@ -272,6 +266,12 @@ def load_and_generate_ir(
 
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
+
+        if version == "0.3":
+            from .transformers.symbol_validation import validate_spec_symbols
+            symbol_errors = validate_spec_symbols(resolved)
+            if symbol_errors:
+                raise ConfigErrors(symbol_errors)
 
         from .transformers.path_validation import validate_spec_paths
         path_errors = validate_spec_paths(resolved)

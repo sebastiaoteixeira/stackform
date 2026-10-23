@@ -1,4 +1,4 @@
-{% from "handler_call.jinja" import invoke_handler %}
+{% from "handler_call.jinja" import run_operation %}
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -29,11 +29,8 @@ from api.repositories.{{ where_collection }} import {{ where_collection | capita
 from api.services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from api.services.exceptions import NotFoundError, ValidationError
 from api.service_inputs import prepare_service_inputs, resolve_access_bind
-{% if routes | selectattr("handler") | list %}
+{% if routes | selectattr("runs_operation") | list %}
 from api.handler_requests import HandlerRequest, invoke
-{% endif %}
-{% if routes | rejectattr("handler") | rejectattr("operation", "in", crud_op_names + ["login"]) | list %}
-from api.operations import operation_bindings
 {% endif %}
 {% if routes | selectattr("pagination") | list %}
 from api.pagination import build_response, map_request
@@ -160,8 +157,8 @@ class {{ class_name }}ListView(APIView):
 {{ bind_inputs(route) }}
         try:
             service_inputs = prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-{% if route.handler %}
-{{ invoke_handler(route.handler) }}
+{% if route.runs_operation %}
+{{ run_operation(route) }}
 {% elif route.operation == "list" %}
 {% if route.pagination %}
             pagination_config = {{ route.pagination | pagination_config | py_literal }}
@@ -203,11 +200,7 @@ class {{ custom_class }}(APIView):
 {{ bind_inputs(route) }}
         try:
             service_inputs = prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-{% if route.handler %}
-{{ invoke_handler(route.handler) }}
-{% else %}
-            return Response(await repo.{{ route.operation }}(operation_bindings({**path_params, **service_inputs}, _resolved_principal, body)))
-{% endif %}
+{{ run_operation(route) }}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
         except ConflictError as exc:
@@ -237,8 +230,8 @@ class {{ class_name }}DetailView(APIView):
 {{ bind_inputs(route) }}
         try:
             service_inputs = prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-{% if route.handler %}
-{{ invoke_handler(route.handler) }}
+{% if route.runs_operation %}
+{{ run_operation(route) }}
 {% elif route.operation == "get" %}
 {% if route.record_parent_params %}
             result = await service.get_by({{ record_criteria(route) }})

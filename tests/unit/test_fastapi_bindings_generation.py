@@ -49,4 +49,5 @@ def test_custom_operation_route_calls_the_repository_method(tmp_path):
     assert "async def byOrg(self, bindings: dict[str, Any]) -> Any:" in repository
     assert "'$principal.record.orgId'" in repository
     route_content = (out / "routes" / "posts.py").read_text()
-    assert "repo.byOrg(operation_bindings(" in route_content
+    assert "svc.byOrg(_request)" in route_content
+    assert "self._repo.byOrg(request.bindings)" in (out / "services" / "posts.py").read_text()

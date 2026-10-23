@@ -68,6 +68,9 @@ repositories:
 services:
   users:
     repository: users
+    operations:
+      register: true
+      login: true
 
   articles:
     repository: articles

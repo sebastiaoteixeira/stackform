@@ -1,4 +1,4 @@
-{% from "handler_call.jinja" import invoke_handler %}
+{% from "handler_call.jinja" import run_operation %}
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -85,7 +85,7 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
                 {{ route.service_forwarding | py_literal }},
                 bound_inputs,
             )
-{{ invoke_handler(route.handler) }}
+{{ run_operation(route) }}
         except ConflictError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except ValueError as exc:

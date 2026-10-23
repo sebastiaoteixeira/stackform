@@ -341,10 +341,22 @@ class IRService:
     repository: str | None = None
     operation: str | None = None
     handler: str | None = None
-    abstract: bool = False
     inherits: str | None = None
     input: IRServiceInput | None = None
     forwarding: dict[str, WhereRhs] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class IRServiceBase:
+    """An abstract service, generated as the base class of the services extending it.
+
+    ``operations`` maps each operation the class implements to its handler, or
+    to None when the service runs the repository operation of the same name.
+    """
+
+    name: str
+    operations: dict[str, str | None] = field(default_factory=dict)
+    inherits: str | None = None
 
 
 @dataclass(frozen=True)
@@ -463,6 +475,7 @@ class IRDocument:
     identityCollections: dict[str, IRIdentityCollection]
     dtos: dict[str, IRDto] = field(default_factory=dict)
     services: dict[str, IRService] = field(default_factory=dict)
+    service_bases: dict[str, IRServiceBase] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
     datastores: dict[str, IRDatastore] = field(default_factory=dict)

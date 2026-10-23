@@ -118,6 +118,7 @@ class ContextBuilder:
             repository_abstract=repository_abstract,
             repository_inherits=repository_inherits,
             services=dict(document.services),
+            service_bases=dict(document.service_bases),
             dto_models=dto_models,
             vendored_requirements=document.vendored_requirements,
             sql_schema_managed=managed.sql,

@@ -76,7 +76,9 @@ def test_fastapi_emits_repository_and_handler_forwarding(tmp_path):
     repository_route = (tmp_path / "routes/posts.py").read_text()
     handler_route = (tmp_path / "routes/_handlers.py").read_text()
     assert "'state': {'literal': 'archived'}" in repository_route
-    assert "operation_bindings({**_path, **_service_inputs}" in repository_route
+    assert "inputs=_service_inputs" in repository_route
+    assert "svc.archive(_request)" in repository_route
+    assert "self._repo.archive(request.bindings)" in (tmp_path / "services/posts.py").read_text()
     assert "inputs=service_inputs" in handler_route
 
 
@@ -136,7 +138,8 @@ def test_raw_emits_repository_and_handler_forwarding(tmp_path):
 
     repository_route = (tmp_path / "routes/posts.py").read_text()
     handler_route = (tmp_path / "routes/handlers.py").read_text()
-    assert "repo.archive(operation_bindings({**url_params, **service_inputs}" in repository_route
+    assert "inputs=service_inputs" in repository_route
+    assert "repo.archive(_request.bindings)" in repository_route
     assert "inputs=service_inputs" in handler_route
 
 
@@ -145,5 +148,6 @@ def test_drf_emits_repository_and_handler_forwarding(tmp_path):
 
     repository_route = (tmp_path / "api/views/posts.py").read_text()
     handler_route = (tmp_path / "api/views/_handlers.py").read_text()
-    assert "repo.archive(operation_bindings({**path_params, **service_inputs}" in repository_route
+    assert "inputs=service_inputs" in repository_route
+    assert "repo.archive(_request.bindings)" in repository_route
     assert "inputs=service_inputs" in handler_route

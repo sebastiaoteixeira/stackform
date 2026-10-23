@@ -1,17 +1,14 @@
-"""Generic single-inheritance desugarer for repository and service layers.
-
-Mirrors EntityDesugarer's validate/cycle-detect/resolve pattern but instead of
-flattening fields it resolves a chain of ``base`` import paths that the code
-generator uses to emit user-authored base-class inheritance.
-"""
+"""Generic single-inheritance desugarer for repository and service layers."""
 
 from typing import Any
 
 from ..yaml_parser import ConfigError, ConfigErrors
 
+_UNINHERITED = frozenset({"abstract", "extends"})
+
 
 class InheritanceDesugarer:
-    """Resolve ``abstract``/``extends``/``base`` for a named config layer.
+    """Resolve ``abstract``/``extends`` for a named config layer.
 
     Args:
         layer: Human-readable layer name used in error codes/paths
@@ -21,77 +18,51 @@ class InheritanceDesugarer:
     def __init__(self, layer: str) -> None:
         self._layer = layer
 
-    def resolve(self, entries: dict[str, Any]) -> dict[str, str | None]:
-        """Validate inheritance and resolve each entry's inherited base.
+    def desugar(self, entries: dict[str, Any], bindings: dict[str, Any]) -> None:
+        """Validate inheritance and fold every ancestor into the entries extending it.
 
-        Validates that every ``extends`` target exists and is abstract and
-        detects cycles, then walks each entry's ``extends`` chain to the
-        nearest ancestor that declares ``operations``. That ancestor is the
-        *inherited base*: it is rendered as a generated class which the entry
-        subclasses.
+        Every ``extends`` target must exist and be abstract, chains must not
+        cycle and no binding may reference an abstract entry. Each extending
+        entry receives its ancestors' configuration: its own keys win and
+        ``operations`` merge per operation. ``_inherits`` names the nearest
+        ancestor declaring ``operations``, rendered as the generated class the
+        entry subclasses. Abstract entries without operations are dropped.
 
         Args:
-            entries: Raw config dict for the layer (repositories or services).
-
-        Returns:
-            Mapping from entry name to the name of the nearest
-            operation-bearing ancestor it inherits (or ``None``).
+            entries: The layer's config dict (repositories or services).
+            bindings: The controllers, whose ``<layer>`` key references entries.
 
         Raises:
-            ConfigErrors: On missing/non-abstract extends target or cycle.
+            ConfigErrors: On a missing or non-abstract target, a cycle or a bound abstract entry.
         """
         self._validate(entries)
         self._validate_no_cycles(entries)
-        return {
-            name: self._resolve_chain(name, entries)
+        self._validate_not_bound(entries, bindings)
+        entries.update({
+            name: {**self._merged(name, entries), "_inherits": self._resolve_chain(name, entries)}
             for name, cfg in entries.items()
             if isinstance(cfg, dict) and cfg.get("extends")
-        }
-
-    def remove_abstract(self, entries: dict[str, Any]) -> None:
-        """Remove abstract entries that carry no operations.
-
-        Abstract entries with operations survive: they are rendered as
-        generated base classes that concrete entries inherit.
-        """
-        removable = [
-            k for k, v in entries.items()
-            if isinstance(v, dict) and v.get("abstract") and not v.get("operations")
-        ]
-        for name in removable:
+        })
+        for name in [
+            name for name, cfg in entries.items()
+            if isinstance(cfg, dict) and cfg.get("abstract") and not cfg.get("operations")
+        ]:
             del entries[name]
 
-    def validate_not_bound(
-        self,
-        entries: dict[str, Any],
-        bindings: dict[str, Any],
-        binding_field: str,
-        *,
-        error_code: str,
-    ) -> None:
-        """Ensure abstract entries are not referenced by controllers/routes.
-
-        Args:
-            entries: The layer dict (repositories or services).
-            bindings: The dict that references entries (e.g. controllers).
-            binding_field: Field name in each binding that holds the reference.
-            error_code: Error code to use if a violation is found.
-        """
+    def _validate_not_bound(self, entries: dict[str, Any], bindings: dict[str, Any]) -> None:
         abstract_names = {
             name for name, cfg in entries.items()
             if isinstance(cfg, dict) and cfg.get("abstract")
         }
-        errors: list[ConfigError] = []
-        for binding_name, binding_cfg in bindings.items():
-            if not isinstance(binding_cfg, dict):
-                continue
-            ref = binding_cfg.get(binding_field)
-            if ref in abstract_names:
-                errors.append(ConfigError(
-                    code=error_code,
-                    message=f"'{binding_name}' references abstract {self._layer} '{ref}'",
-                    path=f"{self._layer}s.{binding_name}.{binding_field}",
-                ))
+        errors = [
+            ConfigError(
+                code=f"DESUGAR_ABSTRACT_{self._layer.upper()}_BOUND",
+                message=f"'{binding_name}' references abstract {self._layer} '{binding_cfg[self._layer]}'",
+                path=f"controllers.{binding_name}.{self._layer}",
+            )
+            for binding_name, binding_cfg in bindings.items()
+            if isinstance(binding_cfg, dict) and binding_cfg.get(self._layer) in abstract_names
+        ]
         if errors:
             raise ConfigErrors(errors)
 
@@ -136,6 +107,17 @@ class InheritanceDesugarer:
                 current = cfg.get("extends") if isinstance(cfg, dict) else None
         if errors:
             raise ConfigErrors(errors)
+
+    def _merged(self, name: str, entries: dict[str, Any]) -> dict[str, Any]:
+        own = entries[name]
+        if not own.get("extends"):
+            return own
+        parent = {
+            key: value for key, value in self._merged(own["extends"], entries).items()
+            if key not in _UNINHERITED
+        }
+        operations = {**parent.get("operations", {}), **own.get("operations", {})}
+        return {**parent, **own, **({"operations": operations} if operations else {})}
 
     def _resolve_chain(self, name: str, entries: dict[str, Any]) -> str | None:
         """Find the nearest ancestor declaring ``operations`` up the chain."""

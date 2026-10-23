@@ -18,7 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
+from ...constants import CRUD_OPERATIONS
+from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService, IRServiceBase
 from ...ir.when import WhenExpr
 from ...utils.strings import to_py_identifier
 
@@ -284,6 +285,13 @@ class RouteDescriptor:
         return [*parents, (self.id_field, self.record_id_param)]
 
     @property
+    def runs_operation(self) -> bool:
+        """Whether the route runs a handler or a declared repository operation instead of a generated step."""
+        return self.operation != "login" and (
+            self.handler is not None or self.operation not in CRUD_OPERATIONS
+        )
+
+    @property
     def django_path(self) -> str:
         path = self.relative_path.lstrip("/")
         return re.sub(r"\{(\w+)\}", r"<str:\1>", path)
@@ -424,6 +432,7 @@ class CompileContext:
     repository_inherits: dict[str, str] = field(default_factory=dict)
     # IR services keyed by their expanded flat name (e.g. "list-posts").
     services: dict[str, IRService] = field(default_factory=dict)
+    service_bases: dict[str, IRServiceBase] = field(default_factory=dict)
     dto_models: list[ModelDescriptor] = field(default_factory=list)
     vendored_requirements: tuple[str, ...] = ()
     sql_schema_managed: bool = False
@@ -470,3 +479,14 @@ class CompileContext:
 
     def collection_datastore_type(self, collection: str) -> str:
         return self.collections.get(collection, {}).get("datastore_type", "mongodb")
+
+    def service_base(self, repository: str) -> IRServiceBase | None:
+        """The abstract service that the services of ``repository`` extend."""
+        return next(
+            (
+                self.service_bases[service.inherits]
+                for service in self.services.values()
+                if service.repository == repository and service.inherits
+            ),
+            None,
+        )

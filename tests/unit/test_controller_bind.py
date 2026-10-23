@@ -317,7 +317,7 @@ def test_generated_fastapi_applies_authorized_bind_end_to_end(tmp_path):
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        from dependencies.auth import require_principal
+        from dependencies.auth import get_optional_principal, require_principal
         from dependencies.repositories import get_posts_repository
         from dependencies.operations import resolve
         from repositories.posts import PostsRepository
@@ -341,6 +341,7 @@ def test_generated_fastapi_applies_authorized_bind_end_to_end(tmp_path):
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[require_principal] = principal
+        app.dependency_overrides[get_optional_principal] = principal
         app.dependency_overrides[get_posts_repository] = RecordingRepository
         response = TestClient(app).post(
             "/posts/p1/archive", json={{"owner": "spoofed"}}

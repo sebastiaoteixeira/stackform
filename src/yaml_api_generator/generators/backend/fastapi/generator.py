@@ -3,6 +3,7 @@ from pathlib import Path
 from jinja2 import Environment
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.ir import IRServiceBase
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
@@ -38,6 +39,17 @@ def _crud_operations(col_data: dict) -> list[str]:
         if route.handler is None and route.operation in _CRUD_ORDER
     }
     return [op for op in _CRUD_ORDER if op in present]
+
+
+def _own_operations(operations: dict[str, str | None], base: IRServiceBase | None) -> dict[str, str | None]:
+    inherited = base.operations.items() if base else {}.items()
+    return {name: handler for name, handler in operations.items() if (name, handler) not in inherited}
+
+
+def _generated_service_base(base: IRServiceBase | None) -> dict[str, str] | None:
+    if base is None:
+        return None
+    return {"module": f"services.{base.name}", "class_name": f"{to_pascal_case(base.name)}Service"}
 
 
 class FastAPIGenerator(TemplateBasedGenerator):
@@ -181,13 +193,29 @@ class FastAPIGenerator(TemplateBasedGenerator):
         ops_content = ops_template.render(auth=context.auth)
         (output_dir / "services" / "_ops.py").write_text(ops_content)
 
+        template = env.get_template("service.py.jinja")
+        for base in context.service_bases.values():
+            parent = context.service_bases.get(base.inherits)
+            (output_dir / "services" / f"{base.name}.py").write_text(template.render(
+                collection_name=base.name,
+                operations=[],
+                is_identity_collection=False,
+                password_via=False,
+                custom_operations=_own_operations(base.operations, parent),
+                generated_base=_generated_service_base(parent),
+            ))
+
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
         identity = find_identity(context, col_name)
         is_identity = identity is not None
+        base = context.service_base(col_name)
+        operations = {route.operation: route.handler for route in col_data["routes"] if route.runs_operation}
 
         return {
             "collection_name": col_name,
             "operations": _crud_operations(col_data),
+            "custom_operations": _own_operations(operations, base),
+            "generated_base": _generated_service_base(base),
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
             "default_role": identity.roles.default if is_identity and identity.roles else None,

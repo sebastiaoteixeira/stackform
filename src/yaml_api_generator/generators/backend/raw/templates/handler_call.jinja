@@ -1,5 +1,6 @@
-{% macro invoke_handler(handler) %}
-    return 200, await invoke({{ handler | py_literal }}, HandlerRequest(
+{# Runs the route's handler, or the repository operation it declares, over one HandlerRequest #}
+{% macro run_operation(route) %}
+    _request = HandlerRequest(
         params=url_params,
         query=query or {},
         headers=headers,
@@ -7,5 +8,10 @@
         body=body or {},
         principal=principal,
         inputs=service_inputs,
-    ))
+    )
+{% if route.handler %}
+    return 200, await invoke({{ route.handler | py_literal }}, _request)
+{% else %}
+    return 200, await repo.{{ route.operation }}(_request.bindings)
+{% endif %}
 {% endmacro %}

@@ -1,6 +1,6 @@
 """Bind and present declared repository operations.
 
-A query value starting with ``$`` is a reference into the request bindings
+A query value starting with ``$`` is a reference into ``HandlerRequest.bindings``
 (``{**params, "principal", "params", "body"}``); every other value passes
 through unchanged. Results are presented the way CRUD responses are: the
 datastore's own ``_id`` becomes the canonical id field and credential fields
@@ -10,12 +10,6 @@ are hidden.
 from typing import Any
 
 _HIDDEN_FIELDS = ("_auth", "password")
-
-
-def operation_bindings(
-    params: dict[str, Any], principal: dict[str, Any] | None, body: Any
-) -> dict[str, Any]:
-    return {**params, "principal": principal or {}, "params": params, "body": body or {}}
 
 
 def resolve(value: Any, bindings: dict[str, Any]) -> Any:

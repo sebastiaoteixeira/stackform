@@ -1,4 +1,4 @@
-{% from "handler_call.jinja" import invoke_handler %}
+{% from "handler_call.jinja" import run_operation %}
 from typing import Any
 from uuid import UUID
 
@@ -13,7 +13,6 @@ from repositories.{{ where_collection }} import {{ where_collection | capitalize
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from services.exceptions import NotFoundError, ValidationError
 from handler_requests import HandlerRequest, invoke
-from operations import operation_bindings
 from service_inputs import prepare_service_inputs, resolve_access_bind
 {% if routes | selectattr("pagination") | list %}
 from pagination import build_response, map_request
@@ -52,7 +51,6 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
     return any(required_role in hierarchy.get(role, set()) for role in roles)
 
 
-{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
 {% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": url_params["{{ param }}"]{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% macro authorization_locals(route) %}
 {% if route.access_rules %}
@@ -147,10 +145,8 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {{ pre_fetch_authorize(route) }}
 {{ bind_inputs(route) }}
     service_inputs = prepare_service_inputs(url_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-{% if route.handler %}
-{{ invoke_handler(route.handler) }}
-{% elif route.operation not in crud_op_names %}
-    return 200, await repo.{{ route.operation }}(operation_bindings({**url_params, **service_inputs}, principal, body))
+{% if route.runs_operation %}
+{{ run_operation(route) }}
 {% else %}
     try:
 {% if route.operation == "list" %}
