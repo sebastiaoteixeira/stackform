@@ -1,0 +1,63 @@
+version: "0.3"
+
+api:
+  basePath: /api
+
+imports:
+  hooks: { path: ./hooks, package: hooks }
+
+mongo:
+  uri: ${MONGO_URI}
+  database: ${MONGO_DB}
+
+entities:
+  task:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+  note:
+    fields:
+      id: { type: id }
+      body: { type: string, required: true }
+
+repositories:
+  tasks:
+    entity: task
+    operations:
+      byTitle:
+        query: { command: find, filter: { title: $title } }
+      notesByBody:
+        query: { command: find, collection: notes, filter: { body: $text } }
+      retitle:
+        query:
+          command: bulkWrite
+          requests:
+            - updateMany: { filter: { title: $old }, update: { $set: { title: $new } } }
+  notes:
+    entity: note
+    crud: [create]
+
+services:
+  tasks:
+    repository: tasks
+    operations:
+      byTitle: true
+      notesByBody: true
+      retitle: true
+      echo: { handler: hooks.echo }
+  notes: { repository: notes }
+
+controllers:
+  tasks:
+    service: tasks
+    base_path: /tasks
+    access: public
+    operations:
+      byTitle: { method: GET, path: "/by-title/{title}" }
+      notesByBody: { method: GET, path: "/notes/{text}" }
+      retitle: { method: POST, path: "/retitle/{old}/{new}" }
+      echo: { method: POST, path: "/echo/{id}" }
+  notes:
+    service: notes
+    base_path: /notes
+    access: public

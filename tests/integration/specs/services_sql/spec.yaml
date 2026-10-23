@@ -1,0 +1,104 @@
+version: "0.3"
+
+api:
+  basePath: /api
+
+imports:
+  hooks: { path: ./hooks, package: hooks }
+
+datastores:
+  store:
+    type: postgres
+    dsn: ${SQL_DSN}
+    default: true
+
+entities:
+  user:
+    type: auth
+    auth: { identifier: email, via: password }
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+  task:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+  note:
+    fields:
+      id: { type: id }
+      body: { type: string, required: true }
+
+repositories:
+  users: { entity: user, crud: [create] }
+  countable:
+    abstract: true
+    operations:
+      countAll:
+        query: { sql: "SELECT count(*) AS total FROM tasks" }
+  tasks:
+    entity: task
+    extends: countable
+    operations:
+      byTitle:
+        query:
+          sql: "SELECT title FROM tasks WHERE title = :title"
+          params: { title: $title }
+  notes:
+    entity: note
+    crud: [list, create]
+  titles:
+    entity: task
+    crud: []
+    operations:
+      named:
+        query:
+          sql: "SELECT title FROM tasks WHERE title = :name"
+          params: { name: $name }
+
+services:
+  users: { repository: users }
+  auditable:
+    abstract: true
+    operations:
+      delete: false
+      countAll: true
+      echo: { handler: hooks.echo }
+  tasks:
+    repository: tasks
+    extends: auditable
+    operations:
+      byTitle: true
+  notes: { repository: notes }
+  titles:
+    repository: titles
+    input: { label: string }
+    with: { name: $label }
+    operations:
+      named: true
+
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: public
+  tasks:
+    service: tasks
+    base_path: /tasks
+    access: public
+    operations:
+      countAll: { method: GET, path: /stats/count }
+      echo: { method: POST, path: "/echo/{id}", access: "*" }
+      byTitle: { method: GET, path: "/by-title/{title}" }
+  notes:
+    service: notes
+    base_path: /notes
+    access: public
+    operations:
+      list: { path: /all }
+      create: { access: "*" }
+  titles:
+    service: titles
+    base_path: /titles
+    access: public
+    operations:
+      named: { method: GET, path: "/{label}" }
