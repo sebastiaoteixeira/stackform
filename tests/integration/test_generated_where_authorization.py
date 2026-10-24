@@ -408,7 +408,7 @@ def test_generated_raw_asgi_enforces_where_per_rule(tmp_path):
         sys.modules["app.handlers"] = handlers_module
 
         async def verify():
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body
@@ -417,39 +417,39 @@ def test_generated_raw_asgi_enforces_where_per_rule(tmp_path):
             assert db["teams"].criteria == [{{"id": "org-1"}}]
 
             db["organizations"].documents = []
-            status, body = await handlers.handle_custom_1(
+            status, body = await handlers.handle_post_audit__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            status, body = await handlers.handle_custom_1(
+            status, body = await handlers.handle_post_audit__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body
             assert body == {{"authorized": True}}
 
-            status, body = await routes.handle_get_reports(
+            status, body = await routes.handle_get_reports__organizationId___id_(
                 {{"organizationId": "org-1", "id": "r1"}}, None, {{}}, db
             )
             assert status == 200, body
             assert body["organizationId"] == "org-1"
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "other"}}]
-            status, body = await routes.handle_get_reports(
+            status, body = await routes.handle_get_reports__organizationId___id_(
                 {{"organizationId": "org-1", "id": "r1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = []
             db["teams"].documents = []
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body

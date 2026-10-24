@@ -292,6 +292,11 @@ class RouteDescriptor:
         )
 
     @property
+    def handler_name(self) -> str:
+        """Function name unique to this method and path across the whole API."""
+        return to_py_identifier(f"handle_{self.method.lower()}{self.relative_path}")
+
+    @property
     def django_path(self) -> str:
         path = self.relative_path.lstrip("/")
         return re.sub(r"\{(\w+)\}", r"<str:\1>", path)

@@ -45,7 +45,7 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 
 
 {% for route in routes %}
-async def handle_custom_{{ loop.index }}(
+async def {{ route.handler_name }}(
     url_params: dict[str, str],
     body: dict[str, Any] | None,
     headers: dict[str, str],

@@ -37,16 +37,9 @@ def _path_to_regex(path: str) -> str:
     return re.sub(r"\{(\w+)\}", _replace, path)
 
 
-{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
 ROUTES: dict[str, list[tuple[re.Pattern[str], Any]]] = {}
-{% for route in crud_routes %}
-{% if route.collection %}
-{% set handler_name = "handle_" ~ route.operation ~ "_" ~ route.collection %}
-ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ handler_name }}))
-{% endif %}
-{% endfor %}
-{% for route in handler_routes %}
-ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), handle_custom_{{ loop.index }}))
+{% for route in routes if route.operation != "login" %}
+ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ route.handler_name }}))
 {% endfor %}
 {% for identity in ctx.auth.identity_collections %}
 {% if identity.has_password and identity.identifier %}

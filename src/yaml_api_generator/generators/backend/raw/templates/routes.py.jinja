@@ -132,8 +132,7 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% endmacro %}
 {% for route in routes %}
 {% if route.operation != "login" %}
-{% set handler_name = "handle_" ~ route.operation ~ "_" ~ collection_name %}
-async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
+async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
     repo = {{ collection_name | capitalize_collection }}Repository(db)
     service = {{ collection_name | capitalize_collection }}Service(repo)
     principal = None

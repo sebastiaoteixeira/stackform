@@ -47,10 +47,10 @@ def test_operation_reads_the_collection_its_query_names(api):
     assert [document["body"] for document in response.json()] == [body]
 
 
-def test_operation_inherited_from_abstract_repository_runs(api):
-    before = api.get("/api/tasks/stats/count").json()
+def test_single_segment_operation_path_outranks_the_record_route(api):
+    before = api.get("/api/tasks/stats").json()
     _create(api, "tasks", title=uuid4().hex)
-    assert api.get("/api/tasks/stats/count").json() == before + 1
+    assert api.get("/api/tasks/stats").json() == before + 1
 
 
 def test_bulk_write_applies_its_requests(api):
@@ -73,3 +73,26 @@ def test_handler_receives_the_request_it_documents(api):
         "principal": None,
         "inputs": {},
     }
+
+
+@pytest.fixture(scope="module")
+def user(api):
+    login = {"email": f"{uuid4().hex}@example.com", "password": "correct-horse-battery"}
+    registered = api.post("/api/users", json=login).json()
+    token = api.post("/api/users/login", json=login).json()["token"]
+    return {"id": registered["id"], "headers": {"Authorization": f"Bearer {token}"}}
+
+
+def test_controllers_sharing_a_service_keep_their_own_access(api, user):
+    title = uuid4().hex
+    _create(api, "tasks", title=title)
+    assert api.get("/api/archive").status_code == 401
+    assert api.get("/api/tasks").status_code == 200
+    assert _titles(api.get(f"/api/archive/by-title/{title}", headers=user["headers"])) == [title]
+
+
+def test_explicit_controller_route_is_public_at_its_overridden_path(api):
+    response = api.get("/api/totals/tasks")
+    assert response.status_code == 200, response.text
+    assert isinstance(response.json(), int)
+    assert api.get("/api/tasks-total").status_code == 404

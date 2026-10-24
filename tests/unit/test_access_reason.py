@@ -281,7 +281,7 @@ def test_generated_raw_asgi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
         posts.resolve_principal = principal
         database = Database()
 
-        result = asyncio.run(posts.handle_create_posts(
+        result = asyncio.run(posts.handle_post_posts_(
             {{}},
             {{"title": "Post", "ownerId": "blocked"}},
             {{}},
@@ -290,13 +290,13 @@ def test_generated_raw_asgi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
         assert result == (403, {{"detail": "Blocked accounts cannot create posts."}})
 
         current["sub"] = "u1"
-        result = asyncio.run(posts.handle_get_posts(
+        result = asyncio.run(posts.handle_get_posts__id_(
             {{"id": "p1"}}, None, {{}}, database
         ))
         assert result == (403, {{"detail": "Only the owner may read this post."}})
 
         current["sub"] = "u2"
-        status, document = asyncio.run(posts.handle_get_posts(
+        status, document = asyncio.run(posts.handle_get_posts__id_(
             {{"id": "p1"}}, None, {{}}, database
         ))
         assert status == 200
