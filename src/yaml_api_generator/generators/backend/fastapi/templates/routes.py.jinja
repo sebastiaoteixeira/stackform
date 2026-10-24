@@ -234,12 +234,27 @@ _files = record_files[{{ collection_name | tojson }}]
 {% endif %}
 {% endmacro %}
 
-{% for route in crud_routes %}
+{% for route in routes if route.operation != "login" %}
 {% set body_model = route.typed_body_model or route.body_model %}
 {% set partial = route.operation == "update" %}
 {% set body_expr = "upload.payload" if files else 'payload.model_dump(mode="json"' ~ (", exclude_unset=True" if partial else "") ~ ")" %}
 {% set record_expr = "upload.record" if files else body_expr %}
-{% if route.operation == "list" %}
+{% if route.runs_operation %}
+@router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"]{{ openapi_extra(route) }})
+async def {{ route.operation }}_{{ collection_name }}(request: Request{% for name in route.path_params %}, {{ name }}: str{% endfor %}{{ auth_param(route) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
+    _body: dict[str, Any] = {}
+    try:
+        _body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        pass
+{{ request_locals(route, "_body") }}
+{{ pre_fetch_guard(route) }}
+{{ bind_inputs(route) }}
+{{ prepare_inputs(route, "dict(request.path_params)", "_body") }}
+{{ call_with_request("svc." ~ route.operation ~ "(_request)", "principal" if auth.enabled and route.needs_auth else "None", "_body", "_service_inputs") }}
+
+
+{% elif route.operation == "list" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 {% set list_prefix = (extra_path_params(route) ~ request_param(route) ~ auth_param(route)) | trim(chars=", ") %}
 async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{{ where_repo_params(route) }}{% if route.pagination %}, limit: int | None = None{% if route.pagination.strategy == "offset" %}, offset: int | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
@@ -332,20 +347,4 @@ async def {{ file_route.handler_name }}({{ source.record_id_param }}: str{{ extr
 {{ file_actions[file_route.action](source, field_name, file_id) }}
 
 
-{% endfor %}
-{% for route in operation_routes %}
-
-
-@router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"]{{ openapi_extra(route) }})
-async def {{ route.operation }}_{{ collection_name }}(request: Request{% for name in route.path_params %}, {{ name }}: str{% endfor %}{{ auth_param(route) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
-    _body: dict[str, Any] = {}
-    try:
-        _body = await request.json()
-    except (ValueError, UnicodeDecodeError):
-        pass
-{{ request_locals(route, "_body") }}
-{{ pre_fetch_guard(route) }}
-{{ bind_inputs(route) }}
-{{ prepare_inputs(route, "dict(request.path_params)", "_body") }}
-{{ call_with_request("svc." ~ route.operation ~ "(_request)", "principal" if auth.enabled and route.needs_auth else "None", "_body", "_service_inputs") }}
 {% endfor %}

@@ -371,6 +371,11 @@ class IRRoute:
     handler: str | None = None
     pagination: IRPagination | None = None
 
+    @property
+    def precedence(self) -> tuple[bool, ...]:
+        """Sort key under which a literal path segment outranks a parameter at the same position."""
+        return tuple(segment.startswith("{") for segment in self.path.split("/"))
+
 
 @dataclass(frozen=True)
 class IRFileRoute:

@@ -4,6 +4,7 @@ Coordinates specialized transformers to convert v0.2 YAML specifications into IR
 """
 
 from dataclasses import fields as dataclass_fields
+from operator import attrgetter
 from typing import Any
 
 from yaml_api_generator.ir import IRDocument
@@ -143,7 +144,7 @@ class V02Transformer:
             version=str(resolved["version"]),
             api=self._route.build_api(api_data),
             collections=collections,
-            routes=routes,
+            routes=sorted(routes, key=attrgetter("precedence")),
             identityCollections=identity_collections,
             dtos=dtos,
             services=services,
