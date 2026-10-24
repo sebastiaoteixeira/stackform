@@ -18,7 +18,7 @@ class InheritanceDesugarer:
     def __init__(self, layer: str) -> None:
         self._layer = layer
 
-    def desugar(self, entries: dict[str, Any], bindings: dict[str, Any]) -> None:
+    def desugar(self, entries: dict[str, Any], bindings: dict[str, dict[str, Any]]) -> None:
         """Validate inheritance and fold every ancestor into the entries extending it.
 
         Every ``extends`` target must exist and be abstract, chains must not
@@ -30,7 +30,8 @@ class InheritanceDesugarer:
 
         Args:
             entries: The layer's config dict (repositories or services).
-            bindings: The controllers, whose ``<layer>`` key references entries.
+            bindings: Each config path whose ``<layer>`` key references an entry,
+                mapped to the config at that path.
 
         Raises:
             ConfigErrors: On a missing or non-abstract target, a cycle or a bound abstract entry.
@@ -49,7 +50,7 @@ class InheritanceDesugarer:
         ]:
             del entries[name]
 
-    def _validate_not_bound(self, entries: dict[str, Any], bindings: dict[str, Any]) -> None:
+    def _validate_not_bound(self, entries: dict[str, Any], bindings: dict[str, dict[str, Any]]) -> None:
         abstract_names = {
             name for name, cfg in entries.items()
             if isinstance(cfg, dict) and cfg.get("abstract")
@@ -58,10 +59,10 @@ class InheritanceDesugarer:
             ConfigError(
                 code=f"DESUGAR_ABSTRACT_{self._layer.upper()}_BOUND",
                 message=f"'{binding_name}' references abstract {self._layer} '{binding_cfg[self._layer]}'",
-                path=f"controllers.{binding_name}.{self._layer}",
+                path=f"{binding_name}.{self._layer}",
             )
             for binding_name, binding_cfg in bindings.items()
-            if isinstance(binding_cfg, dict) and binding_cfg.get(self._layer) in abstract_names
+            if binding_cfg.get(self._layer) in abstract_names
         ]
         if errors:
             raise ConfigErrors(errors)

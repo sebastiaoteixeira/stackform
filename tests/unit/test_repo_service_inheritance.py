@@ -232,3 +232,21 @@ def test_abstract_service_generates_a_base_class_its_services_extend(tmp_path):
     assert "async def countAll" in base_src and "async def summary" in base_src
     assert "from services.auditable import AuditableService" in service_src
     assert "async def countAll" not in service_src
+
+
+def test_service_bound_to_abstract_repository_raises():
+    config = _base_config()
+    config["repositories"]["base"] = {"abstract": True, "operations": {"countAll": {"query": {"command": "estimatedDocumentCount"}}}}
+    config["services"]["posts"]["repository"] = "base"
+    with pytest.raises(ConfigErrors) as exc_info:
+        desugar_v02(config)
+    assert [e.path for e in exc_info.value.errors if e.code == "DESUGAR_ABSTRACT_REPOSITORY_BOUND"] == ["services.posts.repository"]
+
+
+def test_route_targeting_abstract_service_raises():
+    config = _base_config()
+    config["services"]["base"] = {"abstract": True, "operations": {"delete": False}}
+    config["controllers"]["stats"] = {"routes": {"count": {"service": "base", "method": "GET", "path": "/stats"}}}
+    with pytest.raises(ConfigErrors) as exc_info:
+        desugar_v02(config)
+    assert [e.path for e in exc_info.value.errors if e.code == "DESUGAR_ABSTRACT_SERVICE_BOUND"] == ["controllers.stats.routes.count.service"]
