@@ -166,20 +166,13 @@ class {{ class_name }}Repository:
     ) -> dict[str, Any] | None:
         return await self.update_by(self._match_filter(document_id), data)
 
-    @_translate_conflict
     async def replace(
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_replace(
-            self._match_filter(document_id),
-            data,
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._normalize(doc)
+        return await self.replace_by(self._match_filter(document_id), data)
 
     async def delete(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_delete(self._match_filter(document_id))
-        return self._normalize(doc)
+        return await self.delete_by(self._match_filter(document_id))
 {% for op in custom_operations | default([]) %}
 {% set q = op.query %}
 {% set col_expr = "self._db[\"" + q["collection"] + "\"]" if q and q.get("collection") else "self._col" %}

@@ -2,7 +2,8 @@
 
 The spec covers formats, array items, closed nested objects, defaults, readonly
 fields, strict scalars, partial updates and a DTO-typed body, which an access
-rule binds for any signed-in user.
+rule binds for any signed-in user. Round trips check what the apps store and
+return besides the status codes.
 """
 
 import textwrap
@@ -34,7 +35,7 @@ version: "0.2"
 api:
   basePath: ""
   operations:
-    defaults: { list: true, get: true, create: true, update: true, delete: true }
+    defaults: { list: true, get: true, create: true, update: true, replace: true, delete: true }
     auth: { register: true, login: true }
 """
 
@@ -142,10 +143,19 @@ NOTES = [
     ({"role": "admin", "unknown": 1}, 422),
     ({}, 422),
 ]
+ROUND_TRIPS = [
+    ["created number", 3],
+    ["replaced id kept", True],
+    ["replaced number", 1.5],
+    ["replaced item found", 200],
+    ["replaced item deleted", 200],
+    ["note role kept", "admin"],
+]
 EXPECTED = [
     *(["POST /items", body, status] for body, status in CREATES),
     *(["PATCH /items", body, status] for body, status in UPDATES),
     *(["POST /notes", body, status] for body, status in NOTES),
+    *ROUND_TRIPS,
 ]
 
 
@@ -160,8 +170,23 @@ def _bearer(client: TestClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _round_trips(client: TestClient, headers: dict[str, str]) -> list[list]:
+    item = client.post("/items", json={"name": "ab", "rank": 3}).json()
+    path = f"/items/{item['id']}"
+    replaced = client.put(path, json={"name": "cd", "rank": 1.5}).json()
+    note = client.post("/notes", json={"role": "admin"}, headers=headers).json()
+    return [
+        ["created number", item["rank"]],
+        ["replaced id kept", replaced.get("id") == item["id"]],
+        ["replaced number", replaced["rank"]],
+        ["replaced item found", client.get(path).status_code],
+        ["replaced item deleted", client.delete(path).status_code],
+        ["note role kept", note.get("role")],
+    ]
+
+
 def scenario(client: TestClient) -> list[list]:
-    """Each payload with the status it got, after one valid item is created for the updates."""
+    """Each payload with the status it got, after one valid item is created for the updates, then the round trips."""
     headers = _bearer(client)
     created = client.post("/items", json={"name": "ab"})
     assert created.status_code == 200, created.text
@@ -177,4 +202,5 @@ def scenario(client: TestClient) -> list[list]:
             ["POST /notes", body, client.post("/notes", json=body, headers=headers).status_code]
             for body, _ in NOTES
         ),
+        *_round_trips(client, headers),
     ]
