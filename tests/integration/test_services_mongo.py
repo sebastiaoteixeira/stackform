@@ -47,6 +47,12 @@ def test_operation_reads_the_collection_its_query_names(api):
     assert [document["body"] for document in response.json()] == [body]
 
 
+def test_operation_inherited_from_abstract_repository_runs(api):
+    before = api.get("/api/tasks/stats/count").json()
+    _create(api, "tasks", title=uuid4().hex)
+    assert api.get("/api/tasks/stats/count").json() == before + 1
+
+
 def test_bulk_write_applies_its_requests(api):
     old, new = uuid4().hex, uuid4().hex
     _create(api, "tasks", title=old)

@@ -6,7 +6,7 @@ from typing import Any
 
 {% endif %}
 {% if not is_abstract %}
-from ._ops import RepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
+from ._ops import RepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor +%}
 {% endif %}
 {% if generated_base %}
 from {{ generated_base.module }} import {{ generated_base.class_name }}

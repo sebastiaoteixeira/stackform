@@ -21,8 +21,14 @@ entities:
       body: { type: string, required: true }
 
 repositories:
+  countable:
+    abstract: true
+    operations:
+      countAll:
+        query: { command: countDocuments, filter: {} }
   tasks:
     entity: task
+    extends: countable
     operations:
       byTitle:
         query: { command: find, filter: { title: $title } }
@@ -44,6 +50,7 @@ services:
       byTitle: true
       notesByBody: true
       retitle: true
+      countAll: true
       echo: { handler: hooks.echo }
   notes: { repository: notes }
 
@@ -57,6 +64,7 @@ controllers:
       notesByBody: { method: GET, path: "/notes/{text}" }
       retitle: { method: POST, path: "/retitle/{old}/{new}" }
       echo: { method: POST, path: "/echo/{id}" }
+      countAll: { method: GET, path: /stats/count }
   notes:
     service: notes
     base_path: /notes
