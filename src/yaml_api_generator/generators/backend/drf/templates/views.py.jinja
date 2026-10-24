@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from drf_spectacular.utils import extend_schema
 from api.conflicts import ConflictError
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete"] %}
@@ -76,7 +76,7 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% macro pre_fetch_check(route) %}
 {% if route.needs_auth %}
         db = get_database()
-        _resolved_principal = resolve_principal(request, db)
+        _resolved_principal = await resolve_principal(request.headers, db)
         if _resolved_principal is None:
             return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
 {% if route.access_rules %}
@@ -166,7 +166,7 @@ class {{ class_name }}ListView(APIView):
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
             document = await service.create(data)
-            return Response(document, status=status.HTTP_201_CREATED)
+            return Response(document)
 {% endif %}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)

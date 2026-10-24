@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Any
+from typing import Any, Callable, ClassVar
 
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, StrictUndefined
 
@@ -51,6 +51,9 @@ def template_environment(*template_dirs: Path) -> Environment:
 
 
 class CodeGenerator(ABC):
+    asgi_application: ClassVar[str] = "app:app"
+    """Import path an ASGI server loads to serve the generated backend."""
+
     @abstractmethod
     def generate(self, context: CompileContext, output_dir: Path) -> None: ...
 

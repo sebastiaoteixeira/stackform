@@ -288,6 +288,11 @@ class RouteDescriptor:
         path = self.relative_path.lstrip("/")
         return re.sub(r"\{(\w+)\}", r"<str:\1>", path)
 
+    @property
+    def match_precedence(self) -> tuple[bool, ...]:
+        """Sort key for first-match routers: a literal segment outranks a parameter at the same depth."""
+        return tuple(segment.startswith("{") for segment in self.relative_path.strip("/").split("/"))
+
 
 @dataclass(frozen=True)
 class FileRouteDescriptor:
@@ -317,6 +322,15 @@ class IdentityCollectionDescriptor:
     issues_jwt: bool = False
     datastore_type: str = "mongodb"
     id_format: str = "uuidv7"
+    declared_login_path: str | None = None
+
+    @property
+    def login_path(self) -> str:
+        return self.declared_login_path or f"/{self.name}/login"
+
+    @property
+    def refresh_path(self) -> str:
+        return f"{self.login_path.removesuffix('/login')}/refresh"
 
     @property
     def is_sql(self) -> bool:

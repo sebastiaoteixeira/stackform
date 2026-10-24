@@ -42,7 +42,7 @@ class {{ class_name }}LoginPayload(BaseModel):
     password: str = Field(..., min_length=1)
 
 
-@router.post("/{{ identity.name }}/login", tags=["{{ identity.name | capitalize_collection }}"])
+@router.post("{{ identity.login_path }}", tags=["{{ identity.name | capitalize_collection }}"])
 async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if ctx.session.uses_cookie %}, request: Request{% endif %}, repository=Depends(get_{{ identity.name }}_repository)) -> Any:
     doc = await repository.find_by(
         "{{ pw_binding.identifier }}", payload.{{ pw_binding.identifier }}
@@ -72,7 +72,7 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if c
 {% if ctx.session.refresh %}
 {% if ctx.session.uses_cookie %}
 
-@router.post("/{{ identity.name }}/refresh", tags=["{{ identity.name | capitalize_collection }}"])
+@router.post("{{ identity.refresh_path }}", tags=["{{ identity.name | capitalize_collection }}"])
 async def refresh_{{ identity.name }}(request: Request) -> Any:
     presented = refresh_token_from_request(request)
     if presented is None:
@@ -86,7 +86,7 @@ async def refresh_{{ identity.name }}(request: Request) -> Any:
     return response
 {% else %}
 
-@router.post("/{{ identity.name }}/refresh", tags=["{{ identity.name | capitalize_collection }}"])
+@router.post("{{ identity.refresh_path }}", tags=["{{ identity.name | capitalize_collection }}"])
 async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
     rotated = await rotate_session(payload.refresh_token)
     if rotated is None:

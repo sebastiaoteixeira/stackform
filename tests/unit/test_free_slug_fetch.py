@@ -152,7 +152,7 @@ async def test_update_step_multi_token_scoped_mutates_matching_record():
     repo = InMemoryRepository({"members": [{"id": "m1", "orgId": "o1", "name": "old"}]})
     repo.register_id_field("members", "id")
     step = RepositoryUpdateStep(
-        "members", "id", False, record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
+        "members", "id", None, record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
     )
     result = await step(
         _ctx(
@@ -171,7 +171,7 @@ async def test_replace_step_multi_token_wrong_parent_is_404():
     repo = InMemoryRepository({"members": [{"id": "m1", "orgId": "o1", "name": "old"}]})
     repo.register_id_field("members", "id")
     step = RepositoryReplaceStep(
-        "members", "id", False, record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
+        "members", "id", None, record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
     )
     with pytest.raises(NotFoundError):
         await step(
@@ -192,7 +192,7 @@ async def test_replace_step_multi_token_wrong_parent_is_404():
 async def test_update_step_v02_id_token_mutates_record():
     repo = InMemoryRepository({"items": [{"id": "i1", "title": "old"}]})
     repo.register_id_field("items", "id")
-    step = RepositoryUpdateStep("items", "id", False)
+    step = RepositoryUpdateStep("items", "id")
     result = await step(
         _ctx(repo, {"id": "i1"}, collection="items", operation="update", body={"title": "new"})
     )
@@ -204,7 +204,7 @@ async def test_update_step_renamed_token_mutates_record():
     repo = InMemoryRepository({"assetCategories": [{"id": "c1", "title": "old"}]})
     repo.register_id_field("assetCategories", "id")
     step = RepositoryUpdateStep(
-        "assetCategories", "id", False, record_locator("/api/v1/categories/{categoryId}", "id")
+        "assetCategories", "id", None, record_locator("/api/v1/categories/{categoryId}", "id")
     )
     result = await step(
         _ctx(
@@ -222,7 +222,7 @@ async def test_update_step_renamed_token_mutates_record():
 async def test_replace_step_v02_id_token_replaces_record():
     repo = InMemoryRepository({"items": [{"id": "i1", "title": "old", "extra": "drop"}]})
     repo.register_id_field("items", "id")
-    step = RepositoryReplaceStep("items", "id", False)
+    step = RepositoryReplaceStep("items", "id")
     result = await step(
         _ctx(
             repo,
@@ -243,7 +243,7 @@ async def test_replace_step_renamed_token_replaces_record():
     )
     repo.register_id_field("assetCategories", "id")
     step = RepositoryReplaceStep(
-        "assetCategories", "id", False, record_locator("/api/v1/categories/{categoryId}", "id")
+        "assetCategories", "id", None, record_locator("/api/v1/categories/{categoryId}", "id")
     )
     result = await step(
         _ctx(

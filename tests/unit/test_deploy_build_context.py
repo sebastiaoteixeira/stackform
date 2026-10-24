@@ -10,8 +10,7 @@ def _ctx(extra_services):
         name="app",
         port=8000,
         runtime="docker",
-        mongo_local=False,
-        mongo_db="testdb",
+        application="app:app",
         env_vars={},
         has_auth=False,
         has_frontend=False,
@@ -93,7 +92,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, "app:app", "localhost", "ubuntu", "~/.ssh/id_rsa")
     assert "JWT_SECRET" in ctx.secret_env_names
     assert "KEYCLOAK_CLIENT_SECRET" in ctx.secret_env_names
     assert ctx.env_vars["JWT_SECRET"] == ""
@@ -114,7 +113,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, "app:app", "localhost", "ubuntu", "~/.ssh/id_rsa")
     assert "JWT_SECRET=${JWT_SECRET}" in ctx.app_environment
     assert "KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}" in ctx.app_environment
     assert not any(":-" in v for v in ctx.app_environment if "JWT_SECRET" in v)
@@ -135,7 +134,7 @@ deploy:
   port: 8000
 """)
     ir = load_and_generate_ir(str(spec)).ir
-    ctx = build_deploy_context(ir, "localhost", "ubuntu", "~/.ssh/id_rsa")
+    ctx = build_deploy_context(ir, "app:app", "localhost", "ubuntu", "~/.ssh/id_rsa")
     out = tmp_path / "out"
     DockerDeployGenerator().generate(ctx, out, tmp_path)
 

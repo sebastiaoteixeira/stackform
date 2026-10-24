@@ -89,7 +89,7 @@ def parse_pagination(
     strategy = raw.get("strategy")
     errors.extend(_STRATEGY.validate(strategy, f"{path}.strategy"))
 
-    size, size_errors = _parse_size(raw.get("size"), f"{path}.size")
+    size, size_errors = _parse_size(raw["size"], f"{path}.size")
     errors.extend(size_errors)
 
     count = raw.get("count", "none")
@@ -103,12 +103,6 @@ def parse_pagination(
 
     if strategy == "keyset":
         errors.extend(_validate_keyset(sort, collection, path))
-        if not size_errors and size.default == 0:
-            errors.append(ConfigError(
-                code="PAGINATION_INVALID_SIZE",
-                message="keyset pagination size.default must be positive",
-                path=f"{path}.size.default",
-            ))
 
     if errors:
         return None, errors
@@ -123,35 +117,16 @@ def parse_pagination(
     ), []
 
 
-def _parse_size(raw: Any, path: str) -> tuple[IRPageSize, list[ConfigError]]:
-    if not isinstance(raw, dict):
-        return IRPageSize(default=0, max=0), [ConfigError(
+def _parse_size(raw: dict[str, int], path: str) -> tuple[IRPageSize, list[ConfigError]]:
+    """The schema bounds each size; only their ordering is left to check."""
+    size = IRPageSize(default=raw["default"], max=raw["max"])
+    if size.default > size.max:
+        return size, [ConfigError(
             code="PAGINATION_INVALID_SIZE",
-            message="pagination.size must declare 'default' and 'max'",
+            message=f"Default page size {size.default} exceeds the maximum page size {size.max}",
             path=path,
         )]
-    default = raw.get("default")
-    maximum = raw.get("max")
-    errors: list[ConfigError] = []
-    if not isinstance(default, int) or isinstance(default, bool) or default < 0:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_SIZE",
-            message="pagination.size.default must be a non-negative integer",
-            path=f"{path}.default",
-        ))
-    if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_SIZE",
-            message="pagination.size.max must be a positive integer",
-            path=f"{path}.max",
-        ))
-    if not errors and default > maximum:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_SIZE",
-            message="pagination.size.default must not exceed size.max",
-            path=path,
-        ))
-    return IRPageSize(default=default or 0, max=maximum or 0), errors
+    return size, []
 
 
 def _parse_sort(

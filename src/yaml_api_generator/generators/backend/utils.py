@@ -106,3 +106,15 @@ def extract_identity_fields(context: CompileContext, col_name: str) -> list[str]
             seen.add(binding.identifier)
 
     return identity_fields
+
+
+def identity_service_context(context: CompileContext, col_name: str) -> dict:
+    """What a collection's service needs to know about the identity it may back."""
+    identity = find_identity(context, col_name)
+    return {
+        "is_identity_collection": identity is not None,
+        "password_via": identity is not None and identity.has_password,
+        "api_key_via": identity is not None and identity.has_api_key,
+        "default_role": identity.roles.default if identity is not None and identity.roles else None,
+        "identity_fields": extract_identity_fields(context, col_name),
+    }

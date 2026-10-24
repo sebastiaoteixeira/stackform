@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from yaml_api_generator.cli import cli
@@ -116,6 +117,20 @@ def test_frontend_uses_spec_output_without_cli_override(tmp_path):
     assert (output / "src" / "pages" / "Articles.tsx").exists()
 
 
+def test_frontend_targets_api_port(tmp_path):
+    output = tmp_path / "frontend"
+    spec = yaml.safe_load((V03_EXAMPLES / "crud-pagination" / "spec.yaml").read_text())
+    spec["api"] = {**spec.get("api", {}), "port": 9100}
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump(spec, sort_keys=False))
+
+    result = CliRunner().invoke(cli, ["build", str(path), "frontend", "--output", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert "target: 'http://localhost:9100'" in (output / "vite.config.ts").read_text()
+    assert "VITE_API_BASE_URL=http://localhost:9100/" in (output / ".env.example").read_text()
+
+
 def test_frontend_without_ui_block_exits1():
     runner = CliRunner()
     result = runner.invoke(
@@ -129,9 +144,13 @@ def test_frontend_without_ui_block_exits1():
     assert result.exit_code == 1
 
 
-@pytest.mark.parametrize(("arguments", "port"), [([], 9100), (["-p", "9200"], 9200)], ids=["api-port", "flag"])
+@pytest.mark.parametrize(
+    ("arguments", "outcome"),
+    [([], (0, [9100])), (["-p", "9200"], (0, [9200])), (["-p", "0"], (2, []))],
+    ids=["api-port", "flag", "flag-out-of-range"],
+)
 @pytest.mark.parametrize("raw", [False, True], ids=["fastapi", "raw"])
-def test_run_binds_api_port_unless_flag_given(tmp_path, monkeypatch, arguments, port, raw):
+def test_run_binds_api_port_unless_flag_given(tmp_path, monkeypatch, arguments, outcome, raw):
     import uvicorn
 
     spec = write_spec(tmp_path, """
@@ -150,4 +169,4 @@ def test_run_binds_api_port_unless_flag_given(tmp_path, monkeypatch, arguments, 
     bound = []
     monkeypatch.setattr(uvicorn, "run", lambda app, **options: bound.append(options["port"]))
     result = CliRunner().invoke(cli, ["run", str(spec), *arguments, *(["--raw"] if raw else [])])
-    assert (result.exit_code, bound) == (0, [port]), result.output
+    assert (result.exit_code, bound) == outcome, result.output

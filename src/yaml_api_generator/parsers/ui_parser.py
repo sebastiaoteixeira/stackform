@@ -47,6 +47,7 @@ def build_generator_context(
         api_name=base_path.strip("/") or "api",
         api_version=version,
         base_url=base_url,
+        api_port=ir.api.port,
         collections=collections,
         components=components,
         views=views,

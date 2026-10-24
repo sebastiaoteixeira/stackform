@@ -1,10 +1,11 @@
 django
 djangorestframework
+adrf
 drf-spectacular
 {% if ctx.app.cors %}
 django-cors-headers
 {% endif %}
-gunicorn
+uvicorn
 pymongo
 pyjwt{{ "[crypto]" if ctx.session.uses_asymmetric else "" }}
 pydantic-settings

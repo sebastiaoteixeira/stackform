@@ -8,16 +8,17 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
-from yaml_api_generator.cli.compiler import compile_project
+from yaml_api_generator.cli.compiler import backend_generator, compile_project
 
 _REPOSITORY = Path(__file__).parents[3]
 
 _PRELUDE = """
+import importlib
 import json
 from starlette.testclient import TestClient
-import app
 
-client = TestClient(app.app)
+module, attribute = {application!r}.split(":")
+client = TestClient(getattr(importlib.import_module(module), attribute))
 """
 
 
@@ -38,7 +39,7 @@ def run_generated(spec: Path, target: str, script: str, env: dict[str, str] | No
     The script can import the ``tests`` package, so probes are shared with in-process tests.
     """
     result = subprocess.run(
-        [sys.executable, "-c", _PRELUDE + textwrap.dedent(script)],
+        [sys.executable, "-c", _PRELUDE.format(application=backend_generator(target).asgi_application) + textwrap.dedent(script)],
         cwd=generate(spec, target),
         env={**os.environ, "PYTHONPATH": str(_REPOSITORY), **(env or {})},
         capture_output=True,

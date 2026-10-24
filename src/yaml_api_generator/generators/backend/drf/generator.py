@@ -6,9 +6,8 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
-    extract_identity_fields,
-    find_identity,
     group_by_collection,
+    identity_service_context,
     pagination_config,
     runtime_module_source,
 )
@@ -45,6 +44,8 @@ _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "drf" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
 class DRFGenerator(TemplateBasedGenerator):
+    asgi_application = "project.asgi:application"
+
     def __init__(self):
         super().__init__()
         self._dir_prefix = "api"
@@ -96,6 +97,8 @@ class DRFGenerator(TemplateBasedGenerator):
         )
         if context.app.security_headers:
             (api_dir / "security_headers.py").write_text(runtime_module_source("security_headers"))
+        if context.app.cors and "*" in context.app.cors.headers:
+            (api_dir / "cors.py").write_text(env.get_template("cors.py.jinja").render())
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
@@ -158,6 +161,12 @@ class DRFGenerator(TemplateBasedGenerator):
         template = env.get_template("manage.py.jinja")
         (output_dir / "manage.py").write_text(template.render())
 
+        commands_dir = output_dir / self.dir_prefix / "management" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir.parent / "__init__.py").write_text("")
+        (commands_dir / "__init__.py").write_text("")
+        (commands_dir / "runserver.py").write_text(env.get_template("runserver.py.jinja").render())
+
     def _render_serializers(
         self,
         env: Environment,
@@ -196,15 +205,10 @@ class DRFGenerator(TemplateBasedGenerator):
         )
 
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
-        is_identity = identity is not None
-
         return {
             "collection_name": col_name,
             "is_async": True,
-            "is_identity_collection": is_identity,
-            "password_via": is_identity and identity.has_password,
-            "identity_fields": extract_identity_fields(context, col_name),
+            **identity_service_context(context, col_name),
             "import_prefix": "api.repositories",
             "auth_import_prefix": "api.authentication.auth",
             "service_import_prefix": "api.services",

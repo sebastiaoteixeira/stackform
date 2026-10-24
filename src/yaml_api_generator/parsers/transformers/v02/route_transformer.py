@@ -321,10 +321,6 @@ class RouteTransformer:
             else None
         )
 
-        mongo_local = deploy_data.get("mongo", {}).get(
-            "local", any(isinstance(ds, IRMongo) and ds.is_local for ds in datastores.values())
-        )
-
         env_vars = self._collect_env_vars(deploy_data, providers, datastores)
 
         extra_services = tuple(
@@ -336,7 +332,7 @@ class RouteTransformer:
             runtime=str(runtime),
             name=deploy_data.get("name"),
             port=int(deploy_data.get("port", api.port)),
-            mongo_local=mongo_local,
+            mongo_local=deploy_data.get("mongo", {}).get("local"),
             env_vars=tuple(env_vars),
             docker=docker,
             systemd=systemd,

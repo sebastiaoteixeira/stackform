@@ -7,9 +7,8 @@ from yaml_api_generator.generators.backend.builders.settings_builder import buil
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
-    extract_identity_fields,
-    find_identity,
     group_by_collection,
+    identity_service_context,
     pagination_config,
     runtime_module_source,
     write_environment_files,
@@ -185,48 +184,18 @@ class FastAPIGenerator(TemplateBasedGenerator):
         (output_dir / "services" / "_ops.py").write_text(ops_content)
 
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
-        is_identity = identity is not None
-
         return {
             "collection_name": col_name,
             "operations": _crud_operations(col_data),
-            "is_identity_collection": is_identity,
-            "password_via": is_identity and identity.has_password,
-            "default_role": identity.roles.default if is_identity and identity.roles else None,
-            "identity_fields": extract_identity_fields(context, col_name),
+            **identity_service_context(context, col_name),
         }
-
-    @staticmethod
-    def _service_group(route_service: str | None, services: dict) -> str | None:
-        """Resolve the repository/service-group name backing a route's service.
-
-        For expanded flat keys like 'list-posts', the IRService carries the
-        repository name directly. Falling back to the part after the first dash
-        handles edge cases where the service isn't in the index.
-        """
-        if route_service is None:
-            return None
-        ir_svc = services.get(route_service)
-        if ir_svc is not None and ir_svc.repository:
-            return ir_svc.repository
-        # Fallback: strip the operation prefix (e.g. "list-posts" → "posts")
-        if "-" in route_service:
-            return route_service.split("-", 1)[1]
-        return route_service
 
     def _build_routes_context(
         self, col_name: str, col_data: dict, ctx: CompileContext
     ) -> dict:
-        service_groups = list(dict.fromkeys(
-            g
-            for route in col_data["routes"]
-            if (g := self._service_group(route.service, ctx.services)) is not None
-        ))
         return {
             "ctx": ctx,
             "collection_name": col_name,
-            "service_groups": service_groups,
             "routes": col_data["routes"],
             "model_index": {m.name: m for m in col_data["models"]},
             "repo_queries": {

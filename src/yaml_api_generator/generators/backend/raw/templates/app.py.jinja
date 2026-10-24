@@ -50,7 +50,7 @@ ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + 
 {% endfor %}
 {% for identity in ctx.auth.identity_collections %}
 {% if identity.has_password and identity.identifier %}
-ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}))
+ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"{{ identity.login_path | path_to_regex }}$"), handle_login_{{ identity.name }}))
 {% endif %}
 {% endfor %}
 {% if ctx.session.uses_asymmetric %}
@@ -99,7 +99,7 @@ class ASGIApp:
             k.decode("latin-1"): v.decode("latin-1")
             for k, v in scope.get("headers", [])
         }
-        parsed_query = parse_qs(scope.get("query_string", b"").decode("utf-8"))
+        parsed_query = parse_qs(scope.get("query_string", b"").decode("utf-8"), keep_blank_values=True)
         query = {
             key: values[0] if len(values) == 1 else values
             for key, values in parsed_query.items()

@@ -76,7 +76,16 @@ class ContextBuilder:
 
         datastore_types = {n: c["datastore_type"] for n, c in raw_collections.items()}
         auth = self._auth.build_auth_config(
-            identity_map, document.collections, document.providers, datastore_types
+            identity_map,
+            document.collections,
+            document.providers,
+            datastore_types,
+            requires_principal=any(route.needs_auth for route in routes),
+            login_paths={
+                route.collection: route.relative_path
+                for route in routes
+                if route.operation == "login"
+            },
         )
         repository_operations = self._repository.build_repository_operations(document.repositories)
 

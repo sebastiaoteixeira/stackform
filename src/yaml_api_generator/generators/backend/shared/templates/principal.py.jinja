@@ -1,0 +1,169 @@
+import base64
+import hashlib
+import hmac
+import secrets
+from collections.abc import Mapping
+from typing import Any
+
+from {{ settings_module }} import settings
+{% if auth.uses_jwt %}
+{% block jwt_import %}{% endblock %}
+{% endif %}
+{% set api_key_identities = auth.identity_collections | selectattr("has_api_key") | map(attribute="name") | list %}
+{% set password_identifiers = {} %}
+{% for identity in auth.identity_collections if identity.has_password and identity.identifier %}
+{% set _ = password_identifiers.update({identity.name: identity.identifier}) %}
+{% endfor %}
+{% set jwt_issuers = auth.identity_collections | selectattr("issues_jwt") | map(attribute="name") | list %}
+
+
+def hash_password(password: str, rounds: int = settings.PASSWORD_HASH_ROUNDS) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+    salt_b64 = base64.urlsafe_b64encode(salt).decode("ascii")
+    hash_b64 = base64.urlsafe_b64encode(digest).decode("ascii")
+    return f"pbkdf2$sha256${rounds}${salt_b64}${hash_b64}"
+
+
+def verify_password(password: str, encoded_hash: str) -> bool:
+    parts = encoded_hash.split("$")
+    if len(parts) != 5:
+        return False
+    algorithm, digest_name, rounds_text, salt_b64, hash_b64 = parts
+    if algorithm != "pbkdf2" or digest_name != "sha256":
+        return False
+    try:
+        rounds = int(rounds_text)
+        salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
+        expected = base64.urlsafe_b64decode(hash_b64.encode("ascii"))
+    except (ValueError, Exception):
+        return False
+    computed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+    return hmac.compare_digest(computed, expected)
+
+
+def hash_api_key(api_key: str) -> str:
+    """API keys are high-entropy, so an unsalted digest keeps them both secret and indexable."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
+def _extract_api_key(headers: Mapping[str, str]) -> str | None:
+    api_key = headers.get("x-api-key")
+    if api_key:
+        token = api_key.strip()
+        if token:
+            return token
+    return _extract_bearer_token(headers)
+
+
+def _extract_basic_credentials(headers: Mapping[str, str]) -> tuple[str, str] | None:
+    authorization = headers.get("authorization", "")
+    if not authorization.startswith("Basic "):
+        return None
+    encoded = authorization.removeprefix("Basic ").strip()
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return None
+    if ":" not in decoded:
+        return None
+    username, password = decoded.split(":", 1)
+    if not username or not password:
+        return None
+    return username, password
+
+
+def _extract_bearer_token(headers: Mapping[str, str]) -> str | None:
+    authorization = headers.get("authorization", "")
+    if authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        if token:
+            return token
+    return None
+
+
+ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | role_hierarchies_py }}
+
+# identity collection -> (id field, declared roles field, roles managed under _auth)
+_IDENTITIES: dict[str, tuple[str, str | None, bool]] = {
+{% for identity in auth.identity_collections %}
+    "{{ identity.name }}": ({{ identity.id_field | py_literal }}, {{ identity.roles_field | py_literal }}, {{ (identity.roles is not none) | py_literal }}),
+{% endfor %}
+}
+
+
+def _extract_roles(doc: dict[str, Any], roles_field: str | None, managed_roles: bool) -> list[str]:
+    roles = doc.get(roles_field) if roles_field else (doc.get("roles") or doc.get("role"))
+    if roles is None and managed_roles:
+        auth_data = doc.get("_auth")
+        roles = auth_data.get("roles") if isinstance(auth_data, dict) else None
+    if isinstance(roles, list):
+        return [str(role) for role in roles]
+    if isinstance(roles, str):
+        return [roles]
+    return []
+
+
+def _principal_has_role(principal: dict | None, required_role: str) -> bool:
+    if principal is None:
+        return False
+    principal_roles = principal.get("roles", [])
+    if required_role in principal_roles:
+        return True
+    entity_hierarchy = ROLE_HIERARCHIES.get(principal.get("identity_collection", ""), {})
+    return any(required_role in entity_hierarchy.get(role, set()) for role in principal_roles)
+
+
+def _principal(identity_collection: str, doc: dict[str, Any] | None) -> dict[str, Any] | None:
+    if doc is None:
+        return None
+    id_field, roles_field, managed_roles = _IDENTITIES[identity_collection]
+    subject = doc.get(id_field)
+    if subject is None:
+        return None
+    return {
+        "sub": str(subject),
+        "identity_collection": identity_collection,
+        "record": doc,
+        "roles": _extract_roles(doc, roles_field, managed_roles),
+    }
+
+
+_PASSWORD_IDENTIFIERS: dict[str, str] = {{ password_identifiers | py_literal }}
+
+
+async def find_by_password(db, identity_collection: str, identifier_value: str, password: str) -> dict[str, Any] | None:
+    doc = await db[identity_collection].find_one({_PASSWORD_IDENTIFIERS[identity_collection]: identifier_value})
+    auth_data = doc.get("_auth") if doc is not None else None
+    stored_hash = auth_data.get("passwordHash") if isinstance(auth_data, dict) else None
+    return doc if isinstance(stored_hash, str) and verify_password(password, stored_hash) else None
+
+
+async def resolve_principal(headers: Mapping[str, str], db) -> dict[str, Any] | None:
+    headers = {name.lower(): value for name, value in headers.items()}
+{% if jwt_issuers %}
+    bearer_token = _extract_bearer_token(headers)
+    claims = decode_jwt_token(bearer_token) if bearer_token is not None else None
+    if claims is not None and claims.get("sub") and claims.get("identity_collection") in {{ jwt_issuers | py_literal }}:
+        collection = claims["identity_collection"]
+        principal = _principal(collection, await db[collection].find_one({_IDENTITIES[collection][0]: claims["sub"]}))
+        if principal is not None:
+            return principal
+{% endif %}
+{% if api_key_identities %}
+    api_key = _extract_api_key(headers)
+    if api_key is not None:
+        for collection in {{ api_key_identities | py_literal }}:
+            principal = _principal(collection, await db[collection].find_one({"apiKey": hash_api_key(api_key)}))
+            if principal is not None:
+                return principal
+{% endif %}
+{% if password_identifiers %}
+    credentials = _extract_basic_credentials(headers)
+    if credentials is not None:
+        for collection in _PASSWORD_IDENTIFIERS:
+            principal = _principal(collection, await find_by_password(db, collection, *credentials))
+            if principal is not None:
+                return principal
+{% endif %}
+    return None

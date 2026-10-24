@@ -80,11 +80,10 @@ class RouteBuilder:
         dtos: dict[str, IRDto],
     ) -> list[RouteDescriptor]:
         routes: list[RouteDescriptor] = []
-        has_identity = bool(document.identityCollections)
         prefix = _base_prefix(document)
 
         for ir_route in document.routes:
-            needs_auth = not ir_route.is_public and has_identity
+            needs_auth = not ir_route.is_public
             relative_path = ir_route.path.removeprefix(prefix) or "/"
             path_params = _PATH_TOKEN.findall(ir_route.path)
             record_id_param, record_parent_params = self._record_params(

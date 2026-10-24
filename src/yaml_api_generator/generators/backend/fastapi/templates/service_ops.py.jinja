@@ -1,8 +1,8 @@
 from typing import Any
 
 from services.exceptions import NotFoundError, ValidationError
-{% if auth.has_password_auth %}
-from dependencies.auth import hash_password
+{% if auth.has_password_auth or auth.has_api_key_auth %}
+from dependencies.auth import {{ ([auth.has_password_auth and "hash_password", auth.has_api_key_auth and "hash_api_key"] | select | join(", ")) }}
 {% endif %}
 
 
@@ -17,8 +17,8 @@ class ServiceBase:
 
     @staticmethod
     def _strip_internal_fields(document: dict) -> None:
-        document.pop("_auth", None)
-        document.pop("password", None)
+        for field_name in ("_auth", "password", "apiKey"):
+            document.pop(field_name, None)
 
     async def _before_create(self, data: dict) -> None:
         """Hook invoked before create; override to validate or enrich data."""
@@ -151,29 +151,37 @@ class DeleteSvc:
 
 class IdentityFieldsMixin:
     IDENTITY_FIELDS: tuple[str, ...] = ()
+    DEFAULT_ROLE: str | None = None
 
     async def _before_create(self, data: dict) -> None:
         for field_name in self.IDENTITY_FIELDS:
             value = data.get(field_name)
             if not isinstance(value, str) or not value.strip():
                 raise ValidationError(field_name, f"Missing required field: {field_name}")
+        if self.DEFAULT_ROLE is not None:
+            data["_auth"] = {**data.get("_auth", {}), "roles": self.DEFAULT_ROLE}
 {% if auth.has_password_auth %}
 
 
 class PasswordMixin:
-    DEFAULT_ROLE: str | None = None
-
     async def _before_write(self, data: dict) -> None:
         raw_password = data.pop("password", None)
-        if raw_password is None:
-            return
-        if not isinstance(raw_password, str) or not raw_password.strip():
-            raise ValidationError("password", "Password must be a non-empty string")
-        auth_data = data.get("_auth", {})
-        if not isinstance(auth_data, dict):
-            auth_data = {}
-        auth_data["passwordHash"] = hash_password(raw_password)
-        if self.DEFAULT_ROLE is not None:
-            auth_data.setdefault("roles", self.DEFAULT_ROLE)
-        data["_auth"] = auth_data
+        if raw_password is not None:
+            if not isinstance(raw_password, str) or not raw_password.strip():
+                raise ValidationError("password", "Password must be a non-empty string")
+            auth_data = data.get("_auth", {})
+            if not isinstance(auth_data, dict):
+                auth_data = {}
+            auth_data["passwordHash"] = hash_password(raw_password)
+            data["_auth"] = auth_data
+        await super()._before_write(data)
+{% endif %}
+{% if auth.has_api_key_auth %}
+
+
+class ApiKeyMixin:
+    async def _before_write(self, data: dict) -> None:
+        if "apiKey" in data:
+            data["apiKey"] = hash_api_key(data["apiKey"])
+        await super()._before_write(data)
 {% endif %}

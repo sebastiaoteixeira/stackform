@@ -23,7 +23,7 @@ def cli():
 def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | None, target: str, output_json: bool):
     """Build backend, frontend, deploy, or all."""
     from pathlib import Path
-    from .compiler import compile_project
+    from .compiler import backend_generator, compile_project
     from ..parsers.yaml_parser import ConfigErrors, load_and_generate_ir
     from ..generators.frontend.generator import generate_frontend
     from ..generators.frontend.packs.loader import load_pack
@@ -86,6 +86,7 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | 
             else:
                 generate_deploy(
                     ir=result.ir,
+                    application=backend_generator(target).asgi_application,
                     host="localhost",
                     ssh_user="ubuntu",
                     ssh_key="~/.ssh/id_rsa",
@@ -104,7 +105,7 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | 
 @click.argument("yaml_file", type=click.Path(exists=True))
 @click.option("-s", "--schema", "schema_file", type=click.Path(exists=True), help="JSON schema file")
 @click.option("--host", default="127.0.0.1", help="Host to bind")
-@click.option("-p", "--port", type=int, help="Port to bind (default: api.port)")
+@click.option("-p", "--port", type=click.IntRange(1, 65535), help="Port to bind (default: api.port)")
 @click.option("--raw", is_flag=True, help="Use raw ASGI runner")
 @click.option("-r", "--reload", is_flag=True, help="Reload the app when the spec changes")
 @click.option("--json", "output_json", is_flag=True, help="Output errors in JSON")

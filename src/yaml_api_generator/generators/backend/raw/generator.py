@@ -8,9 +8,8 @@ from yaml_api_generator.generators.backend.builders.settings_builder import buil
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
-    extract_identity_fields,
-    find_identity,
     group_by_collection,
+    identity_service_context,
     pagination_config,
     runtime_module_source,
     write_environment_files,
@@ -180,15 +179,10 @@ class RawASGIGenerator(TemplateBasedGenerator):
         )
 
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
-        is_identity = identity is not None
-
         return {
             "collection_name": col_name,
             "is_async": True,
-            "is_identity_collection": is_identity,
-            "password_via": is_identity and identity.has_password,
-            "identity_fields": extract_identity_fields(context, col_name),
+            **identity_service_context(context, col_name),
             "import_prefix": "repositories",
             "auth_import_prefix": "dependencies.auth",
             "service_import_prefix": "services",

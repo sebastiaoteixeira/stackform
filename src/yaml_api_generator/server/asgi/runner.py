@@ -87,7 +87,7 @@ class ASGIApp:
             for k, v in scope.get("headers", [])
         }
 
-        query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+        query = parse_qs(scope.get("query_string", b"").decode("latin-1"), keep_blank_values=True)
 
         try:
             ctx = await pipeline.run(

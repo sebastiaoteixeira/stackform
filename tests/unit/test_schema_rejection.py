@@ -32,6 +32,7 @@ BASE_SPECS = {
 OIDC_V01 = {"type": "oidc", "client_id": "id", "client_secret": "secret"}
 SAML = {"type": "saml", "idp_metadata_url": "https://idp/metadata", "sp_entity_id": "sp"}
 ACCESS_RULE = ("controllers", "posts", "access", 0)
+ROLES = {"values": ["reader"], "default": "reader"}
 TITLE = ("fields", "title")
 
 # (versions, path, value, message fragment)
@@ -79,6 +80,20 @@ REJECTED = {
     ),
     "typo-root": (("0.1", "0.2", "0.3"), ("colections",), {}, "'colections' was unexpected"),
     "typo-field": (("0.2", "0.3"), ("entities", "post", *TITLE, "requird"), True, "'requird' was unexpected"),
+    "v01-max-page-size-zero": (("0.1",), ("api", "pagination", "maxPageSize"), 0, "less than the minimum of 1"),
+    "v01-default-page-size-negative": (
+        ("0.1",), ("api", "pagination", "defaultPageSize"), -1, "less than the minimum of 1"
+    ),
+    "v01-via-empty": (
+        ("0.1",), ("collections", "posts", "auth"), {"identifier": "title", "via": []}, "is not valid under any"
+    ),
+    "v01-roles-on-base-collection": (("0.1",), ("collections", "posts", "roles"), ROLES, "'type' is a required property"),
+    "roles-on-base-entity": (("0.2", "0.3"), ("entities", "post", "roles"), ROLES, "'type' is a required property"),
+    "deploy-port-zero": (("0.2", "0.3"), ("deploy",), {"runtime": "docker", "port": 0}, "less than the minimum of 1"),
+    "deploy-port-negative": (("0.2", "0.3"), ("deploy",), {"runtime": "docker", "port": -5}, "less than the minimum of 1"),
+    "deploy-port-above-range": (
+        ("0.2", "0.3"), ("deploy",), {"runtime": "docker", "port": 65536}, "greater than the maximum of 65535"
+    ),
 }
 
 CASES = [
@@ -140,6 +155,7 @@ def test_mongo_block_beside_record_datastores_rejected(tmp_path, version):
     spec = {**BASE_SPECS[version], "mongo": MONGO, "datastores": {"main": POSTGRES}}
     errors = _load_errors(tmp_path, spec)
     assert [(error.code, error.path) for error in errors] == [("SCHEMA_VALIDATION_ERROR", "mongo")]
+    assert "mutually exclusive" in errors[0].message
 
 
 def test_mongo_block_beside_file_datastores_accepted(tmp_path):

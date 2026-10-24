@@ -208,7 +208,7 @@ class TestGeneratedFastAPIStartup:
 
 @pytest.mark.parametrize(
     ("target", "startup_file"),
-    [("drf", "api/apps.py"), ("raw", "app.py")],
+    [("drf", "project/asgi.py"), ("raw", "app.py")],
 )
 def test_generated_mongo_targets_initialize_indexes_before_graduation(
     tmp_path, target, startup_file
@@ -231,7 +231,7 @@ def test_generated_drf_views_package_does_not_import_absent_route_classes(tmp_pa
 
 @pytest.mark.parametrize(
     ("target", "startup_file"),
-    [("drf", "api/apps.py"), ("raw", "app.py")],
+    [("drf", "project/asgi.py"), ("raw", "app.py")],
 )
 def test_generated_mongo_targets_skip_indexes_after_graduation(
     tmp_path, target, startup_file

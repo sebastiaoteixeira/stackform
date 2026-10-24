@@ -20,6 +20,17 @@ _GENERATORS: dict[str, type[CodeGenerator]] = {
 }
 
 
+def backend_generator(target: str) -> type[CodeGenerator]:
+    """Return the generator class of a backend target.
+
+    Raises:
+        ValueError: If target is unsupported
+    """
+    if target not in _GENERATORS:
+        raise ValueError(f"Unknown target '{target}'. Supported: {', '.join(_GENERATORS)}")
+    return _GENERATORS[target]
+
+
 def compile_project(
     yaml_file: str | Path,
     schema_file: str | Path | None = None,
@@ -40,11 +51,7 @@ def compile_project(
     Raises:
         ValueError: If target is unsupported
     """
-    generator_cls = _GENERATORS.get(target)
-    if generator_cls is None:
-        supported = ", ".join(_GENERATORS)
-        raise ValueError(f"Unknown target '{target}'. Supported: {supported}")
-
+    generator_cls = backend_generator(target)
     result = load_and_generate_ir(yaml_file, schema_file)
     out = Path(output_dir)
     context = build_context(result.ir, SchemaManagement.for_spec(yaml_file))

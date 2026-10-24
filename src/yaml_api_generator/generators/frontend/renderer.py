@@ -33,6 +33,7 @@ def _render_scaffold(
         "package.json",
         "index.html",
         "vite.config.ts",
+        ".env.example",
         "tsconfig.json",
         "tsconfig.node.json",
         "tailwind.config.js",

@@ -32,6 +32,8 @@ class AuthBuilder:
         collections: dict[str, IRCollection],
         providers: dict[str, Any],
         datastore_types: dict[str, str],
+        requires_principal: bool,
+        login_paths: dict[str, str],
     ) -> AuthConfig:
         """Build auth configuration descriptor.
 
@@ -40,13 +42,15 @@ class AuthBuilder:
             collections: Collection IR objects
             providers: Provider configurations
             datastore_types: Collection name -> resolved datastore type
+            requires_principal: Whether any route is closed to anonymous callers
+            login_paths: Identity collection name -> relative path of its declared login route
 
         Returns:
             Auth configuration descriptor
         """
         if not identity_map:
             return AuthConfig(
-                enabled=False,
+                enabled=requires_principal,
                 identity_collections=[],
                 has_password_auth=False,
                 has_api_key_auth=False,
@@ -86,6 +90,7 @@ class AuthBuilder:
                     roles_field=identity.roles_field,
                     issues_jwt=issues_jwt,
                     datastore_type=datastore_types.get(name, "mongodb"),
+                    declared_login_path=login_paths.get(name),
                 )
             )
             if identity.has_password:

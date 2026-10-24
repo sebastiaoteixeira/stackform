@@ -218,6 +218,11 @@ def test_v01_roles_hierarchy_unknown_role_rejected(tmp_path) -> None:
     ]
 
 
+def test_v01_roles_default_must_be_declared(tmp_path) -> None:
+    roles = "roles: { values: [reader, editor], default: admin }"
+    assert _platform_errors(tmp_path, roles=roles) == [("ROLES_DEFAULT_UNKNOWN_ROLE", "collections.users.roles.default")]
+
+
 def test_v01_shared_validators_check_collections(tmp_path) -> None:
     assert _platform_errors(tmp_path, field="class") == [("INVALID_FIELD_NAME", "collections.posts.fields.class")]
     assert [code for code, _ in _platform_errors(tmp_path, min_length=-1)] == ["FIELD_CONSTRAINT_INVALID"]

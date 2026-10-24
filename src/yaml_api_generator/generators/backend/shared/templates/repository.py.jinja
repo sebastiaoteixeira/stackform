@@ -76,6 +76,9 @@ def _translate_conflict(operation):
 
 {% set class_name = collection_name | capitalize_collection %}
 
+_HIDDEN_FIELDS = frozenset({"_id", "_auth", "password", "apiKey"})
+
+
 class {{ class_name }}Repository:
     COLLECTION = "{{ collection_name }}"
     ID_FIELD = "{{ id_field }}"
@@ -88,10 +91,10 @@ class {{ class_name }}Repository:
         return {self.ID_FIELD: document_id}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Hide the datastore's own identifier; the service layer hides domain-internal fields."""
+        """Hide the datastore's own identifier and every stored credential."""
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if k != "_id"}
+        return {k: v for k, v in doc.items() if k not in _HIDDEN_FIELDS}
 
     async def list(self) -> list[dict[str, Any]]:
         cursor = self._col.find({})

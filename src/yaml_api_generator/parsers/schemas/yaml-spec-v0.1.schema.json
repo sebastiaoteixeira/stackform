@@ -20,8 +20,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "defaultPageSize": { "type": "integer" },
-            "maxPageSize": { "type": "integer" }
+            "defaultPageSize": { "type": "integer", "minimum": 1 },
+            "maxPageSize": { "type": "integer", "minimum": 1 }
           }
         },
         "operations": {
@@ -131,7 +131,10 @@
           },
           "then": { "required": ["auth"] }
         }
-      ]
+      ],
+      "dependentSchemas": {
+        "roles": { "required": ["type"], "properties": { "type": { "const": "auth" } } }
+      }
     },
     "AuthCollectionConfig": {
       "type": "object",
@@ -142,7 +145,7 @@
         "via": {
           "oneOf": [
             { "type": "string" },
-            { "$ref": "#/$defs/StringList" }
+            { "$ref": "#/$defs/StringList", "minItems": 1 }
           ]
         }
       }

@@ -39,7 +39,7 @@ class SystemdDeployGenerator(DeployGenerator):
         roles_py.mkdir(parents=True, exist_ok=True)
         self._render(env, "roles/python/tasks/main.yml.jinja", ctx, roles_py / "main.yml")
 
-        if ctx.mongo_local:
+        if ctx.local_mongo:
             roles_mongo = output_dir / "roles" / "mongodb" / "tasks"
             roles_mongo.mkdir(parents=True, exist_ok=True)
             self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongo / "main.yml")

@@ -1,7 +1,3 @@
-{% if ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
-import asyncio
-{% endif %}
-
 from django.apps import AppConfig
 
 
@@ -12,7 +8,3 @@ class ApiConfig(AppConfig):
     def ready(self):
         from api.authentication.mongodb import connect_db
         connect_db()
-{% if ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
-        from api.authentication.mongodb import initialize_indexes
-        asyncio.run(initialize_indexes({{ ctx.mongo_unique_indexes | tojson }}))
-{% endif %}

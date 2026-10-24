@@ -30,18 +30,17 @@ urlpatterns = [
 {% if auth and auth.has_password_auth %}
 {% for identity in auth.identity_collections %}
 {% if identity.has_password and identity.identifier %}
-    path("{{ identity.name }}/login", {{ identity.name | capitalize_collection }}LoginView.as_view(), name="{{ identity.name }}-login"),
+    path("{{ identity.login_path.lstrip('/') }}", {{ identity.name | capitalize_collection }}LoginView.as_view(), name="{{ identity.name }}-login"),
 {% endif %}
 {% endfor %}
 {% endif %}
 {% set seen_paths = [] %}
-{% for route in routes if route.collection and route.operation in crud_op_names %}
-{% if route.django_path not in seen_paths %}
+{% for route in routes | selectattr("collection") | rejectattr("operation", "equalto", "login") | sort(attribute="match_precedence") %}
+{% if route.operation not in crud_op_names %}
+    path("{{ route.django_path }}", {{ route.collection | capitalize_collection }}{{ route.operation | capitalize_collection }}View.as_view(), name="{{ route.collection }}-{{ route.operation }}"),
+{% elif route.django_path not in seen_paths %}
 {% set _ = seen_paths.append(route.django_path) %}
     path("{{ route.django_path }}", {{ route.collection | capitalize_collection }}{% if route.has_id_param %}Detail{% else %}List{% endif %}View.as_view(), name="{{ route.collection }}-{{ route.operation }}"),
 {% endif %}
-{% endfor %}
-{% for route in routes if route.collection and route.operation not in crud_op_names and route.operation != "login" %}
-    path("{{ route.django_path }}", {{ route.collection | capitalize_collection }}{{ route.operation | capitalize_collection }}View.as_view(), name="{{ route.collection }}-{{ route.operation }}"),
 {% endfor %}
 ]

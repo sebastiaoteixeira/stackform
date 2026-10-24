@@ -86,7 +86,7 @@ def test_generated_drf_configures_cors_headers(tmp_path, version):
     backend = generate(write_spec(tmp_path, _spec(version)), "drf")
     settings = next(backend.glob("*/settings.py")).read_text()
     assert '"corsheaders"' in settings
-    assert "corsheaders.middleware.CorsMiddleware" in settings
+    assert "api.cors.RequestedHeadersCorsMiddleware" in settings
     assert f"CORS_ALLOWED_ORIGINS = ['{ORIGIN}']" in settings
     assert "CORS_ALLOW_METHODS = ['GET', 'POST']" in settings
     assert "CORS_ALLOW_CREDENTIALS = True" in settings

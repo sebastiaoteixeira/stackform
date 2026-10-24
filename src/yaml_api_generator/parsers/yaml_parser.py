@@ -28,7 +28,7 @@ from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import best_match
+from jsonschema.exceptions import ValidationError, best_match
 from referencing import Registry, Resource
 
 from ..ir import IRDocument
@@ -162,11 +162,17 @@ def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
     return [
         ConfigError(
             code="SCHEMA_VALIDATION_ERROR",
-            message=best_match([error]).message,
+            message=_schema_message(error),
             path=join_path(tuple(str(part) for part in error.path)),
         )
         for error in errors
     ]
+
+
+def _schema_message(error: ValidationError) -> str:
+    """A failing subschema's ``errorMessage`` annotation, else the validator's own message."""
+    custom = error.schema.get("errorMessage") if isinstance(error.schema, dict) else None
+    return custom or best_match([error]).message
 
 
 _VERSION_SCHEMA_MAP: dict[str, str] = {

@@ -75,7 +75,8 @@ class IRDeploy:
     runtime: str
     name: str | None = None
     port: int = 8000
-    mongo_local: bool = False
+    mongo_local: bool | None = None
+    """Explicit ``deploy.mongo.local``; when unset each MongoDB datastore is local if its URI is."""
     env_vars: tuple[str, ...] = field(default_factory=tuple)
     docker: IRDeployDocker | None = None
     systemd: IRDeploySystemd | None = None

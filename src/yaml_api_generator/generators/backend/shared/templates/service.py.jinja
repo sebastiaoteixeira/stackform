@@ -1,11 +1,16 @@
 from {{ import_prefix }}.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from {{ service_import_prefix }}.exceptions import NotFoundError, ValidationError
-{% if is_identity_collection %}
-from {{ auth_import_prefix }} import hash_password
+{% set protects_credentials = password_via or api_key_via %}
+{% if protects_credentials %}
+from {{ auth_import_prefix }} import {{ ([password_via and "hash_password", api_key_via and "hash_api_key"] | select | join(", ")) }}
 {% endif %}
 
 
 class {{ collection_name | capitalize_collection }}Service:
+{% if is_identity_collection %}
+    IDENTITY_FIELDS = ({% for field_name in identity_fields %}"{{ field_name }}", {% endfor %})
+
+{% endif %}
     def __init__(self, repo: {{ collection_name | capitalize_collection }}Repository):
         self._repo = repo
 
@@ -31,14 +36,17 @@ class {{ collection_name | capitalize_collection }}Service:
 {% if is_identity_collection %}
         self._validate_identity_fields(data)
 {% endif %}
-{% if password_via %}
-        self._process_password(data)
+{% if default_role is not none %}
+        data["_auth"] = {**data.get("_auth", {}), "roles": {{ default_role | py_literal }}}
+{% endif %}
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         return await self._repo.create(data)
 
     async def update(self, resource_id: str, data: dict) -> dict:
-{% if password_via %}
-        self._process_password(data)
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         document = await self._repo.update(resource_id, data)
         if document is None:
@@ -46,8 +54,8 @@ class {{ collection_name | capitalize_collection }}Service:
         return document
 
     async def update_by(self, criteria: dict, data: dict) -> dict:
-{% if password_via %}
-        self._process_password(data)
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         document = await self._repo.update_by(criteria, data)
         if document is None:
@@ -55,8 +63,8 @@ class {{ collection_name | capitalize_collection }}Service:
         return document
 
     async def replace(self, resource_id: str, data: dict) -> dict:
-{% if password_via %}
-        self._process_password(data)
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         document = await self._repo.replace(resource_id, data)
         if document is None:
@@ -64,8 +72,8 @@ class {{ collection_name | capitalize_collection }}Service:
         return document
 
     async def replace_by(self, criteria: dict, data: dict) -> dict:
-{% if password_via %}
-        self._process_password(data)
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         document = await self._repo.replace_by(criteria, data)
         if document is None:
@@ -99,14 +107,17 @@ class {{ collection_name | capitalize_collection }}Service:
 {% if is_identity_collection %}
         self._validate_identity_fields(data)
 {% endif %}
-{% if password_via %}
-        self._process_password(data)
+{% if default_role is not none %}
+        data["_auth"] = {**data.get("_auth", {}), "roles": {{ default_role | py_literal }}}
+{% endif %}
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         return self._repo.create(data)
 
     def update(self, resource_id: str, data: dict) -> dict:
-{% if password_via %}
-        self._process_password(data)
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         document = self._repo.update(resource_id, data)
         if document is None:
@@ -114,8 +125,8 @@ class {{ collection_name | capitalize_collection }}Service:
         return document
 
     def replace(self, resource_id: str, data: dict) -> dict:
-{% if password_via %}
-        self._process_password(data)
+{% if protects_credentials %}
+        self._protect_credentials(data)
 {% endif %}
         document = self._repo.replace(resource_id, data)
         if document is None:
@@ -128,10 +139,11 @@ class {{ collection_name | capitalize_collection }}Service:
             raise NotFoundError("{{ collection_name }}", resource_id)
         return document
 {% endif %}
-{% if password_via %}
+{% if protects_credentials %}
 
     @staticmethod
-    def _process_password(data: dict) -> None:
+    def _protect_credentials(data: dict) -> None:
+{% if password_via %}
         raw_password = data.pop("password", None)
         if raw_password is not None:
             if not isinstance(raw_password, str) or not raw_password.strip():
@@ -142,12 +154,16 @@ class {{ collection_name | capitalize_collection }}Service:
             auth_data["passwordHash"] = hash_password(raw_password)
             data["_auth"] = auth_data
 {% endif %}
+{% if api_key_via %}
+        if "apiKey" in data:
+            data["apiKey"] = hash_api_key(data["apiKey"])
+{% endif %}
+{% endif %}
 {% if is_identity_collection %}
 
-    @staticmethod
-    def _validate_identity_fields(data: dict) -> None:
-{% for field_name in identity_fields %}
-        if not isinstance(data.get("{{ field_name }}"), str) or not data.get("{{ field_name }}", "").strip():
-            raise ValidationError("{{ field_name }}", "Missing required field: {{ field_name }}")
-{% endfor %}
+    def _validate_identity_fields(self, data: dict) -> None:
+        for field_name in self.IDENTITY_FIELDS:
+            value = data.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValidationError(field_name, f"Missing required field: {field_name}")
 {% endif %}

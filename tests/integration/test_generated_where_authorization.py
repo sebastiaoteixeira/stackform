@@ -486,7 +486,8 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
             HTTP_422_UNPROCESSABLE_ENTITY=422,
         )
         response_module = types.ModuleType("rest_framework.response")
-        views_module = types.ModuleType("rest_framework.views")
+        adrf_module = types.ModuleType("adrf")
+        views_module = types.ModuleType("adrf.views")
         spectacular_module = types.ModuleType("drf_spectacular")
         spectacular_utils = types.ModuleType("drf_spectacular.utils")
         auth_module = types.ModuleType("api.authentication.auth")
@@ -508,13 +509,17 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         views_module.APIView = APIView
         spectacular_utils.extend_schema = extend_schema
         auth_module._principal_has_role = lambda principal, role: role in principal.get("roles", [])
-        auth_module.resolve_principal = lambda request, database: None
+        async def anonymous(headers, database):
+            return None
+
+        auth_module.resolve_principal = anonymous
         auth_module.hash_password = lambda password: password
         mongodb_module.get_database = lambda: None
         sys.modules.update({{
             "rest_framework": rest_framework,
             "rest_framework.response": response_module,
-            "rest_framework.views": views_module,
+            "adrf": adrf_module,
+            "adrf.views": views_module,
             "drf_spectacular": spectacular_module,
             "drf_spectacular.utils": spectacular_utils,
             "api.authentication.auth": auth_module,
@@ -562,9 +567,10 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
             "reports": Collection([{{"id": "r1", "organizationId": "org-1", "title": "visible"}}]),
         }}
         views.get_database = lambda: db
-        views.resolve_principal = lambda request, database: {{
-            "sub": "u1", "identity_collection": "users", "roles": []
-        }}
+        async def member(headers, database):
+            return {{"sub": "u1", "identity_collection": "users", "roles": []}}
+
+        views.resolve_principal = member
         handler_views.get_database = lambda: db
         handler_views.resolve_principal = views.resolve_principal
         request = SimpleNamespace(data={{}}, query_params={{}}, headers={{}}, COOKIES={{}})
