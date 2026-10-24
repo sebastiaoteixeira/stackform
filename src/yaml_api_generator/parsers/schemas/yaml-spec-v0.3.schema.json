@@ -705,6 +705,9 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationConfig"
+          },
+          "propertyNames": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
           }
         }
       }
@@ -760,6 +763,9 @@
                 }
               }
             ]
+          },
+          "propertyNames": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
           }
         }
       }
@@ -804,6 +810,11 @@
           "routes": {
             "additionalProperties": {
               "$ref": "#/$defs/RouteOverride"
+            }
+          },
+          "operations": {
+            "propertyNames": {
+              "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
             }
           }
         }
