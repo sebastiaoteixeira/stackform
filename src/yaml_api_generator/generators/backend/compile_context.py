@@ -163,22 +163,19 @@ class S3StoreDescriptor(FileStoreDescriptor):
 @dataclass(frozen=True)
 class FieldDescriptor:
     name: str
-    type: str
-    required: bool
-    is_optional: bool
-    default: Any | None = None
-    constraints: dict[str, Any] = field(default_factory=dict)
-    enum_values: list[str] | None = None
-    array_item_type: str | None = None
-    ref_collection: str | None = None
+    config: dict[str, Any]
 
 
 @dataclass(frozen=True)
 class ModelDescriptor:
+    """A payload model; ``base`` names the model whose fields it extends."""
+
     name: str
     collection: str
     operation: str
     fields: list[FieldDescriptor]
+    base: str | None = None
+
 
 
 @dataclass(frozen=True)

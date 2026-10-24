@@ -203,14 +203,8 @@ class CreateOp:
 
 
 class UpdateOp:
-    @_translate_conflict
     async def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_update(
-            self._match_filter(document_id),
-            {"$set": data},
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._normalize(doc)
+        return await self.update_by(self._match_filter(document_id), data)
 
 
 class ReplaceOp:

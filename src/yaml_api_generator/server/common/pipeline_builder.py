@@ -241,7 +241,7 @@ class PipelineBuilder:
     def _validate_body_step(self, route: RuntimeRouteDescriptor) -> Step:
         collection = self._ctx.collections[route.collection]
         identity_collection = self._ctx.auth.identity_collections.get(route.collection)
-        return ValidateBodyStep(collection, route.operation, identity_collection)
+        return ValidateBodyStep(collection, route.operation, identity_collection, route.body_dto)
 
     def _service_input_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         if route.service_input is None and not route.service_forwarding:
@@ -275,31 +275,21 @@ class PipelineBuilder:
         operation = route.operation
         collection = self._ctx.collections[collection_name]
         id_field = collection.id_field
-        identity_collection = self._ctx.auth.identity_collections.get(collection_name)
-        uses_password = (
-            identity_collection is not None and identity_collection.has_password
-        )
+        identity = self._ctx.auth.identity_collections.get(collection_name)
 
         if operation == "list":
             return RepositoryListStep(collection_name, id_field, route.pagination)
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field, self._locator(route))
         if operation == "create":
-            roles_config = identity_collection.roles if identity_collection is not None else None
-            return RepositoryCreateStep(
-                collection_name,
-                id_field,
-                collection.id_format,
-                uses_password,
-                roles_config=roles_config,
-            )
+            return RepositoryCreateStep(collection_name, id_field, collection.id_format, identity)
         if operation == "update":
             return RepositoryUpdateStep(
-                collection_name, id_field, uses_password, self._locator(route)
+                collection_name, id_field, self._locator(route), identity=identity
             )
         if operation == "replace":
             return RepositoryReplaceStep(
-                collection_name, id_field, uses_password, self._locator(route)
+                collection_name, id_field, self._locator(route), identity=identity
             )
         if operation == "delete":
             return RepositoryDeleteStep(collection_name, id_field, self._locator(route))

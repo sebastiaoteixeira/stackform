@@ -4,7 +4,8 @@ from typing import Any, cast
 
 from ..auth import hash_password
 from ..request_context import RequestContext
-from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
+from ..server_context import RuntimeIdentityDescriptor
+from yaml_api_generator.ir.api import IRPagination
 from yaml_api_generator.runtime.operations import (
     present,
     present_document as _inject_canonical_id,
@@ -20,6 +21,7 @@ from .handlers import handler_request
 _PATH_TOKEN = re.compile(r"\{(\w+)\}")
 _REQUEST_BODY_MESSAGE = "Request body must be a JSON object"
 _NOT_FOUND_MESSAGE = "Resource not found"
+_ROLE_FIELDS = frozenset({"role", "roles"})
 
 
 def _repository(ctx: RequestContext) -> BaseRepository:
@@ -98,18 +100,16 @@ def _inject_canonical_id_list(
 
 def _prepare_payload(
     payload: dict[str, Any],
+    identity: RuntimeIdentityDescriptor | None,
     *,
-    password_via: bool,
-    roles_config: IRRolesConfig | None = None,
     is_create: bool = False,
 ) -> dict[str, Any]:
-    normalized = dict(payload)
+    """Identity records keep roles in the _auth namespace, never writable through CRUD."""
+    if identity is None:
+        return dict(payload)
+    normalized = {key: value for key, value in payload.items() if key not in _ROLE_FIELDS}
 
-    # Roles are managed exclusively through _auth namespace — never writable via CRUD
-    normalized.pop("roles", None)
-    normalized.pop("role", None)
-
-    if password_via:
+    if identity.has_password:
         raw_password = normalized.pop("password", None)
         if raw_password is not None:
             if not isinstance(raw_password, str) or not raw_password.strip():
@@ -120,11 +120,11 @@ def _prepare_payload(
             auth_data["passwordHash"] = hash_password(raw_password)
             normalized["_auth"] = auth_data
 
-    if is_create and roles_config is not None:
+    if is_create and identity.roles is not None:
         auth_data = normalized.get("_auth", {})
         if not isinstance(auth_data, dict):
             auth_data = {}
-        auth_data["roles"] = roles_config.default
+        auth_data["roles"] = identity.roles.default
         normalized["_auth"] = auth_data
 
     return normalized
@@ -172,16 +172,10 @@ def RepositoryCreateStep(
     collection_name: str,
     id_field: str,
     id_format: str,
-    password_via: bool,
-    roles_config: IRRolesConfig | None = None,
+    identity: RuntimeIdentityDescriptor | None = None,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(
-            _payload(ctx),
-            password_via=password_via,
-            roles_config=roles_config,
-            is_create=True,
-        )
+        payload = _prepare_payload(_payload(ctx), identity, is_create=True)
         if id_format != "natural":
             payload[id_field] = _generate_id(id_format)
         result = await _repository(ctx).create(collection_name, payload)
@@ -194,13 +188,14 @@ def RepositoryCreateStep(
 def RepositoryUpdateStep(
     collection_name: str,
     id_field: str,
-    password_via: bool,
     locator: RecordLocator | None = None,
+    *,
+    identity: RuntimeIdentityDescriptor | None = None,
 ) -> Step:
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        payload = _prepare_payload(_payload(ctx), identity)
         if locator.is_scoped:
             result = await _repository(ctx).update_by(
                 collection_name, locator.criteria(ctx.url_params), payload
@@ -220,13 +215,14 @@ def RepositoryUpdateStep(
 def RepositoryReplaceStep(
     collection_name: str,
     id_field: str,
-    password_via: bool,
     locator: RecordLocator | None = None,
+    *,
+    identity: RuntimeIdentityDescriptor | None = None,
 ) -> Step:
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        payload = _prepare_payload(_payload(ctx), identity)
         if locator.is_scoped:
             result = await _repository(ctx).replace_by(
                 collection_name, locator.criteria(ctx.url_params), payload

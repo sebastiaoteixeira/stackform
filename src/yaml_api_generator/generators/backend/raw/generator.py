@@ -3,8 +3,12 @@ from pathlib import Path
 
 from jinja2 import Environment
 
-from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.generators.backend.compile_context import (
+    CompileContext,
+    IdentityCollectionDescriptor,
+)
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
+from yaml_api_generator.ir import SECRET_FIELD
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
@@ -71,15 +75,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             env.get_template("conflicts.py.jinja").render()
         )
 
-        self._render_single_file(
-            env,
-            context,
-            output_dir,
-            SingleFileRenderConfig(
-                template_name="service_inputs.py.jinja",
-                output_path="service_inputs.py",
-            ),
-        )
+        self._render_service_inputs(env, output_dir, "")
         write_runtime_modules(output_dir, MONGO_RUNTIME_MODULES)
 
         collections_by_name = group_by_collection(context)
@@ -140,9 +136,10 @@ class RawASGIGenerator(TemplateBasedGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        all_models = []
-        for col_data in collections_by_name.values():
-            all_models.extend(col_data["models"])
+        models = [
+            *(model for col_data in collections_by_name.values() for model in col_data["models"]),
+            *context.dto_models,
+        ]
 
         self._render_single_file(
             env, context, output_dir,
@@ -150,7 +147,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 template_name="validation.py.jinja",
                 output_path="validation.py",
                 context_builder=lambda ctx: {
-                    "models": all_models,
+                    "models": models,
                     "auth": ctx.auth,
                 },
             )
@@ -258,7 +255,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         routes_dir.mkdir(parents=True, exist_ok=True)
 
         template = env.get_template("login_routes.py.jinja")
-        content = template.render(ctx=context)
+        content = template.render(ctx=context, secret=SECRET_FIELD)
         (routes_dir / "login.py").write_text(content)
 
     def _render_dependencies(

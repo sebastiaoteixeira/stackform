@@ -6,7 +6,7 @@ Converts IR routes into route descriptors with access control and model referenc
 import re
 
 from yaml_api_generator.ir import IRDocument, IRDto, IRSymbolRef
-from yaml_api_generator.utils.strings import to_pascal_case
+from .model_builder import dto_payload_name, payload_name
 from ..compile_context import (
     AccessRuleDescriptor,
     DocumentBindingDescriptor,
@@ -113,7 +113,8 @@ class RouteBuilder:
                 ]
 
             needs_request = self._needs_request(access_rules)
-            typed_body_model = self._typed_body_model(access_rules, dtos)
+            body_dto = ir_route.body_dto(dtos)
+            typed_body_model = dto_payload_name(body_dto.name, ir_route.operation) if body_dto else None
 
             if ir_route.handler is not None or ir_route.collection is None:
                 routes.append(
@@ -149,7 +150,7 @@ class RouteBuilder:
 
             body_model: str | None = None
             if ir_route.operation in WRITE_OPERATIONS or ir_route.operation == "login":
-                model_name = self._model_name(ir_route.collection, ir_route.operation)
+                model_name = payload_name(ir_route.collection, ir_route.operation)
                 if model_name in model_index:
                     body_model = model_name
 
@@ -200,17 +201,3 @@ class RouteBuilder:
             for sym in rule.request_symbols
             for part in _REQUEST_PARTS
         )
-
-    @staticmethod
-    def _typed_body_model(
-        rules: list[AccessRuleDescriptor] | None, dtos: dict[str, IRDto]
-    ) -> str | None:
-        for rule in rules or ():
-            for sym in rule.request_symbols:
-                if sym.part in (None, "body") and sym.type_name in dtos:
-                    return to_pascal_case(sym.type_name)
-        return None
-
-    def _model_name(self, collection: str, operation: str) -> str:
-        col_part = "".join(part.capitalize() for part in collection.split("_"))
-        return f"{col_part}{operation.capitalize()}Payload"

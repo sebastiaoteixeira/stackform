@@ -14,8 +14,8 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 _RUNTIME_MODULES = frozenset(
     {
-        "dpop", "pagination", "files", "multipart", "file_requests", "filesystem_store", "s3_store",
-        "operations", "mongo_operations", "sql_operations", "handler_requests",
+        "dpop", "pagination", "fields", "payloads", "files", "multipart", "file_requests", "filesystem_store",
+        "s3_store", "sql_types", "operations", "mongo_operations", "sql_operations", "handler_requests",
     }
 )
 

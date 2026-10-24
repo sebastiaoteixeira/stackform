@@ -162,3 +162,8 @@ def test_request_path_param_not_declared():
 def test_request_path_param_declared_valid():
     codes = _request_path_codes("/orgs/{orgId}", "req.path.orgId equals 'a'")
     assert codes == set()
+
+
+def test_dto_nested_ref_to_undeclared_type():
+    dto = {"d": {"fields": {"x": {"type": "array", "items": {"type": "ref", "ref": "ghost"}}}}}
+    assert "DTO_NOT_FOUND" in _dto_codes(dto)

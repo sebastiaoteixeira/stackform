@@ -234,13 +234,9 @@ class MongoRepository(BaseRepository):
         document_id: str,
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
-        with _as_conflict():
-            document = await self.collection(collection_name).find_one_and_update(
-                self._match_filter(document_id, collection_name),
-                {"$set": payload},
-                return_document=ReturnDocument.AFTER,
-            )
-        return self._normalize_document(document)
+        return await self.update_by(
+            collection_name, self._match_filter(document_id, collection_name), payload
+        )
 
     async def replace(
         self,

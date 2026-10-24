@@ -1,7 +1,7 @@
 {% from "handler_call.jinja" import run_operation %}
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 
 from api.conflicts import ConflictError
 from api.handler_requests import HandlerRequest, invoke
@@ -23,7 +23,7 @@ from api.authentication.mongodb import get_database
 class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(APIView):
     async def {{ route.method | lower }}(self, request, **path_params):
 {% if route.needs_auth %}
-        _resolved_principal = resolve_principal(request, get_database())
+        _resolved_principal = await resolve_principal(request, get_database())
         if _resolved_principal is None:
             return Response(
                 {"detail": "Unauthorized"},

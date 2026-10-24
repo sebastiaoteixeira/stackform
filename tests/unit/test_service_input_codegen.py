@@ -52,9 +52,12 @@ def test_route_descriptors_carry_service_contract():
     ],
 )
 def test_generated_backends_compile_and_validate_service_inputs(
-    generator, helper, tmp_path
+    generator, helper, tmp_path, monkeypatch
 ):
     generator.generate(_context(), tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for package in ("dependencies", "api", "fields"):
+        monkeypatch.delitem(sys.modules, package, raising=False)
 
     assert compileall.compile_dir(str(tmp_path), quiet=1)
     generated = _load_helper(tmp_path / helper)
@@ -66,7 +69,7 @@ def test_generated_backends_compile_and_validate_service_inputs(
         fields,
         forwarding,
     ) == {"id": "path-value"}
-    with pytest.raises(ValueError, match="Missing required inputs"):
+    with pytest.raises(ValueError, match="Missing required fields: postId"):
         generated.prepare_service_inputs({}, {}, fields, forwarding)
 
 
