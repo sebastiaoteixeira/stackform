@@ -273,6 +273,11 @@ def load_and_generate_ir(
             if symbol_errors:
                 raise ConfigErrors(symbol_errors)
 
+        from .transformers.query_validation import validate_spec_queries
+        query_errors = validate_spec_queries(resolved)
+        if query_errors:
+            raise ConfigErrors(query_errors)
+
         from .transformers.path_validation import validate_spec_paths
         path_errors = validate_spec_paths(resolved)
         if path_errors:

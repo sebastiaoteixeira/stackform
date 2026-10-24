@@ -93,3 +93,24 @@ def test_declared_repository_operation_emits_its_query(tmp_path, generator):
 
     sources = [path.read_text() for path in out.rglob("*.py")]
     assert any("'state': 'published'" in source for source in sources)
+
+
+def test_query_targeting_an_unknown_collection_is_rejected(tmp_path):
+    spec = copy.deepcopy(_SPEC)
+    spec["repositories"]["posts"]["operations"] = {
+        "recent": {"query": {"command": "find", "collection": "postz", "filter": {}}}
+    }
+    [error] = _errors(tmp_path, spec)
+    assert (error.code, error.path) == (
+        "QUERY_COLLECTION_NOT_FOUND", "repositories.posts.operations.recent.query.collection"
+    )
+
+
+def test_query_targeting_a_declared_collection_is_accepted(tmp_path):
+    spec = copy.deepcopy(_SPEC)
+    spec["repositories"]["posts"]["operations"] = {
+        "recent": {"query": {"command": "find", "collection": "posts", "filter": {}}}
+    }
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump(spec))
+    load_and_generate_ir(str(path))
