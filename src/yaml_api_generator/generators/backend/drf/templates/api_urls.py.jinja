@@ -35,7 +35,7 @@ urlpatterns = [
 {% endfor %}
 {% endif %}
 {% set seen_paths = [] %}
-{% for route in routes if route.collection and route.operation in crud_op_names %}
+{% for route in routes | sort(attribute="has_id_param") if route.collection and route.operation in crud_op_names %}
 {% if route.django_path not in seen_paths %}
 {% set _ = seen_paths.append(route.django_path) %}
     path("{{ route.django_path }}", {{ route.collection | capitalize_collection }}{% if route.has_id_param %}Detail{% else %}List{% endif %}View.as_view(), name="{{ route.collection }}-{{ route.operation }}"),

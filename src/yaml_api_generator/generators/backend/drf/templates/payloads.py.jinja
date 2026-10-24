@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from rest_framework import serializers
+from rest_framework import serializers, status, views
 
 from .fields import conform_object
 
@@ -23,3 +23,11 @@ class PayloadSerializer(serializers.Serializer):
 def partial(serializer: type[PayloadSerializer], name: str) -> type[PayloadSerializer]:
     """``serializer`` accepting any subset of its properties."""
     return type(name, (serializer,), {"omittable": True})
+
+
+def exception_handler(exc: Exception, context: dict[str, Any]):
+    """DRF's handler, answering an invalid payload with 422 as every other target does."""
+    response = views.exception_handler(exc, context)
+    if isinstance(exc, serializers.ValidationError):
+        response.status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    return response

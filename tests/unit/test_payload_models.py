@@ -1,8 +1,9 @@
 """Request payloads are validated by their field configs in every consumer.
 
 The shared payload scenario runs against both development servers and a
-generated FastAPI app executed in a subprocess. DRF cannot run here, so its
-generated serializers are checked to delegate to the shared validator.
+generated FastAPI app executed in a subprocess. DRF needs its own interpreter,
+so here its generated serializers are checked to delegate to the shared
+validator; the integration suite runs the scenario against it over HTTP.
 """
 
 import ast
@@ -94,6 +95,18 @@ def test_generated_drf_serializers_validate_through_the_shared_validator(mongo_s
     notes = (api / "views" / "notes.py").read_text()
     assert "NoteInput(data=request.data)" in notes
     assert "NoteInputUpdatePayload(data=request.data)" in notes
+
+
+def test_generated_drf_serves_async_views_at_spec_paths(mongo_spec_file):
+    backend = _generate(mongo_spec_file, "drf")
+    views = [*(backend / "api" / "views").glob("*.py")]
+    assert all("from rest_framework.views import APIView" not in view.read_text() for view in views)
+    assert "from adrf.views import APIView" in (backend / "api" / "views" / "users.py").read_text()
+    assert '"adrf",' in (backend / "project" / "settings.py").read_text()
+    assert "adrf" in (backend / "requirements.txt").read_text().split()
+    assert 'path("", include("api.urls"))' in (backend / "project" / "urls.py").read_text()
+    urls = (backend / "api" / "urls.py").read_text()
+    assert urls.index('"users/register"') < urls.index('"users/<str:id>"')
 
 
 def _is_field_config(node: ast.expr) -> bool:
