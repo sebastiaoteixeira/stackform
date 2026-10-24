@@ -1,9 +1,9 @@
 """Valid and invalid request payloads, sent alike to every app under test.
 
 The spec covers formats, array items, closed nested objects, defaults, readonly
-fields, strict scalars, partial updates and a DTO-typed body, which an access
-rule binds for any signed-in user. Round trips check what the apps store and
-return besides the status codes.
+fields, datetimes, strict scalars, partial updates and DTO-typed bodies, which
+access rules bind for any signed-in user. Round trips check what the apps store
+and return besides the status codes.
 """
 
 import textwrap
@@ -44,6 +44,8 @@ dto:
   noteInput:
     fields:
       role: { type: enum, values: [admin, member], required: true }
+      level: { type: number, default: 2 }
+      labels: { type: array, items: { type: string, maxLength: 8 } }
 entities:
   user:
     type: auth
@@ -59,13 +61,15 @@ entities:
       status: { type: enum, values: [draft, live], default: draft }
       rank: { type: number }
       active: { type: boolean }
-      stamp: { type: string, readonly: true }
+      stamp: { type: string, readonly: true, default: S0 }
+      due: { type: datetime }
       tags: { type: array, items: { type: string, maxLength: 3 } }
       meta:
         type: object
         properties:
           color: { type: string, required: true }
           size: { type: number, min: 1 }
+          locked: { type: boolean, readonly: true, default: false }
         additionalProperties: false
       points:
         type: array
@@ -78,6 +82,8 @@ entities:
     fields:
       id: { type: id, format: uuidv4 }
       role: { type: string }
+      level: { type: number }
+      labels: { type: array, items: { type: string } }
 repositories:
   users: { entity: user }
   items: { entity: item }
@@ -105,6 +111,9 @@ controllers:
       create:
         access:
           - given: { caller: "identity:user", note: "request.body:noteInput" }
+      update:
+        access:
+          - given: { caller: "identity:user", note: "request.body:noteInput" }
 """
 
 CREATES = [
@@ -124,6 +133,10 @@ CREATES = [
     ({"name": "ab", "active": "true"}, 422),
     ({"name": "ab", "active": 1}, 422),
     ({"name": "ab", "stamp": "x"}, 422),
+    ({"name": "ab", "meta": {"color": "r", "locked": True}}, 422),
+    ({"name": "ab", "due": 1704103200}, 422),
+    ({"name": "ab", "due": "2024-01-01T10:00:00Z"}, 200),
+    ({"name": "ab", "due": "soon"}, 422),
     ({"name": "ab", "unknown": 1}, 422),
     ({"name": "a"}, 422),
     ({}, 422),
@@ -145,11 +158,21 @@ NOTES = [
 ]
 ROUND_TRIPS = [
     ["created number", 3],
+    ["readonly default stored", "S0"],
+    ["nested readonly default stored", False],
+    ["datetime canonical", "2024-01-01T10:00:00+00:00"],
+    ["date-only datetime canonical", "2024-01-01T00:00:00+00:00"],
     ["replaced id kept", True],
     ["replaced number", 1.5],
     ["replaced item found", 200],
     ["replaced item deleted", 200],
     ["note role kept", "admin"],
+    ["note dto default stored", 2],
+    ["note partial update", 200],
+    ["note value kept by partial update", 5],
+    ["note empty update", 200],
+    ["anonymous note rejected first", 401],
+    ["credentials hidden", [False, False]],
 ]
 EXPECTED = [
     *(["POST /items", body, status] for body, status in CREATES),
@@ -163,30 +186,48 @@ def spec(datastore: str) -> str:
     return _API + textwrap.dedent(datastore) + _ENTITIES
 
 
+_LOGIN = {"email": "caller@example.com", "password": "caller-password"}
+
+
 def _bearer(client: TestClient) -> dict[str, str]:
-    login = {"email": "caller@example.com", "password": "caller-password"}
-    assert client.post("/users/register", json=login).status_code == 200
-    token = client.post("/users/login", json=login).json()["token"]
+    token = client.post("/users/login", json=_LOGIN).json()["token"]
     return {"Authorization": f"Bearer {token}"}
 
 
-def _round_trips(client: TestClient, headers: dict[str, str]) -> list[list]:
-    item = client.post("/items", json={"name": "ab", "rank": 3}).json()
+def _round_trips(client: TestClient, headers: dict[str, str], user: dict) -> list[list]:
+    item = client.post("/items", json={"name": "ab", "rank": 3, "meta": {"color": "r"}}).json()
     path = f"/items/{item['id']}"
+    due = client.post("/items", json={"name": "ab", "due": "2024-01-01T11:00:00+01:00"}).json()
+    day = client.post("/items", json={"name": "ab", "due": "2024-01-01"}).json()
     replaced = client.put(path, json={"name": "cd", "rank": 1.5}).json()
     note = client.post("/notes", json={"role": "admin"}, headers=headers).json()
+    fives = client.post("/notes", json={"role": "admin", "level": 5}, headers=headers).json()
+    labelled = client.patch(f"/notes/{fives['id']}", json={"labels": ["a"]}, headers=headers)
+    patched_user = client.patch(f"/users/{user['id']}", json={"email": "c@example.com"}, headers=headers)
     return [
         ["created number", item["rank"]],
+        ["readonly default stored", item.get("stamp")],
+        ["nested readonly default stored", item["meta"].get("locked")],
+        ["datetime canonical", due.get("due")],
+        ["date-only datetime canonical", day.get("due")],
         ["replaced id kept", replaced.get("id") == item["id"]],
         ["replaced number", replaced["rank"]],
         ["replaced item found", client.get(path).status_code],
         ["replaced item deleted", client.delete(path).status_code],
         ["note role kept", note.get("role")],
+        ["note dto default stored", note.get("level")],
+        ["note partial update", labelled.status_code],
+        ["note value kept by partial update", labelled.json().get("level")],
+        ["note empty update", client.patch(f"/notes/{fives['id']}", json={}, headers=headers).status_code],
+        ["anonymous note rejected first", client.post("/notes", json={"role": "owner"}).status_code],
+        ["credentials hidden", ["_auth" in user, "_auth" in patched_user.json()]],
     ]
 
 
 def scenario(client: TestClient) -> list[list]:
     """Each payload with the status it got, after one valid item is created for the updates, then the round trips."""
+    registered = client.post("/users/register", json=_LOGIN)
+    assert registered.status_code == 200, registered.text
     headers = _bearer(client)
     created = client.post("/items", json={"name": "ab"})
     assert created.status_code == 200, created.text
@@ -202,5 +243,5 @@ def scenario(client: TestClient) -> list[list]:
             ["POST /notes", body, client.post("/notes", json=body, headers=headers).status_code]
             for body, _ in NOTES
         ),
-        *_round_trips(client, headers),
+        *_round_trips(client, headers, registered.json()),
     ]

@@ -6,8 +6,7 @@ Converts IR routes into route descriptors with access control and model referenc
 import re
 
 from yaml_api_generator.ir import IRDocument, IRDto, IRSymbolRef
-from yaml_api_generator.utils.strings import to_pascal_case
-from .model_builder import payload_name
+from .model_builder import dto_payload_name, payload_name
 from ..compile_context import (
     AccessRuleDescriptor,
     DocumentBindingDescriptor,
@@ -115,7 +114,7 @@ class RouteBuilder:
 
             needs_request = self._needs_request(access_rules)
             body_dto = ir_route.body_dto(dtos)
-            typed_body_model = to_pascal_case(body_dto.name) if body_dto else None
+            typed_body_model = dto_payload_name(body_dto.name, ir_route.operation) if body_dto else None
 
             if ir_route.handler is not None or ir_route.collection is None:
                 routes.append(

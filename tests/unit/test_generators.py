@@ -132,7 +132,7 @@ def test_fastapi_payload_module_maps_every_field_type():
         "s": "str",
         "n": "Annotated[float, Field(strict=True)]",
         "b": "Annotated[bool, Field(strict=True)]",
-        "d": "datetime",
+        "d": "Timestamp",
         "e": "Literal['a', 'b']",
         "a": "list[str]",
         "o": "dict[str, Any]",

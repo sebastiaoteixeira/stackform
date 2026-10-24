@@ -192,7 +192,7 @@ def test_validate_body_datetime_valid_iso():
     step = ValidateBodyStep(collection, "create")
     ctx = _make_ctx(body={"ts": "2025-01-15T10:30:00"})
     result = step(ctx)
-    assert result.body["ts"] == "2025-01-15T10:30:00"
+    assert result.body["ts"] == "2025-01-15T10:30:00+00:00"
 
 
 def test_validate_body_datetime_invalid_iso():
@@ -338,7 +338,7 @@ def test_validate_body_datetime_iso_string_from_json_mode_passes():
     step = ValidateBodyStep(collection, "create")
     ctx = _make_ctx(body={"starts_at": "2025-01-15T10:30:00"})
     result = step(ctx)
-    assert result.body["starts_at"] == "2025-01-15T10:30:00"
+    assert result.body["starts_at"] == "2025-01-15T10:30:00+00:00"
 
 
 # --- Nullable non-required datetime regression (model_dump no exclude_unset) ---
@@ -365,4 +365,4 @@ def test_validate_body_valid_iso_datetime_still_passes():
     step = ValidateBodyStep(collection, "create")
     ctx = _make_ctx(body={"createdAt": "2025-06-27T12:00:00"})
     result = step(ctx)
-    assert result.body["createdAt"] == "2025-06-27T12:00:00"
+    assert result.body["createdAt"] == "2025-06-27T12:00:00+00:00"

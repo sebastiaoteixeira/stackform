@@ -19,6 +19,8 @@ from {{ conflict_import }} import ConflictError
 from {{ pagination_import }} import Page, Primitives, expand_bound
 
 
+_HIDDEN_FIELDS = frozenset({"_id", "_auth"})
+
 _PAGINATION_COMPARATORS = {
     "gt": "$gt",
     "gte": "$gte",
@@ -88,10 +90,10 @@ class {{ class_name }}Repository:
         return {self.ID_FIELD: document_id}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Hide the datastore's own identifier; the service layer hides domain-internal fields."""
+        """Hide the datastore's own identifier and the stored credentials."""
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if k != "_id"}
+        return {k: v for k, v in doc.items() if k not in _HIDDEN_FIELDS}
 
     async def list(self) -> list[dict[str, Any]]:
         cursor = self._col.find({})

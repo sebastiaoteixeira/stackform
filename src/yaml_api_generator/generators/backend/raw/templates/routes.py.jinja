@@ -188,13 +188,13 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% elif route.operation == "create" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate({{ (route.typed_body_model or route.body_model) | tojson }}, body)
+        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
         document = await service.create(data)
         return 200, document
 {% elif route.operation == "update" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate({{ (route.typed_body_model or route.body_model) | tojson }}, body)
+        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})
@@ -212,7 +212,7 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% elif route.operation == "replace" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate({{ (route.typed_body_model or route.body_model) | tojson }}, body)
+        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})

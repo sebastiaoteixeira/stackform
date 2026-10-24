@@ -2,6 +2,7 @@
 import sqlalchemy as sa
 
 from dependencies.postgres import metadata
+from dependencies.sql_types import IsoDateTime
 from ._sql_ops import SQLRepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
 
 

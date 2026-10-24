@@ -409,6 +409,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "postgres.py").write_text(
                 env.get_template("postgres.py.jinja").render(ctx=context)
             )
+            (deps_dir / "sql_types.py").write_text(runtime_module_source("sql_types"))
         if context.auth.has_app_oidc_auth:
             (deps_dir / "login_codes.py").write_text(
                 env.get_template("login_codes.py.jinja").render(auth=context.auth)

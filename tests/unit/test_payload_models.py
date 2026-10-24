@@ -91,7 +91,9 @@ def test_generated_drf_serializers_validate_through_the_shared_validator(mongo_s
     serializers = (api / "serializers" / "items.py").read_text()
     assert 'ItemsUpdatePayload = partial(ItemsFields, "ItemsUpdatePayload")' in serializers
     assert "class ItemsCreatePayload(ItemsFields):" in serializers
-    assert "NoteInput(data=request.data)" in (api / "views" / "notes.py").read_text()
+    notes = (api / "views" / "notes.py").read_text()
+    assert "NoteInput(data=request.data)" in notes
+    assert "NoteInputUpdatePayload(data=request.data)" in notes
 
 
 def _is_field_config(node: ast.expr) -> bool:

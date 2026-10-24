@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from yaml_api_generator.ir import SECRET_FIELD, IRDto, writable_fields
-from yaml_api_generator.runtime.fields import NOT_AN_OBJECT, conform_object
+from yaml_api_generator.ir import SECRET_FIELD, IRDto, payload_fields
+from yaml_api_generator.runtime.fields import NOT_AN_OBJECT, Model
 
 from ..request_context import RequestContext
 from ..server_context import RuntimeCollectionDescriptor, RuntimeIdentityDescriptor
@@ -40,7 +40,7 @@ def ValidateBodyStep(
     identity_collection: RuntimeIdentityDescriptor | None = None,
     dto: IRDto | None = None,
 ) -> Step:
-    """Check the body against ``dto`` when the route types it, else against the entity."""
+    """Check the body against ``dto`` when the route types it, else against the entity; updates accept any subset."""
     if operation in _NO_BODY_OPS:
         return lambda ctx: ctx
     if operation == "login":
@@ -48,13 +48,13 @@ def ValidateBodyStep(
             raise ValueError("login operation requires an identity collection")
         properties = login_properties(identity_collection)
     elif dto is not None:
-        properties = writable_fields(dto.fields)
+        properties = payload_fields(dto.fields)
     else:
         properties = {
             **credential_properties(operation, identity_collection),
-            **writable_fields(collection.fields, collection.files),
+            **payload_fields(collection.fields, collection.files),
         }
-    partial = operation == "update" and dto is None
+    model = Model(properties, partial=operation == "update")
     files = set(collection.files)
 
     def step(ctx: RequestContext) -> RequestContext:
@@ -63,7 +63,7 @@ def ValidateBodyStep(
             raise ValueError(NOT_AN_OBJECT)
         uploads = {name: value for name, value in body.items() if name in files}
         fields = {name: value for name, value in body.items() if name not in files}
-        ctx.body = {**conform_object(properties, fields, partial=partial), **uploads}
+        ctx.body = {**model.conform(fields), **uploads}
         return ctx
 
     return step

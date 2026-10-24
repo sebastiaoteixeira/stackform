@@ -3,13 +3,15 @@
 Shared verbatim by the development server and every generated backend, so a
 field config means the same thing wherever a request lands. ``conform`` checks
 one value, ``conform_object`` a key/value map and ``conform_inputs`` a service's
-inputs; each returns the value with the declared defaults filled in.
+inputs; each returns the value with the declared defaults filled in. A
+``Model`` names the properties of one request payload.
 """
 
 import re
 from collections.abc import Callable
 from copy import deepcopy
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -88,14 +90,23 @@ def _boolean(config: dict[str, Any], value: Any, path: str) -> bool:
     return value
 
 
+def iso_utc(moment: datetime) -> str:
+    """``moment`` as an ISO 8601 UTC timestamp; a naive one is taken as UTC."""
+    return (moment if moment.tzinfo else moment.replace(tzinfo=UTC)).astimezone(UTC).isoformat()
+
+
+def canonical_datetime(value: str) -> str:
+    """``value`` in the form ``iso_utc`` gives."""
+    return iso_utc(datetime.fromisoformat(value))
+
+
 def _datetime(config: dict[str, Any], value: Any, path: str) -> str:
     if not isinstance(value, str):
         raise FieldError(path, "must be a datetime string")
     try:
-        datetime.fromisoformat(value)
+        return canonical_datetime(value)
     except ValueError as exc:
         raise FieldError(path, "is not a valid ISO datetime") from exc
-    return value
 
 
 def _enum(config: dict[str, Any], value: Any, path: str) -> Any:
@@ -158,7 +169,9 @@ def conform_object(
 ) -> dict[str, Any]:
     """Check a map against its declared properties.
 
-    ``partial`` accepts any subset of the properties and fills in no defaults.
+    A readonly property is never accepted; its default is filled in like any
+    other. ``partial`` accepts any subset of the properties and fills in no
+    defaults.
     """
     if not isinstance(value, dict):
         raise FieldError(path, "must be an object") if path else ValueError(NOT_AN_OBJECT)
@@ -166,11 +179,15 @@ def conform_object(
     unknown = [] if open else sorted(value.keys() - properties.keys())
     if unknown:
         raise ValueError(f"Unknown fields: {', '.join(map(qualified, unknown))}")
+    readonly = sorted(name for name in value.keys() & properties.keys() if properties[name].get("readonly"))
+    if readonly:
+        raise ValueError(f"Readonly fields: {', '.join(map(qualified, readonly))}")
     expected = {} if partial else properties
     missing = [
         name
         for name, config in expected.items()
-        if config.get("required") and "default" not in config and name not in value
+        if config.get("required") and not config.get("readonly") and "default" not in config
+        and name not in value
     ]
     if missing:
         raise ValueError(f"Missing required fields: {', '.join(map(qualified, missing))}")
@@ -188,6 +205,26 @@ def conform_object(
             if name in properties
         },
     }
+
+
+@dataclass(frozen=True)
+class Model:
+    """A request payload: its properties, whether it keeps undeclared keys and whether it accepts any subset."""
+
+    properties: dict[str, dict[str, Any]]
+    open: bool = False
+    partial: bool = False
+
+    def extend(self, properties: dict[str, dict[str, Any]]) -> "Model":
+        return replace(self, properties={**self.properties, **properties})
+
+    def conform(self, value: Any) -> dict[str, Any]:
+        return conform_object(self.properties, value, open=self.open, partial=self.partial)
+
+
+def partial(model: Model) -> Model:
+    """``model`` accepting any subset of its properties, with no defaults filled in."""
+    return replace(model, partial=True)
 
 
 def conform_inputs(

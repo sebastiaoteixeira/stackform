@@ -252,16 +252,18 @@ SECRET_FIELD: dict[str, Any] = {"type": "string", "required": True, "minLength":
 """The config of a credential a request sends, such as a password."""
 
 
-def writable_fields(
+def payload_fields(
     fields: dict[str, Any], excluded: Collection[str] = ()
 ) -> dict[str, dict[str, Any]]:
-    """The field configs a client may send: no ids, readonly, auth or ``excluded`` fields."""
+    """The field configs a request payload is checked against: no ids, auth or ``excluded`` fields.
+
+    Readonly fields stay, since their keys are rejected and their defaults filled in.
+    """
     return {
         name: config
         for name, config in fields.items()
         if isinstance(config, dict)
         and config.get("type") != "id"
-        and not config.get("readonly", False)
         and name != "_auth"
         and name not in excluded
     }

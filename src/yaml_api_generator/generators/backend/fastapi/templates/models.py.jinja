@@ -6,11 +6,19 @@
 {% if declaration.attributes is defined %}
 
 class {{ declaration.name }}({{ declaration.base }}):
+{% if declaration.readonly %}
+    _readonly = frozenset({{ declaration.readonly | sort | list | py_literal }})
+{% endif %}
+{% if declaration.server_defaults %}
+    _server_defaults = {{ declaration.server_defaults | py_literal }}
+{% endif %}
 {% for attribute in declaration.attributes %}
     {{ attribute.name }}: {{ attribute.annotation }}{% if attribute.default is not none %} = {{ attribute.default }}{% endif %}
 
 {% else %}
+{% if not declaration.readonly %}
     pass
+{% endif %}
 {% endfor %}
 {% else %}
 

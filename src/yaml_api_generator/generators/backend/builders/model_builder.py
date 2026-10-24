@@ -2,7 +2,8 @@
 
 Each collection gets one ``<Collection>Fields`` model holding its writable
 fields; the create and replace payloads extend it and the update payload is
-its partial form, so no field is declared twice.
+its partial form, so no field is declared twice. A DTO is its own base and
+gets the same partial update form.
 """
 
 from yaml_api_generator.ir import (
@@ -12,7 +13,7 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     IRRepository,
     SECRET_FIELD,
-    writable_fields,
+    payload_fields,
 )
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..compile_context import FieldDescriptor, ModelDescriptor
@@ -22,10 +23,15 @@ WRITE_OPERATIONS = ("create", "update", "replace")
 _PASSWORD = FieldDescriptor("password", SECRET_FIELD)
 
 
-def payload_name(collection: str, operation: str) -> str:
-    """``<Collection>Fields`` for the shared base, else ``<Collection><Operation>Payload``."""
-    prefix = "".join(part.capitalize() for part in collection.split("_"))
-    return f"{prefix}Fields" if operation == "fields" else f"{prefix}{operation.capitalize()}Payload"
+def payload_name(owner: str, operation: str) -> str:
+    """``<Owner>Fields`` for the shared base, else ``<Owner><Operation>Payload``."""
+    suffix = "Fields" if operation == "fields" else f"{operation.capitalize()}Payload"
+    return f"{to_pascal_case(owner)}{suffix}"
+
+
+def dto_payload_name(dto: str, operation: str) -> str:
+    """The model a route typed by ``dto`` validates its ``operation`` body with."""
+    return payload_name(dto, "update") if operation == "update" else to_pascal_case(dto)
 
 
 def _descriptors(fields: dict[str, dict]) -> list[FieldDescriptor]:
@@ -44,20 +50,28 @@ class ModelBuilder:
         return [
             model
             for name, col in collections.items()
-            for model in self._family(
-                col, identity_map.get(name), repositories.get(name)
-            )
+            for model in self._family(col, identity_map.get(name), repositories.get(name))
         ]
 
     def build_dto_models(self, dtos: dict[str, IRDto]) -> list[ModelDescriptor]:
         return [
-            ModelDescriptor(
-                name=to_pascal_case(dto.name),
-                collection=dto.name,
-                operation="dto",
-                fields=_descriptors(writable_fields(dto.fields)),
-            )
+            model
             for dto in dtos.values()
+            for model in (
+                ModelDescriptor(
+                    name=dto_payload_name(dto.name, "dto"),
+                    collection=dto.name,
+                    operation="dto",
+                    fields=_descriptors(payload_fields(dto.fields)),
+                ),
+                ModelDescriptor(
+                    name=dto_payload_name(dto.name, "update"),
+                    collection=dto.name,
+                    operation="update",
+                    fields=[],
+                    base=dto_payload_name(dto.name, "dto"),
+                ),
+            )
         ]
 
     def _family(
@@ -79,7 +93,7 @@ class ModelBuilder:
                 name=base,
                 collection=col.name,
                 operation="fields",
-                fields=_descriptors(writable_fields(col.fields, col.files.keys())),
+                fields=_descriptors(payload_fields(col.fields, col.files.keys())),
             ),
             *(
                 ModelDescriptor(

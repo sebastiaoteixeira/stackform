@@ -10,10 +10,9 @@ from yaml_api_generator.generators.backend.compile_context import ModelDescripto
 
 
 _IMPORTS: dict[str, tuple[str, ...]] = {
-    "datetime": ("datetime",),
     "typing": ("Annotated", "Any", "Literal"),
     "pydantic": ("Field",),
-    "dependencies.payloads": ("OpenPayload", "Payload", "formatted", "partial"),
+    "dependencies.payloads": ("OpenPayload", "Payload", "Timestamp", "formatted", "partial"),
 }
 
 
@@ -26,9 +25,13 @@ class Attribute:
 
 @dataclass(frozen=True)
 class ClassDeclaration:
+    """A payload class; ``readonly`` fields are rejected and ``server_defaults`` added on dump."""
+
     name: str
     base: str
     attributes: tuple[Attribute, ...]
+    readonly: frozenset[str] = frozenset()
+    server_defaults: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,11 +83,16 @@ class PayloadModule:
     ) -> None:
         if any(declaration.name == name for declaration in self.declarations):
             raise ValueError(f"Two payload models are both named '{name}'")
+        readonly = {field: config for field, config in properties.items() if config.get("readonly")}
         attributes = tuple(
             self._attribute(f"{owner}{to_pascal_case(field)}", field, config)
             for field, config in properties.items()
+            if field not in readonly
         )
-        self.declarations.append(ClassDeclaration(name, base, attributes))
+        server_defaults = {field: config["default"] for field, config in readonly.items() if "default" in config}
+        self.declarations.append(
+            ClassDeclaration(name, base, attributes, frozenset(readonly), server_defaults or None)
+        )
 
     def _attribute(self, nested_name: str, name: str, config: dict[str, Any]) -> Attribute:
         annotation = self._annotation(config, nested_name)

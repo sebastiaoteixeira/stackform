@@ -1,11 +1,11 @@
 import types
-from datetime import datetime
 from typing import Any, Literal
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from yaml_api_generator.ir import IRProviderBinding
+from yaml_api_generator.runtime.payloads import Timestamp
 from yaml_api_generator.server.fastapi.factory import (
     _field_annotation,
     _security_requirements,
@@ -134,7 +134,7 @@ def test_boolean_field_is_never_coerced(value):
 
 
 def test_field_type_mapping_datetime():
-    assert _field_annotation({"type": "datetime"}) is datetime
+    assert _field_annotation({"type": "datetime"}) is Timestamp
 
 
 def test_field_type_mapping_enum():
@@ -330,7 +330,7 @@ async def test_error_mapping_unauthorized_401():
         state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
-        await _run_pipeline(pipeline, _FakeRequest(), None, {})
+        await _run_pipeline(pipeline, _FakeRequest(), None)
     assert exc_info.value.status_code == 401
 
 
@@ -352,7 +352,7 @@ async def test_error_mapping_forbidden_403():
         state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
-        await _run_pipeline(pipeline, _FakeRequest(), None, {})
+        await _run_pipeline(pipeline, _FakeRequest(), None)
     assert exc_info.value.status_code == 403
 
 
@@ -374,7 +374,7 @@ async def test_error_mapping_not_found_404():
         state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
-        await _run_pipeline(pipeline, _FakeRequest(), None, {})
+        await _run_pipeline(pipeline, _FakeRequest(), None)
     assert exc_info.value.status_code == 404
 
 
@@ -395,7 +395,7 @@ async def test_error_mapping_value_error_422():
         state = types.SimpleNamespace(principal=None)
 
     with pytest.raises(HTTPException) as exc_info:
-        await _run_pipeline(pipeline, _FakeRequest(), None, {})
+        await _run_pipeline(pipeline, _FakeRequest(), None)
     assert exc_info.value.status_code == 422
 
 
@@ -477,10 +477,8 @@ def test_update_model_dump_exclude_unset_does_not_include_defaults():
 # --- BUG 2: datetime model_dump with mode='json' produces ISO string ---
 
 
-def test_create_model_dump_json_mode_serializes_datetime_to_iso_string():
+def test_create_model_dump_canonicalizes_datetime_to_utc():
     col = _make_collection("events", {"starts_at": {"type": "datetime"}})
     model = create_pydantic_model(col, "create")
-    instance = model(starts_at=datetime(2025, 1, 15, 10, 30, 0))
-    dumped = instance.model_dump(mode="json")
-    assert isinstance(dumped["starts_at"], str)
-    assert dumped["starts_at"].startswith("2025-01-15")
+    instance = model(starts_at="2025-01-15T11:30:00+01:00")
+    assert instance.model_dump(mode="json") == {"starts_at": "2025-01-15T10:30:00+00:00"}

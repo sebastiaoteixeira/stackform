@@ -8,6 +8,7 @@ from yaml_api_generator.generators.backend.compile_context import (
     IdentityCollectionDescriptor,
 )
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
+from yaml_api_generator.ir import SECRET_FIELD
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
@@ -262,7 +263,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         routes_dir.mkdir(parents=True, exist_ok=True)
 
         template = env.get_template("login_routes.py.jinja")
-        content = template.render(ctx=context)
+        content = template.render(ctx=context, secret=SECRET_FIELD)
         (routes_dir / "login.py").write_text(content)
 
     def _render_dependencies(

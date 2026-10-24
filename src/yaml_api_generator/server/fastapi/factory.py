@@ -20,13 +20,14 @@ from yaml_api_generator.runtime.payloads import (
 )
 from yaml_api_generator.runtime.files import FileError, RecordFiles
 from yaml_api_generator.runtime.file_requests import (
+    json_body,
     json_request_body,
     read_json,
     read_upload,
     upload_request_body,
 )
 from yaml_api_generator.runtime.multipart import file_download_responses, file_upload_body
-from yaml_api_generator.ir import writable_fields
+from yaml_api_generator.ir import payload_fields
 from yaml_api_generator.ir.api import IRDto, IROIDCProvider, IRProviderBinding
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..common.auth import oidc
@@ -74,7 +75,11 @@ def _model_field(config: dict[str, Any]) -> tuple[Any, Any]:
 def create_pydantic_model_fields(
     properties: dict[str, dict[str, Any]],
 ) -> dict[str, tuple[Any, Any]]:
-    return {name: _model_field(config) for name, config in properties.items()}
+    return {
+        name: _model_field(config)
+        for name, config in properties.items()
+        if not config.get("readonly")
+    }
 
 
 def create_pydantic_model(
@@ -83,7 +88,7 @@ def create_pydantic_model(
     identity_collection: RuntimeIdentityDescriptor | None = None,
     dto: IRDto | None = None,
 ) -> type[BaseModel] | None:
-    """The body model of ``operation``; nested objects and formats are left to ``ValidateBodyStep``."""
+    """The documented body of ``operation``; ``ValidateBodyStep`` validates the body itself."""
     model_name = to_pascal_case(collection.name)
     if operation == "login" and identity_collection is not None:
         return create_model(
@@ -103,12 +108,12 @@ def create_pydantic_model(
         return create_model(
             to_pascal_case(dto.name),
             __base__=Payload,
-            **create_pydantic_model_fields(writable_fields(dto.fields)),
+            **create_pydantic_model_fields(payload_fields(dto.fields)),
         )
     fields = create_model(
         f"{model_name}Fields",
         __base__=Payload,
-        **create_pydantic_model_fields(writable_fields(collection.fields, collection.files)),
+        **create_pydantic_model_fields(payload_fields(collection.fields, collection.files)),
     )
     if operation == "update":
         return partial(fields, f"{model_name}UpdatePayload")
@@ -159,11 +164,17 @@ def register_fastapi_routes(
         endpoint = _build_endpoint(
             pipeline, body_model, route, uses_cookie=ctx.session.uses_cookie
         )
+        body_document = (
+            {} if body_model is None
+            else {"requestBody": json_request_body(None, body_model, partial=route.operation == "update")}
+        )
         app.add_api_route(
             route.path,
             endpoint,
             methods=[route.method],
-            openapi_extra=_openapi_extra(route, ctx.auth),
+            openapi_extra=_openapi_extra(
+                route, ctx.auth, parameters=_path_parameters(route.path), **body_document
+            ),
         )
 
     for file_route in ctx.file_routes:
@@ -308,7 +319,6 @@ def _record_endpoint(
             pipeline=pipeline,
             request=request,
             body=None,
-            url_params={},
             uses_cookie=uses_cookie,
             operation=operation,
             upload=read(request),
@@ -323,7 +333,6 @@ def _download_endpoint(pipeline: Pipeline, *, uses_cookie: bool):
             pipeline=pipeline,
             request=request,
             body=None,
-            url_params={},
             uses_cookie=uses_cookie,
         )
         return StreamingResponse(ctx.response.chunks, headers=ctx.response.headers)
@@ -584,82 +593,30 @@ def _build_endpoint(
     *,
     uses_cookie: bool = False,
 ):
-    has_id_param = "{id}" in route.path
+    """An endpoint passing the raw JSON body to ``pipeline``, which validates it after the access checks."""
 
-    if body_model is None:
-        if has_id_param:
-
-            async def endpoint_no_body_with_id(request: Request, id: str) -> Any:
-                return await _run_pipeline(
-                    pipeline=pipeline,
-                    request=request,
-                    body=None,
-                    url_params={"id": id},
-                    uses_cookie=uses_cookie,
-                    operation=route.operation,
-                )
-
-            return endpoint_no_body_with_id
-
-        async def endpoint_no_body(request: Request) -> Any:
-            return await _run_pipeline(
-                pipeline=pipeline,
-                request=request,
-                body=None,
-                url_params={},
-                uses_cookie=uses_cookie,
-                operation=route.operation,
-            )
-
-        return endpoint_no_body
-
-    exclude_unset = route.operation == "update"
-
-    if has_id_param:
-
-        async def endpoint_with_body_and_id(
-            request: Request,
-            id: str,
-            payload: BaseModel,
-        ) -> Any:
-            return await _run_pipeline(
-                pipeline=pipeline,
-                request=request,
-                body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
-                url_params={"id": id},
-                uses_cookie=uses_cookie,
-                operation=route.operation,
-            )
-
-        endpoint_with_body_and_id.__annotations__["payload"] = body_model
-        return endpoint_with_body_and_id
-
-    async def endpoint_with_body(request: Request, payload: BaseModel) -> Any:
+    async def endpoint(request: Request) -> Any:
         return await _run_pipeline(
             pipeline=pipeline,
             request=request,
-            body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
-            url_params={},
+            body=None if body_model is None else await json_body(request),
             uses_cookie=uses_cookie,
             operation=route.operation,
         )
 
-    endpoint_with_body.__annotations__["payload"] = body_model
-    return endpoint_with_body
+    return endpoint
 
 
 async def _execute(
     pipeline: Pipeline,
     request: Request,
     body: dict[str, Any] | None,
-    url_params: dict[str, str],
     uses_cookie: bool = False,
     operation: str | None = None,
     upload: RequestBody | None = None,
 ) -> RequestContext:
     try:
         path_params = {key: str(value) for key, value in request.path_params.items()}
-        path_params.update(url_params)
         query_params = getattr(request, "query_params", None)
         query: dict[str, str | list[str]] = (
             {
@@ -706,12 +663,11 @@ async def _run_pipeline(
     pipeline: Pipeline,
     request: Request,
     body: dict[str, Any] | None,
-    url_params: dict[str, str],
     uses_cookie: bool = False,
     operation: str | None = None,
     upload: RequestBody | None = None,
 ) -> Any:
-    ctx = await _execute(pipeline, request, body, url_params, uses_cookie, operation, upload)
+    ctx = await _execute(pipeline, request, body, uses_cookie, operation, upload)
     response_payload = jsonable_encoder(ctx.response)
     if not uses_cookie or operation not in {"login", "refresh"}:
         return response_payload

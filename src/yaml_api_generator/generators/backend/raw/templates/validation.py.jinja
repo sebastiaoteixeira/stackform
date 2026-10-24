@@ -1,57 +1,13 @@
-from typing import Any, NamedTuple
-
-from fields import conform_object
-
-
-class _Payload(NamedTuple):
-    base: str | None
-    properties: dict[str, dict[str, Any]]
-    partial: bool = False
-
-
-_PAYLOADS = {
+from fields import Model, partial
 {% for model in models %}
-    {{ model.name | tojson }}: _Payload(
-        {{ model.base | tojson if model.base else "None" }},
-        {{ "{" }}{% for field in model.fields %}{{ field.name | tojson }}: {{ field.config | py_literal }}{{ ", " if not loop.last }}{% endfor %}{{ "}" }},
+{% set properties %}{{ "{" }}{% for field in model.fields %}{{ field.name | tojson }}: {{ field.config | py_literal }}{{ ", " if not loop.last }}{% endfor %}{{ "}" }}{% endset %}
+
 {% if model.operation == "update" %}
-        partial=True,
-{% endif %}
-    ),
-{% endfor %}
-}
+{{ model.name }} = partial({{ model.base }})
+{% elif model.base %}
+{{ model.name }} = {{ model.base }}{% if model.fields %}.extend({{ properties }}){% endif %}
 
-
-def _properties(model: str) -> dict[str, dict[str, Any]]:
-    payload = _PAYLOADS[model]
-    return {**(_properties(payload.base) if payload.base else {}), **payload.properties}
-
-
-def validate(model: str, body: Any) -> dict[str, Any]:
-    """``body`` checked against the payload model ``model``."""
-    return conform_object(_properties(model), body, partial=_PAYLOADS[model].partial)
-
-{% for identity in auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
-def validate_{{ identity.name }}_login(body: dict) -> dict:
-    """Validate login payload for {{ identity.name }}."""
-    if not isinstance(body, dict):
-        raise ValueError("Request body must be a JSON object")
-
-    known_fields = { {{ identity.identifier | tojson }}, "password"}
-    unknown = set(body.keys()) - known_fields
-    if unknown:
-        raise ValueError(f"Unknown fields: {', '.join(sorted(unknown))}")
-
-    if {{ identity.identifier | tojson }} not in body or not isinstance(body[{{ identity.identifier | tojson }}], str) or not body[{{ identity.identifier | tojson }}].strip():
-        raise ValueError("Missing required field: {{ identity.identifier }}")
-    if "password" not in body or not isinstance(body["password"], str) or not body["password"].strip():
-        raise ValueError("Missing required field: password")
-
-    return {
-        {{ identity.identifier | tojson }}: body[{{ identity.identifier | tojson }}],
-        "password": body["password"],
-    }
-
+{% else %}
+{{ model.name }} = Model({{ properties }})
 {% endif %}
 {% endfor %}
