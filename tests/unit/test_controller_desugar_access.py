@@ -74,3 +74,26 @@ def test_routes_form_access_takes_priority_over_operations_form() -> None:
     ControllerDesugarer().desugar(controllers, _expanded_services())
     routes = controllers["users"]["routes"]
     assert routes["get"]["access"] == ["role:admin"]
+
+
+def test_explicit_controller_without_access_is_public() -> None:
+    controllers = {
+        "stats": {
+            "routes": {"count": {"service": "count-posts", "method": "GET", "path": "/stats"}},
+        }
+    }
+    ControllerDesugarer().desugar(controllers, _expanded_services())
+    assert controllers["stats"]["routes"]["count"]["access"] == "public"
+
+
+def test_explicit_controller_operations_override_route_method_and_path() -> None:
+    controllers = {
+        "stats": {
+            "access": "authenticated",
+            "routes": {"count": {"service": "count-posts", "method": "GET", "path": "/stats"}},
+            "operations": {"count": {"method": "POST", "path": "/stats/run"}},
+        }
+    }
+    ControllerDesugarer().desugar(controllers, _expanded_services())
+    route = controllers["stats"]["routes"]["count"]
+    assert (route["method"], route["path"], route["access"]) == ("POST", "/stats/run", "authenticated")

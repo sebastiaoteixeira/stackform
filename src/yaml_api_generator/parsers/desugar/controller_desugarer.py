@@ -26,10 +26,11 @@ class ControllerDesugarer:
     """Expand every controller into explicit routes.
 
     Each route is layered from least to most specific: the controller
-    ``access``, what the route exposes (for a minified controller, the
-    service operation and its method/path convention), the ``operations``
-    override and the ``routes`` entry. ``operations.<name>: false`` drops
-    the route.
+    ``access`` (public when absent), what the route exposes (the ``routes``
+    entry, or for a service-bound controller the service operation and its
+    method/path convention), the ``operations`` override and, for a
+    service-bound controller, the ``routes`` refinement.
+    ``operations.<name>: false`` drops the route.
     """
 
     def desugar(
@@ -53,16 +54,16 @@ class ControllerDesugarer:
     ) -> dict[str, Any]:
         routes = entry.get("routes") or {}
         overrides = entry.get("operations") or {}
+        base = {"access": entry.get("access", "public")}
         if "service" in entry:
-            base = {"access": entry.get("access", "public")}
             exposed = self._exposed(ctrl_name, entry["service"], expanded_services)
+            refinements = routes
         else:
-            base = {"access": entry["access"]} if "access" in entry else {}
-            exposed = {name: {} for name in routes}
+            exposed, refinements = routes, {}
 
         errors = [
             self._unexposed(ctrl_name, section, name)
-            for section, names in (("operations", overrides), ("routes", routes))
+            for section, names in (("operations", overrides), ("routes", refinements))
             for name in names
             if name not in exposed
         ]
@@ -71,7 +72,7 @@ class ControllerDesugarer:
                 **base,
                 **route,
                 **(overrides.get(name) if isinstance(overrides.get(name), dict) else {}),
-                **routes.get(name, {}),
+                **refinements.get(name, {}),
             }
             for name, route in exposed.items()
             if overrides.get(name) is not False
