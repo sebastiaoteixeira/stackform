@@ -7,16 +7,14 @@ validator; the integration suite runs the scenario against it over HTTP.
 """
 
 import ast
-import json
 import os
-import subprocess
-import sys
 from collections import Counter
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.unit.support import payload_requests
 from tests.unit.support.payload_requests import (
     EXPECTED,
     JWT_SECRET,
@@ -25,6 +23,7 @@ from tests.unit.support.payload_requests import (
     scenario,
     spec,
 )
+from tests.unit.support.scenarios import run_generated
 from yaml_api_generator.cli.compiler import compile_project
 from yaml_api_generator.server import build_app, build_raw_app
 
@@ -53,29 +52,10 @@ def test_dev_server_validates_payloads(spec_file, build):
         assert scenario(client) == EXPECTED
 
 
-_RUNNER = f"""
-import json, sys
-sys.path.append({str(ROOT)!r})
-from fastapi.testclient import TestClient
-from tests.unit.support.payload_requests import scenario
-import app
-
-with TestClient(app.app) as client:
-    print(json.dumps(scenario(client)))
-"""
-
-
 def test_generated_fastapi_validates_payloads(spec_file):
     backend = _generate(spec_file, "fastapi")
-    result = subprocess.run(
-        [sys.executable, "-c", _RUNNER],
-        cwd=backend,
-        env={**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{backend / 'generated.sqlite'}"},
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout.splitlines()[-1]) == EXPECTED
+    env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{backend / 'generated.sqlite'}"}
+    assert run_generated(backend, payload_requests.__name__, env) == EXPECTED
 
 
 @pytest.fixture
@@ -116,12 +96,14 @@ def _is_field_config(node: ast.expr) -> bool:
 
 
 def _field_declarations(source: str) -> Counter:
-    """Each field a module declares, as a class annotation or a field config map entry.
+    """Each field a module declares, as a class annotation or a payload's field config map entry.
 
     A declaration is its name with its type, so same-named fields of unrelated
     payloads stay distinct while a field copied into a sibling payload repeats.
+    Nested properties belong to their parent's declaration.
     """
     nodes = list(ast.walk(ast.parse(source)))
+    payload_maps = (arg for node in nodes if isinstance(node, ast.Call) for arg in node.args)
     annotations = (
         (node.target.id, ast.unparse(node.annotation))
         for node in nodes
@@ -130,7 +112,7 @@ def _field_declarations(source: str) -> Counter:
     )
     configured = (
         (key.value, ast.unparse(value))
-        for node in nodes
+        for node in payload_maps
         if isinstance(node, ast.Dict)
         for key, value in zip(node.keys, node.values)
         if isinstance(key, ast.Constant) and _is_field_config(value)

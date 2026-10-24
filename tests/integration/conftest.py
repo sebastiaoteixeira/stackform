@@ -4,6 +4,7 @@ from tests.integration.support.file_apps import BACKENDS, CLIENT_ID, serve
 from tests.integration.support.minio import MINIO
 from tests.integration.support.mongo import MONGO
 from tests.integration.support.oidc import live_issuer
+from tests.integration.support.postgres import POSTGRES
 
 
 @pytest.fixture(scope="session")
@@ -15,6 +16,12 @@ def s3_endpoint():
 @pytest.fixture(scope="session")
 def mongo_uri():
     with MONGO.endpoint() as uri:
+        yield uri
+
+
+@pytest.fixture(scope="session")
+def postgres_uri():
+    with POSTGRES.endpoint() as uri:
         yield uri
 
 

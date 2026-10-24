@@ -47,6 +47,7 @@ dto:
       level: { type: number, default: 2 }
       labels: { type: array, items: { type: string, maxLength: 8 } }
       contact: { type: string, format: email }
+      seen: { type: datetime, default: "2024-01-01T00:00:00Z" }
 entities:
   user:
     type: auth
@@ -86,6 +87,7 @@ entities:
       level: { type: number }
       labels: { type: array, items: { type: string } }
       contact: { type: string }
+      seen: { type: datetime }
 repositories:
   users: { entity: user }
   items: { entity: item }
@@ -157,6 +159,8 @@ NOTES = [
     ({"role": "owner"}, 422),
     ({"role": "admin", "contact": "a@b.co"}, 200),
     ({"role": "admin", "contact": "x"}, 422),
+    ({"role": "admin", "seen": "2024-01-01T00:00:00Z"}, 200),
+    ({"role": "admin", "seen": "soon"}, 422),
     ({"role": "admin", "unknown": 1}, 422),
     ({}, 422),
 ]
@@ -172,6 +176,7 @@ ROUND_TRIPS = [
     ["replaced item deleted", 200],
     ["note role kept", "admin"],
     ["note dto default stored", 2],
+    ["note dto datetime default stored", "2024-01-01T00:00:00+00:00"],
     ["note partial update", 200],
     ["note value kept by partial update", 5],
     ["note empty update", 200],
@@ -220,6 +225,7 @@ def _round_trips(client: TestClient, headers: dict[str, str], user: dict) -> lis
         ["replaced item deleted", client.delete(path).status_code],
         ["note role kept", note.get("role")],
         ["note dto default stored", note.get("level")],
+        ["note dto datetime default stored", client.get(f"/notes/{note['id']}", headers=headers).json().get("seen")],
         ["note partial update", labelled.status_code],
         ["note value kept by partial update", labelled.json().get("level")],
         ["note empty update", client.patch(f"/notes/{fives['id']}", json={}, headers=headers).status_code],
