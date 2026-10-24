@@ -788,6 +788,12 @@
     "ServiceConfig": {
       "type": "object",
       "additionalProperties": false,
+      "not": {
+        "required": [
+          "handler",
+          "operation"
+        ]
+      },
       "properties": {
         "abstract": {
           "type": "boolean"

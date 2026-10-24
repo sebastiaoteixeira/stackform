@@ -274,6 +274,27 @@ def test_handler_referencing_undeclared_package_raises(tmp_path):
     assert _codes(spec) == ["IMPORT_UNDECLARED_PACKAGE"]
 
 
+@pytest.mark.parametrize("handler", ["vend.nosuch", "vend.helper.nosuch", "vend.nomodule.build", "vend"])
+def test_handler_naming_an_undefined_function_raises(tmp_path, handler):
+    _write_package(tmp_path / "src", "vend_pkg")
+    spec = _minimal(tmp_path, "vend: { path: ./src/vend_pkg, package: vend_pkg }", handler=handler)
+    assert _codes(spec) == ["IMPORT_HANDLER_NOT_FOUND"]
+
+
+@pytest.mark.parametrize("handler", ["vend.route", "vend.build", "vend.helper.build"])
+def test_handler_naming_a_bound_function_is_accepted(tmp_path, handler):
+    _write_package(tmp_path / "src", "vend_pkg")
+    spec = _minimal(tmp_path, "vend: { path: ./src/vend_pkg, package: vend_pkg }", handler=handler)
+    load_and_generate_ir(str(spec))
+
+
+def test_service_with_both_handler_and_operation_raises(tmp_path):
+    _write_package(tmp_path / "src", "vend_pkg")
+    spec = _minimal(tmp_path, "vend: { path: ./src/vend_pkg, package: vend_pkg }", handler="vend.route")
+    spec.write_text(spec.read_text().replace("handler: vend.route", "handler: vend.route, repository: posts, operation: list"))
+    assert _codes(spec) == ["SCHEMA_VALIDATION_ERROR"]
+
+
 def test_v03_bare_string_import_rejected(tmp_path):
     spec = _minimal(tmp_path, "vend: some.author.module", handler="vend.route")
     assert _codes(spec) == ["SCHEMA_VALIDATION_ERROR"]
