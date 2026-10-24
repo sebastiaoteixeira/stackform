@@ -3,6 +3,7 @@ import pytest
 from yaml_api_generator.parsers.transformers.constraint_validation import (
     validate_spec_constraints,
 )
+from yaml_api_generator.parsers.transformers.field_defaults import canonicalize_defaults
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 
 
@@ -170,3 +171,25 @@ def test_invalid_constraint_rejected_end_to_end(tmp_path):
     with pytest.raises(ConfigErrors) as exc_info:
         load_and_generate_ir(str(yaml_file))
     assert "FIELD_CONSTRAINT_INVALID" in {e.code for e in exc_info.value.errors}
+
+
+# ---- Defaults reach every consumer in canonical form ----
+
+def test_defaults_are_canonicalized_at_every_depth():
+    spec = _spec({
+        "type": "object",
+        "properties": {
+            "at": {"type": "datetime", "default": "2024-01-01T01:00:00+01:00"},
+            "port": {"type": "number", "default": "8080"},
+        },
+        "default": {"port": 1},
+    })
+    canonicalize_defaults(spec)
+    field = spec["entities"]["post"]["fields"]["value"]
+    assert field["properties"]["at"]["default"] == "2024-01-01T00:00:00+00:00"
+    assert field["properties"]["port"]["default"] == 8080.0
+    assert field["default"] == {"port": 1, "at": "2024-01-01T00:00:00+00:00"}
+
+
+def test_env_string_default_is_bounded_like_its_type():
+    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "number", "max": 1, "default": "42"})

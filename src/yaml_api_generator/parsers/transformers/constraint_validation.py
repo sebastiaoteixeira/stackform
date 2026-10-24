@@ -9,10 +9,9 @@ pre-desugar spec, so the rejection happens once for all targets.
 from collections.abc import Iterator
 from typing import Any
 
+from yaml_api_generator.parsers.transformers.field_defaults import canonical_default
 from yaml_api_generator.parsers.transformers.field_maps import spec_fields
-from yaml_api_generator.parsers.transformers.file_validation import file_config
 from yaml_api_generator.parsers.yaml_parser import ConfigError
-from yaml_api_generator.runtime.fields import conform
 
 _BOUNDS = (("min", "max"), ("minLength", "maxLength"))
 
@@ -41,35 +40,14 @@ def _check_field(field: dict[str, Any], path: str) -> Iterator[ConfigError]:
 
 
 def _check_default(field: dict[str, Any], path: str) -> Iterator[ConfigError]:
-    """A default must satisfy its own field config, nested properties and items included.
-
-    Interpolation has already run, so a numeric or boolean looking string is an
-    env-driven default (``${PORT:-8080}``) and is accepted for its type.
-    """
-    default = field["default"]
-    if default is None or file_config(field) is not None:
-        return
-    if isinstance(default, str) and _coerces_to(field.get("type"), default):
-        return
+    """A default must satisfy its own field config, nested properties and items included."""
     try:
-        conform(field, default, path)
+        canonical_default(field, path)
     except ValueError as error:
         yield _error(
-            f"default {default!r} is invalid: {error}", path,
+            f"default {field['default']!r} is invalid: {error}", path,
             "Make the default satisfy the field's own constraints or remove it",
         )
-
-
-def _coerces_to(field_type: str, value: str) -> bool:
-    if field_type == "number":
-        try:
-            float(value)
-        except ValueError:
-            return False
-        return True
-    if field_type == "boolean":
-        return value.lower() in ("true", "false", "1", "0")
-    return False
 
 
 def validate_spec_constraints(spec: dict[str, Any]) -> list[ConfigError]:

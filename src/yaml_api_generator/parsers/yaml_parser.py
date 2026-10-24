@@ -235,6 +235,9 @@ def load_and_generate_ir(
     if constraint_errors:
         raise ConfigErrors(constraint_errors)
 
+    from .transformers.field_defaults import canonicalize_defaults
+    canonicalize_defaults(resolved)
+
     if version in ("0.2", "0.3"):
         from .transformers.file_validation import validate_spec_files
         file_errors = validate_spec_files(resolved)
