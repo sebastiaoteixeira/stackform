@@ -1,10 +1,11 @@
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 from ..auth import hash_password
 from ..request_context import RequestContext
+from ..server_context import RuntimeIdentityDescriptor
 from yaml_api_generator.ir.api import IRPagination
 from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
@@ -107,10 +108,12 @@ def _inject_canonical_id_list(
     ]
 
 
-def _prepare_payload(payload: dict[str, Any], *, password_via: bool) -> dict[str, Any]:
+def _prepare_payload(
+    payload: dict[str, Any], identity: RuntimeIdentityDescriptor | None
+) -> dict[str, Any]:
     normalized = dict(payload)
 
-    if password_via:
+    if identity is not None and identity.has_password:
         raw_password = normalized.pop("password", None)
         if raw_password is not None:
             if not isinstance(raw_password, str) or not raw_password.strip():
@@ -166,13 +169,14 @@ def RepositoryCreateStep(
     collection_name: str,
     id_field: str,
     id_format: str,
-    password_via: bool,
-    grant: Callable[[dict[str, Any]], dict[str, Any]] = dict,
+    identity: RuntimeIdentityDescriptor | None = None,
+    assignable: bool = False,
 ) -> Step:
-    """``grant`` sets the roles of a new identity record."""
+    """A new identity record keeps the roles it names only when they are ``assignable``."""
+    grant = partial(identity.role_store.granted, assignable=assignable) if identity else dict
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(grant(_payload(ctx)), password_via=password_via)
+        payload = _prepare_payload(grant(_payload(ctx)), identity)
         if id_format != "natural":
             payload[id_field] = _generate_id(id_format)
         result = await _repository(ctx).create(collection_name, payload)
@@ -185,13 +189,14 @@ def RepositoryCreateStep(
 def RepositoryUpdateStep(
     collection_name: str,
     id_field: str,
-    password_via: bool,
     locator: RecordLocator | None = None,
+    *,
+    identity: RuntimeIdentityDescriptor | None = None,
 ) -> Step:
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        payload = _prepare_payload(_payload(ctx), identity)
         if locator.is_scoped:
             result = await _repository(ctx).update_by(
                 collection_name, locator.criteria(ctx.url_params), payload
@@ -211,13 +216,14 @@ def RepositoryUpdateStep(
 def RepositoryReplaceStep(
     collection_name: str,
     id_field: str,
-    password_via: bool,
     locator: RecordLocator | None = None,
+    *,
+    identity: RuntimeIdentityDescriptor | None = None,
 ) -> Step:
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        payload = _prepare_payload(_payload(ctx), identity)
         if locator.is_scoped:
             result = await _repository(ctx).replace_by(
                 collection_name, locator.criteria(ctx.url_params), payload

@@ -46,8 +46,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         reject_unsigned_session_algorithm(context)
         reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
-        env.filters["python_type"] = type_mapper.python_type
-        env.filters["python_annotation"] = type_mapper.python_annotation
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
@@ -66,9 +64,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         )
         env.tests["needs_request_rule"] = access_filters.needs_request_rule
         env.tests["unconditional"] = access_filters.is_unconditional
-        env.globals["needs_datetime_import"] = type_mapper.needs_datetime_import
-        env.globals["needs_literal_import"] = type_mapper.needs_literal_import
-        env.globals["needs_any_import"] = type_mapper.needs_any_import
 
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "conflicts.py").write_text(
@@ -83,7 +78,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_models(env, context, collections_by_name, output_dir)
         self._render_dtos(env, context, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
-        self._render_service_inputs(env, context, output_dir)
+        self._render_service_inputs(env, output_dir, "dependencies")
         self._render_routes(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_dependencies(env, context, output_dir)
@@ -95,18 +90,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
         )
 
-    def _render_service_inputs(
-        self, env: Environment, context: CompileContext, output_dir: Path
-    ) -> None:
-        self._render_single_file(
-            env,
-            context,
-            output_dir,
-            SingleFileRenderConfig(
-                template_name="service_inputs.py.jinja",
-                output_path="dependencies/service_inputs.py",
-            ),
-        )
 
     def _render_settings(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -140,8 +123,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 template_name="models.py.jinja",
                 output_subdir="models",
                 context_builder=lambda col_name, col_data, ctx: {
-                    "models": col_data["models"],
-                    "all_fields": [f for m in col_data["models"] for f in m.fields],
+                    "module": type_mapper.PayloadModule(col_data["models"]),
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["models"]),
             )
@@ -155,8 +137,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         models_dir = output_dir / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
         content = env.get_template("models.py.jinja").render(
-            models=context.dto_models,
-            all_fields=[f for m in context.dto_models for f in m.fields],
+            module=type_mapper.PayloadModule(context.dto_models)
         )
         (models_dir / "_dto.py").write_text(content)
 
@@ -428,6 +409,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "postgres.py").write_text(
                 env.get_template("postgres.py.jinja").render(ctx=context)
             )
+            (deps_dir / "sql_types.py").write_text(runtime_module_source("sql_types"))
         if context.auth.has_app_oidc_auth:
             (deps_dir / "login_codes.py").write_text(
                 env.get_template("login_codes.py.jinja").render(auth=context.auth)
@@ -440,7 +422,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
-        for module in ("access", "pagination"):
+        for module in ("access", "pagination", "payloads"):
             (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))

@@ -165,6 +165,7 @@ def _runtime_route(route: IRRoute, document: IRDocument) -> RuntimeRouteDescript
         service_input=service_input,
         service_forwarding=service_forwarding,
         pagination=route.pagination,
+        body_dto=route.body_dto(document.dtos),
     )
 
 

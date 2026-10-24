@@ -10,7 +10,7 @@ from yaml_api_generator.ir import (
     IRRequestBinding,
     WhereRhs,
 )
-from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
+from yaml_api_generator.ir.api import IRDto, IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
 from yaml_api_generator.runtime.access import Roles
 
@@ -24,19 +24,6 @@ class RuntimeCollectionDescriptor:
     fields: dict[str, Any]
     datastore: str | None = None
     files: Mapping[str, IRFileField] = field(default_factory=dict)
-
-    @property
-    def writable_fields(self) -> dict[str, dict[str, Any]]:
-        """The fields a client may send: not the id, a readonly or file field, nor ``_auth``."""
-        return {
-            name: config
-            for name, config in self.fields.items()
-            if isinstance(config, dict)
-            and config.get("type") != "id"
-            and not config.get("readonly", False)
-            and name != "_auth"
-            and name not in self.files
-        }
 
 
 @dataclass(frozen=True)
@@ -96,6 +83,7 @@ class RuntimeRouteDescriptor:
     service_input: dict[str, Any] | None = None
     service_forwarding: dict[str, Any] = field(default_factory=dict)
     pagination: IRPagination | None = None
+    body_dto: IRDto | None = None
 
 
 @dataclass(frozen=True)

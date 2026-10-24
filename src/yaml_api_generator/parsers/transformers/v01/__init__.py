@@ -9,12 +9,12 @@ from typing import Any
 from yaml_api_generator.ir import (
     IRApi,
     IRDocument,
-    IRMongo,
     IRRepository,
     IRService,
 )
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 
+from ..v02.datastore_transformer import parse_datastores
 from .collection_transformer import CollectionTransformer
 from .identity_transformer import IdentityTransformer
 from .route_transformer import RouteTransformer
@@ -96,7 +96,7 @@ class V01Transformer:
             for route in routes
         ]
 
-        mongo_data = resolved.get("mongo", {})
+        datastores, default_datastore, _ = parse_datastores(resolved)
         return IRDocument(
             version=str(resolved["version"]),
             api=api_ir,
@@ -105,8 +105,7 @@ class V01Transformer:
             services=services,
             routes=routes,
             identityCollections=identity_collections,
-            mongo=IRMongo(
-                uri=mongo_data.get("uri", "mongodb://localhost:27017"),
-                database=mongo_data.get("database", "yaml_api"),
-            ),
+            mongo=datastores[default_datastore],
+            datastores=datastores,
+            default_datastore=default_datastore,
         )

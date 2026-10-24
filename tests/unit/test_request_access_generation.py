@@ -22,9 +22,9 @@ def _generate(tmp_path):
 
 def test_dto_model_emitted(tmp_path):
     ctx = _generate(tmp_path)
-    assert [m.name for m in ctx.dto_models] == ["CreateMembership"]
+    assert [m.name for m in ctx.dto_models] == ["CreateMembership", "CreateMembershipUpdatePayload"]
     dto_module = (tmp_path / "models" / "_dto.py").read_text()
-    assert "class CreateMembership(BaseModel):" in dto_module
+    assert "class CreateMembership(Payload):" in dto_module
     assert "Literal['admin', 'member', 'viewer']" in dto_module
 
 

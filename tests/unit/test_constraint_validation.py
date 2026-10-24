@@ -131,6 +131,32 @@ def test_valid_string_constraints_accepted():
     ) == set()
 
 
+# ---- Defaults conform to their own field config ----
+
+@pytest.mark.parametrize("field", [
+    {"type": "string", "format": "email", "default": "not-an-email"},
+    {"type": "string", "maxLength": 2, "default": "long"},
+    {"type": "number", "min": 5, "default": 1},
+    {"type": "array", "items": {"type": "string", "maxLength": 1}, "default": ["ab"]},
+    {"type": "array", "items": {"type": "number"}, "default": ["x"]},
+    {"type": "object", "properties": {"a": {"type": "number"}}, "default": {"b": 1}},
+    {"type": "object", "properties": {"a": {"type": "number", "required": True}}, "default": {}},
+    {"type": "object", "properties": {"a": {"type": "number", "max": 1}}, "default": {"a": 2}},
+])
+def test_default_violating_its_own_config_rejected(field):
+    assert "FIELD_CONSTRAINT_INVALID" in _codes(field)
+
+
+@pytest.mark.parametrize("field", [
+    {"type": "string", "format": "email", "default": "a@b.co"},
+    {"type": "array", "items": {"type": "string", "maxLength": 1}, "default": ["a"]},
+    {"type": "object", "properties": {"a": {"type": "number", "required": True}}, "default": {"a": 1}},
+    {"type": "object", "default": {"free": "form"}},
+])
+def test_default_satisfying_its_own_config_accepted(field):
+    assert _codes(field) == set()
+
+
 # ---- End to end ----
 
 def test_invalid_constraint_rejected_end_to_end(tmp_path):

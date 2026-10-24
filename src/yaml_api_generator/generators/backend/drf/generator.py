@@ -23,7 +23,6 @@ from ..validation import (
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
-from . import type_mapper
 from ..fastapi import access_filters
 from .settings_builder import build_drf_settings_fields
 
@@ -48,7 +47,6 @@ class DRFGenerator(TemplateBasedGenerator):
         reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.globals["settings_module"] = f"{self.dir_prefix}.settings"
-        env.filters["drf_field"] = type_mapper.drf_field
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["rule_to_predicate"] = access_filters.rule_to_predicate
         env.filters["py_literal"] = access_filters.py_literal
@@ -76,7 +74,7 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_project_scaffold(env, context, output_dir)
         self._render_serializers(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
-        self._render_service_inputs(env, context, output_dir)
+        self._render_service_inputs(env, output_dir, self.dir_prefix)
         for module in ("access", "pagination"):
             (api_dir / f"{module}.py").write_text(runtime_module_source(module))
         self._render_views(env, context, collections_by_name, output_dir)
@@ -99,18 +97,6 @@ class DRFGenerator(TemplateBasedGenerator):
             )
         )
 
-    def _render_service_inputs(
-        self, env: Environment, context: CompileContext, output_dir: Path
-    ) -> None:
-        self._render_single_file(
-            env,
-            context,
-            output_dir,
-            SingleFileRenderConfig(
-                template_name="service_inputs.py.jinja",
-                output_path=f"{self.dir_prefix}/service_inputs.py",
-            ),
-        )
 
     def _render_settings(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -159,6 +145,12 @@ class DRFGenerator(TemplateBasedGenerator):
                 should_render=lambda col_name, col_data, ctx: bool(col_data["models"]),
             )
         )
+        api_dir = output_dir / self.dir_prefix
+        (api_dir / "payloads.py").write_text(env.get_template("payloads.py.jinja").render())
+        if context.dto_models:
+            (api_dir / "serializers" / "_dto.py").write_text(
+                env.get_template("serializers.py.jinja").render(models=context.dto_models)
+            )
 
     def _render_services(
         self,

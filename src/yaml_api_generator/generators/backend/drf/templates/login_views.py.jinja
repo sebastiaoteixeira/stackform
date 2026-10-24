@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from drf_spectacular.utils import extend_schema
 
 from api.authentication.auth import verify_password
@@ -15,7 +15,7 @@ class {{ class_name }}LoginView(APIView):
     permission_classes = []
 
     @extend_schema(tags=["{{ identity.name | capitalize_collection }}"], auth=[])
-    def post(self, request):
+    async def post(self, request):
         identifier_value = request.data.get("{{ identity.identifier }}")
         password = request.data.get("password")
 
@@ -27,7 +27,7 @@ class {{ class_name }}LoginView(APIView):
 
         db = get_database()
         col = db["{{ identity.name }}"]
-        for doc in col.find({}):
+        async for doc in col.find({}):
             if str(doc.get("{{ identity.identifier }}", "")) != str(identifier_value):
                 continue
             stored_hash = doc["_auth"]["passwordHash"]
