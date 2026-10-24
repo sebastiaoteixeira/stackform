@@ -869,7 +869,7 @@
       }
     },
     "PaginationConfig": {
-      "description": "Controller pagination. The parser accepts the offset and keyset strategies and count none/exact; cursor, range and count: estimated are named so it can reject them by name (PAGINATION_UNSUPPORTED).",
+      "description": "Controller pagination.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -881,9 +881,7 @@
           "type": "string",
           "enum": [
             "offset",
-            "keyset",
-            "cursor",
-            "range"
+            "keyset"
           ]
         },
         "size": {
@@ -908,8 +906,7 @@
           "type": "string",
           "enum": [
             "none",
-            "exact",
-            "estimated"
+            "exact"
           ],
           "default": "none"
         },
