@@ -3,8 +3,6 @@
 Converts IR routes into route descriptors with access control and model references.
 """
 
-import re
-
 from yaml_api_generator.ir import IRDocument, IRDto, IRSymbolRef
 from .model_builder import dto_payload_name, payload_name
 from ..compile_context import (
@@ -17,9 +15,7 @@ from ..compile_context import (
 
 
 WRITE_OPERATIONS = ("create", "update", "replace")
-DETAIL_OPERATIONS = frozenset({"get", "update", "replace", "delete"})
 _REQUEST_PARTS = frozenset({"body", "query", "header", "cookie"})
-_PATH_TOKEN = re.compile(r"\{(\w+)\}")
 
 
 def _base_prefix(document: IRDocument) -> str:
@@ -84,11 +80,9 @@ class RouteBuilder:
 
         for ir_route in document.routes:
             needs_auth = not ir_route.is_public and has_identity
+            admits_anonymous = needs_auth and ir_route.admits_anonymous
             relative_path = ir_route.path.removeprefix(prefix) or "/"
-            path_params = _PATH_TOKEN.findall(ir_route.path)
-            record_id_param, record_parent_params = self._record_params(
-                document.version, ir_route.operation, path_params
-            )
+            path_params = ir_route.path_params
             service_input, service_forwarding = _service_config(
                 document, ir_route.service
             )
@@ -125,9 +119,10 @@ class RouteBuilder:
                         collection=ir_route.collection,
                         is_public=ir_route.is_public,
                         needs_auth=needs_auth,
+                        admits_anonymous=admits_anonymous,
                         is_identity_create=False,
                         body_model=None,
-                        has_id_param=record_id_param is not None,
+                        has_id_param=ir_route.record_param is not None,
                         password_via=False,
                         handler=ir_route.handler,
                         access_rules=access_rules,
@@ -135,8 +130,8 @@ class RouteBuilder:
                         needs_request=needs_request,
                         typed_body_model=typed_body_model,
                         service=ir_route.service,
-                        record_id_param=record_id_param,
-                        record_parent_params=record_parent_params,
+                        record_id_param=ir_route.record_param,
+                        record_parent_params=list(ir_route.scope),
                         service_input=service_input,
                         service_forwarding=service_forwarding,
                     )
@@ -162,17 +157,18 @@ class RouteBuilder:
                     collection=ir_route.collection,
                     is_public=ir_route.is_public,
                     needs_auth=needs_auth,
+                    admits_anonymous=admits_anonymous,
                     is_identity_create=is_identity_create,
                     body_model=body_model,
-                    has_id_param=record_id_param is not None,
+                    has_id_param=ir_route.record_param is not None,
                     password_via=uses_password,
                     access_rules=access_rules,
                     path_params=path_params,
                     needs_request=needs_request,
                     typed_body_model=typed_body_model,
                     service=ir_route.service,
-                    record_id_param=record_id_param,
-                    record_parent_params=record_parent_params,
+                    record_id_param=ir_route.record_param,
+                    record_parent_params=list(ir_route.scope),
                     id_field=document.collections[ir_route.collection].idField,
                     service_input=service_input,
                     service_forwarding=service_forwarding,
@@ -181,16 +177,6 @@ class RouteBuilder:
             )
 
         return routes
-
-    @staticmethod
-    def _record_params(
-        spec_version: str, operation: str, path_params: list[str]
-    ) -> tuple[str | None, list[str]]:
-        if operation not in DETAIL_OPERATIONS:
-            return None, []
-        if spec_version == "0.3" and path_params:
-            return path_params[-1], path_params[:-1]
-        return ("id", []) if "id" in path_params else (None, [])
 
     @staticmethod
     def _needs_request(rules: list[AccessRuleDescriptor] | None) -> bool:

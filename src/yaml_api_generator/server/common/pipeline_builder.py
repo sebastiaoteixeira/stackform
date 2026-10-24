@@ -38,7 +38,7 @@ from .steps.files import (
     replace_file,
 )
 from .steps.authorization import Admission, admit_record, admit_rows, screen_record
-from .steps.repositories import RecordLocator, record_locator
+from .steps.repositories import RecordLocator
 
 
 def _document_bindings(route: RuntimeRouteDescriptor) -> Iterator[IRDocumentBinding]:
@@ -282,11 +282,9 @@ class PipelineBuilder:
             return None
         return PostFetchAuthorizeStep(route.access_rules, self._ctx.auth)
 
-    def _locator(self, route: RuntimeRouteDescriptor):
-        if getattr(self._ctx, "spec_version", "0.2") != "0.3":
-            return RecordLocator(self._ctx.collections[route.collection].id_field)
-        return record_locator(
-            route.path, self._ctx.collections[route.collection].id_field
+    def _locator(self, route: RuntimeRouteDescriptor) -> RecordLocator:
+        return RecordLocator(
+            self._ctx.collections[route.collection].id_field, route.record_param, route.scope
         )
 
     def _repository_step(self, route: RuntimeRouteDescriptor) -> Step:
@@ -297,12 +295,17 @@ class PipelineBuilder:
         identity = self._ctx.auth.identity_collections.get(collection_name)
 
         if operation == "list":
-            return RepositoryListStep(collection_name, id_field, route.pagination)
+            return RepositoryListStep(collection_name, id_field, route.pagination, self._locator(route))
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field, self._locator(route))
         if operation == "create":
             return RepositoryCreateStep(
-                collection_name, id_field, collection.id_format, identity, assignable=not route.is_public
+                collection_name,
+                id_field,
+                collection.id_format,
+                identity,
+                assignable=not route.is_public,
+                locator=self._locator(route),
             )
         if operation == "update":
             return RepositoryUpdateStep(

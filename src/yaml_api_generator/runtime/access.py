@@ -247,6 +247,11 @@ def all_of(*predicates: Predicate) -> Predicate:
     return reduce(conjoin, predicates, EVERY_ROW)
 
 
+def matching(criteria: Mapping[str, Any]) -> Predicate:
+    """The rows whose top-level fields hold the values ``criteria`` maps them to."""
+    return all_of(*(FieldEquals(Field((name,)), value) for name, value in criteria.items()))
+
+
 def negate(predicate: Predicate) -> Predicate:
     if isinstance(predicate, Constant):
         return constant(not predicate.value)
@@ -275,6 +280,17 @@ class AccessDenied(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+    def refusal(self, principal: Any) -> tuple[int, str]:
+        """The status and detail refusing the caller ``principal`` names."""
+        return 403, self.reason
+
+
+class Unadmitted(AccessDenied):
+    """No rule admits the caller, whom authenticating may yet admit."""
+
+    def refusal(self, principal: Any) -> tuple[int, str]:
+        return (401, "Unauthorized") if principal is None else super().refusal(principal)
 
 
 @dataclass(frozen=True)
@@ -310,7 +326,7 @@ def decide(decisions: list[Decision], holds: Callable[[Predicate], bool] = parti
         (None, None),
     )
     if decision is None:
-        raise AccessDenied(refusal_reason(decisions))
+        raise Unadmitted(refusal_reason(decisions))
     if decision.effect == "deny":
         raise AccessDenied(decision.reason or "Forbidden")
     return index

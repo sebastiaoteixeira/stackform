@@ -15,6 +15,7 @@ from yaml_api_generator.ir import (
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 
 from ..v02.datastore_transformer import parse_datastores
+from ..v02.record_location import id_param, locate_records
 from .collection_transformer import CollectionTransformer
 from .identity_transformer import IdentityTransformer
 from .route_transformer import RouteTransformer
@@ -103,7 +104,7 @@ class V01Transformer:
             collections=collections,
             repositories=repositories,
             services=services,
-            routes=routes,
+            routes=locate_records(routes, collections, id_param),
             identityCollections=identity_collections,
             mongo=datastores[default_datastore],
             datastores=datastores,

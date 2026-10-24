@@ -42,7 +42,9 @@ from api.authentication.mongodb import get_database
 {% set needs_auth = routes | selectattr("needs_auth") | list %}
 {% if needs_auth %}
 from api.authentication.auth import resolve_principal, _principal_has_role
-from api.access import AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, row_filter, value_at
+from api.access import AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, matching, negate, one_of, row_filter, value_at
+{% elif crud_routes | selectattr("operation", "equalto", "list") | selectattr("record_parent_params") | list %}
+from api.access import matching
 {% endif %}
 
 {% set class_name = collection_name | capitalize_collection %}
@@ -83,8 +85,10 @@ from api.access import AccessDenied, Decision, Field, all_of, conjoin, constant,
 {% if route.needs_auth %}
         db = get_database()
         _resolved_principal = await resolve_principal(request, db)
+{% if not route.admits_anonymous %}
         if _resolved_principal is None:
             return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
+{% endif %}
 {% if route.access_rules %}
         principal = _resolved_principal
 {% set ns = namespace(identity_symbols=[]) %}
@@ -129,7 +133,8 @@ from api.access import AccessDenied, Decision, Field, all_of, conjoin, constant,
             _access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(_decisions)]
 {% endif %}
         except AccessDenied as exc:
-            return Response({"detail": exc.reason}, status=status.HTTP_403_FORBIDDEN)
+            code, detail = exc.refusal(principal)
+            return Response({"detail": detail}, status=code)
 {% endmacro %}
 
 {% macro post_fetch_check(route, doc_var) %}
@@ -200,7 +205,11 @@ class {{ path_routes[0].view_name }}(APIView):
         try:
             prepare_service_inputs(path_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
 {% if route.operation == "list" %}
-{% set row_filter_arg = ", _row_filter" if auth.enabled and route.needs_auth and route.access_rules else "" %}
+{% set rules_filter = auth.enabled and route.needs_auth and route.access_rules %}
+{% set row_filter_arg = ", _row_filter" if rules_filter or route.record_parent_params else "" %}
+{% if route.record_parent_params %}
+            _row_filter = {{ "conjoin(_row_filter, " if rules_filter }}matching({{ record_criteria(route) }}){{ ")" if rules_filter }}
+{% endif %}
 {% if route.pagination %}
             pagination_config = {{ route.pagination | pagination_config | py_literal }}
             pagination_query = dict(request.query_params)
@@ -214,6 +223,9 @@ class {{ path_routes[0].view_name }}(APIView):
             serializer = {{ route.typed_body_model or route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
+{% if route.record_parent_params %}
+            data = {**data, **{{ record_criteria(route) }}}
+{% endif %}
 {% if identity %}
             data = {{ identity.role_store | py_literal }}.granted(dict(data), assignable={{ route.needs_auth | py_literal }})
 {% endif %}

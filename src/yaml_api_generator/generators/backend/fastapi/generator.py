@@ -57,6 +57,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["rule_to_predicate"] = access_filters.rule_to_predicate
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
+        env.filters["principal_dependency"] = access_filters.principal_dependency
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
         env.tests["needs_document_rule"] = access_filters.needs_document_rule
         env.tests["needs_current_document_rule"] = (

@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
+from ...ir.api import CallerDemand, IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
 from ...runtime.access import Roles
 from ...utils.strings import to_py_identifier
@@ -216,7 +216,7 @@ class RequestSymbolDescriptor:
 
 
 @dataclass(frozen=True)
-class AccessRuleDescriptor:
+class AccessRuleDescriptor(CallerDemand):
     principal: str
     required_role: str | None = None
     identity_symbols: list[str] = field(default_factory=list)
@@ -255,6 +255,7 @@ class RouteDescriptor:
     service_input: dict[str, Any] = field(default_factory=dict)
     service_forwarding: dict[str, dict[str, Any]] = field(default_factory=dict)
     pagination: IRPagination | None = None
+    admits_anonymous: bool = False
 
     @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:

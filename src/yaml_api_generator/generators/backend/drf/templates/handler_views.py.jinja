@@ -25,11 +25,13 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
     async def {{ route.method | lower }}(self, request, **path_params):
 {% if route.needs_auth %}
         principal = await resolve_principal(request, get_database())
+{% if not route.admits_anonymous %}
         if principal is None:
             return Response(
                 {"detail": "Unauthorized"},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+{% endif %}
 {% else %}
         principal = None
 {% endif %}
@@ -68,7 +70,8 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
         try:
             access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(decisions)]
         except AccessDenied as exc:
-            return Response({"detail": exc.reason}, status=status.HTTP_403_FORBIDDEN)
+            code, detail = exc.refusal(principal)
+            return Response({"detail": detail}, status=code)
         bound_inputs = resolve_access_bind(access_bindings, locals())
 {% else %}
         bound_inputs = {}

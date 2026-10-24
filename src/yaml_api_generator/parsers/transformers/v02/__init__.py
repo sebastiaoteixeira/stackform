@@ -19,12 +19,15 @@ from .file_transformer import FileStoreRegistry, FileTransformer
 from .identity_transformer import IdentityTransformer
 from .policies_transformer import PoliciesTransformer
 from .policy_expansion import expand_rule_policies
+from .record_location import id_param, locate_records
 from .repository_transformer import RepositoryTransformer
 from .route_transformer import RouteTransformer
 
 
 class V02Transformer:
     """Orchestrates v0.2 YAML to IR transformation."""
+
+    _record_param = staticmethod(id_param)
 
     def __init__(self):
         self._repository = RepositoryTransformer()
@@ -129,7 +132,11 @@ class V02Transformer:
             raise ConfigErrors(policy_errors)
 
         routes = desugar_document_lookups(
-            self._expand_route_policies(routes, policies, entity_to_collection),
+            locate_records(
+                self._expand_route_policies(routes, policies, entity_to_collection),
+                collections,
+                self._record_param,
+            ),
             collections,
         )
         file_routes, file_route_errors = self._files.derive(collections, routes)

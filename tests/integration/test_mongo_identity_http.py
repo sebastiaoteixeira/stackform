@@ -1,4 +1,4 @@
-"""The identity HTTP suite, served by the generated MongoDB backends: raw ASGI and DRF."""
+"""The identity HTTP suite, served on MongoDB by the dev server and every generated backend."""
 
 from uuid import uuid4
 

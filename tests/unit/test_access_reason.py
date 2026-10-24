@@ -180,7 +180,7 @@ def test_generated_fastapi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        from dependencies.auth import require_principal
+        from dependencies.auth import get_optional_principal
         from dependencies.services import get_posts_service
         from routes._handlers import router as handlers_router
         from routes.posts import router
@@ -205,7 +205,7 @@ def test_generated_fastapi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
         app = FastAPI()
         app.include_router(router)
         app.include_router(handlers_router)
-        app.dependency_overrides[require_principal] = principal
+        app.dependency_overrides[get_optional_principal] = principal
         app.dependency_overrides[get_posts_service] = Service
         client = TestClient(app)
 

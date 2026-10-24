@@ -76,6 +76,18 @@ class _RuleCompiler:
         return f"value_at({expr.root}, {expr.path or ('sub',)!r})"
 
 
+def _caller_conditions(rule: AccessRuleDescriptor) -> list[str]:
+    """The rule's demand on the caller: an identity of its collection, holding its role."""
+    if not rule.principal.startswith("identity:"):
+        return []
+    checks = [
+        "principal is not None",
+        f'principal.get("identity_collection") == {rule.principal.removeprefix("identity:")!r}',
+        *([f"_principal_has_role(principal, {rule.required_role!r})"] if rule.required_role is not None else []),
+    ]
+    return [f"constant({' and '.join(checks)})"]
+
+
 def rule_to_predicate(rule: AccessRuleDescriptor) -> str:
     """Compile an access rule to a Python expression of the predicate it admits."""
     compiler = _RuleCompiler(
@@ -85,16 +97,7 @@ def rule_to_predicate(rule: AccessRuleDescriptor) -> str:
         ),
     )
     conditions = [
-        *(
-            [f'constant(principal.get("identity_collection") == {rule.principal.removeprefix("identity:")!r})']
-            if rule.principal.startswith("identity:")
-            else []
-        ),
-        *(
-            [f"constant(_principal_has_role(principal, {rule.required_role!r}))"]
-            if rule.required_role is not None
-            else []
-        ),
+        *_caller_conditions(rule),
         *(f"constant({symbol} is not None)" for symbol in rule.document_symbols),
         *([compiler.compile(rule.when)] if rule.when is not None else []),
     ]
@@ -141,8 +144,13 @@ def needs_post_fetch(route: RouteDescriptor) -> bool:
     )
 
 
+def principal_dependency(route: RouteDescriptor) -> str:
+    """The FastAPI dependency resolving the caller of ``route``."""
+    return "get_optional_principal" if route.admits_anonymous else "require_principal"
+
+
 def is_unconditional(rule: AccessRuleDescriptor) -> bool:
-    return not rule.principal and rule.when is None and rule.required_role is None
+    return rule.admits_anonymous and rule.when is None
 
 
 def needs_document_rule(rule: AccessRuleDescriptor) -> bool:

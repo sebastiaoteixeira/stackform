@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
@@ -7,13 +6,13 @@ from ..auth import hash_password
 from ..request_context import RequestContext
 from ..server_context import RuntimeIdentityDescriptor
 from yaml_api_generator.ir.api import IRPagination
+from yaml_api_generator.runtime.access import conjoin, matching
 from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
 from ..utils.ids import generate_id as _generate_id
 from . import NotFoundError, Step
 
 
-_PATH_TOKEN = re.compile(r"\{(\w+)\}")
 _REQUEST_BODY_MESSAGE = "Request body must be a JSON object"
 _NOT_FOUND_MESSAGE = "Resource not found"
 
@@ -31,39 +30,28 @@ def _require_param(url_params: dict[str, str], token: str) -> str:
 
 @dataclass(frozen=True)
 class RecordLocator:
-    """Locates a single record from a route's path tokens.
+    """Locates the rows a route reaches from its path parameters.
 
-    The final path token identifies the record by its id field; each preceding
-    token constrains a same-named field, scoping the record to its parents.
+    The record parameter names the record by its id field; each scope parameter
+    constrains the same-named field.
     """
 
     id_field: str
-    id_token: str = "id"
-    parents: tuple[tuple[str, str], ...] = ()
+    record_param: str | None = "id"
+    scope: tuple[str, ...] = ()
 
     @property
     def is_scoped(self) -> bool:
-        return bool(self.parents)
+        return bool(self.scope)
+
+    def scope_criteria(self, url_params: dict[str, str]) -> dict[str, str]:
+        return {name: _require_param(url_params, name) for name in self.scope}
 
     def document_id(self, url_params: dict[str, str]) -> str:
-        return _require_param(url_params, self.id_token)
+        return _require_param(url_params, self.record_param)
 
     def criteria(self, url_params: dict[str, str]) -> dict[str, Any]:
-        constraints = {
-            field_name: _require_param(url_params, token)
-            for field_name, token in self.parents
-        }
-        constraints[self.id_field] = _require_param(url_params, self.id_token)
-        return constraints
-
-
-def record_locator(path: str, id_field: str) -> RecordLocator:
-    *parents, id_token = _PATH_TOKEN.findall(path) or ["id"]
-    return RecordLocator(
-        id_field=id_field,
-        id_token=id_token,
-        parents=tuple((token, token) for token in parents),
-    )
+        return {**self.scope_criteria(url_params), self.id_field: self.document_id(url_params)}
 
 
 async def _fetch_record(
@@ -131,15 +119,19 @@ def RepositoryListStep(
     collection_name: str,
     id_field: str,
     pagination: IRPagination | None = None,
+    locator: RecordLocator | None = None,
 ) -> Step:
+    locator = locator or RecordLocator(id_field, None)
+
     async def step(ctx: RequestContext) -> RequestContext:
+        rows = conjoin(ctx.row_filter, matching(locator.scope_criteria(ctx.url_params)))
         if pagination is None:
-            result = await _repository(ctx).list(collection_name, ctx.row_filter)
+            result = await _repository(ctx).list(collection_name, rows)
             ctx.response = _inject_canonical_id_list(result, id_field)
             return ctx
         query = ctx.query or {}
         primitives = map_request(pagination, query)
-        page = await _repository(ctx).paginate(collection_name, primitives, ctx.row_filter)
+        page = await _repository(ctx).paginate(collection_name, primitives, rows)
         canonical = Page(
             rows=_inject_canonical_id_list(page.rows, id_field),
             total=page.total,
@@ -171,12 +163,16 @@ def RepositoryCreateStep(
     id_format: str,
     identity: RuntimeIdentityDescriptor | None = None,
     assignable: bool = False,
+    locator: RecordLocator | None = None,
 ) -> Step:
-    """A new identity record keeps the roles it names only when they are ``assignable``."""
+    """A new identity record keeps the roles it names only when they are ``assignable``;
+    a new record holds the values of the path parameters scoping the route."""
     grant = partial(identity.role_store.granted, assignable=assignable) if identity else dict
+    locator = locator or RecordLocator(id_field, None)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(grant(_payload(ctx)), identity)
+        scoped = {**_payload(ctx), **locator.scope_criteria(ctx.url_params)}
+        payload = _prepare_payload(grant(scoped), identity)
         if id_format != "natural":
             payload[id_field] = _generate_id(id_format)
         result = await _repository(ctx).create(collection_name, payload)

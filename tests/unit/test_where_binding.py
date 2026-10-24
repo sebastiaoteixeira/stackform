@@ -138,11 +138,11 @@ def test_post_fetch_rule_sees_its_where_document():
     assert PostFetchAuthorizeStep([rule])(ctx) is ctx
 
 
-def test_step_is_a_no_op_without_principal():
+def test_anonymous_callers_load_nothing_for_rules_demanding_an_identity():
     repo = InMemoryRepository({"assetCategories": []})
     ctx = _ctx(repo, {"categorySlug": "books"}, principal=None)
     assert asyncio.run(ResolveWhereBindingsStep([_owner_rule()])(ctx)) is ctx
-    assert ctx.where_documents is None
+    assert ctx.where_documents == [{}]
 
 
 _SPEC = """

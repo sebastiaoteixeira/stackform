@@ -51,7 +51,7 @@ class GeneratedApp(Server):
 
 
 class DjangoApp(GeneratedApp):
-    """The generated DRF backend under gunicorn; its tests skip where Django REST framework is not installed."""
+    """The generated DRF backend under uvicorn, run by the interpreter YAML_API_TEST_DRF_PYTHON names; skipped without one."""
 
     environment = {"DJANGO_SECRET_KEY": "test", "JWT_SECRET": "test"}
 
@@ -59,19 +59,14 @@ class DjangoApp(GeneratedApp):
         super().__init__("drf")
 
     def process(self, port):
-        for module in ("rest_framework", "gunicorn"):
-            pytest.importorskip(module)
-        return [sys.executable, "-m", "gunicorn", "--bind", f"127.0.0.1:{port}", "project.wsgi:application"]
+        python = os.environ.get("YAML_API_TEST_DRF_PYTHON")
+        if python is None:
+            pytest.skip("YAML_API_TEST_DRF_PYTHON is not set")
+        return [python, "-m", "uvicorn", "project.asgi:application", "--port", str(port)]
 
 
 SERVERS = (DevServer(), GeneratedApp("fastapi"))
-MONGO_SERVERS = (
-    GeneratedApp("raw"),
-    pytest.param(
-        DjangoApp(),
-        marks=pytest.mark.xfail(reason="generated DRF views define async handlers on the synchronous APIView", strict=True),
-    ),
-)
+MONGO_SERVERS = (*SERVERS, GeneratedApp("raw"), DjangoApp())
 
 
 def sqlite(directory: Path) -> str:

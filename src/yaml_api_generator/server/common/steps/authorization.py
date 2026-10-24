@@ -22,6 +22,7 @@ from yaml_api_generator.runtime.access import (
     Decision,
     Field,
     Predicate,
+    Unadmitted,
     decide,
     row_filter,
 )
@@ -108,7 +109,7 @@ def _rule_matches_principal(
     auth_config: RuntimeAuthConfig | None,
 ) -> bool:
     if principal is None:
-        return False
+        return rule.admits_anonymous
 
     if rule.principal and rule.principal.startswith("identity:"):
         expected_collection = rule.principal[len("identity:"):]
@@ -264,10 +265,10 @@ async def _where_documents(rule: RuntimeAccessRule, ctx: RequestContext) -> Wher
 
 def ResolveWhereBindingsStep(access_rules: list[RuntimeAccessRule]) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        if ctx.principal is None:
-            return ctx
-
-        ctx.where_documents = [await _where_documents(rule, ctx) for rule in access_rules]
+        ctx.where_documents = [
+            await _where_documents(rule, ctx) if ctx.principal is not None or rule.admits_anonymous else {}
+            for rule in access_rules
+        ]
         return ctx
 
     return step
@@ -294,6 +295,16 @@ def ResolveAccessBindStep(
 Admission = Callable[[RequestContext, list[Decision]], None]
 
 
+def _admitting(admission: Admission, ctx: RequestContext, decisions: list[Decision]) -> None:
+    """Apply ``admission``, refusing an anonymous caller as one who may yet authenticate."""
+    try:
+        admission(ctx, decisions)
+    except Unadmitted as exc:
+        if ctx.principal is None:
+            raise UnauthorizedError("Unauthorized") from exc
+        raise
+
+
 def admit_record(ctx: RequestContext, decisions: list[Decision]) -> None:
     """Routes without a current record: the first rule that holds decides."""
     ctx.authorized_rule_index = decide(decisions)
@@ -314,11 +325,13 @@ def AuthorizeRouteStep(
     auth_config: RuntimeAuthConfig | None = None,
     admission: Admission = admit_record,
 ) -> Step:
+    admits_anonymous = any(rule.admits_anonymous for rule in access_rules or ())
+
     def step(ctx: RequestContext) -> RequestContext:
-        if ctx.principal is None:
+        if ctx.principal is None and not admits_anonymous:
             raise UnauthorizedError("Unauthorized")
         if access_rules:
-            admission(ctx, _decisions(access_rules, RECORD, ctx, auth_config))
+            _admitting(admission, ctx, _decisions(access_rules, RECORD, ctx, auth_config))
         return ctx
 
     return step
@@ -330,7 +343,7 @@ def PostFetchAuthorizeStep(
 ) -> Step:
     def step(ctx: RequestContext) -> RequestContext:
         record = ctx.response if isinstance(ctx.response, dict) else RECORD
-        admit_record(ctx, _decisions(access_rules, record, ctx, auth_config))
+        _admitting(admit_record, ctx, _decisions(access_rules, record, ctx, auth_config))
         return ctx
 
     return step

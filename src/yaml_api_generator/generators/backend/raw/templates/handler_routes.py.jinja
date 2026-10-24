@@ -37,8 +37,10 @@ async def handle_custom_{{ loop.index }}(
 ) -> tuple[int, Any]:
 {% if route.needs_auth %}
     principal = await resolve_principal(headers, db)
+{% if not route.admits_anonymous %}
     if principal is None:
         return 401, {"detail": "Unauthorized"}
+{% endif %}
 {% else %}
     principal = None
 {% endif %}
@@ -75,7 +77,8 @@ async def handle_custom_{{ loop.index }}(
     try:
         access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(decisions)]
     except AccessDenied as exc:
-        return 403, {"detail": exc.reason}
+        status, detail = exc.refusal(principal)
+        return status, {"detail": detail}
     bound_inputs = resolve_access_bind(access_bindings, locals())
 {% else %}
     bound_inputs = {}

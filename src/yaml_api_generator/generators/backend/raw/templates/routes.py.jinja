@@ -21,7 +21,7 @@ from pagination import build_response, map_request
 from dependencies.auth import resolve_principal
 {% endif %}
 import validation
-from access import EVERY_ROW, AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, row_filter, value_at
+from access import EVERY_ROW, AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, matching, negate, one_of, row_filter, value_at
 
 
 ROLE_HIERARCHIES = {{ auth.role_hierarchies | role_hierarchies_py }}
@@ -89,7 +89,8 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
         access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(decisions)]
 {% endif %}
     except AccessDenied as exc:
-        return 403, {"detail": exc.reason}
+        status, detail = exc.refusal(principal)
+        return status, {"detail": detail}
 {% elif rows %}
     rows = EVERY_ROW
 {% endif %}
@@ -98,6 +99,9 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% macro pre_fetch_authorize(route) %}
 {% if route.operation == "list" %}
 {{ authorize_rules(route, "Field(())", rows=true) }}
+{% if route.record_parent_params %}
+    rows = conjoin(rows, matching({{ record_criteria(route) }}))
+{% endif %}
 {% elif not (route is needs_post_fetch) %}
 {{ authorize_rules(route, "None") }}
 {% elif route.access_rules %}
@@ -126,8 +130,10 @@ async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers:
     principal = None
 {% if route.needs_auth %}
     principal = await resolve_principal(headers, db)
+{% if not route.admits_anonymous %}
     if principal is None:
         return 401, {"detail": "Unauthorized"}
+{% endif %}
 {% endif %}
 {{ pre_fetch_authorize(route) }}
 {{ bind_inputs(route) }}
@@ -177,6 +183,9 @@ async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers:
         if body is None:
             return 422, {"detail": "Request body is required"}
         data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
+{% if route.record_parent_params %}
+        data = {**data, **{{ record_criteria(route) }}}
+{% endif %}
 {% if identity %}
         data = {{ identity.role_store | py_literal }}.granted(data, assignable={{ route.needs_auth | py_literal }})
 {% endif %}

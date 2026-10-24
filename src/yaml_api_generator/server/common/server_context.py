@@ -10,7 +10,7 @@ from yaml_api_generator.ir import (
     IRRequestBinding,
     WhereRhs,
 )
-from yaml_api_generator.ir.api import IRDto, IRPagination, IRRolesConfig
+from yaml_api_generator.ir.api import CallerDemand, IRDto, IRPagination, IRRolesConfig
 from yaml_api_generator.ir.when import WhenExpr
 from yaml_api_generator.runtime.access import Roles
 
@@ -59,7 +59,7 @@ class RuntimeIdentityDescriptor:
 
 
 @dataclass(frozen=True)
-class RuntimeAccessRule:
+class RuntimeAccessRule(CallerDemand):
     principal: str
     required_role: str | None = None
     identity_symbols: dict[str, IRIdentityBinding] = field(default_factory=dict)
@@ -84,6 +84,8 @@ class RuntimeRouteDescriptor:
     service_forwarding: dict[str, Any] = field(default_factory=dict)
     pagination: IRPagination | None = None
     body_dto: IRDto | None = None
+    record_param: str | None = None
+    scope: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

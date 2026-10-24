@@ -5,6 +5,7 @@ Builds routes from collection operations and access policies.
 
 from typing import Any
 
+from yaml_api_generator.ir.api import AUTHENTICATED
 from yaml_api_generator.ir import IRAccessRule, IRIdentityCollection, IROperations, IRRoute
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 from yaml_api_generator.parsers.when_parser import parse_when_expr
@@ -179,7 +180,7 @@ class RouteTransformer:
                 continue
             rules.append(
                 IRAccessRule(
-                    principal=resolved.principal or "",
+                    principal=resolved.principal or AUTHENTICATED,
                     required_role=resolved.required_role,
                     when=when_expr,
                     **extras,
