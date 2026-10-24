@@ -3,10 +3,16 @@ from pathlib import Path
 from jinja2 import Environment
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
-from yaml_api_generator.ir import IRServiceBase
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
+from ..inheritance import (
+    own_repository_operations,
+    own_service_operations,
+    repository_base_class,
+    route_operations,
+    service_base_class,
+)
 from ..utils import (
     extract_identity_fields,
     find_identity,
@@ -39,17 +45,6 @@ def _crud_operations(col_data: dict) -> list[str]:
         if route.handler is None and route.operation in _CRUD_ORDER
     }
     return [op for op in _CRUD_ORDER if op in present]
-
-
-def _own_operations(operations: dict[str, str | None], base: IRServiceBase | None) -> dict[str, str | None]:
-    inherited = base.operations.items() if base else {}.items()
-    return {name: handler for name, handler in operations.items() if (name, handler) not in inherited}
-
-
-def _generated_service_base(base: IRServiceBase | None) -> dict[str, str] | None:
-    if base is None:
-        return None
-    return {"module": f"services.{base.name}", "class_name": f"{to_pascal_case(base.name)}Service"}
 
 
 class FastAPIGenerator(TemplateBasedGenerator):
@@ -182,21 +177,20 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 operations=[],
                 is_identity_collection=False,
                 password_via=False,
-                custom_operations=_own_operations(base.operations, parent),
-                generated_base=_generated_service_base(parent),
+                custom_operations=own_service_operations(base.operations, parent),
+                generated_base=service_base_class(parent),
             ))
 
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
         identity = find_identity(context, col_name)
         is_identity = identity is not None
         base = context.service_base(col_name)
-        operations = {route.operation: route.handler for route in col_data["routes"] if route.runs_operation}
 
         return {
             "collection_name": col_name,
             "operations": _crud_operations(col_data),
-            "custom_operations": _own_operations(operations, base),
-            "generated_base": _generated_service_base(base),
+            "custom_operations": own_service_operations(route_operations(col_data), base),
+            "generated_base": service_base_class(base),
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
             "default_role": identity.roles.default if is_identity and identity.roles else None,
@@ -351,19 +345,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         init_imports: list[str] = []
         uses_mongo = uses_sql = False
 
-        def generated_base(name: str) -> dict[str, str] | None:
-            base = context.repository_inherits.get(name)
-            if base is None:
-                return None
-            return {"module": f".{base}", "class_name": f"{to_pascal_case(base)}Repository"}
-
-        def own_queries(name: str) -> list[dict]:
-            inherited = context.repository_operations.get(context.repository_inherits.get(name), [])
-            return [
-                op for op in context.repository_operations.get(name, [])
-                if op["query"] is not None and op not in inherited
-            ]
-
         # Abstract base repositories render as inheritable classes (no collection).
         for base_name, ds_type in context.repository_abstract.items():
             is_sql = ds_type in ("postgres", "postgresql")
@@ -372,8 +353,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 abstract=True,
                 collection_name=base_name,
                 operations=[],
-                custom_operations=own_queries(base_name),
-                generated_base=generated_base(base_name),
+                custom_operations=own_repository_operations(context, base_name),
+                generated_base=repository_base_class(context, base_name),
             ))
             init_imports.append(f"from .{base_name} import {to_pascal_case(base_name)}Repository")
             uses_sql = uses_sql or is_sql
@@ -389,8 +370,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "id_field_format": meta["id_format"],
                 "collection_type": meta["type"],
                 "fields": meta["fields"],
-                "custom_operations": own_queries(col_name),
-                "generated_base": generated_base(col_name),
+                "custom_operations": own_repository_operations(context, col_name),
+                "generated_base": repository_base_class(context, col_name),
             }
             template = sql_template if is_sql else mongo_template
             (repos_dir / f"{col_name}.py").write_text(template.render(**template_context))

@@ -11,7 +11,9 @@ import pytest
 
 from yaml_api_generator.parsers.desugar import desugar_v02
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+from yaml_api_generator.generators.backend.drf.generator import DRFGenerator
 from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
+from yaml_api_generator.generators.backend.raw.generator import RawASGIGenerator
 from yaml_api_generator.generators.backend.context_builder import build_context
 from tests.conftest import VALID_DIR
 
@@ -230,8 +232,20 @@ def test_abstract_service_generates_a_base_class_its_services_extend(tmp_path):
     service_src = (tmp_path / "out" / "services" / "posts.py").read_text()
     assert "class AuditableService(ServiceBase)" in base_src
     assert "async def countAll" in base_src and "async def summary" in base_src
-    assert "from services.auditable import AuditableService" in service_src
+    assert "from .auditable import AuditableService" in service_src
     assert "async def countAll" not in service_src
+
+
+@pytest.mark.parametrize(("generator", "layers"), [(RawASGIGenerator, "."), (DRFGenerator, "api")])
+def test_raw_and_drf_generate_the_abstract_bases_their_layers_extend(tmp_path, generator, layers):
+    generator().generate(build_context(_parse(_SERVICE_FIXTURE, tmp_path)), tmp_path / "services")
+    generator().generate(build_context(load_and_generate_ir(str(VALID_DIR / "repo-service-inheritance.yaml")).ir), tmp_path / "repositories")
+    services = tmp_path / "services" / layers / "services"
+    repositories = tmp_path / "repositories" / layers / "repositories"
+    assert "async def countAll" in (services / "auditable.py").read_text()
+    assert "class PostsService(AuditableService)" in (services / "posts.py").read_text()
+    assert "async def countAll" in (repositories / "countable.py").read_text()
+    assert "class PostsRepository(CountableRepository)" in (repositories / "posts.py").read_text()
 
 
 def test_service_bound_to_abstract_repository_raises():

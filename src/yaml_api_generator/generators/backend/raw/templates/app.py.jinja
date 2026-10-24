@@ -37,17 +37,18 @@ def _path_to_regex(path: str) -> str:
     return re.sub(r"\{(\w+)\}", _replace, path)
 
 
-ROUTES: dict[str, list[tuple[re.Pattern[str], Any]]] = {}
+# Each route: path pattern, handler, and whether its body is a record that must be JSON
+ROUTES: dict[str, list[tuple[re.Pattern[str], Any, bool]]] = {}
 {% for route in routes if route.operation != "login" %}
-ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ route.handler_name }}))
+ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ route.handler_name }}, {{ (route.body_model is not none) | py_literal }}))
 {% endfor %}
 {% for identity in ctx.auth.identity_collections %}
 {% if identity.has_password and identity.identifier %}
-ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}))
+ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}, True))
 {% endif %}
 {% endfor %}
 {% if ctx.session.uses_asymmetric %}
-ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), handle_jwks))
+ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), handle_jwks, False))
 {% endif %}
 
 
@@ -78,15 +79,17 @@ class ASGIApp:
         method = scope["method"].upper()
         path = scope["path"]
 
-        handler, url_params = self._match_route(method, path)
+        handler, url_params, record_body = self._match_route(method, path)
         if handler is None:
             await self._send_json(send, 404, {"detail": "Not found"})
             return
 
         body = await self._read_body(receive)
         if body is _INVALID_JSON:
-            await self._send_json(send, 400, {"detail": "Invalid JSON body"})
-            return
+            if record_body:
+                await self._send_json(send, 400, {"detail": "Invalid JSON body"})
+                return
+            body = None
 
         headers = {
             k.decode("latin-1"): v.decode("latin-1")
@@ -117,13 +120,13 @@ class ASGIApp:
         await self._send_json(send, status, data)
 
     @staticmethod
-    def _match_route(method: str, path: str) -> tuple[Any, dict[str, str]]:
+    def _match_route(method: str, path: str) -> tuple[Any, dict[str, str], bool]:
         entries = ROUTES.get(method, [])
-        for pattern, handler in entries:
+        for pattern, handler, record_body in entries:
             match = pattern.match(path)
             if match:
-                return handler, match.groupdict()
-        return None, {}
+                return handler, match.groupdict(), record_body
+        return None, {}, False
 
     @staticmethod
     async def _read_body(receive: Any) -> dict[str, Any] | None:

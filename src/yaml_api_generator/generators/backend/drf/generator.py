@@ -4,10 +4,9 @@ from jinja2 import Environment
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
 from yaml_api_generator.utils.strings import to_pascal_case
-from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
+from ..base import RenderConfig, SingleFileRenderConfig, template_environment
+from ..shared_layers import SharedLayersGenerator
 from ..utils import (
-    extract_identity_fields,
-    find_identity,
     group_by_collection,
     pagination_config,
     MONGO_RUNTIME_MODULES,
@@ -43,7 +42,9 @@ from yaml_api_generator.ir.when import (
 _BACKEND_GENERATORS = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BACKEND_GENERATORS / "drf" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
-class DRFGenerator(TemplateBasedGenerator):
+class DRFGenerator(SharedLayersGenerator):
+    auth_module = "api.authentication.auth"
+
     def __init__(self):
         super().__init__()
         self._dir_prefix = "api"
@@ -164,39 +165,6 @@ class DRFGenerator(TemplateBasedGenerator):
                 env.get_template("serializers.py.jinja").render(models=context.dto_models)
             )
 
-    def _render_services(
-        self,
-        env: Environment,
-        context: CompileContext,
-        collections_by_name: dict[str, dict],
-        output_dir: Path,
-    ) -> None:
-        self._render_collection_based(
-            env, context, collections_by_name, output_dir,
-            RenderConfig(
-                template_name="service.py.jinja",
-                output_subdir="services",
-                import_class_suffix="Service",
-                context_builder=self._build_service_context,
-                additional_files=[("exceptions.py.jinja", "exceptions.py")],
-            )
-        )
-
-    def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
-        is_identity = identity is not None
-
-        return {
-            "collection_name": col_name,
-            "is_async": True,
-            "is_identity_collection": is_identity,
-            "password_via": is_identity and identity.has_password,
-            "identity_fields": extract_identity_fields(context, col_name),
-            "import_prefix": "api.repositories",
-            "auth_import_prefix": "api.authentication.auth",
-            "service_import_prefix": "api.services",
-        }
-
     def _render_views(
         self,
         env: Environment,
@@ -242,29 +210,6 @@ class DRFGenerator(TemplateBasedGenerator):
                 )
             )
 
-    def _render_repositories(
-        self,
-        env: Environment,
-        context: CompileContext,
-        collections_by_name: dict[str, dict],
-        output_dir: Path,
-    ) -> None:
-        self._render_collection_based(
-            env, context, collections_by_name, output_dir,
-            RenderConfig(
-                template_name="repository.py.jinja",
-                output_subdir="repositories",
-                import_class_suffix="Repository",
-                context_builder=lambda col_name, col_data, ctx: {
-                    "collection_name": col_name,
-                    "id_field": ctx.collections[col_name]["id_field"],
-                    "id_field_format": ctx.collections[col_name]["id_format"],
-                    "custom_operations": ctx.repository_operations.get(col_name, []),
-                    "module_prefix": "api.",
-                },
-            )
-        )
-
     def _render_authentication(
         self, env: Environment, context: CompileContext, output_dir: Path
     ) -> None:
@@ -292,16 +237,8 @@ class DRFGenerator(TemplateBasedGenerator):
         api_dir = output_dir / self.dir_prefix
         api_dir.mkdir(parents=True, exist_ok=True)
 
-        template = env.get_template("api_urls.py.jinja")
-        collections_with_routes = sorted(
-            {route.collection for route in context.routes if route.collection}
-        )
         (api_dir / "urls.py").write_text(
-            template.render(
-                collections=collections_with_routes,
-                routes=context.routes,
-                auth=context.auth,
-            )
+            env.get_template("api_urls.py.jinja").render(routes=context.routes, auth=context.auth)
         )
 
         (api_dir / "__init__.py").write_text("")

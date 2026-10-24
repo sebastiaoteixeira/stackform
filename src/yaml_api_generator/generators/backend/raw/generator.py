@@ -10,10 +10,9 @@ from yaml_api_generator.generators.backend.compile_context import (
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.ir import SECRET_FIELD
 from yaml_api_generator.utils.strings import to_pascal_case
-from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
+from ..base import SingleFileRenderConfig, template_environment
+from ..shared_layers import SharedLayersGenerator
 from ..utils import (
-    extract_identity_fields,
-    find_identity,
     group_by_collection,
     pagination_config,
     MONGO_RUNTIME_MODULES,
@@ -43,7 +42,9 @@ def _path_to_regex(path: str) -> str:
     return re.sub(r"\{(\w+)\}", _replace, path)
 
 
-class RawASGIGenerator(TemplateBasedGenerator):
+class RawASGIGenerator(SharedLayersGenerator):
+    auth_module = "dependencies.auth"
+
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "raw")
         reject_cookie_delivery(context, "raw")
@@ -149,62 +150,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 context_builder=lambda ctx: {
                     "models": models,
                     "auth": ctx.auth,
-                },
-            )
-        )
-
-    def _render_services(
-        self,
-        env: Environment,
-        context: CompileContext,
-        collections_by_name: dict[str, dict],
-        output_dir: Path,
-    ) -> None:
-        self._render_collection_based(
-            env, context, collections_by_name, output_dir,
-            RenderConfig(
-                template_name="service.py.jinja",
-                output_subdir="services",
-                import_class_suffix="Service",
-                context_builder=self._build_service_context,
-                additional_files=[("exceptions.py.jinja", "exceptions.py")],
-            )
-        )
-
-    def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
-        is_identity = identity is not None
-
-        return {
-            "collection_name": col_name,
-            "is_async": True,
-            "is_identity_collection": is_identity,
-            "password_via": is_identity and identity.has_password,
-            "identity_fields": extract_identity_fields(context, col_name),
-            "import_prefix": "repositories",
-            "auth_import_prefix": "dependencies.auth",
-            "service_import_prefix": "services",
-        }
-
-    def _render_repositories(
-        self,
-        env: Environment,
-        context: CompileContext,
-        collections_by_name: dict[str, dict],
-        output_dir: Path,
-    ) -> None:
-        self._render_collection_based(
-            env, context, collections_by_name, output_dir,
-            RenderConfig(
-                template_name="repository.py.jinja",
-                output_subdir="repositories",
-                import_class_suffix="Repository",
-                context_builder=lambda col_name, col_data, ctx: {
-                    "collection_name": col_name,
-                    "id_field": ctx.collections[col_name]["id_field"],
-                    "id_field_format": ctx.collections[col_name]["id_format"],
-                    "custom_operations": ctx.repository_operations.get(col_name, []),
-                    "module_prefix": "",
                 },
             )
         )

@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from adrf.views import APIView
 
 from api.conflicts import ConflictError
-from api.handler_requests import HandlerRequest, invoke
+from api.handler_requests import HandlerRequest, invoke, json_body
 from api.service_inputs import prepare_service_inputs, resolve_access_bind
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}{% for where_collection in route.where_collections %}
@@ -19,8 +19,10 @@ from api.authentication.mongodb import get_database
 {% endif %}
 
 
-{% for route in routes %}
-class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(APIView):
+{% for path, path_routes in routes | groupby("relative_path") %}
+class {{ path_routes[0].view_name }}(APIView):
+{% for route in path_routes %}
+
     async def {{ route.method | lower }}(self, request, **path_params):
 {% if route.needs_auth %}
         _resolved_principal = await resolve_principal(request, get_database())
@@ -32,7 +34,7 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
 {% else %}
         _resolved_principal = None
 {% endif %}
-        body = request.data if isinstance(request.data, dict) else {}
+        body = json_body(request.body) or {}
 {% if route.access_rules %}
         _request_body = body
         _request_path = path_params
@@ -90,6 +92,7 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+{% endfor %}
 
 
 {% endfor %}

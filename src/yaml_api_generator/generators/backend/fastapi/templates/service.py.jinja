@@ -1,22 +1,13 @@
-{% from "service_operations.jinja" import operation_methods %}
+{% from "service_operations.jinja" import operation_imports, operation_methods %}
 {% set bases = [] %}
 {% for op in operations %}{% set _ = bases.append((op | capitalize) ~ "Svc") %}{% endfor %}
 {% if is_identity_collection %}{% set _ = bases.append("IdentityFieldsMixin") %}{% endif %}
 {% if password_via %}{% set _ = bases.append("PasswordMixin") %}{% endif %}
 {% set ops_bases = bases + ([] if generated_base else ["ServiceBase"]) %}
-{% if custom_operations %}
-from typing import Any
-
-from dependencies.handler_requests import HandlerRequest{% if custom_operations.values() | select | list %}, invoke{% endif %}
-
-{% endif %}
 {% if ops_bases %}
 from services._ops import {{ ops_bases | join(", ") }}
 {% endif %}
-{% if generated_base %}
-from {{ generated_base.module }} import {{ generated_base.class_name }}
-{% endif %}
-
+{{ operation_imports(custom_operations, "dependencies.handler_requests", generated_base) }}
 
 class {{ collection_name | capitalize_collection }}Service({{ (ops_bases + ([generated_base.class_name] if generated_base else [])) | join(", ") }}):
 {% if is_identity_collection %}

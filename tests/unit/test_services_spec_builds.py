@@ -13,7 +13,7 @@ def test_services_spec_builds_for_drf(tmp_path, monkeypatch):
     monkeypatch.setenv("MONGO_DB", "services")
     compile_project(yaml_file=str(_SPEC), output_dir=str(tmp_path), target="drf")
 
-    views = tmp_path / "backend" / "api" / "views"
+    service = (tmp_path / "backend" / "api" / "services" / "tasks.py").read_text()
     assert compileall.compile_dir(str(tmp_path / "backend"), quiet=2)
-    assert "repo.retitle(_request.bindings)" in (views / "tasks.py").read_text()
-    assert "invoke('hooks.echo', _request)" in (views / "tasks.py").read_text()
+    assert "self._repo.retitle(request.bindings)" in service
+    assert "invoke('hooks.echo', request)" in service

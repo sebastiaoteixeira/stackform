@@ -17,13 +17,10 @@ def HandlerStep(handler: str) -> Step:
 def handler_request(ctx: RequestContext) -> HandlerRequest:
     return HandlerRequest(
         params=dict(ctx.url_params),
-        query={
-            key: value[-1] if isinstance(value, list) else value
-            for key, value in (ctx.query or {}).items()
-        },
+        query=dict(ctx.query or {}),
         headers=dict(ctx.headers),
         cookies=dict(ctx.cookies or {}),
-        body=ctx.body or {},
+        body=ctx.body,
         principal=ctx.principal,
         inputs=dict(ctx.service_inputs or {}),
     )

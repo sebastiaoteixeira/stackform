@@ -294,6 +294,11 @@ class RouteDescriptor:
         return to_py_identifier(f"handle_{self.method.lower()}{self.relative_path}")
 
     @property
+    def view_name(self) -> str:
+        """Class name of the view serving every method on this route's path."""
+        return f"View{to_py_identifier(self.relative_path)}"
+
+    @property
     def django_path(self) -> str:
         path = self.relative_path.lstrip("/")
         return re.sub(r"\{(\w+)\}", r"<str:\1>", path)

@@ -142,7 +142,8 @@ def test_raw_emits_repository_and_handler_forwarding(tmp_path):
     repository_route = (tmp_path / "routes/posts.py").read_text()
     handler_route = (tmp_path / "routes/handlers.py").read_text()
     assert "inputs=service_inputs" in repository_route
-    assert "repo.archive(_request.bindings)" in repository_route
+    assert "service.archive(_request)" in repository_route
+    assert "self._repo.archive(request.bindings)" in (tmp_path / "services/posts.py").read_text()
     assert "inputs=service_inputs" in handler_route
 
 
@@ -152,5 +153,6 @@ def test_drf_emits_repository_and_handler_forwarding(tmp_path):
     repository_route = (tmp_path / "api/views/posts.py").read_text()
     handler_route = (tmp_path / "api/views/_handlers.py").read_text()
     assert "inputs=service_inputs" in repository_route
-    assert "repo.archive(_request.bindings)" in repository_route
+    assert "service.archive(_request)" in repository_route
+    assert "self._repo.archive(request.bindings)" in (tmp_path / "api/services/posts.py").read_text()
     assert "inputs=service_inputs" in handler_route

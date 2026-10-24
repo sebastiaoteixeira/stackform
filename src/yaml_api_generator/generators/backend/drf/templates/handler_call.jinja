@@ -1,4 +1,4 @@
-{# Runs the route's handler, or the repository operation it declares, over one HandlerRequest #}
+{# Runs the route's service operation, or the handler of a route without a service, over one HandlerRequest #}
 {% macro run_operation(route) %}
             _request = HandlerRequest(
                 params=path_params,
@@ -9,9 +9,9 @@
                 principal=_resolved_principal,
                 inputs=service_inputs,
             )
-{% if route.handler %}
-            return Response(await invoke({{ route.handler | py_literal }}, _request))
+{% if route.collection %}
+            return Response(await service.{{ route.operation }}(_request))
 {% else %}
-            return Response(await repo.{{ route.operation }}(_request.bindings))
+            return Response(await invoke({{ route.handler | py_literal }}, _request))
 {% endif %}
 {% endmacro %}

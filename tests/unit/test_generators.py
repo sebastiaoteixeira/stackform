@@ -172,7 +172,8 @@ def test_drf_views_per_collection(tmp_path):
     gen.generate(ctx, tmp_path)
     assert (tmp_path / "api" / "views" / "posts.py").exists()
     content = (tmp_path / "api" / "views" / "posts.py").read_text()
-    assert "ListView" in content or "DetailView" in content
+    assert "class View_posts(APIView)" in content
+    assert "class View_posts__id_(APIView)" in content
 
 
 def test_drf_when_expression_to_python():

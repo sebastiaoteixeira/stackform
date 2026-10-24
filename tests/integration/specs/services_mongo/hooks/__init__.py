@@ -3,6 +3,6 @@ async def echo(request):
         "params": request.params,
         "query": request.query,
         "body": request.body,
-        "principal": request.principal and {"sub": request.principal["sub"]},
+        "principal": request.principal,
         "inputs": request.inputs,
     }

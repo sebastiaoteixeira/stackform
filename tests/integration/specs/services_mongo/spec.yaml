@@ -76,7 +76,7 @@ controllers:
       notesByBody: false
       retitle: false
       countAll: false
-      echo: false
+      echo: { method: POST, path: "/echo/{id}" }
   totals:
     routes:
       tasks: { service: countAll-tasks, method: GET, path: /tasks-total }

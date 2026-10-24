@@ -21,6 +21,9 @@ from {{ module_prefix }}conflicts import ConflictError
 from {{ module_prefix }}mongo_operations import run_mongo
 from {{ module_prefix }}operations import present, resolve
 from {{ module_prefix }}pagination import Page, Primitives, expand_bound
+{% if generated_base %}
+from {{ generated_base.module }} import {{ generated_base.class_name }}
+{% endif %}
 
 
 _HIDDEN_FIELDS = frozenset({"_id", "_auth"})
@@ -82,7 +85,7 @@ def _translate_conflict(operation):
 
 {% set class_name = collection_name | capitalize_collection %}
 
-class {{ class_name }}Repository:
+class {{ class_name }}Repository{% if generated_base %}({{ generated_base.class_name }}){% endif %}:
     COLLECTION = "{{ collection_name }}"
     ID_FIELD = "{{ id_field }}"
 
