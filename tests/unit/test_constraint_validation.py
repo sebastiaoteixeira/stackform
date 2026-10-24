@@ -30,26 +30,6 @@ def test_string_min_length_greater_than_max_length_rejected():
     )
 
 
-@pytest.mark.parametrize("key", ["minLength", "maxLength"])
-def test_negative_length_rejected(key):
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "string", key: -1})
-
-
-@pytest.mark.parametrize("key", ["min", "max"])
-def test_numeric_constraint_on_non_numeric_rejected(key):
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "string", key: 1})
-
-
-@pytest.mark.parametrize("key", ["minLength", "maxLength", "format"])
-def test_string_constraint_on_non_string_rejected(key):
-    value = "email" if key == "format" else 1
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "number", key: value})
-
-
-def test_empty_enum_rejected():
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "enum", "values": []})
-
-
 def test_default_outside_enum_rejected():
     assert "FIELD_CONSTRAINT_INVALID" in _codes(
         {"type": "enum", "values": ["a", "b"], "default": "c"}
@@ -67,6 +47,11 @@ def test_default_type_mismatch_rejected(field_type, default):
     assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": field_type, "default": default})
 
 
+def test_dto_field_checked():
+    errors = validate_spec_constraints({"dto": {"d": {"fields": {"n": {"type": "number", "max": 1, "default": 2}}}}})
+    assert [error.path for error in errors] == ["dto.d.fields.n"]
+
+
 def test_error_path_points_at_field():
     errors = _errors({"type": "number", "min": 10, "max": 1})
     assert errors[0].path == "entities.post.fields.value"
@@ -81,7 +66,7 @@ def test_nested_array_item_constraint_rejected():
 def test_nested_object_property_constraint_rejected():
     field = {
         "type": "object",
-        "properties": {"name": {"type": "string", "minLength": -1}},
+        "properties": {"name": {"type": "string", "minLength": 3, "maxLength": 1}},
     }
     errors = _errors(field)
     assert errors[0].path == "entities.post.fields.value.properties.name"

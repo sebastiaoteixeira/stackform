@@ -46,6 +46,7 @@ dto:
       role: { type: enum, values: [admin, member], required: true }
       level: { type: number, default: 2 }
       labels: { type: array, items: { type: string, maxLength: 8 } }
+      contact: { type: string, format: email }
 entities:
   user:
     type: auth
@@ -84,6 +85,7 @@ entities:
       role: { type: string }
       level: { type: number }
       labels: { type: array, items: { type: string } }
+      contact: { type: string }
 repositories:
   users: { entity: user }
   items: { entity: item }
@@ -153,6 +155,8 @@ UPDATES = [
 NOTES = [
     ({"role": "admin"}, 200),
     ({"role": "owner"}, 422),
+    ({"role": "admin", "contact": "a@b.co"}, 200),
+    ({"role": "admin", "contact": "x"}, 422),
     ({"role": "admin", "unknown": 1}, 422),
     ({}, 422),
 ]

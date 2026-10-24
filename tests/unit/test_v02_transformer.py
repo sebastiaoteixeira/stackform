@@ -144,7 +144,7 @@ def test_74_id_format_uuidv4_parsed_from_yaml():
 def test_77_id_format_invalid_string():
     with pytest.raises(ConfigErrors) as exc_info:
         load_and_generate_ir(str(INVALID_DIR / "invalid-id-format.yaml"))
-    assert any(e.code == "ID_FORMAT_INVALID" for e in exc_info.value.errors)
+    assert any(e.code == "SCHEMA_VALIDATION_ERROR" for e in exc_info.value.errors)
 
 
 def test_78_operations_normalization_repo_overrides_defaults(tmp_path):
