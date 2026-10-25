@@ -12,9 +12,9 @@ export type FieldConfig = {
 export type Fields = Record<string, FieldConfig>;
 export type FormValues = Record<string, unknown>;
 
-{% macro fields_by_entity(name, attribute) %}
+{% macro fields_by_entity(name, attribute, owners) %}
 export const {{ name }}: Record<string, Fields> = {
-{% for entity in entities.values() %}
+{% for entity in owners %}
   {{ entity.name | tojson }}: {
 {% for field in entity[attribute] %}
     {{ field.name | tojson }}: {{ field.config | tojson }},
@@ -24,11 +24,12 @@ export const {{ name }}: Record<string, Fields> = {
 };
 {% endmacro %}
 /** The fields a client may send for each entity: every declared field except its id and readonly ones. */
-{{ fields_by_entity('ENTITY_FIELDS', 'writable_fields') }}
+{{ fields_by_entity('ENTITY_FIELDS', 'writable_fields', entities.values()) }}
+{% set identities = entities.values() | selectattr('is_auth') | list %}
 /** What each identity sends only when it is created: the password its login checks. */
-{{ fields_by_entity('CREDENTIAL_FIELDS', 'credential_fields') }}
+{{ fields_by_entity('CREDENTIAL_FIELDS', 'credential_fields', identities) }}
 /** What each identity registers with: its identifier first, then its other fields and credentials. */
-{{ fields_by_entity('SIGNUP_FIELDS', 'signup_fields') }}
+{{ fields_by_entity('SIGNUP_FIELDS', 'signup_fields', identities) }}
 
 const STRUCTURED = new Set(['object', 'array']);
 
@@ -51,17 +52,17 @@ function writable(config: FieldConfig, value: unknown): unknown {
 
 /** `value`, as the API returns it, in the form an input of its field holds. */
 export function inputValue(config: FieldConfig, value: unknown): unknown {
-  if (config.type === 'boolean') return Boolean(value);
   if (value === undefined || value === null) return '';
+  if (config.type === 'boolean') return Boolean(value);
   if (STRUCTURED.has(config.type)) return JSON.stringify(writable(config, value), null, 2);
   if (config.type === 'datetime') return localDateTime(String(value));
   return String(value);
 }
 
-/** What an input holds, as the API accepts it; a blank input is `undefined`. */
+/** What an input holds, as the API accepts it; a blank input is `null`. */
 export function apiValue(config: FieldConfig, input: unknown): unknown {
+  if (input === undefined || input === null || input === '') return null;
   if (config.type === 'boolean') return Boolean(input);
-  if (input === undefined || input === null || input === '') return undefined;
   const text = String(input);
   if (config.type === 'number') return Number(text);
   if (config.type === 'datetime') return new Date(text).toISOString();
@@ -69,19 +70,23 @@ export function apiValue(config: FieldConfig, input: unknown): unknown {
   return text;
 }
 
-/** The input values of `fields` for `record`, a field it lacks starting at its declared default. */
-export function formValues(fields: Fields, record: Record<string, unknown> = {}): FormValues {
+/** The input values of `fields` for `record`, or for a new record, whose fields start at their declared defaults. */
+export function formValues(fields: Fields, record?: Record<string, unknown>): FormValues {
   return Object.fromEntries(
-    Object.entries(fields).map(([name, config]) => [name, inputValue(config, record[name] ?? config.default)])
+    Object.entries(fields).map(([name, config]) => [name, inputValue(config, record ? record[name] : config.default)])
   );
 }
 
-/** The request body for `values`, leaving out blank fields. */
-export function payload(fields: Fields, values: FormValues): Record<string, unknown> {
+/**
+ * The request body for `values`, which started as `initial`: a field left blank
+ * is sent only when it changed, as `null`, clearing what the record held.
+ */
+export function payload(fields: Fields, values: FormValues, initial: FormValues = formValues(fields)): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(fields)
       .filter(([name]) => name in values)
-      .map(([name, config]) => [name, apiValue(config, values[name])])
-      .filter(([, value]) => value !== undefined)
+      .map(([name, config]) => [name, apiValue(config, values[name]), values[name] !== initial[name]] as const)
+      .filter(([, value, changed]) => value !== null || changed)
+      .map(([name, value]) => [name, value])
   );
 }

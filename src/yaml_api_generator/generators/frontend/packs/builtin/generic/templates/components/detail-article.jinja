@@ -1,3 +1,4 @@
+{% from 'macros/access.jinja' import allowed %}
 {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
 {% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
 {% set content_field = entity.fields[roles.content] if roles.content is defined else none %}
@@ -7,7 +8,7 @@
 {% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { callOperation, displayValue } from '../__generated__/records';
 import { Button } from '../__generated__/components/Button';
 {% if status_field %}
@@ -152,9 +153,11 @@ export function {{ entity.name | pascal_case }}Article({
             ← Back
           </button>
           {!publicView && (
+            {% call allowed(entity, 'edit') %}
             <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
               Edit
             </Button>
+            {% endcall %}
           )}
         </div>
       </div>

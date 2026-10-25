@@ -1,6 +1,7 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { callOperation, displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
@@ -121,12 +122,14 @@ export default function {{ view.name | pascal_case }}() {
         {n > 0 && (
           <span className="wf-mono">{n} selected</span>
         )}
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table */}
@@ -209,12 +212,14 @@ export default function {{ view.name | pascal_case }}() {
           >
             Open <kbd className="wf-mono">↵</kbd>
           </button>
+          {% call allowed(entity, 'edit') %}
           <button
             onClick={() => { navigate(`{{ view.path }}/${menu.targetId}/edit`); closeMenu(); }}
             className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-fill text-wf-ink"
           >
             Edit <kbd className="wf-mono">E</kbd>
           </button>
+          {% endcall %}
           <div className="my-1 border-t border-wf-line" />
 
           <button
@@ -226,12 +231,14 @@ export default function {{ view.name | pascal_case }}() {
 
           <div className="my-1 border-t border-wf-line" />
 
+          {% call allowed(entity, 'delete') %}
           <button
             onClick={handleDelete}
             className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-wf-danger-soft text-wf-danger"
           >
             Delete <kbd className="wf-mono">⌫</kbd>
           </button>
+          {% endcall %}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
@@ -77,7 +78,7 @@ export default function {{ view.name | pascal_case }}() {
             <span className="font-title text-2xl text-wf-ink-faint">∅</span>
           </div>
           <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
-          {% if 'create' in entity.operations %}
+          {% call allowed(entity, 'create') %}
           <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
           <button
             onClick={() => navigate('{{ view.path }}/new')}
@@ -85,7 +86,7 @@ export default function {{ view.name | pascal_case }}() {
           >
             + New {{ entity.name | title }}
           </button>
-          {% endif %}
+          {% endcall %}
         </div>
       </div>
     );
@@ -108,14 +109,14 @@ export default function {{ view.name | pascal_case }}() {
         <button className="wf-btn">
           Sort ↓
         </button>
-        {% if 'create' in entity.operations %}
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
-        {% endif %}
+        {% endcall %}
       </div>
 
       {/* Table */}
@@ -176,14 +177,14 @@ export default function {{ view.name | pascal_case }}() {
                   </td>
                   {% endfor %}
                   <td>
-                    {% if 'get' in entity.operations %}
+                    {% call allowed(entity, 'get') %}
                     <Link
                       to={`{{ view.path }}/${item.{{ entity.pk_field }}}`}
                       className="text-wf-accent hover:text-wf-accent-ink text-sm"
                     >
                       View
                     </Link>
-                    {% endif %}
+                    {% endcall %}
                   </td>
                 </tr>
               ))}

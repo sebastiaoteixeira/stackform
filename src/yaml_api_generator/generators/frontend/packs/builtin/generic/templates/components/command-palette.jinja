@@ -1,6 +1,8 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { allows } from '../__generated__/access';
+import { Allowed, useAuth } from '../__generated__/App';
 import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
@@ -30,7 +32,7 @@ export default function {{ view.name | pascal_case }}() {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { token } = useAuth();
+  const { token, caller } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,9 +45,11 @@ export default function {{ view.name | pascal_case }}() {
   }, [token]);
 
   const actions: Action[] = useMemo(() => [
-    { id: 'new', label: 'Create {{ entity.name | title }}', shortcut: 'C', handler: () => navigate('{{ view.path }}/new') },
+    ...(allows({{ entity.name | tojson }}, 'create', caller)
+      ? [{ id: 'new', label: 'Create {{ entity.name | title }}', shortcut: 'C', handler: () => navigate('{{ view.path }}/new') }]
+      : []),
     { id: 'settings', label: 'Settings', shortcut: ',', handler: () => {} },
-  ], [navigate]);
+  ], [navigate, caller]);
 
   const matchedItems = useMemo(() =>
     query.trim()
@@ -132,12 +136,14 @@ export default function {{ view.name | pascal_case }}() {
           <span className="text-wf-ink-dim">Search or jump to...</span>
           <span className="wf-mono">⌘K</span>
         </button>
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table */}

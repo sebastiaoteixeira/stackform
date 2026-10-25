@@ -1,6 +1,7 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
@@ -171,12 +172,14 @@ export default function {{ view.name | pascal_case }}() {
           Sort: {sortField} {sortAsc ? '↑' : '↓'}
         </button>
 
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Active filter chips */}

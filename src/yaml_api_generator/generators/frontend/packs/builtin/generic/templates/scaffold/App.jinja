@@ -6,13 +6,23 @@
 {% endfor %}
 {% set login_view = ns.login_view %}
 {% set login_entity = context.entities.values() | selectattr('serves_login') | first %}
-import { useState, {% if context.identity_entities %}useEffect, {% endif %}createContext, useContext } from 'react';
-import { Routes, Route, Link, {% if context.identity_entities %}useNavigate, {% endif %}useLocation } from 'react-router-dom';
-import { API_BASE_URL } from './config';
-{% if login_entity %}
-import { callOperation } from './records';
+{% set account_entity = context.account_entity %}
+{% set provider_entity = context.entities.values() | selectattr('auth_providers') | first %}
+{% set signs_in = login_view or account_entity or provider_entity %}
+{% set sign_in_page = login_view.name | pascal_case if login_view else 'LoginPage' %}
+{% macro route(path, page, entity, operation) %}
+{% if not entity %}
+            <Route path="{{ path }}" element={<{{ page }} />} />
+{% elif operation in entity.operations %}
+            <Route path="{{ path }}" element={<Allowed entity={{ entity.name | tojson }} operation={{ operation | tojson }} fallback={<Denied />}><{{ page }} /></Allowed>} />
 {% endif %}
-{% if login_entity and not login_view %}
+{% endmacro %}
+import { useState, {% if context.identity_entities %}useEffect, {% endif %}createContext, useContext, type ReactNode } from 'react';
+import { Routes, Route, Link, {% if signs_in %}Navigate, {% endif %}{% if context.identity_entities %}useNavigate, {% endif %}useLocation } from 'react-router-dom';
+import { API_BASE_URL } from './config';
+import { ROLES, allows, grants, {% if login_entity %}callerOf, {% endif %}type Caller } from './access';
+import { {% if account_entity %}callOperation, failure, {% endif %}type Operation } from './records';
+{% if account_entity and not login_view %}
 import { Auth } from './auth.tsx';
 {% endif %}
 {% for view in views.values() %}
@@ -26,6 +36,7 @@ import {{ view.name | pascal_case }}Detail from '../pages/{{ view.name | pascal_
 interface AuthContextType {
   token: string | null;
   user: any | null;
+  caller: Caller | null;
 {% if login_entity %}
   login: (identifier: string, password: string) => Promise<void>;
 {% endif %}
@@ -38,6 +49,40 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be inside AuthProvider');
   return ctx;
+}
+
+/** `children` when the server may serve `operation` on `entity` to the caller, else `fallback`. */
+export function Allowed({ entity, operation, children, fallback = null }: {
+  entity: string;
+  operation: Operation;
+  children: ReactNode;
+  fallback?: ReactNode;
+}) {
+  const { caller } = useAuth();
+  return <>{allows(entity, operation, caller) ? children : fallback}</>;
+}
+
+/** What a caller sees in place of a page the server refuses it{% if signs_in %}: an anonymous one signs in{% endif %}. */
+export function Denied() {
+{% if signs_in %}
+  const { caller } = useAuth();
+  if (!caller) return <Navigate to="/login" replace />;
+{% endif %}
+  return <div className="p-6 text-wf-ink-dim">You do not have access to this page.</div>;
+}
+
+/** The options of `identity`'s roles field; one the caller may not grant is disabled, as the server would drop it. */
+export function RoleOptions({ identity }: { identity: string }) {
+  const { caller } = useAuth();
+  return (
+    <>
+      {ROLES[identity].values.map((role) => (
+        <option key={role} value={role} disabled={!grants(caller, role)}>
+          {role.charAt(0).toUpperCase() + role.slice(1)}
+        </option>
+      ))}
+    </>
+  );
 }
 
 {% if context.identity_entities %}
@@ -73,57 +118,67 @@ export function ExternalProviders({ collection }: { collection: string }) {
 }
 {% endif %}
 
-{% if context.identity_entities and not login_view %}
+{% if signs_in and not login_view %}
 function LoginPage() {
-{% if login_entity %}
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+{% if account_entity %}
+{% set both = account_entity.serves_login and account_entity.serves_register %}
+  const [mode{% if both %}, setMode{% endif %}] = useState<'login' | 'register'>({{ ('login' if account_entity.serves_login else 'register') | tojson }});
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+{% if login_entity %}
   const { login } = useAuth();
   const navigate = useNavigate();
+{% endif %}
 
   const handleSubmit = async (formData: any) => {
     setError('');
+    setNotice('');
 
     try {
+{% if account_entity.serves_register %}
       if (mode === 'register') {
-        const res = await callOperation('{{ login_entity.name }}', 'register', {
+        const res = await callOperation('{{ account_entity.name }}', 'register', {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData),
         });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || 'Registration failed');
-        }
+        if (!res.ok) throw await failure(res, 'Registration failed');
+        setNotice('Account created');
+{% if both %}
         setMode('login');
+{% endif %}
         return;
       }
+{% endif %}
+{% if login_entity %}
 
       await login(formData.{{ login_entity.auth_identifier }}, formData.password);
       navigate('/');
+{% endif %}
     } catch (err: any) {
       setError(err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
     }
   };
 {% endif %}
 
-  {% set auth_entity = context.entities[context.identity_entities[0]] if context.identity_entities else none %}
   return (
     <>
-{% if login_entity %}
-      {error && (
-        <div className="fixed top-4 right-4 max-w-md p-4 bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf shadow-lg z-50">
-          <p className="text-wf-ink text-sm">{error}</p>
+{% if account_entity %}
+      {(error || notice) && (
+        <div className={`fixed top-4 right-4 max-w-md p-4 border-l-[3px] rounded-wf shadow-lg z-50 ${error ? 'bg-wf-danger-soft border-wf-danger' : 'bg-wf-accent-soft border-wf-accent'}`}>
+          <p className="text-wf-ink text-sm">{error || notice}</p>
         </div>
       )}
       <Auth
         mode={mode}
         onSubmit={handleSubmit}
-{% if 'register' in login_entity.routes %}
+{% if both %}
         onToggleMode={() => setMode(mode === 'login' ? 'register' : 'login')}
 {% endif %}
       />
 {% endif %}
-      <ExternalProviders collection="{{ auth_entity.repository_name }}" />
+{% if provider_entity %}
+      <ExternalProviders collection="{{ provider_entity.repository_name }}" />
+{% endif %}
     </>
   );
 }
@@ -168,7 +223,20 @@ function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   {% endif %}
   const [user, setUser] = useState<any | null>(null);
+  const [caller, setCaller] = useState<Caller | null>(() => (token ? JSON.parse(localStorage.getItem('caller') ?? '{}') : null));
 
+{% if context.identity_entities %}
+  const signIn = (signed: string, signer: Caller) => {
+    localStorage.removeItem('sso_logout_path');
+    {% if context.session_delivery != 'cookie' %}
+    localStorage.setItem('token', signed);
+    {% endif %}
+    localStorage.setItem('caller', JSON.stringify(signer));
+    setToken(signed);
+    setCaller(signer);
+  };
+
+{% endif %}
   const logout = async () => {
     const ssoLogoutPath = localStorage.getItem('sso_logout_path');
     {% if context.session_delivery == 'cookie' %}
@@ -178,8 +246,10 @@ function App() {
     localStorage.removeItem('token');
     {% endif %}
     localStorage.removeItem('sso_logout_path');
+    localStorage.removeItem('caller');
     setToken(null);
     setUser(null);
+    setCaller(null);
     if (ssoLogoutPath) {
       window.location.href = `${API_BASE_URL}/${ssoLogoutPath}`;
     }
@@ -191,54 +261,32 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ {{ login_entity.auth_identifier }}: identifier, password }),
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || 'Invalid credentials');
-    }
+    if (!res.ok) throw await failure(res, 'Invalid credentials');
     const data = await res.json();
-    localStorage.removeItem('sso_logout_path');
-    {% if context.session_delivery == 'cookie' %}
-    setToken('cookie-session');
-    {% else %}
-    localStorage.setItem('token', data.token);
-    setToken(data.token);
-    {% endif %}
+    signIn({{ "'cookie-session'" if context.session_delivery == 'cookie' else 'data.token' }}, callerOf('{{ login_entity.name }}', data.user));
     setUser(data.user);
   };
 {% endif %}
 
   {% if context.identity_entities %}
   {% if context.session_delivery == 'cookie' %}
-  const handleExternalToken = () => {
-    setToken('cookie-session');
-  };
+  const handleExternalToken = () => signIn('cookie-session', {});
   {% else %}
-  const handleExternalToken = (t: string) => {
-    localStorage.setItem('token', t);
-    setToken(t);
-  };
+  const handleExternalToken = (t: string) => signIn(t, {});
   {% endif %}
   {% endif %}
 
   return (
-    <AuthContext.Provider value={{ "{{" }} token, user, {% if login_entity %}login, {% endif %}logout {{ "}}" }}>
+    <AuthContext.Provider value={{ "{{" }} token, user, caller, {% if login_entity %}login, {% endif %}logout {{ "}}" }}>
       <Routes>
         {% if context.identity_entities %}
         <Route path="/auth/callback" element={<AuthCallback onToken={handleExternalToken} />} />
-        {% if login_view %}
-        <Route path="/login" element={<{{ login_view.name | pascal_case }} />} />
-        {% else %}
-        <Route path="/login" element={<LoginPage />} />
         {% endif %}
-        {% if pack_config.get('require_auth', true) %}
-        {% if login_view %}
-        <Route path="/*" element={token ? <AppLayout /> : <{{ login_view.name | pascal_case }} />} />
-        {% else %}
-        <Route path="/*" element={token ? <AppLayout /> : <LoginPage />} />
+        {% if signs_in %}
+        <Route path="/login" element={<{{ sign_in_page }} />} />
         {% endif %}
-        {% else %}
-        <Route path="/*" element={<AppLayout />} />
-        {% endif %}
+        {% if signs_in and pack_config.get('require_auth', false) %}
+        <Route path="/*" element={token ? <AppLayout /> : <{{ sign_in_page }} />} />
         {% else %}
         <Route path="/*" element={<AppLayout />} />
         {% endif %}
@@ -304,12 +352,12 @@ function AppLayout() {
               <span className="w-4 text-center text-wf-ink-faint">↩</span>
               Logout
             </button>
-          ) : (
+          ) : {% if signs_in %}(
             <Link to="/login" className="wf-sidebar-item w-full">
               <span className="w-4 text-center text-wf-ink-faint">→</span>
-              Login
+              {{ 'Login' if login_entity or provider_entity else 'Register' }}
             </Link>
-          )}
+          ){% else %}null{% endif %}}
           {% endif %}
         </div>
       </aside>
@@ -343,22 +391,16 @@ function AppLayout() {
                 <p className="text-wf-ink-dim">Welcome to {{ pack_config.app_name or 'App' }}</p>
               </div>
             } />
-            {% for view in views.values() %}
-            {% if view.path and view.path != '/login' %}
-            <Route path="{{ view.path }}" element={<{{ view.name | pascal_case }} />} />
+            {% for view in views.values() if view.path and view.path != '/login' %}
+            {% set page = view.name | pascal_case %}
             {% if view.name in crud_views %}
-            {% set view_entity = view_entities.get(view.name) %}
-            {% set ops = view_entity.operations if view_entity else none %}
-            {% if ops is none or 'create' in ops %}
-            <Route path="{{ view.path }}/new" element={<{{ view.name | pascal_case }}Form />} />
-            {% endif %}
-            {% if ops is none or 'get' in ops %}
-            <Route path="{{ view.path }}/:id" element={<{{ view.name | pascal_case }}Detail />} />
-            {% endif %}
-            {% if ops is none or view_entity.edit_operation %}
-            <Route path="{{ view.path }}/:id/edit" element={<{{ view.name | pascal_case }}Form />} />
-            {% endif %}
-            {% endif %}
+            {% set entity = view_entities.get(view.name) %}
+{{ route(view.path, page, entity, 'list') }}
+{{ route(view.path ~ '/new', page ~ 'Form', entity, 'create') }}
+{{ route(view.path ~ '/:id', page ~ 'Detail', entity, 'get') }}
+{{ route(view.path ~ '/:id/edit', page ~ 'Form', entity, entity.edit_operation if entity else 'update') }}
+            {% else %}
+            <Route path="{{ view.path }}" element={<{{ page }} />} />
             {% endif %}
             {% endfor %}
           </Routes>

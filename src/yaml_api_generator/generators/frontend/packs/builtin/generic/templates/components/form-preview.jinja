@@ -1,7 +1,8 @@
-{% from 'macros/field_input.jinja' import field_input %}
+{% from 'macros/field_input.jinja' import field_input, control_imports %}
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecordForm } from '../__generated__/useRecordForm';
+{{ control_imports(entity.writable_fields) }}
 
 interface {{ entity.name | pascal_case }}PreviewFormProps {
   entityId?: string;

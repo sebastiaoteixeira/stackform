@@ -1,3 +1,4 @@
+{% from 'macros/access.jinja' import allowed %}
 {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
 {% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
 {% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
@@ -5,7 +6,7 @@
 {% set meta_fields = entity.fields.values() | rejectattr('name', 'in', ([entity.pk_field] + (roles.values() | list)) | select | list) | list %}
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { Button } from '../__generated__/components/Button';
 {% if meta_fields | selectattr('type', 'equalto', 'enum') | list %}
 import { Badge } from '../__generated__/components/Badge';
@@ -120,12 +121,16 @@ export function {{ entity.name | pascal_case }}Drawer({
 
         {/* Drawer footer actions */}
         <div className="px-5 py-4 border-t border-wf-line sticky bottom-0 bg-wf-surface flex items-center gap-2">
+          {% call allowed(entity, 'edit') %}
           <Button variant="primary" onClick={onEdit} className="flex-1">
             Edit
           </Button>
+          {% endcall %}
+          {% call allowed(entity, 'delete') %}
           <Button variant="danger" onClick={onDelete}>
             Delete
           </Button>
+          {% endcall %}
           <Button
             variant="ghost"
             onClick={() => navigate(`${basePath}/${shown.{{ entity.pk_field }}}`)}

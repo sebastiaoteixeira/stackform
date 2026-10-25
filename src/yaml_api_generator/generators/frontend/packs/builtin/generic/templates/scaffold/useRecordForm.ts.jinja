@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from './App';
 import { CREDENTIAL_FIELDS, ENTITY_FIELDS, formValues, payload } from './fields';
-import { callOperation, readJson, saveOperation } from './records';
+import { callOperation, failure, readJson, saveOperation } from './records';
 
 /**
  * The form state of one `entity` record: a new one, or the one `entityId`
@@ -14,16 +14,23 @@ export function useRecordForm<T = Record<string, unknown>>(entity: string, entit
   const id = entityId ?? routeId;
   const fields = id ? ENTITY_FIELDS[entity] : { ...ENTITY_FIELDS[entity], ...CREDENTIAL_FIELDS[entity] };
   const { token } = useAuth();
-  const [values, setValues] = useState(() => formValues(fields));
+  const [initial, setInitial] = useState(() => formValues(fields));
+  const [values, setValues] = useState(initial);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
+  const start = (record?: Record<string, unknown>) => {
+    const started = formValues(fields, record);
+    setInitial(started);
+    setValues(started);
+  };
+
   useEffect(() => {
-    setValues(formValues(fields));
+    start();
     if (!id) return;
     callOperation(entity, 'get', { id, headers })
       .then(readJson)
-      .then(record => setValues(formValues(fields, record)))
+      .then(start)
       .catch(() => undefined);
   }, [entity, id, token]);
 
@@ -31,11 +38,8 @@ export function useRecordForm<T = Record<string, unknown>>(entity: string, entit
 
   const submit = async (): Promise<T> => {
     const operation = saveOperation(entity, id);
-    const res = await callOperation(entity, operation, { id, headers, body: JSON.stringify(payload(fields, values)) });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || `Failed to ${operation} ${entity}`);
-    }
+    const res = await callOperation(entity, operation, { id, headers, body: JSON.stringify(payload(fields, values, initial)) });
+    if (!res.ok) throw await failure(res, `Failed to ${operation} ${entity}`);
     return res.json();
   };
 

@@ -97,6 +97,24 @@ export async function readJson(res: Response): Promise<any> {
   return res.json();
 }
 
+interface Problem {
+  loc?: (string | number)[];
+  msg: string;
+}
+
+function described(detail: unknown): string {
+  if (!Array.isArray(detail)) return detail ? String(detail) : '';
+  return detail
+    .map(({ loc = [], msg }: Problem) => [loc.filter((part) => part !== 'body').join('.'), msg].filter(Boolean).join(': '))
+    .join('; ');
+}
+
+/** The error a refused request reports: its `detail`, a message or a list of validation problems, else `fallback`. */
+export async function failure(res: Response, fallback: string): Promise<Error> {
+  const { detail } = await res.json().catch(() => ({}));
+  return new Error(described(detail) || fallback);
+}
+
 function cursor(row: Row, sort: string[]): string {
   const bytes = new TextEncoder().encode(JSON.stringify(sort.map((field) => row[field] ?? null)));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_');

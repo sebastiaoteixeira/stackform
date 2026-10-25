@@ -37,7 +37,7 @@ datastores:
 entities:
   member:
     type: auth
-    auth: { identifier: handle, via: password }
+    auth: { identifier: handle, via: password, roles: role }
     roles:
       values: [owner, viewer]
       default: viewer
@@ -47,6 +47,7 @@ entities:
       handle: { type: string, required: true, unique: true }
       age: { type: number }
       active: { type: boolean, default: true }
+      role: { type: enum, values: [owner, viewer], default: viewer }
   ledger:
     fields: &rows
       id: { type: id }
@@ -151,7 +152,8 @@ ui:
 
 DRIVER = """
 import { CREDENTIAL_FIELDS, ENTITY_FIELDS, SIGNUP_FIELDS, formValues, payload } from './fields.ts';
-import { callOperation, listCollection, listRecords, readCollection, readJson, saveOperation } from './records.ts';
+import { callOperation, failure, listCollection, listRecords, readCollection, readJson, saveOperation } from './records.ts';
+import { allows, callerOf, grants } from './access.ts';
 
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = (path, init) => nativeFetch(process.env.ORIGIN + path, init);
@@ -171,16 +173,27 @@ report.updated = Number((await send('ledger', saveOperation('ledger', top.id), {
 report.ledgerAfterEdit = (await listRecords('ledger')).length;
 report.fetched = Number((await send('ledger', 'get', { id: top.id })).rank);
 report.anonymousDelete = await send('ledger', 'delete', { id: top.id }).catch((error) => error.message);
+report.invalid = (await callOperation('ledger', 'create', { headers: json, body: JSON.stringify({ rank: 1 }) }).then((res) => failure(res, 'refused'))).message;
+report.identities = [Object.keys(SIGNUP_FIELDS), Object.keys(CREDENTIAL_FIELDS)];
 const ana = await send('member', 'register', { body: entered(SIGNUP_FIELDS.member, { handle: 'ana', age: '', password: 'correct-horse' }) });
 const session = await send('member', 'login', { body: { handle: 'ana', password: 'correct-horse' } });
 report.token = typeof session.token;
 const signedIn = { ...json, Authorization: `Bearer ${session.token}` };
+const viewer = callerOf('member', session.user);
+report.allowed = [null, viewer, { identity: 'member', roles: ['owner'] }, { identity: 'member' }].map((caller) => allows('ledger', 'delete', caller));
+report.viewerDelete = await send('ledger', 'delete', { id: top.id, headers: signedIn }).catch((error) => error.message);
+report.granted = ['owner', 'viewer'].map((role) => grants(viewer, role));
 const newMember = { ...ENTITY_FIELDS.member, ...CREDENTIAL_FIELDS.member };
 const created = await send('member', 'create', {
   headers: signedIn,
   body: entered(newMember, { handle: 'bo', age: '7', password: 'battery-staple' }),
 });
 report.created = [created.age, created.active];
+const promoted = await send('member', 'create', {
+  headers: signedIn,
+  body: entered(newMember, { handle: 'cy', role: 'owner', password: 'battery-staple' }),
+});
+report.promotedRole = promoted.role;
 report.createdSignsIn = typeof (await send('member', 'login', { body: { handle: 'bo', password: 'battery-staple' } })).token;
 const note = await send('note', 'create', { body: { body: 'hello', entry: top.id, signer: ana.id } });
 const projected = ({ id, text, code, signer }) => [id === note.id, text, code, signer ?? null];
@@ -298,6 +311,28 @@ def test_sign_in_submits_the_declared_identifier(project):
     assert 'login(String(values["handle"])' in (generated / "pages/Signin.tsx").read_text()
 
 
+def test_anonymous_callers_reach_every_page_their_access_allows(project):
+    app = (project / "generated/frontend/src/__generated__/App.tsx").read_text()
+
+    assert '<Route path="/*" element={<AppLayout />} />' in app
+    assert '<Route path="/ledger/:id/edit" element={<Allowed entity="ledger" operation="update" fallback={<Denied />}>' in app
+
+
+def test_pages_offer_actions_only_to_callers_the_server_serves(project):
+    pages = project / "generated/frontend/src/pages"
+
+    assert '<Allowed entity="ledger" operation="create">' in (pages / "Ledger.tsx").read_text()
+    assert {'<Allowed entity="ledger" operation="update">', '<Allowed entity="ledger" operation="delete">'} <= set(
+        re.findall(r'<Allowed entity="ledger" operation="\w+">', (pages / "LedgerDetail.tsx").read_text())
+    )
+
+
+def test_role_selects_offer_only_roles_the_caller_may_grant(project):
+    form = (project / "generated/frontend/src/pages/MembersForm.tsx").read_text()
+
+    assert '<RoleOptions identity="member" />' in form
+
+
 def test_sign_up_and_new_identity_forms_send_typed_fields_and_credentials(project):
     generated = project / "generated/frontend/src"
     form = (generated / "pages/MembersForm.tsx").read_text()
@@ -334,6 +369,13 @@ def _serving(command: tuple[str, ...], cwd: Path, env: dict[str, str]) -> Iterat
         server.terminate()
         server.wait()
 
+
+# A refused body reads as the server's message, whether a string or FastAPI's list of field problems.
+INVALID = {
+    "dev-fastapi": "Missing required fields: code",
+    "dev-raw": "Missing required fields: code",
+    "generated-fastapi": "code: Field required",
+}
 
 SERVERS = {
     "dev-fastapi": lambda project, workdir: _serving(
@@ -376,8 +418,14 @@ def test_generated_data_layer_drives_every_server(project, tmp_path, server):
         "ledgerAfterEdit": 7,
         "fetched": 99,
         "anonymousDelete": "Authentication required",
+        "invalid": INVALID[server],
+        "identities": [["member"], ["member"]],
         "token": "string",
+        "allowed": [False, False, True, True],
+        "viewerDelete": "Error: 403",
+        "granted": [False, True],
         "created": [7, True],
+        "promotedRole": "viewer",
         "createdSignsIn": "string",
         "projected": [[True, "hello", "c6", None]],
         "signed": [[True, "hello", "c6", "ana"]],

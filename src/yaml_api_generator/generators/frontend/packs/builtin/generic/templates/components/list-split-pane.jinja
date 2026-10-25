@@ -1,6 +1,7 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
@@ -67,9 +68,11 @@ export default function {{ view.name | pascal_case }}() {
           </div>
           <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
           <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+          {% call allowed(entity, 'create') %}
           <button onClick={() => navigate('{{ view.path }}/new')} className="wf-btn wf-btn-primary">
             + New {{ entity.name | title }}
           </button>
+          {% endcall %}
         </div>
       </div>
     );
@@ -84,12 +87,14 @@ export default function {{ view.name | pascal_case }}() {
         <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
         <span className="wf-mono text-wf-ink-dim">{items.length} records</span>
         <div className="flex-1" />
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Split layout: table left, preview right */}
@@ -170,12 +175,14 @@ export default function {{ view.name | pascal_case }}() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-title text-lg text-wf-ink">Preview</h3>
                 <div className="flex gap-2">
+                  {% call allowed(entity, 'edit') %}
                   <button
                     className="wf-btn wf-btn-sm"
                     onClick={() => navigate(`{{ view.path }}/${selectedItem.{{ entity.pk_field }}}/edit`)}
                   >
                     Edit
                   </button>
+                  {% endcall %}
                   <button
                     className="wf-btn wf-btn-sm"
                     onClick={() => navigate(`{{ view.path }}/${selectedItem.{{ entity.pk_field }}}`)}

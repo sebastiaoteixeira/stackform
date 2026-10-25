@@ -1,28 +1,4 @@
-type Verdict = 'allow' | 'deny' | 'conditional';
-
-interface IdentityRoles {
-  identity: string;
-  field: string | null;
-  defaultRole: string;
-  includes: Record<string, string[]>;
-}
-
-const ROLES: IdentityRoles[] = [
-{% for entity in context.entities.values() if entity.roles %}
-  {
-    identity: {{ entity.name | tojson }},
-    field: {{ entity.roles.field | tojson }},
-    defaultRole: {{ entity.roles.default | tojson }},
-    includes: {{ entity.roles.includes | tojson }},
-  },
-{% endfor %}
-];
-
-const ACCESS: Record<string, Record<string, Record<string, Verdict>>> = {
-{% for entity in context.entities.values() if entity.access %}
-  {{ entity.name | tojson }}: {{ entity.access | tojson }},
-{% endfor %}
-};
+import { ACCESS, ROLES, type Verdict } from '../__generated__/access';
 
 const OPERATIONS = ['list', 'get', 'create', 'update', 'replace', 'delete'];
 
@@ -47,9 +23,9 @@ export function SettingsRoles({ entities = Object.keys(ACCESS) }: SettingsRolesP
         <h1 className="font-title text-2xl text-wf-ink">Roles & permissions</h1>
       </div>
 
-      {ROLES.map((roles) => (
-        <div key={roles.identity} className="wf-card mb-5">
-          <h2 className="font-title text-lg text-wf-ink mb-2">{roles.identity}</h2>
+      {Object.entries(ROLES).map(([identity, roles]) => (
+        <div key={identity} className="wf-card mb-5">
+          <h2 className="font-title text-lg text-wf-ink mb-2">{identity}</h2>
           <ul className="flex flex-col gap-1 text-sm">
             {Object.entries(roles.includes).map(([role, included]) => (
               <li key={role} className="flex items-center gap-2">

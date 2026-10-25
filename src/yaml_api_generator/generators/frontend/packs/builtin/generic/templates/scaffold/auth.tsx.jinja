@@ -1,7 +1,7 @@
 {% from 'macros/field_input.jinja' import field_input %}
-{% set entity = context.entities.values() | selectattr('serves_login') | first %}
+{% set entity = context.account_entity %}
 {% if entity %}
-{% set login_fields = [entity.auth_identifier] + (entity.credential_fields | map(attribute='name') | list) %}
+{% set login_fields = ([entity.auth_identifier] + (entity.credential_fields | map(attribute='name') | list)) if entity.serves_login else [] %}
 import { useState } from 'react';
 import { SIGNUP_FIELDS, formValues, payload } from './fields';
 

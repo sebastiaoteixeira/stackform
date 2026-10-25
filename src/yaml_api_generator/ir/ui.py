@@ -70,6 +70,8 @@ class EntityFieldInfo:
 
     name: str
     config: dict[str, Any]
+    roles_of: str | None = None
+    """The identity whose roles this field stores, when it is that identity's roles field."""
 
     @property
     def type(self) -> str:
@@ -116,6 +118,16 @@ class RouteInfo:
 
 
 @dataclass(frozen=True)
+class AccessColumn:
+    """A signed-in principal of the access matrix: an identity, holding `role` when that identity has roles."""
+
+    identity: str
+    collection: str
+    role: str | None
+    held_roles: frozenset[str]
+
+
+@dataclass(frozen=True)
 class RolesInfo:
     values: tuple[str, ...]
     default: str
@@ -147,6 +159,10 @@ class EntityInfo:
     @property
     def serves_login(self) -> bool:
         return "login" in self.routes
+
+    @property
+    def serves_register(self) -> bool:
+        return "register" in self.routes
 
     @property
     def edit_operation(self) -> str | None:
@@ -182,4 +198,15 @@ class GeneratorContext:
     pack_config: dict[str, Any]
     entities: dict[str, EntityInfo]
     identity_entities: list[str]
+    access_columns: dict[str, AccessColumn | None] = field(default_factory=dict)
+    """The columns of every entity's access verdicts; anonymous callers are the `None` column."""
     session_delivery: str = "token-url"
+
+    @property
+    def account_entity(self) -> EntityInfo | None:
+        """The identity the sign-in page serves: one that logs in, else one that registers."""
+        return min(
+            (entity for entity in self.entities.values() if entity.serves_login or entity.serves_register),
+            key=lambda entity: not entity.serves_login,
+            default=None,
+        )

@@ -369,6 +369,7 @@ scaffold:
   - api
   - config.ts
   - records.ts
+  - access.ts
   - auth.tsx
   - fields.ts
   - useRecordForm.ts

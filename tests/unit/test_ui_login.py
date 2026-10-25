@@ -1,4 +1,4 @@
-"""The generated UI signs in with a password only through an identity that serves a login route."""
+"""The generated UI signs in with a password only through an identity that serves a login route, and registers through one that serves register."""
 
 import re
 
@@ -27,10 +27,11 @@ def _app(context):
     return files["src/__generated__/App.tsx"]
 
 
-def test_disabled_login_renders_no_password_sign_in(tmp_path):
+def test_disabled_login_renders_registration_only(tmp_path):
     app = _app(_context(tmp_path, login=False))
 
-    assert (SIGN_IN_CALL.search(app), PASSWORD_FORM.search(app)) == (None, None)
+    assert {match.group(1) for match in SIGN_IN_CALL.finditer(app)} == {"register"}
+    assert PASSWORD_FORM.search(app)
 
 
 def test_enabled_login_signs_in_through_the_identity_login_route(tmp_path):

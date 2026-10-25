@@ -1,6 +1,7 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { callOperation, displayValue } from '../__generated__/records';
 import { Button } from '../__generated__/components/Button';
 import { Badge } from '../__generated__/components/Badge';
@@ -88,9 +89,11 @@ export function {{ entity.name | pascal_case }}Tabbed({
           {% if status_field %}
           <Badge value={String(record.{{ status_field.name }})} />
           {% endif %}
+          {% call allowed(entity, 'edit') %}
           <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
             Edit
           </Button>
+          {% endcall %}
         </div>
       </div>
 

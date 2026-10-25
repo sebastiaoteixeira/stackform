@@ -1,6 +1,7 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { callOperation, displayValue } from '../__generated__/records';
 import { Button } from '../__generated__/components/Button';
 {% set has_enum = entity.fields.values() | selectattr('type', 'equalto', 'enum') | list | length > 0 %}
@@ -84,12 +85,12 @@ export function {{ entity.name | pascal_case }}TwoColumn({
         {% if status_field %}
         <Badge value={String(record.{{ status_field.name }})} size="sm" />
         {% endif %}
-        {% if entity.edit_operation %}
+        {% call allowed(entity, 'edit') %}
         <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
           Edit
         </Button>
-        {% endif %}
-        {% if 'delete' in entity.operations %}
+        {% endcall %}
+        {% call allowed(entity, 'delete') %}
         <Button
           size="sm"
           variant="danger"
@@ -97,7 +98,7 @@ export function {{ entity.name | pascal_case }}TwoColumn({
         >
           Delete
         </Button>
-        {% endif %}
+        {% endcall %}
       </div>
 
       {/* Two-column layout: 1fr main + 280px metadata rail */}

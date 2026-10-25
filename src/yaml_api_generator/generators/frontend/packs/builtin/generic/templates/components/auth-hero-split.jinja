@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ExternalProviders } from '../__generated__/App';
 import { SIGNUP_FIELDS, formValues, payload } from '../__generated__/fields';
-import { callOperation } from '../__generated__/records';
+import { callOperation, failure } from '../__generated__/records';
 
 const FIELDS = SIGNUP_FIELDS[{{ entity.name | tojson }}];
 
@@ -31,10 +31,7 @@ export default function Login() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload(FIELDS, values)),
         });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || 'Registration failed');
-        }
+        if (!res.ok) throw await failure(res, 'Registration failed');
         setMode('login');
         return;
       }

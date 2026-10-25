@@ -1,9 +1,20 @@
-{% from 'macros/field_input.jinja' import field_input %}
+{% from 'macros/access.jinja' import allowed %}
+{% from 'macros/field_input.jinja' import field_input, control_imports %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set role_names = roles.values() | list %}
+{% set role_fields = [] %}
+{% for name in role_names %}
+{% if name in entity.fields %}{% if role_fields.append(entity.fields[name]) %}{% endif %}{% endif %}
+{% endfor %}
+{% set other_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | rejectattr('name', 'in', role_names) | list %}
+{% set display_fields = (role_fields + other_fields)[:4] %}
+{% set edit_fields = display_fields | rejectattr('name', 'in', ['content', 'body', 'description', 'excerpt', 'bio']) | list %}
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { displayValue, listRecords } from '../__generated__/records';
 import { useRecordForm } from '../__generated__/useRecordForm';
+{{ control_imports(edit_fields) }}
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -76,15 +87,6 @@ export default function {{ view.name | pascal_case }}() {
     );
   }
 
-  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
-  {% set role_names = roles.values() | list %}
-  {% set role_fields = [] %}
-  {% for name in role_names %}
-  {% if name in entity.fields %}{% if role_fields.append(entity.fields[name]) %}{% endif %}{% endif %}
-  {% endfor %}
-  {% set other_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | rejectattr('name', 'in', role_names) | list %}
-  {% set display_fields = (role_fields + other_fields)[:4] %}
-  {% set edit_fields = display_fields | rejectattr('name', 'in', ['content', 'body', 'description', 'excerpt', 'bio']) | list %}
   {% set col_count = [edit_fields | length, 4] | min %}
 
   return (
@@ -94,12 +96,14 @@ export default function {{ view.name | pascal_case }}() {
         <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
         <span className="wf-mono">{items.length} records</span>
         <div className="flex-1" />
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table with inline-edit rows */}
@@ -194,9 +198,11 @@ export default function {{ view.name | pascal_case }}() {
             <div className="text-center p-12 border-[1.5px] border-dashed border-wf-line rounded-lg max-w-md">
               <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
               <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+              {% call allowed(entity, 'create') %}
               <button onClick={() => navigate('{{ view.path }}/new')} className="wf-btn wf-btn-primary">
                 + New {{ entity.name | title }}
               </button>
+              {% endcall %}
             </div>
           </div>
         )}

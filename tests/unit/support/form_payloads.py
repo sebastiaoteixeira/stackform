@@ -2,7 +2,8 @@
 
 The generated `fields` module, run by Node from the path in ``FIELDS_MODULE``,
 turns what a user enters into each body: a create form, an edit form loaded
-from the stored record, a spreadsheet cell and a bulk edit of two fields.
+from the stored record, a spreadsheet cell, a bulk edit of two fields and edits
+that clear an optional field.
 """
 
 import json
@@ -51,6 +52,9 @@ EXPECTED = [
     ["edit keeps record", True],
     ["cell", 200, 7],
     ["bulk", 200, ["live", False]],
+    ["cleared by update", 200, None],
+    ["cleared by replace", 200, None],
+    ["untouched boolean unset", [None, None]],
 ]
 
 
@@ -79,6 +83,10 @@ def scenario(client: TestClient) -> list[list]:
     edited = client.put(path, json=_form(record=record))
     cell = client.patch(path, json=_form(fields=["rank"], inputs={"rank": "7"}))
     bulk = client.patch(path, json=_form(fields=["status", "active"], inputs={"status": "live", "active": False}))
+    cleared = client.patch(path, json=_form(record=client.get(path).json(), inputs={"rank": ""}))
+    replaced = client.put(path, json=_form(record=client.get(path).json(), inputs={"due": ""}))
+    bare = client.post("/items", json=_form(inputs={"name": "cd"})).json()
+    rebuilt = client.put(f"/items/{bare['id']}", json=_form(record=bare)).json()
     return [
         ["create", created.status_code],
         ["typed values stored", [record["rank"], record["active"], record["due"], record["status"]]],
@@ -86,4 +94,7 @@ def scenario(client: TestClient) -> list[list]:
         ["edit keeps record", edited.json() == record],
         ["cell", cell.status_code, cell.json().get("rank")],
         ["bulk", bulk.status_code, [bulk.json().get("status"), bulk.json().get("active")]],
+        ["cleared by update", cleared.status_code, cleared.json().get("rank")],
+        ["cleared by replace", replaced.status_code, replaced.json().get("due")],
+        ["untouched boolean unset", [bare.get("active"), rebuilt.get("active")]],
     ]

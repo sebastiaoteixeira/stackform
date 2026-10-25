@@ -1,0 +1,78 @@
+import type { Operation } from './records.ts';
+
+export type Verdict = 'allow' | 'deny' | 'conditional';
+
+export interface IdentityRoles {
+  values: string[];
+  field: string | null;
+  defaultRole: string;
+  includes: Record<string, string[]>;
+}
+
+/** A signed-in principal of the access matrix: an identity, holding `role` when that identity has roles. */
+interface Column {
+  identity: string;
+  role: string | null;
+}
+
+/** Who calls the API: `null` when anonymous, else the identity it signed in as and the roles it holds, when known. */
+export interface Caller {
+  identity?: string;
+  roles?: string[];
+}
+
+export const ROLES: Record<string, IdentityRoles> = {
+{% for entity in entities.values() if entity.roles %}
+  {{ entity.name | tojson }}: {
+    values: {{ entity.roles.values | list | tojson }},
+    field: {{ entity.roles.field | tojson }},
+    defaultRole: {{ entity.roles.default | tojson }},
+    includes: {{ entity.roles.includes | tojson }},
+  },
+{% endfor %}
+};
+
+/** Per entity, operation and column, whether the server serves that operation to that column's callers. */
+export const ACCESS: Record<string, Record<string, Record<string, Verdict>>> = {
+{% for entity in entities.values() if entity.access %}
+  {{ entity.name | tojson }}: {{ entity.access | tojson }},
+{% endfor %}
+};
+
+const COLUMNS: Record<string, Column | null> = {
+{% for name, column in context.access_columns.items() %}
+  {{ name | tojson }}: {{ ({'identity': column.identity, 'role': column.role} if column else none) | tojson }},
+{% endfor %}
+};
+
+/** The roles `caller` holds, with every role they include. */
+function held({ identity = '', roles = [] }: Caller): string[] {
+  return roles.flatMap((role) => [role, ...(ROLES[identity]?.includes[role] ?? [])]);
+}
+
+/** Whether `caller` may be a caller of `column`; what the caller does not know about itself matches any. */
+function occupies(caller: Caller | null, column: Column | null): boolean {
+  if (!caller || !column) return caller === column;
+  return (
+    [undefined, column.identity].includes(caller.identity) &&
+    (!column.role || !caller.roles || held(caller).includes(column.role))
+  );
+}
+
+/** Whether the server may serve `operation` on `entity` to `caller`. */
+export function allows(entity: string, operation: Operation, caller: Caller | null): boolean {
+  return Object.entries(ACCESS[entity]?.[operation] ?? {}).some(
+    ([column, verdict]) => verdict !== 'deny' && occupies(caller, COLUMNS[column]),
+  );
+}
+
+/** Whether `caller` may give `role` to a record, which the server allows only for roles the caller holds. */
+export function grants(caller: Caller | null, role: string): boolean {
+  return caller !== null && (!caller.roles || held(caller).includes(role));
+}
+
+/** The caller a signed-in `identity` record is. */
+export function callerOf(identity: string, record: Record<string, unknown>): Caller {
+  const field = ROLES[identity]?.field;
+  return { identity, roles: field ? [record[field] ?? []].flat().map(String) : undefined };
+}

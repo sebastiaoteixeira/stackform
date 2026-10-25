@@ -1,6 +1,7 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
+import { Allowed, useAuth } from '../__generated__/App';
 import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
@@ -78,12 +79,14 @@ export default function {{ view.name | pascal_case }}() {
           </div>
           <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
           <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+          {% call allowed(entity, 'create') %}
           <button
             onClick={() => navigate('{{ view.path }}/new')}
             className="wf-btn wf-btn-primary"
           >
             + New {{ entity.name | title }}
           </button>
+          {% endcall %}
         </div>
       </div>
     );
@@ -106,12 +109,14 @@ export default function {{ view.name | pascal_case }}() {
         <button className="wf-btn">
           Sort ↓
         </button>
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table */}
