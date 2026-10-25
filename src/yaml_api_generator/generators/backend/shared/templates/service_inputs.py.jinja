@@ -10,14 +10,7 @@ def prepare_service_inputs(
     forwarding: dict[str, dict[str, Any]],
     bound_inputs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    values = conform_inputs(
-        field_configs,
-        {
-            **(body if isinstance(body, dict) else {}),
-            **path_values,
-            **(bound_inputs or {}),
-        },
-    )
+    values = conform_inputs(field_configs, body, path_values, bound_inputs)
     return {
         name: _resolve(binding, values)
         for name, binding in forwarding.items()

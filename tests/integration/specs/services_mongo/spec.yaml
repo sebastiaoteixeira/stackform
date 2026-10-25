@@ -61,6 +61,10 @@ services:
       countAll: true
       echo: { handler: hooks.echo }
   notes: { repository: notes }
+  sized:
+    handler: hooks.echo
+    input: { size: number }
+    with: { size: $size }
 
 controllers:
   users:
@@ -77,6 +81,9 @@ controllers:
       retitle: false
       countAll: false
       echo: { method: POST, path: "/echo/{id}" }
+  sizes:
+    routes:
+      sized: { service: sized, method: GET, path: "/sized/{size}" }
   totals:
     routes:
       tasks: { service: countAll-tasks, method: GET, path: /tasks-total }

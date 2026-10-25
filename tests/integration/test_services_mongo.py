@@ -135,3 +135,10 @@ def test_a_malformed_page_parameter_is_rejected_with_the_parameter_name(api, par
     response = api.get(f"/api/notes?{parameter}=abc")
     assert response.status_code == 422
     assert response.json() == {"detail": f"Invalid pagination parameter '{parameter}'"}
+
+
+def test_a_number_input_is_read_from_its_path_parameter(api):
+    response = api.get("/api/sized/3")
+    assert response.status_code == 200, response.text
+    assert response.json()["inputs"] == {"size": 3}
+    assert api.get("/api/sized/three").status_code == 422
