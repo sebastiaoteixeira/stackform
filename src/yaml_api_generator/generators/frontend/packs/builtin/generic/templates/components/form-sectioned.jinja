@@ -65,7 +65,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { callOperation } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }}SectionedFormProps {
   mode?: 'create' | 'edit';
@@ -136,12 +136,8 @@ export function {{ entity.name | pascal_case }}SectionedForm({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const url = mode === 'edit' && entityId
-        ? `${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${entityId}`
-        : `${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`;
-
-      const res = await fetch(url, {
-        method: mode === 'edit' ? 'PUT' : 'POST',
+      const res = await callOperation('{{ entity.name }}', {% if entity.edit_operation %}mode === 'edit' ? '{{ entity.edit_operation }}' : {% endif %}'create', {
+        id: entityId,
         headers,
         body: JSON.stringify(formData),
       });

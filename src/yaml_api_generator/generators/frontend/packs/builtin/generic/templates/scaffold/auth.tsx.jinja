@@ -1,3 +1,5 @@
+{% set entity = context.entities.values() | selectattr('serves_login') | first %}
+{% if entity %}
 import { useState } from 'react';
 
 interface AuthProps {
@@ -15,14 +17,14 @@ export function Auth({
   onToggleMode,
   appName = '{{ pack_config.app_name or "App" }}',
   providers = [],
-  defaultRole
+  defaultRole{% if entity.roles %} = '{{ entity.roles.default }}'{% endif %}
 }: AuthProps) {
-  const [formData, setFormData] = useState({ email: '', password: '', name: '' });
+  const [formData, setFormData] = useState({ {% for field in entity.signup_fields %}{{ field.name }}: '', {% endfor %}password: '' });
   const [rememberMe, setRememberMe] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit?.(formData);
+    onSubmit?.(mode === 'login' ? { {{ entity.auth_identifier }}: formData.{{ entity.auth_identifier }}, password: formData.password } : formData);
   };
 
   const handleFieldChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,37 +53,24 @@ export function Auth({
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {mode === 'register' && (
+{% for field in entity.signup_fields %}
+            {% if field.name != entity.auth_identifier %}{mode === 'register' && ({% endif %}
               <div className="flex flex-col gap-1.5">
                 <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
-                  Display name
-                  <span className="text-wf-danger font-title">*</span>
+                  {{ field.name | replace('_', ' ') | capitalize }}
+                  {% if field.required %}<span className="text-wf-danger font-title">*</span>{% endif %}
                 </label>
                 <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
+                  type="{{ 'email' if 'email' in field.name else 'number' if field.type == 'number' else 'text' }}"
+                  name="{{ field.name }}"
+                  value={formData.{{ field.name }}}
                   onChange={handleFieldChange}
-                  required
+                  {% if field.required %}required{% endif %}
                   className="wf-input"
                 />
               </div>
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
-                Email
-                <span className="text-wf-danger font-title">*</span>
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleFieldChange}
-                required
-                className="wf-input"
-              />
-            </div>
+            {% if field.name != entity.auth_identifier %})}{% endif %}
+{% endfor %}
 
             <div className="flex flex-col gap-1.5">
               <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
@@ -155,20 +144,23 @@ export function Auth({
             </>
           )}
 
-          <div className="mt-5 pt-5 border-t border-dashed border-wf-line text-center">
-            <p className="text-sm text-wf-ink-dim">
-              {mode === 'login' ? 'New here?' : 'Already have an account?'}{' '}
-              <button
-                onClick={onToggleMode}
-                type="button"
-                className="text-wf-accent hover:text-wf-accent-ink font-title"
-              >
-                {mode === 'login' ? 'Create account' : 'Sign in'}
-              </button>
-            </p>
-          </div>
+          {onToggleMode && (
+            <div className="mt-5 pt-5 border-t border-dashed border-wf-line text-center">
+              <p className="text-sm text-wf-ink-dim">
+                {mode === 'login' ? 'New here?' : 'Already have an account?'}{' '}
+                <button
+                  onClick={onToggleMode}
+                  type="button"
+                  className="text-wf-accent hover:text-wf-accent-ink font-title"
+                >
+                  {mode === 'login' ? 'Create account' : 'Sign in'}
+                </button>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
+{% endif %}

@@ -263,10 +263,7 @@ def _resolve_entity(view: UIView, context: GeneratorContext, pack_component: str
             if prop_val.value in context.entities:
                 return context.entities[prop_val.value]
     if pack_component.startswith("auth"):
-        for eid in context.identity_entities:
-            entity = context.entities.get(eid)
-            if entity:
-                return entity
+        return next((entity for entity in context.entities.values() if entity.serves_login), None)
     return None
 
 
@@ -369,7 +366,8 @@ def _try_render(
         template = env.get_template(template_path)
     except TemplateNotFound:
         return None
-    return template.render(**variables)
+    content = template.render(**variables)
+    return content if content.strip() else None
 
 
 def _pascal(name: str) -> str:

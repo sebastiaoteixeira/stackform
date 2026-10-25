@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from yaml_api_generator.ir.api import IRPagination
+
 
 @dataclass
 class PropValue:
@@ -79,6 +81,22 @@ class AuthProviderInfo:
     type: str
 
 
+@dataclass(frozen=True)
+class RouteInfo:
+    method: str
+    path: str
+    """Relative to the API base URL, with `{param}` placeholders."""
+
+
+@dataclass(frozen=True)
+class RolesInfo:
+    values: tuple[str, ...]
+    default: str
+    field: str | None
+    includes: dict[str, tuple[str, ...]]
+    """Every role each role transitively includes through the entity's hierarchy."""
+
+
 @dataclass
 class EntityInfo:
     name: str
@@ -87,10 +105,32 @@ class EntityInfo:
     pk_field: str = "id"
     repository_name: str | None = None
     auth_identifier: str | None = None
-    api_base_path: str | None = None
     auth_providers: list[AuthProviderInfo] = field(default_factory=list)
-    operations: frozenset[str] = field(default_factory=frozenset)
-    public_operations: frozenset[str] = field(default_factory=frozenset)
+    routes: dict[str, RouteInfo] = field(default_factory=dict)
+    """First route serving each operation; identities also map `register` to their public create route."""
+    pagination: IRPagination | None = None
+    roles: RolesInfo | None = None
+    access: dict[str, dict[str, str]] = field(default_factory=dict)
+    """Per operation and principal column: `allow`, `deny` or `conditional`."""
+
+    @property
+    def operations(self) -> frozenset[str]:
+        return frozenset(self.routes)
+
+    @property
+    def serves_login(self) -> bool:
+        return "login" in self.routes
+
+    @property
+    def edit_operation(self) -> str | None:
+        return next((op for op in ("update", "replace") if op in self.routes), None)
+
+    @property
+    def signup_fields(self) -> list[EntityFieldInfo]:
+        """Writable fields a new identity fills in, identifier first; roles take their default."""
+        excluded = {self.pk_field, self.roles.field if self.roles else None}
+        writable = [f for f in self.fields.values() if not f.readonly and f.name not in excluded]
+        return sorted(writable, key=lambda f: f.name != self.auth_identifier)
 
 
 @dataclass

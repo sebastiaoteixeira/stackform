@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { callOperation, displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -30,15 +30,9 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        }
-        return res.json();
-      })
+    listRecords('{{ entity.name }}', headers)
       .then(data => {
-        setItems(Array.isArray(data) ? data : []);
+        setItems(data);
         setLoading(false);
       })
       .catch(err => {
@@ -65,10 +59,11 @@ export default function {{ view.name | pascal_case }}() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${activeCell.id}`,
-        { method: 'PUT', headers, body: JSON.stringify({ [activeCell.field]: editValue }) }
-      );
+      const res = await callOperation('{{ entity.name }}', 'update', {
+        id: activeCell.id,
+        headers,
+        body: JSON.stringify({ [activeCell.field]: editValue }),
+      });
       if (!res.ok) throw new Error('Save failed');
       const updated = await res.json();
       setItems(prev => prev.map(item => item.{{ entity.pk_field }} === activeCell.id ? updated : item));
@@ -214,7 +209,7 @@ export default function {{ view.name | pascal_case }}() {
                     ) : (
                       <div className="px-3 py-1.5 text-wf-ink">
                         {% if field.type == 'enum' %}
-                        <span className="wf-badge">{String(item.{{ field.name }} || '—')}</span>
+                        <span className="wf-badge">{displayValue(item.{{ field.name }})}</span>
                         {% elif field.name in ['id', 'pk', 'createdAt', 'updatedAt'] %}
                         <span className="wf-mono">{String(item.{{ field.name }} || '')}</span>
                         {% else %}

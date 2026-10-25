@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../__generated__/components/Button';
 import { Badge } from '../__generated__/components/Badge';
+import { displayValue } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }}DrawerProps {
   record: any;
@@ -91,7 +92,7 @@ export function {{ entity.name | pascal_case }}Drawer({
                   {% elif field.type in ['datetime', 'date'] or field.name in ['createdAt', 'updatedAt', 'publishedAt', 'date'] %}
                   {record.{{ field.name }} ? new Date(record.{{ field.name }}).toLocaleDateString() : '—'}
                   {% else %}
-                  <span className="truncate block">{String(record.{{ field.name }} ?? '—')}</span>
+                  <span className="truncate block">{displayValue(record.{{ field.name }})}</span>
                   {% endif %}
                 </dd>
               </div>

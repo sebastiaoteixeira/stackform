@@ -64,7 +64,7 @@
 {% endmacro %}
 import { useState } from 'react';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { callOperation } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }}ModalFormProps {
   onSuccess?: (data: Record<string, unknown>) => void;
@@ -93,8 +93,7 @@ export function {{ entity.name | pascal_case }}ModalForm({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, {
-        method: 'POST',
+      const res = await callOperation('{{ entity.name }}', 'create', {
         headers,
         body: JSON.stringify(formData),
       });

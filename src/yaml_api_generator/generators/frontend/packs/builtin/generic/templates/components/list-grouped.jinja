@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -27,15 +27,9 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        }
-        return res.json();
-      })
+    listRecords('{{ entity.name }}', headers)
       .then(data => {
-        setItems(Array.isArray(data) ? data : []);
+        setItems(data);
         setLoading(false);
       })
       .catch(err => {
@@ -154,7 +148,7 @@ export default function {{ view.name | pascal_case }}() {
                         {% for field in entity.fields.values() %}
                         {% if ns.count < 2 and field.name != group_field and field.name != entity.pk_field and (not title_field or field.name != title_field.name) %}
                         <td className="text-wf-ink-dim text-sm">
-                          {String(item.{{ field.name }} || '—')}
+                          {displayValue(item.{{ field.name }})}
                         </td>
                         {% set ns.count = ns.count + 1 %}
                         {% endif %}

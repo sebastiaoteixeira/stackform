@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { listRecords } from '../__generated__/records';
 
 interface RefOption {
   id: string;
@@ -11,7 +11,6 @@ interface RefOption {
 
 interface RefRadioListProps {
   target: string;
-  targetEndpoint: string;
   value?: string | null;
   onChange?: (id: string | null) => void;
   maxVisible?: number;
@@ -30,7 +29,6 @@ function Avatar({ src, name }: { src?: string; name: string }) {
 
 export function RefRadioList({
   target,
-  targetEndpoint,
   value,
   onChange,
   maxVisible = 6,
@@ -43,12 +41,11 @@ export function RefRadioList({
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}${targetEndpoint}`, { headers })
-      .then((r) => r.json())
-      .then((data) => setOptions(Array.isArray(data) ? data : []))
+    listRecords(target, headers)
+      .then(setOptions)
       .catch(() => setOptions([]))
       .finally(() => setLoading(false));
-  }, [token, targetEndpoint]);
+  }, [token, target]);
 
   const visible = options.slice(0, maxVisible);
 

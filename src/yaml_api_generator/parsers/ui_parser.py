@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
-from yaml_api_generator.ir import IRDocument
+from yaml_api_generator.ir import IRDocument, flatten_role_hierarchy
+from yaml_api_generator.ir.api import IRAccessRule, IRIdentityCollection, IRRoute
 from yaml_api_generator.ir.ui import (
     AuthProviderInfo,
     ComponentNode,
@@ -13,6 +14,8 @@ from yaml_api_generator.ir.ui import (
     PackComponentDef,
     PackComponentProp,
     PropValue,
+    RolesInfo,
+    RouteInfo,
     UICollection,
     UICollectionField,
     UIComponent,
@@ -21,6 +24,8 @@ from yaml_api_generator.ir.ui import (
 from yaml_api_generator.ir.pack_manifest import PackManifest
 
 CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
+ENTITY_OPS = CRUD_OPS | {"login"}
+ANONYMOUS = "anonymous"
 
 
 def build_generator_context(
@@ -28,7 +33,8 @@ def build_generator_context(
     ui_block: dict[str, Any],
     manifest: PackManifest,
 ) -> GeneratorContext:
-    entities = _build_entities(ir)
+    base_url = _base_url(ir)
+    entities = _build_entities(ir, base_url)
     identity_entities = [
         ir.collections[k].entity_name for k in ir.identityCollections.keys()
     ]
@@ -37,15 +43,9 @@ def build_generator_context(
     components = _parse_components(ui_block.get("components", {}), pack_components)
     views = _parse_views(ui_block.get("views", {}), components, pack_components)
 
-    base_path = ir.api.basePath or ""
-    version = ir.api.version or ""
-    base_url = base_path.rstrip("/")
-    if version:
-        base_url = f"{base_url}/{version}"
-
     return GeneratorContext(
-        api_name=base_path.strip("/") or "api",
-        api_version=version,
+        api_name=(ir.api.basePath or "").strip("/") or "api",
+        api_version=ir.api.version or "",
         base_url=base_url,
         collections=collections,
         components=components,
@@ -59,83 +59,152 @@ def build_generator_context(
     )
 
 
-def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
-    entities: dict[str, EntityInfo] = {}
-    identity_names = {
-        ir.collections[k].entity_name for k in ir.identityCollections.keys()
+class _Principal(NamedTuple):
+    collection: str
+    held_roles: frozenset[str]
+
+
+def _build_entities(ir: IRDocument, base_url: str) -> dict[str, EntityInfo]:
+    served = [
+        (ir.services[route.service].repository, route)
+        for route in ir.routes
+        if route.operation in ENTITY_OPS
+        and route.service in ir.services
+        and ir.services[route.service].repository
+    ]
+    principals = _principal_columns(ir)
+    return {
+        ir_col.entity_name: _build_entity(
+            ir,
+            col_name,
+            [route for repository, route in served if repository == col_name],
+            base_url,
+            principals,
+        )
+        for col_name, ir_col in ir.collections.items()
     }
 
-    base_url = (ir.api.basePath or "").rstrip("/")
-    if ir.api.version:
-        base_url = f"{base_url}/{ir.api.version}"
 
-    repo_to_base_path: dict[str, str] = {}
-    repo_operations: dict[str, set[str]] = {}
-    repo_public_operations: dict[str, set[str]] = {}
-    for route in ir.routes:
-        if not route.service or route.operation not in CRUD_OPS:
-            continue
-        service = ir.services.get(route.service)
-        if not service or not service.repository:
-            continue
-        repo = service.repository
-        repo_operations.setdefault(repo, set()).add(route.operation)
-        if route.is_public:
-            repo_public_operations.setdefault(repo, set()).add(route.operation)
-        if route.operation == "list":
-            path = route.path
-            if path.startswith(base_url):
-                path = path[len(base_url):]
-            repo_to_base_path[repo] = path
+def _build_entity(
+    ir: IRDocument,
+    col_name: str,
+    served: list[IRRoute],
+    base_url: str,
+    principals: dict[str, _Principal | None],
+) -> EntityInfo:
+    ir_col = ir.collections[col_name]
+    identity = ir.identityCollections.get(col_name)
+    routes = _first_routes(served, identity is not None)
+    password = identity.get_binding("password") if identity else None
+    list_route = routes.get("list")
+    return EntityInfo(
+        name=ir_col.entity_name,
+        fields={
+            name: _field_info(name, config)
+            for name, config in ir_col.fields.items()
+            if isinstance(config, dict) and config.get("type", "string") != "id"
+        },
+        is_auth=identity is not None,
+        pk_field=ir_col.idField,
+        repository_name=col_name,
+        auth_identifier=password.identifier if password else None,
+        auth_providers=[
+            AuthProviderInfo(name=b.provider, type=ir.providers[b.provider].type)
+            for b in (identity.bindings if identity else ())
+            if b.provider not in ("password", "apiKey") and b.provider in ir.providers
+        ],
+        routes={
+            op: RouteInfo(method=route.method, path=route.path.removeprefix(base_url))
+            for op, route in routes.items()
+        },
+        pagination=list_route.pagination if list_route else None,
+        roles=_roles_info(identity) if identity else None,
+        access={
+            op: {column: _verdict(route, principal) for column, principal in principals.items()}
+            for op, route in routes.items()
+            if op in CRUD_OPS
+        },
+    )
 
-    for col_name, ir_col in ir.collections.items():
-        entity_name = ir_col.entity_name
-        fields: dict[str, EntityFieldInfo] = {}
-        for field_name, field_config in ir_col.fields.items():
-            if not isinstance(field_config, dict):
-                continue
-            ftype = field_config.get("type", "string")
-            if ftype == "id":
-                continue
-            fields[field_name] = EntityFieldInfo(
-                name=field_name,
-                type=ftype,
-                required=field_config.get("required", False),
-                unique=field_config.get("unique", False),
-                enum_values=field_config.get("values"),
-                ref_entity=field_config.get("ref"),
-                default=field_config.get("default"),
-                readonly=field_config.get("readonly", False),
-            )
 
-        auth_identifier = None
-        auth_providers: list[AuthProviderInfo] = []
-        identity = ir.identityCollections.get(col_name)
-        if identity:
-            pw_binding = identity.get_binding("password")
-            auth_identifier = pw_binding.identifier if pw_binding else None
-            auth_providers = [
-                AuthProviderInfo(name=b.provider, type=ir.providers[b.provider].type)
-                for b in identity.bindings
-                if b.provider not in ("password", "apiKey") and b.provider in ir.providers
-            ]
+def _field_info(name: str, config: dict[str, Any]) -> EntityFieldInfo:
+    return EntityFieldInfo(
+        name=name,
+        type=config.get("type", "string"),
+        required=config.get("required", False),
+        unique=config.get("unique", False),
+        enum_values=config.get("values"),
+        ref_entity=config.get("ref"),
+        default=config.get("default"),
+        readonly=config.get("readonly", False),
+    )
 
-        api_base_path = repo_to_base_path.get(col_name)
 
-        entities[entity_name] = EntityInfo(
-            name=entity_name,
-            fields=fields,
-            is_auth=entity_name in identity_names,
-            pk_field=ir_col.idField,
-            repository_name=col_name,
-            auth_identifier=auth_identifier,
-            api_base_path=api_base_path,
-            auth_providers=auth_providers,
-            operations=frozenset(repo_operations.get(col_name, set())),
-            public_operations=frozenset(repo_public_operations.get(col_name, set())),
-        )
+def _first_routes(served: list[IRRoute], is_identity: bool) -> dict[str, IRRoute]:
+    first = dict((route.operation, route) for route in reversed(served))
+    register = next(
+        (route for route in served if route.operation == "create" and route.is_public),
+        None,
+    )
+    return first | ({"register": register} if is_identity and register else {})
 
-    return entities
+
+def _roles_info(identity: IRIdentityCollection) -> RolesInfo | None:
+    if identity.roles is None:
+        return None
+    includes = flatten_role_hierarchy(identity.roles.hierarchy)
+    return RolesInfo(
+        values=identity.roles.values,
+        default=identity.roles.default,
+        field=identity.roles_field,
+        includes={role: tuple(sorted(includes.get(role, ()))) for role in identity.roles.values},
+    )
+
+
+def _principal_columns(ir: IRDocument) -> dict[str, _Principal | None]:
+    """Columns of the access matrix: anonymous callers, then every identity role."""
+    return {ANONYMOUS: None} | {
+        column: principal
+        for col_name, identity in ir.identityCollections.items()
+        for column, principal in _identity_principals(
+            ir.collections[col_name].entity_name, col_name, _roles_info(identity)
+        ).items()
+    }
+
+
+def _identity_principals(
+    entity_name: str, col_name: str, roles: RolesInfo | None
+) -> dict[str, _Principal]:
+    if roles is None:
+        return {entity_name: _Principal(col_name, frozenset())}
+    return {
+        f"{entity_name}.{role}": _Principal(col_name, frozenset({role, *roles.includes[role]}))
+        for role in roles.values
+    }
+
+
+def _verdict(route: IRRoute, principal: _Principal | None) -> str:
+    if route.is_public:
+        return "allow"
+    if principal is None:
+        return "deny"
+    if not route.access_rules:
+        return "allow"
+    rule = next((rule for rule in route.access_rules if _rule_matches(rule, principal)), None)
+    if rule is None:
+        return "deny"
+    return "conditional" if rule.when or rule.document_symbols else rule.effect
+
+
+def _rule_matches(rule: IRAccessRule, principal: _Principal) -> bool:
+    return (
+        not rule.principal or rule.principal == f"identity:{principal.collection}"
+    ) and (rule.required_role is None or rule.required_role in principal.held_roles)
+
+
+def _base_url(ir: IRDocument) -> str:
+    base_path = (ir.api.basePath or "").rstrip("/")
+    return f"{base_path}/{ir.api.version}" if ir.api.version else base_path
 
 
 def _parse_collections(

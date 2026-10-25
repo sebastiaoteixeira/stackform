@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { callOperation, displayValue } from '../__generated__/records';
 import { Button } from '../__generated__/components/Button';
 import { Badge } from '../__generated__/components/Badge';
 import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
@@ -28,7 +28,7 @@ export function {{ entity.name | pascal_case }}Article({
       try {
         const headers: Record<string, string> = {};
         if (token && !publicView) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { headers });
+        const res = await callOperation('{{ entity.name }}', 'get', { id, headers });
         if (!res.ok) throw new Error(res.status === 404 ? 'Record not found' : `Error: ${res.status}`);
         setRecord(await res.json());
       } catch (err: any) {
@@ -140,7 +140,7 @@ export function {{ entity.name | pascal_case }}Article({
             {% if field.name not in ([entity.pk_field] + (roles.values() | list)) %}
             <div>
               <dt className="text-2xs uppercase tracking-wide text-wf-ink-faint mb-0.5">{{ field.name | title }}</dt>
-              <dd className="text-sm text-wf-ink">{String(record.{{ field.name }} ?? '—')}</dd>
+              <dd className="text-sm text-wf-ink">{displayValue(record.{{ field.name }})}</dd>
             </div>
             {% endif %}
             {% endfor %}

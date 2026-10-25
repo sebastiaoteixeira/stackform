@@ -1,0 +1,95 @@
+import { API_BASE_URL } from './config.ts';
+
+export type Operation = 'list' | 'get' | 'create' | 'update' | 'replace' | 'delete' | 'login' | 'register';
+
+interface Route {
+  method: string;
+  path: string;
+}
+
+interface Paging {
+  strategy: 'offset' | 'keyset';
+  size: number;
+  envelope: boolean;
+  sort: string[];
+}
+
+type Query = Record<string, string>;
+type Row = Record<string, unknown>;
+
+export const ROUTES: Record<string, Partial<Record<Operation, Route>>> = {
+{% for entity in entities.values() %}
+  {{ entity.name | tojson }}: {
+{% for operation, route in entity.routes.items() %}
+    {{ operation }}: { method: {{ route.method | tojson }}, path: {{ route.path | tojson }} },
+{% endfor %}
+  },
+{% endfor %}
+};
+
+const PAGING: Record<string, Paging> = {
+{% for entity in entities.values() if entity.pagination %}
+  {{ entity.name | tojson }}: {
+    strategy: {{ entity.pagination.strategy | tojson }},
+    size: {{ entity.pagination.size.max }},
+    envelope: {{ entity.pagination.envelope | tojson }},
+    sort: {{ entity.pagination.sort | map(attribute='field') | list | tojson }},
+  },
+{% endfor %}
+};
+
+export interface OperationRequest extends RequestInit {
+  id?: string | number;
+  query?: Query;
+}
+
+export async function callOperation(
+  entity: string,
+  operation: Operation,
+  { id, query, ...init }: OperationRequest = {},
+): Promise<Response> {
+  const route = ROUTES[entity]?.[operation];
+  if (!route) throw new Error(`${entity} does not serve ${operation}`);
+  const path = route.path.replace(/\{[^}]+\}/g, () => encodeURIComponent(String(id)));
+  const search = new URLSearchParams(query).toString();
+  return fetch(`${API_BASE_URL}${path}${search && `?${search}`}`, { ...init, method: route.method });
+}
+
+export async function readJson(res: Response): Promise<any> {
+  if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+  return res.json();
+}
+
+function cursor(row: Row, sort: string[]): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(sort.map((field) => row[field] ?? null)));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+type Advance = (paging: Paging, body: any, rows: Row[], query: Query) => Query | null;
+
+const ADVANCE: Record<Paging['strategy'], Advance> = {
+  offset: (paging, _body, rows, query) =>
+    rows.length < paging.size ? null : { ...query, offset: String(Number(query.offset ?? 0) + rows.length) },
+  keyset: (paging, body, rows, query) => {
+    if (paging.envelope) return body.next ? { ...query, after: body.next } : null;
+    return rows.length < paging.size ? null : { ...query, after: cursor(rows[rows.length - 1], paging.sort) };
+  },
+};
+
+/** Every record the list operation serves, following its pagination to the last page. */
+export async function listRecords<T = any>(entity: string, headers: HeadersInit = {}): Promise<T[]> {
+  const paging: Paging | undefined = PAGING[entity];
+  const records: T[] = [];
+  for (let query: Query | null = paging ? { limit: String(paging.size) } : {}; query; ) {
+    const body = await readJson(await callOperation(entity, 'list', { headers, query }));
+    const rows: Row[] = paging?.envelope ? body.items : body;
+    records.push(...(rows as T[]));
+    query = paging ? ADVANCE[paging.strategy](paging, body, rows, query) : null;
+  }
+  return records;
+}
+
+export function displayValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}

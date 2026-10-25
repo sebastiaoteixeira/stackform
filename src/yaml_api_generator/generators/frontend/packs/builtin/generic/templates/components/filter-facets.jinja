@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -35,12 +35,8 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        return res.json();
-      })
-      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+    listRecords('{{ entity.name }}', headers)
+      .then(data => { setItems(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [token]);
 
@@ -205,12 +201,12 @@ export default function {{ view.name | pascal_case }}() {
                     className="cursor-pointer"
                   >
                     {% if title_field %}
-                    <td className="font-medium text-wf-ink">{String(item.{{ title_field.name }} ?? '—')}</td>
+                    <td className="font-medium text-wf-ink">{displayValue(item.{{ title_field.name }})}</td>
                     {% else %}
                     <td><span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span></td>
                     {% endif %}
                     {% for field in facet_fields %}
-                    <td><span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span></td>
+                    <td><span className="wf-badge">{displayValue(item.{{ field.name }})}</span></td>
                     {% endfor %}
                     {% if date_field %}
                     <td>

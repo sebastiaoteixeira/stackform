@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { callOperation, displayValue } from '../__generated__/records';
 import { Button } from '../__generated__/components/Button';
 {% set has_enum = entity.fields.values() | selectattr('type', 'equalto', 'enum') | list | length > 0 %}
 {% if has_enum %}
@@ -31,7 +31,7 @@ export function {{ entity.name | pascal_case }}TwoColumn({
       try {
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { headers });
+        const res = await callOperation('{{ entity.name }}', 'get', { id, headers });
         if (!res.ok) throw new Error(res.status === 404 ? 'Record not found' : `Error: ${res.status}`);
         setRecord(await res.json());
       } catch (err: any) {
@@ -84,7 +84,7 @@ export function {{ entity.name | pascal_case }}TwoColumn({
         {% if status_field %}
         <Badge value={String(record.{{ status_field.name }})} size="sm" />
         {% endif %}
-        {% if 'update' in entity.operations %}
+        {% if entity.edit_operation %}
         <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
           Edit
         </Button>
@@ -146,7 +146,7 @@ export function {{ entity.name | pascal_case }}TwoColumn({
                   {% elif field.type in ['datetime', 'date'] or field.name in ['createdAt', 'updatedAt', 'publishedAt', 'date'] %}
                   {record.{{ field.name }} ? new Date(record.{{ field.name }}).toLocaleString() : '—'}
                   {% else %}
-                  {String(record.{{ field.name }} ?? '—')}
+                  {displayValue(record.{{ field.name }})}
                   {% endif %}
                 </dd>
               </div>
@@ -162,7 +162,7 @@ export function {{ entity.name | pascal_case }}TwoColumn({
               {% for field in relation_fields %}
               <div className="flex flex-col gap-0.5">
                 <dt className="text-2xs uppercase tracking-wide text-wf-ink-faint">{{ field.name | title }}</dt>
-                <dd className="wf-mono">{String(record.{{ field.name }} ?? '—')}</dd>
+                <dd className="wf-mono">{displayValue(record.{{ field.name }})}</dd>
               </div>
               {% endfor %}
             </dl>

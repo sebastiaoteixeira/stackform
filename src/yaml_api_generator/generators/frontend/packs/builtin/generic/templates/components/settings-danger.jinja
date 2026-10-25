@@ -44,7 +44,7 @@ interface SettingsDangerProps {
 }
 
 export function SettingsDanger({
-  appName = '{{ context.app_name | default("App") }}',
+  appName = '{{ pack_config.app_name or "App" }}',
   onAction,
 }: SettingsDangerProps) {
   const [confirming, setConfirming] = useState<string | null>(null);

@@ -321,6 +321,7 @@ scaffold:
   - App
   - api
   - config.ts
+  - records.ts
   - auth.tsx
   - index.css
   - tailwind.config.js

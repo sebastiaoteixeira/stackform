@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { callOperation, displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -32,12 +32,8 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        return res.json();
-      })
-      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+    listRecords('{{ entity.name }}', headers)
+      .then(data => { setItems(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [token]);
 
@@ -60,7 +56,7 @@ export default function {{ view.name | pascal_case }}() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     await Promise.all([...selectedIds].map(id =>
-      fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { method: 'DELETE', headers })
+      callOperation('{{ entity.name }}', 'delete', { id, headers })
     ));
     setItems(prev => prev.filter(i => !selectedIds.has(i.{{ entity.pk_field }})));
     setSelectedIds(new Set());
@@ -145,9 +141,9 @@ export default function {{ view.name | pascal_case }}() {
                   {% for field in display_fields %}
                   <td>
                     {% if field.type == 'enum' %}
-                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    <span className="wf-badge">{displayValue(item.{{ field.name }})}</span>
                     {% else %}
-                    {String(item.{{ field.name }} ?? '—')}
+                    {displayValue(item.{{ field.name }})}
                     {% endif %}
                   </td>
                   {% endfor %}

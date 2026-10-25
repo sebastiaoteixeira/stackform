@@ -23,7 +23,7 @@ interface SettingsSectionedProps {
 }
 
 export function SettingsSectioned({
-  appName = '{{ context.app_name | default("App") }}',
+  appName = '{{ pack_config.app_name or "App" }}',
   initialTheme = 'system',
   initialBrandColor = '#6366f1',
   initialFont = 'Inter',
