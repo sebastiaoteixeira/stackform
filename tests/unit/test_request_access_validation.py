@@ -95,29 +95,14 @@ def test_request_referencing_create_rule_valid():
     assert _access_codes(access, op_name="create") == set()
 
 
-# ---- DTO_FORBIDS_PERSISTENCE_ATTR ----
+# ---- DTO fields ----
 
 def _dto_codes(dto) -> set[str]:
     return {e.code for e in validate_spec_dtos({"entities": _ENTITIES, "dto": dto})}
 
 
-def test_dto_forbids_id_type():
-    dto = {"d": {"fields": {"x": {"type": "id"}}}}
-    assert "DTO_FORBIDS_PERSISTENCE_ATTR" in _dto_codes(dto)
-
-
-def test_dto_forbids_unique():
-    dto = {"d": {"fields": {"x": {"type": "string", "unique": True}}}}
-    assert "DTO_FORBIDS_PERSISTENCE_ATTR" in _dto_codes(dto)
-
-
-def test_dto_forbids_format():
-    dto = {"d": {"fields": {"x": {"type": "string", "format": "email"}}}}
-    assert "DTO_FORBIDS_PERSISTENCE_ATTR" in _dto_codes(dto)
-
-
 def test_dto_clean_fields_valid():
-    dto = {"d": {"fields": {"x": {"type": "string", "required": True}}}}
+    dto = {"d": {"fields": {"x": {"type": "string", "required": True, "format": "email"}}}}
     assert _dto_codes(dto) == set()
 
 

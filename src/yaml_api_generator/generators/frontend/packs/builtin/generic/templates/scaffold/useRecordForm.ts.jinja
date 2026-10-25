@@ -1,0 +1,46 @@
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { useAuth } from './App';
+import { API_BASE_URL } from './config';
+import { ENTITY_FIELDS, formValues, payload } from './fields';
+
+/**
+ * The form state of one `entity` record at `resource`: a new one, or the one
+ * `entityId` (by default the route's `:id`) names, which is loaded and replaced.
+ */
+export function useRecordForm<T = Record<string, unknown>>(entity: string, resource: string, entityId?: string) {
+  const fields = ENTITY_FIELDS[entity];
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = entityId ?? routeId;
+  const { token } = useAuth();
+  const [values, setValues] = useState(() => formValues(fields));
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const url = id ? `${API_BASE_URL}/${resource}/${id}` : `${API_BASE_URL}/${resource}`;
+
+  useEffect(() => {
+    setValues(formValues(fields));
+    if (!id) return;
+    fetch(url, { headers })
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`Error: ${res.status}`))))
+      .then(record => setValues(formValues(fields, record)))
+      .catch(() => undefined);
+  }, [url, token]);
+
+  const setValue = (name: string, value: unknown) => setValues(prev => ({ ...prev, [name]: value }));
+
+  const submit = async (): Promise<T> => {
+    const res = await fetch(url, {
+      method: id ? 'PUT' : 'POST',
+      headers,
+      body: JSON.stringify(payload(fields, values)),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `Failed to ${id ? 'update' : 'create'} ${entity}`);
+    }
+    return res.json();
+  };
+
+  return { values, setValue, mode: id ? 'edit' as const : 'create' as const, submit };
+}

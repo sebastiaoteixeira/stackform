@@ -225,16 +225,20 @@ def load_and_generate_ir(
         if name_errors:
             raise ConfigErrors(name_errors)
 
-        from .transformers.ref_validation import validate_spec_refs
-        ref_errors = validate_spec_refs(resolved)
-        if ref_errors:
-            raise ConfigErrors(ref_errors)
+    from .transformers.ref_validation import validate_spec_refs
+    ref_errors = validate_spec_refs(resolved)
+    if ref_errors:
+        raise ConfigErrors(ref_errors)
 
-        from .transformers.constraint_validation import validate_spec_constraints
-        constraint_errors = validate_spec_constraints(resolved)
-        if constraint_errors:
-            raise ConfigErrors(constraint_errors)
+    from .transformers.constraint_validation import validate_spec_constraints
+    constraint_errors = validate_spec_constraints(resolved)
+    if constraint_errors:
+        raise ConfigErrors(constraint_errors)
 
+    from .transformers.field_defaults import canonicalize_defaults
+    canonicalize_defaults(resolved)
+
+    if version in ("0.2", "0.3"):
         from .transformers.file_validation import validate_spec_files
         file_errors = validate_spec_files(resolved)
         if file_errors:

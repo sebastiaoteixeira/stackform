@@ -108,18 +108,7 @@ class CollectionTransformer:
                     path=f"collections.{collection_name}.fields.{id_field}",
                 )
             ]
-        raw_format = field_config.get("format")
-        if raw_format is None:
-            return "uuidv7", []
-        if raw_format in {"uuidv7", "uuidv4"}:
-            return str(raw_format), []
-        return None, [
-            ConfigError(
-                code="ID_FORMAT_INVALID",
-                message="id field format must be uuidv7 or uuidv4",
-                path=f"collections.{collection_name}.fields.{id_field}.format",
-            )
-        ]
+        return str(field_config.get("format", "uuidv7")), []
 
     def _validate_field_names(
         self, collection_name: str, fields: dict[str, Any]

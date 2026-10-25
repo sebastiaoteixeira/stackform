@@ -11,6 +11,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from yaml_api_generator.parsers.errors import ConfigError, ConfigErrors
+from yaml_api_generator.parsers.transformers.field_maps import spec_fields
 
 
 def file_config(field: Any) -> dict[str, Any] | None:
@@ -51,18 +52,10 @@ def file_context_errors(field: Any, path: str, context: str) -> list[ConfigError
     ]
 
 
-def _entity_fields(spec: dict[str, Any]) -> Iterator[tuple[str, Any]]:
-    for entity_name, entity in (spec.get("entities") or {}).items():
-        fields = entity.get("fields") if isinstance(entity, dict) else None
-        if isinstance(fields, dict):
-            for field_name, field in fields.items():
-                yield f"entities.{entity_name}.fields.{field_name}", field
-
-
 def validate_spec_files(spec: dict[str, Any]) -> list[ConfigError]:
     """Reject file fields nested below an entity's top level."""
     errors: list[ConfigError] = []
-    for path, field in _entity_fields(spec):
+    for path, field in spec_fields(spec, ("entities",)):
         top = file_config(field)
         allowed = None if top is None else path if top is field else f"{path}.items"
         errors.extend(

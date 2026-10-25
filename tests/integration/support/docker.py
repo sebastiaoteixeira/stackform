@@ -21,7 +21,7 @@ def docker_available() -> bool:
 
 @dataclass(frozen=True)
 class Service:
-    """A dockerised service reachable at `{scheme}://127.0.0.1:{port}` once `ready` accepts that endpoint."""
+    """A dockerised service reachable at `{scheme}://{userinfo}127.0.0.1:{port}` once `ready` accepts that endpoint."""
 
     name: str
     image: str
@@ -31,6 +31,7 @@ class Service:
     ready: Callable[[str], bool]
     env: dict[str, str] = field(default_factory=dict)
     command: tuple[str, ...] = ()
+    userinfo: str = ""
 
     @contextmanager
     def endpoint(self) -> Iterator[str]:
@@ -58,7 +59,7 @@ class Service:
         if started.returncode != 0:
             pytest.skip(f"could not start {self.image}: {started.stderr.strip()}")
         try:
-            endpoint = f"{self.scheme}://127.0.0.1:{port}"
+            endpoint = f"{self.scheme}://{self.userinfo}127.0.0.1:{port}"
             if not wait_until(lambda: self.ready(endpoint)):
                 pytest.skip(f"{self.image} container did not become ready")
             yield endpoint
