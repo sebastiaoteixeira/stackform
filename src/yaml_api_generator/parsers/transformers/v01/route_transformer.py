@@ -27,6 +27,8 @@ class RouteTransformer:
         "replace": ("PUT", "/{collection}/{id}"),
         "delete": ("DELETE", "/{collection}/{id}"),
     }
+    _SHARED_ACCESS = {"replace": "update"}
+    """Operations that, without access of their own, take another operation's."""
 
     def build_routes(
         self,
@@ -116,9 +118,10 @@ class RouteTransformer:
         for operation in self._OPERATION_NAMES:
             if not op_map[operation]:
                 continue
+            access_key = operation if operation in collection_access else self._SHARED_ACCESS.get(operation, operation)
             is_public, access_rules, access_errors = self._parse_access(
-                collection_access.get(operation),
-                f"collections.{collection}.access.{operation}",
+                collection_access.get(access_key),
+                f"collections.{collection}.access.{access_key}",
                 auth_entities,
                 entity_to_collection,
                 None if operation == "create" else IRDocumentBinding(collection=collection),

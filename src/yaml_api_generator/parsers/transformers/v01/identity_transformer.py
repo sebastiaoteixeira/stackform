@@ -1,12 +1,14 @@
 """Identity and auth transformation for v0.1 specifications.
 
-Validates auth collections and implicit auth fields.
+Validates auth collections, their roles and implicit auth fields.
 """
 
 from typing import Any, cast
 
 from yaml_api_generator.ir import IRCollection, IRIdentityCollection, IRProviderBinding
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+
+from ..roles import roles_config
 
 
 class IdentityTransformer:
@@ -25,6 +27,9 @@ class IdentityTransformer:
 
         Returns:
             Dictionary of identity collections
+
+        Raises:
+            ConfigErrors: If a role hierarchy names an undeclared role or is cyclic
         """
         identity_collections: dict[str, IRIdentityCollection] = {}
         for name, collection in collections.items():
@@ -40,6 +45,7 @@ class IdentityTransformer:
             identity_collections[name] = IRIdentityCollection(
                 name=name,
                 bindings=bindings,
+                roles=roles_config(f"collections.{name}.roles", collection_data.get("roles")),
             )
         return identity_collections
 
