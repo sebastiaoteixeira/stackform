@@ -14,6 +14,11 @@ api:
   operations:
     auth: { register: true }
 {datastore}
+dto:
+  draftInput:
+    fields:
+      title: { type: string }
+      ownerId: { type: string }
 entities:
   user:
     type: auth
@@ -153,6 +158,16 @@ controllers:
             then: deny
             reason: Drafts start without an owner.
           - then: allow
+  owners:
+    base_path: /owners
+    routes:
+      create:
+        service: drafts
+        method: POST
+        path: /{ownerId}/drafts
+        access:
+          - given: { req: "request:draftInput" }
+            when: req.body.ownerId equals req.path.ownerId
 """
 
 # The dev server hands a handler its request context; a generated backend hands it the request
@@ -276,6 +291,11 @@ def test_unconditional_allow_admits_anonymous_callers(client, accounts):
 
     assert client.get(f"/api/posts/{ann_post['id']}").status_code == 200
     assert client.post("/api/drafts", json={"title": "t"}).status_code == 200
+
+
+def test_typed_request_binding_reads_every_part(client):
+    assert client.post("/api/owners/u1/drafts", json={"title": "t", "ownerId": "u1"}).status_code == 200
+    assert client.post("/api/owners/u1/drafts", json={"title": "t", "ownerId": "u2"}).status_code == 401
 
 
 def test_request_is_null_holds_for_absent_body_fields(client):

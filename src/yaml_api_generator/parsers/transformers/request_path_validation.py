@@ -9,19 +9,9 @@ this validator runs post-desugar (mirroring ``validate_spec_paths``):
 """
 
 import re
-from typing import Any, Iterator
+from typing import Any
 
-from yaml_api_generator.ir.when import (
-    And,
-    Equals,
-    FieldRef,
-    In,
-    Not,
-    NotEquals,
-    NotIn,
-    Or,
-    WhenExpr,
-)
+from yaml_api_generator.ir.when import field_refs
 from yaml_api_generator.parsers.when_parser import (
     parse_request_binding,
     parse_when_list,
@@ -30,21 +20,13 @@ from yaml_api_generator.parsers.yaml_parser import ConfigError
 
 _PARAM_TOKEN = re.compile(r"\{([^/{}]+)\}")
 
-
-def _field_refs(expr: WhenExpr) -> Iterator[FieldRef]:
-    if isinstance(expr, FieldRef):
-        yield expr
-    elif isinstance(expr, (Equals, NotEquals, And, Or)):
-        yield from _field_refs(expr.left)
-        yield from _field_refs(expr.right)
-    elif isinstance(expr, (In, NotIn)):
-        yield from _field_refs(expr.left)
-    elif isinstance(expr, Not):
-        yield from _field_refs(expr.operand)
+# The field-path prefix that leads from a symbol to the path parameters of the part it binds
+_PATH_PREFIX = {None: ("path",), "path": ()}
 
 
-def _path_symbols(given: dict[str, Any]) -> set[str]:
-    symbols: set[str] = set()
+def _path_symbols(given: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Each symbol bound to the request's path parameters, with its path prefix."""
+    symbols: dict[str, tuple[str, ...]] = {}
     for name, value in given.items():
         if not isinstance(value, str) or not (
             value == "request" or value.startswith(("request.", "request:"))
@@ -54,8 +36,8 @@ def _path_symbols(given: dict[str, Any]) -> set[str]:
         if errors or parsed is None:
             continue
         part, _, _ = parsed
-        if part in (None, "path"):
-            symbols.add(name)
+        if part in _PATH_PREFIX:
+            symbols[name] = _PATH_PREFIX[part]
     return symbols
 
 
@@ -72,16 +54,18 @@ def _check_rule(
     expr, when_errors = parse_when_list(when_raw, f"{path}.when")
     if when_errors or expr is None:
         return
-    for ref in _field_refs(expr):
-        if ref.root in path_symbols and len(ref.path) >= 2 and ref.path[0] == "path":
-            name = ref.path[1]
-            if name not in tokens:
-                errors.append(ConfigError(
-                    code="REQUEST_PATH_PARAM_NOT_DECLARED",
-                    message=f"request.path.{name} is not a parameter of this route",
-                    path=f"{path}.when",
-                    hint=f"Declare {{{name}}} in the route path or fix the reference",
-                ))
+    for ref in field_refs(expr):
+        prefix = path_symbols.get(ref.root)
+        if prefix is None or len(ref.path) <= len(prefix) or ref.path[:len(prefix)] != prefix:
+            continue
+        name = ref.path[len(prefix)]
+        if name not in tokens:
+            errors.append(ConfigError(
+                code="REQUEST_PATH_PARAM_NOT_DECLARED",
+                message=f"request.path.{name} is not a parameter of this route",
+                path=f"{path}.when",
+                hint=f"Declare {{{name}}} in the route path or fix the reference",
+            ))
 
 
 def validate_spec_request_paths(spec: dict[str, Any]) -> list[ConfigError]:

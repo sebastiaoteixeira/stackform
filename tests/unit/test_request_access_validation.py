@@ -1,3 +1,5 @@
+import pytest
+
 from yaml_api_generator.parsers.transformers.access_validation import (
     validate_spec_access,
 )
@@ -120,7 +122,7 @@ def test_dto_ref_to_entity_resolves():
 
 # ---- REQUEST_PATH_PARAM_NOT_DECLARED (post-desugar route) ----
 
-def _request_path_codes(route_path, when) -> set[str]:
+def _request_path_codes(route_path, when, binding="request") -> set[str]:
     spec = {
         "controllers": {
             "c": {
@@ -129,7 +131,7 @@ def _request_path_codes(route_path, when) -> set[str]:
                     "r": {
                         "path": route_path,
                         "access": [
-                            {"given": {"req": "request"}, "when": when}
+                            {"given": {"req": binding}, "when": when}
                         ],
                     }
                 },
@@ -147,6 +149,20 @@ def test_request_path_param_not_declared():
 def test_request_path_param_declared_valid():
     codes = _request_path_codes("/orgs/{orgId}", "req.path.orgId equals 'a'")
     assert codes == set()
+
+
+@pytest.mark.parametrize(
+    ("binding", "when", "codes"),
+    [
+        ("request:createMembership", "req.path.missing equals 'a'", {"REQUEST_PATH_PARAM_NOT_DECLARED"}),
+        ("request.path", "req.missing is null", {"REQUEST_PATH_PARAM_NOT_DECLARED"}),
+        ("request.path", "req.orgId equals 'a'", set()),
+        ("request.body", "req.missing equals 'a'", set()),
+    ],
+    ids=["typed-request", "path-part", "path-part-declared", "body-part"],
+)
+def test_request_path_params_resolve_through_every_binding(binding, when, codes):
+    assert _request_path_codes("/orgs/{orgId}", when, binding) == codes
 
 
 def test_dto_nested_ref_to_undeclared_type():

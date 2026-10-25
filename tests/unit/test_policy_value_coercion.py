@@ -83,7 +83,7 @@ class TestRuleToPredicateRegression:
                 right=FieldRef(root="user", path=("record", "id")),
             ),
             request_symbols=[
-                RequestSymbolDescriptor(name="target", part=None, type_name="Membership")
+                RequestSymbolDescriptor(name="target", part="body", type_name="Membership")
             ],
             document_symbols=[],
         )

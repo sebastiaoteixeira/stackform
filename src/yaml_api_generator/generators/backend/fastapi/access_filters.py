@@ -130,7 +130,7 @@ def request_symbol_binding(symbol) -> str:
     if symbol.is_whole:
         parts = ", ".join(f'"{part}": {source}' for part, source in _PART_SOURCE.items())
         return f"{symbol.name} = {{{parts}}}"
-    return f"{symbol.name} = {_PART_SOURCE[symbol.effective_part]}"
+    return f"{symbol.name} = {_PART_SOURCE[symbol.part]}"
 
 
 def needs_request_rule(rule: AccessRuleDescriptor) -> bool:

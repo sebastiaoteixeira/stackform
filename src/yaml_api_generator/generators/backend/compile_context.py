@@ -179,22 +179,17 @@ class RequestSymbolDescriptor:
     name: str
     part: str | None
     type_name: str | None = None
-    raw: bool = False
 
     @property
     def is_whole(self) -> bool:
-        return self.part is None and self.raw
-
-    @property
-    def effective_part(self) -> str:
-        return self.part or "body"
+        return self.part is None
 
     @property
     def is_record_shaped(self) -> bool:
         return not self.is_whole
 
     def binds(self, part: str) -> bool:
-        return self.is_whole or self.effective_part == part
+        return self.part in (None, part)
 
 
 @dataclass(frozen=True)
