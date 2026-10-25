@@ -35,7 +35,7 @@ entities:
       id: { type: id }
       title: { type: string, required: true }
       content: { type: string, required: true }
-      author_id: { type: string, required: true }
+      author_id: { type: string, required: true, readonly: true }
       status:
         type: enum
         values: [draft, published, archived]
@@ -50,7 +50,7 @@ entities:
       public_info: { type: string }
       restricted_info: { type: string }
       confidential_info: { type: string }
-      owner_id: { type: string, required: true }
+      owner_id: { type: string, required: true, readonly: true }
 
 repositories:
   users:
@@ -72,18 +72,38 @@ services:
   articles:
     repository: articles
 
+  authoredArticles:
+    repository: articles
+    operation: create
+    input:
+      title: { type: string, required: false }
+      content: { type: string, required: false }
+      author_id: string
+      status: { type: enum, values: [draft, published, archived], required: false }
+      department: { type: string, required: false }
+      is_public: { type: boolean, required: false }
+
   sensitive_data:
     repository: sensitive_data
+
+  ownedSensitiveData:
+    repository: sensitive_data
+    operation: create
+    input:
+      title: { type: string, required: false }
+      owner_id: string
+      public_info: { type: string, required: false }
+      restricted_info: { type: string, required: false }
+      confidential_info: { type: string, required: false }
 
 controllers:
   users:
     base_path: /users
     service: users
-    access: public
+    access: admin
     operations:
       register: { access: public }
       login: { access: public }
-      list: { access: admin }
       get:
         access:
           - admin
@@ -93,6 +113,7 @@ controllers:
             when: principal.sub equals document.id
       update:
         access:
+          - admin
           - given:
               principal: identity:user
               document: users
@@ -101,13 +122,10 @@ controllers:
   articles:
     base_path: /articles
     service: articles
-    access: public
+    access: admin
     operations:
-      list:
-        access:
-          - viewer
-          - editor
-          - admin
+      create: false
+      list: { access: viewer }
       get:
         access:
           - admin
@@ -115,9 +133,6 @@ controllers:
               principal: identity:user
               document: articles
             when: principal.sub equals document.author_id
-      create:
-        access:
-          - editor
       update:
         access:
           - admin
@@ -125,36 +140,57 @@ controllers:
               principal: identity:user
               document: articles
             when: principal.sub equals document.author_id
-      delete:
+
+  authoring:
+    base_path: /articles
+    routes:
+      create:
+        service: authoredArticles
+        method: POST
+        path: ""
         access:
-          - admin
+          - given:
+              principal: identity:user
+            bind:
+              author_id: $principal.sub
 
   sensitive_data:
     base_path: /sensitive
     service: sensitive_data
-    access: "*"
+    access: admin
     operations:
-      create:
-        access:
-          - editor
+      create: false
       list:
         access:
-          - viewer
           - admin
+          - given:
+              principal: identity:user
+              document: sensitive_data
+            when: principal.sub equals document.owner_id
       get:
         access:
+          - admin
           - given:
               principal: identity:user
               document: sensitive_data
             when: principal.sub equals document.owner_id
-          - admin
       update:
         access:
+          - admin
           - given:
               principal: identity:user
               document: sensitive_data
             when: principal.sub equals document.owner_id
-          - admin
-      delete:
+
+  sensitive_authoring:
+    base_path: /sensitive
+    routes:
+      create:
+        service: ownedSensitiveData
+        method: POST
+        path: ""
         access:
-          - admin
+          - given:
+              principal: identity:user
+            bind:
+              owner_id: $principal.sub
