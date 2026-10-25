@@ -131,7 +131,7 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                   {{ field_input(field, setter='change') }}
                   {% endfor %}
                   {% if not basic_fields %}
-                  {% for field in all_fields | first | default([]) %}
+                  {% for field in all_fields[:1] %}
                   {{ field_input(field, setter='change') }}
                   {% endfor %}
                   {% endif %}

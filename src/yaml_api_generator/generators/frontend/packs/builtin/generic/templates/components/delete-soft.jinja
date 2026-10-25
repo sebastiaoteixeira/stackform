@@ -2,8 +2,8 @@ import { useState } from 'react';
 
 interface DeleteSoftProps {
   entityLabel?: string;
-  onConfirm: (mode: 'archive' | 'delete') => void;
-  onCancel: () => void;
+  onConfirm?: (mode: 'archive' | 'delete') => void;
+  onCancel?: () => void;
   loading?: boolean;
 }
 
@@ -82,7 +82,7 @@ export function DeleteSoft({
               Cancel
             </button>
             <button
-              onClick={() => onConfirm(mode)}
+              onClick={() => onConfirm?.(mode)}
               disabled={loading}
               className={`wf-btn ${mode === 'delete' ? 'wf-btn-danger' : 'wf-btn-primary'}`}
             >
@@ -98,3 +98,5 @@ export function DeleteSoft({
     </div>
   );
 }
+
+export default DeleteSoft;

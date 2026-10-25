@@ -10,10 +10,10 @@ interface RefOption {
 }
 
 interface RefPickerModalProps {
-  target: string;
+  target?: string;
   value?: string | null;
-  onSelect: (id: string | null) => void;
-  onClose: () => void;
+  onSelect?: (id: string | null) => void;
+  onClose?: () => void;
 }
 
 function Avatar({ src, name }: { src?: string; name: string }) {
@@ -28,7 +28,7 @@ function Avatar({ src, name }: { src?: string; name: string }) {
 }
 
 export function RefPickerModal({
-  target,
+  target = {{ props.target.value | tojson }},
   value,
   onSelect,
   onClose,
@@ -142,7 +142,7 @@ export function RefPickerModal({
           <button
             type="button"
             disabled={!selected}
-            onClick={() => { onSelect(selected); onClose(); }}
+            onClick={() => { onSelect?.(selected); onClose?.(); }}
             className="wf-btn wf-btn-sm wf-btn-primary disabled:opacity-50"
           >
             Select
@@ -152,3 +152,5 @@ export function RefPickerModal({
     </div>
   );
 }
+
+export default RefPickerModal;

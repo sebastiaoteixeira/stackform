@@ -21,7 +21,7 @@ interface SettingsYamlProps {
 }
 
 export function SettingsYaml({
-  initialSpec = '{{ context.spec_yaml | default("# spec.yaml\nversion: \\"1.0\\"") }}',
+  initialSpec = '# spec.yaml',
   summary = { entities: {{ entities | length }}, collections: {{ entities | length }}, views: {{ views | length if views else 0 }}, pack: 'generic' },
   warnings = [],
   onValidate,
@@ -139,3 +139,5 @@ export function SettingsYaml({
     </div>
   );
 }
+
+export default SettingsYaml;

@@ -10,14 +10,14 @@ interface RefRecord {
 }
 
 interface RefSelectedCardProps {
-  target: string;
+  target?: string;
   value?: string | null;
   onChange?: (id: string | null) => void;
   onSwap?: () => void;
 }
 
 export function RefSelectedCard({
-  target,
+  target = {{ props.target.value | tojson }},
   value,
   onChange,
   onSwap,
@@ -115,3 +115,5 @@ export function RefSelectedCard({
     </div>
   );
 }
+
+export default RefSelectedCard;

@@ -7,15 +7,15 @@ interface OnboardingStep {
 }
 
 interface EmptyOnboardingProps {
-  title: string;
+  title?: string;
   subtitle?: string;
-  steps: OnboardingStep[];
+  steps?: OnboardingStep[];
 }
 
 export function EmptyOnboarding({
-  title,
+  title = {{ props.title.value | tojson }},
   subtitle = 'A few steps and you\'re running.',
-  steps,
+  steps = {{ props.steps.value | tojson }},
 }: EmptyOnboardingProps) {
   return (
     <div className="flex justify-center px-4 py-10">
@@ -70,3 +70,5 @@ export function EmptyOnboarding({
     </div>
   );
 }
+
+export default EmptyOnboarding;

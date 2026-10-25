@@ -1,9 +1,18 @@
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+{% set content_field = entity.fields[roles.content] if roles.content is defined else none %}
+{% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
+{% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+{% set author_field = entity.fields[roles.author] if roles.author is defined else none %}
+{% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
 import { callOperation, displayValue } from '../__generated__/records';
 import { Button } from '../__generated__/components/Button';
+{% if status_field %}
 import { Badge } from '../__generated__/components/Badge';
+{% endif %}
 import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
 
 interface {{ entity.name | pascal_case }}ArticleProps {
@@ -40,13 +49,6 @@ export function {{ entity.name | pascal_case }}Article({
     fetchRecord();
   }, [id, token, publicView]);
 
-  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
-  {% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
-  {% set content_field = entity.fields[roles.content] if roles.content is defined else none %}
-  {% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
-  {% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
-  {% set author_field = entity.fields[roles.author] if roles.author is defined else none %}
-  {% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
 
   if (loading) return <LoadingSpinner message="Loading..." />;
 
@@ -105,13 +107,6 @@ export function {{ entity.name | pascal_case }}Article({
               {% if author_field.name == 'authorId' %}Author{% else %}{{ author_field.name | title }}{% endif %}
             </div>
           </div>
-          {!publicView && (
-            <div className="ml-auto">
-              <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
-                Edit
-              </Button>
-            </div>
-          )}
         </div>
         {% endif %}
 
@@ -149,13 +144,18 @@ export function {{ entity.name | pascal_case }}Article({
         </div>
 
         {/* Footer */}
-        <div className="mt-8 pt-5 border-t border-wf-line">
+        <div className="mt-8 pt-5 border-t border-wf-line flex items-center justify-between">
           <button
             onClick={() => navigate(-1)}
             className="text-wf-accent-ink hover:text-wf-accent text-sm font-medium"
           >
             ← Back
           </button>
+          {!publicView && (
+            <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
+              Edit
+            </Button>
+          )}
         </div>
       </div>
     </article>

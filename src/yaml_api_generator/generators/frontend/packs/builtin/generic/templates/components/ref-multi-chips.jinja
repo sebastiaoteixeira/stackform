@@ -10,7 +10,7 @@ interface RefOption {
 }
 
 interface RefMultiChipsProps {
-  target: string;
+  target?: string;
   values?: string[];
   onChange?: (ids: string[]) => void;
 }
@@ -28,7 +28,7 @@ function Avatar({ src, name, size = 'sm' }: { src?: string; name: string; size?:
 }
 
 export function RefMultiChips({
-  target,
+  target = {{ props.target.value | tojson }},
   values = [],
   onChange,
 }: RefMultiChipsProps) {
@@ -142,3 +142,5 @@ export function RefMultiChips({
     </div>
   );
 }
+
+export default RefMultiChips;

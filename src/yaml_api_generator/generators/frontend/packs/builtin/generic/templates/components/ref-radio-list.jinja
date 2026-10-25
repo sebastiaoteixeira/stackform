@@ -10,7 +10,7 @@ interface RefOption {
 }
 
 interface RefRadioListProps {
-  target: string;
+  target?: string;
   value?: string | null;
   onChange?: (id: string | null) => void;
   maxVisible?: number;
@@ -28,7 +28,7 @@ function Avatar({ src, name }: { src?: string; name: string }) {
 }
 
 export function RefRadioList({
-  target,
+  target = {{ props.target.value | tojson }},
   value,
   onChange,
   maxVisible = 6,
@@ -103,3 +103,5 @@ export function RefRadioList({
     </div>
   );
 }
+
+export default RefRadioList;
