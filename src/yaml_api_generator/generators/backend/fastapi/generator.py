@@ -439,7 +439,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "payloads",
             "operations",
             "handler_requests",
-            *(("mongo_operations",) if uses_mongo else ()),
+            *(("ids", "mongo_operations") if uses_mongo else ()),
             *(("sql_operations",) if uses_sql else ()),
         ))
         self._render_file_dependencies(env, context, deps_dir)

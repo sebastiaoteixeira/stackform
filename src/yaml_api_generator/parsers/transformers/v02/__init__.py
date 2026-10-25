@@ -89,6 +89,7 @@ class V02Transformer:
             repos_data, defaults, datastore_names, default_datastore, datastore_types,
             handler_resolver=self._operation_handler_resolver(import_map),
             file_datastore_names=set(file_stores),
+            collections=collections,
         )
         if repo_errors:
             raise ConfigErrors(repo_errors)

@@ -2,7 +2,7 @@
 
 import shutil
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -142,3 +142,25 @@ def test_a_number_input_is_read_from_its_path_parameter(api):
     assert response.status_code == 200, response.text
     assert response.json()["inputs"] == {"size": 3}
     assert api.get("/api/sized/three").status_code == 422
+
+
+@pytest.mark.parametrize("operation", ["seed", "plant"])
+def test_documents_an_operation_inserts_get_the_collection_id(api, operation):
+    title = uuid4().hex
+    assert api.post(f"/api/tasks/{operation}/{title}").status_code == 200
+    [inserted] = api.get(f"/api/tasks/by-title/{title}").json()
+    assert UUID(inserted["id"]).version == 7
+    assert api.get(f"/api/tasks/{inserted['id']}").json()["title"] == title
+
+
+def test_an_absent_optional_field_is_left_out_of_the_record(api):
+    title = uuid4().hex
+    assert "rank" not in _create(api, "tasks", title=title)
+    [stored] = api.get(f"/api/tasks/by-title/{title}").json()
+    assert "rank" not in stored
+
+
+def test_a_route_to_another_controllers_service_binds_its_path_parameter(api):
+    title = uuid4().hex
+    _create(api, "tasks", title=title)
+    assert _titles(api.get(f"/api/titled/{title}")) == [title]

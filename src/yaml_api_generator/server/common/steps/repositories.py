@@ -13,7 +13,7 @@ from yaml_api_generator.runtime.operations import (
 )
 from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
-from ..utils.ids import generate_id as _generate_id
+from yaml_api_generator.runtime.ids import generate_id as _generate_id
 from . import NotFoundError, Step
 from .handlers import handler_request
 

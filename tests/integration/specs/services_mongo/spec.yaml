@@ -21,6 +21,7 @@ entities:
     fields:
       id: { type: id }
       title: { type: string, required: true }
+      rank: { type: number }
   note:
     fields:
       id: { type: id }
@@ -46,6 +47,13 @@ repositories:
           command: bulkWrite
           requests:
             - updateMany: { filter: { title: $old }, update: { $set: { title: $new } } }
+      seed:
+        query:
+          command: bulkWrite
+          requests:
+            - insertOne: { document: { title: $title } }
+      plant:
+        query: { command: insertOne, document: { title: $title } }
   notes:
     entity: note
     crud: [create, list]
@@ -58,6 +66,8 @@ services:
       byTitle: true
       notesByBody: true
       retitle: true
+      seed: true
+      plant: true
       countAll: true
       echo: { handler: hooks.echo }
   notes: { repository: notes }
@@ -79,6 +89,8 @@ controllers:
       byTitle: { method: GET, path: "/by-title/{title}" }
       notesByBody: false
       retitle: false
+      seed: false
+      plant: false
       countAll: false
       echo: { method: POST, path: "/echo/{id}" }
   sizes:
@@ -87,6 +99,7 @@ controllers:
   totals:
     routes:
       tasks: { service: countAll-tasks, method: GET, path: /tasks-total }
+      titled: { service: byTitle-tasks, method: GET, path: "/titled/{title}" }
     operations:
       tasks: { path: /totals/tasks }
   tasks:
@@ -97,6 +110,8 @@ controllers:
       byTitle: { method: GET, path: "/by-title/{title}" }
       notesByBody: { method: GET, path: "/notes/{text}" }
       retitle: { method: POST, path: "/retitle/{old}/{new}" }
+      seed: { method: POST, path: "/seed/{title}" }
+      plant: { method: POST, path: "/plant/{title}" }
       echo: { method: POST, path: "/echo/{id}" }
       countAll: { method: GET, path: /stats }
   notes:

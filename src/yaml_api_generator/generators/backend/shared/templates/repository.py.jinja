@@ -18,7 +18,8 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from {{ module_prefix }}conflicts import ConflictError
-from {{ module_prefix }}mongo_operations import run_mongo
+from {{ module_prefix }}ids import generate_id
+from {{ module_prefix }}mongo_operations import run_mongo, with_identity
 from {{ module_prefix }}operations import present, resolve
 from {{ module_prefix }}pagination import Page, Primitives, expand_bound
 {% if generated_base %}
@@ -88,6 +89,7 @@ def _translate_conflict(operation):
 class {{ class_name }}Repository{% if generated_base %}({{ generated_base.class_name }}){% endif %}:
     COLLECTION = "{{ collection_name }}"
     ID_FIELD = "{{ id_field }}"
+    ID_FORMAT = "{{ id_field_format }}"
 
     def __init__(self, db: AsyncDatabase) -> None:
         self._col = db[self.COLLECTION]
@@ -185,5 +187,6 @@ class {{ class_name }}Repository{% if generated_base %}({{ generated_base.class_
 
     @_translate_conflict
     async def run_operation(self, query: dict[str, Any], bindings: dict[str, Any]) -> Any:
-        return present(await run_mongo(self._col, resolve(query, bindings)), self.ID_FIELD)
+        identified = with_identity(query, self.ID_FIELD, self.ID_FORMAT)
+        return present(await run_mongo(self._col, resolve(identified, bindings), generate_id), self.ID_FIELD)
 {{ operation_methods(custom_operations) }}

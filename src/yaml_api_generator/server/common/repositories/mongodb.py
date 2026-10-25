@@ -7,6 +7,7 @@ from bson.errors import InvalidId
 from pymongo import AsyncMongoClient, ReturnDocument
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
+from yaml_api_generator.runtime.ids import generate_id
 from yaml_api_generator.runtime.mongo_operations import run_mongo
 from .base import BaseRepository, ConflictError
 from ..pagination import Page, Primitives, expand_bound
@@ -263,7 +264,7 @@ class MongoRepository(BaseRepository):
 
     async def run_operation(self, collection_name: str, query: dict[str, Any]) -> Any:
         with _as_conflict():
-            return await run_mongo(self.collection(collection_name), query)
+            return await run_mongo(self.collection(collection_name), query, generate_id)
 
     @staticmethod
     def _normalize_document(document: dict[str, Any] | None) -> dict[str, Any] | None:

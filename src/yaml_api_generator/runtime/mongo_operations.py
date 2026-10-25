@@ -1,7 +1,10 @@
 """Run a resolved MongoDB operation query against an async pymongo collection.
 
 ``bulkWrite`` requests use the shell form, e.g.
-``{"updateOne": {"filter": ..., "update": ..., "upsert": true}}``.
+``{"updateOne": {"filter": ..., "update": ..., "upsert": true}}``. A query's
+``identity`` names the ``field`` and ``format`` of the id each document it
+inserts gets from ``run_mongo``'s ``new_id``; a document keeps an id it already
+has.
 """
 
 from collections.abc import Awaitable, Callable
@@ -10,6 +13,7 @@ from typing import Any
 from pymongo import DeleteMany, DeleteOne, InsertOne, ReplaceOne, ReturnDocument, UpdateMany, UpdateOne
 
 Command = Callable[[Any, dict[str, Any]], Awaitable[Any]]
+Stamp = Callable[[dict[str, Any]], dict[str, Any]]
 
 _COMMANDS: dict[str, Command] = {}
 
@@ -23,9 +27,32 @@ _BULK_REQUESTS: dict[str, Callable[[dict[str, Any]], Any]] = {
 }
 
 
-async def run_mongo(collection: Any, query: dict[str, Any]) -> Any:
+_INSERTS: dict[str, Callable[[dict[str, Any], Stamp], dict[str, Any]]] = {
+    "insertOne": lambda query, stamp: {**query, "document": stamp(query.get("document") or {})},
+    "insertMany": lambda query, stamp: {**query, "documents": [*map(stamp, query.get("documents") or [])]},
+    "bulkWrite": lambda query, stamp: {**query, "requests": [
+        {kind: {**spec, "document": stamp(spec["document"])} if kind == "insertOne" else spec for kind, spec in request.items()}
+        for request in query["requests"]
+    ]},
+}
+
+
+def with_identity(query: dict[str, Any], id_field: str, id_format: str) -> dict[str, Any]:
+    """``query`` inserting documents with ids of this field and format, unless it names its own identity."""
+    return {"identity": {"field": id_field, "format": id_format}, **query}
+
+
+def _stamp(identity: dict[str, str] | None, new_id: Callable[[str], str]) -> Stamp:
+    if identity is None or identity["format"] == "natural":
+        return dict
+    return lambda document: {identity["field"]: new_id(identity["format"]), **document}
+
+
+async def run_mongo(collection: Any, query: dict[str, Any], new_id: Callable[[str], str]) -> Any:
     target = collection.database[query["collection"]] if query.get("collection") else collection
-    return await _COMMANDS[query["command"]](target, query)
+    insert = _INSERTS.get(query["command"])
+    stamped = insert(query, _stamp(query.get("identity"), new_id)) if insert else query
+    return await _COMMANDS[query["command"]](target, stamped)
 
 
 def _command(*names: str) -> Callable[[Command], Command]:

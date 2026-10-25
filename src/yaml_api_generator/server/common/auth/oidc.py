@@ -14,7 +14,7 @@ from yaml_api_generator.runtime.dpop import DPoPProofFactory, request_with_dpop
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding, IRProviderRelation
 from ..repositories import BaseRepository, RepositoryRegistry
 from ..server_context import RuntimeCollectionDescriptor
-from ..utils.ids import generate_id
+from yaml_api_generator.runtime.ids import generate_id
 from ..utils.field_access import resolve_claim_path
 from ..utils.ttl_cache import TTLCache
 from .login_codes import login_codes

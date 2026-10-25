@@ -15,7 +15,7 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 _RUNTIME_MODULES = frozenset(
     {
         "dpop", "pagination", "fields", "payloads", "files", "multipart", "file_requests", "filesystem_store",
-        "s3_store", "sql_types", "operations", "mongo_operations", "sql_operations", "handler_requests",
+        "s3_store", "sql_types", "operations", "ids", "mongo_operations", "sql_operations", "handler_requests",
     }
 )
 
@@ -31,7 +31,7 @@ def write_runtime_modules(directory: Path, names: Iterable[str]) -> None:
         (directory / f"{name}.py").write_text(runtime_module_source(name))
 
 
-MONGO_RUNTIME_MODULES = ("pagination", "operations", "mongo_operations", "handler_requests")
+MONGO_RUNTIME_MODULES = ("pagination", "operations", "ids", "mongo_operations", "handler_requests")
 
 
 def write_environment_files(

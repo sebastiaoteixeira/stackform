@@ -3,6 +3,7 @@ from collections.abc import Iterator, Mapping
 from yaml_api_generator.ir import IRDocumentBinding
 from .auth.session_tokens import SessionTokens
 from yaml_api_generator.runtime.files import RecordFiles
+from yaml_api_generator.runtime.mongo_operations import with_identity
 from .server_context import RuntimeContext, RuntimeFileRouteDescriptor, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
@@ -295,4 +296,6 @@ class PipelineBuilder:
             return RepositoryDeleteStep(collection_name, id_field, self._locator(route))
 
         query = self._ctx.operations[collection_name][operation].query
-        return RepositoryOperationStep(collection_name, query, id_field)
+        return RepositoryOperationStep(
+            collection_name, with_identity(query, id_field, collection.id_format), id_field
+        )
