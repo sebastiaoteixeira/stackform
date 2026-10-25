@@ -63,6 +63,7 @@ entities:
       id: { type: id }
       body: { type: string, required: true }
       entry: { type: ref, ref: ledger }
+      signer: { type: ref, ref: member }
 
 repositories:
   members: { entity: member }
@@ -141,6 +142,7 @@ ui:
       fields:
         text: { from: note.body }
         code: { from: note.entry.code }
+        signer: { from: note.signer.handle }
   views:
     ledger: { path: /ledger, component: crud, props: { collection: ledger } }
     members: { path: /members, component: crud, props: { collection: member } }
@@ -168,19 +170,21 @@ const [top] = await listRecords('ledger');
 report.updated = Number((await send('ledger', 'update', { id: top.id, body: { rank: 99 } })).rank);
 report.fetched = Number((await send('ledger', 'get', { id: top.id })).rank);
 report.anonymousDelete = await send('ledger', 'delete', { id: top.id }).catch((error) => error.message);
-await send('member', 'register', { body: entered(SIGNUP_FIELDS.member, { handle: 'ana', age: '', password: 'correct-horse' }) });
+const ana = await send('member', 'register', { body: entered(SIGNUP_FIELDS.member, { handle: 'ana', age: '', password: 'correct-horse' }) });
 const session = await send('member', 'login', { body: { handle: 'ana', password: 'correct-horse' } });
 report.token = typeof session.token;
+const signedIn = { ...json, Authorization: `Bearer ${session.token}` };
 const newMember = { ...ENTITY_FIELDS.member, ...CREDENTIAL_FIELDS.member };
 const created = await send('member', 'create', {
-  headers: { ...json, Authorization: `Bearer ${session.token}` },
+  headers: signedIn,
   body: entered(newMember, { handle: 'bo', age: '7', password: 'battery-staple' }),
 });
 report.created = [created.age, created.active];
 report.createdSignsIn = typeof (await send('member', 'login', { body: { handle: 'bo', password: 'battery-staple' } })).token;
-const note = await send('note', 'create', { body: { body: 'hello', entry: top.id } });
-const projected = ({ id, text, code }) => [id === note.id, text, code];
+const note = await send('note', 'create', { body: { body: 'hello', entry: top.id, signer: ana.id } });
+const projected = ({ id, text, code, signer }) => [id === note.id, text, code, signer ?? null];
 report.projected = (await listCollection('notes')).map(projected);
+report.signed = (await listCollection('notes', signedIn)).map(projected);
 report.read = projected(await readCollection('notes', note.id));
 console.log(JSON.stringify(report));
 """
@@ -373,6 +377,7 @@ def test_generated_data_layer_drives_every_server(project, tmp_path, server):
         "token": "string",
         "created": [7, True],
         "createdSignsIn": "string",
-        "projected": [[True, "hello", "c6"]],
-        "read": [True, "hello", "c6"],
+        "projected": [[True, "hello", "c6", None]],
+        "signed": [[True, "hello", "c6", "ana"]],
+        "read": [True, "hello", "c6", None],
     }

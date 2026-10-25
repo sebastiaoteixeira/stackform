@@ -126,19 +126,24 @@ export function displayValue(value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
-type Reader = (entity: string, id: Id) => Promise<Row>;
+type Reader = (entity: string, id: Id) => Promise<Row | null>;
 
+const DENIED = new Set([401, 403]);
+
+/** Reads each referenced record once; one the caller may not read is null. */
 function reader(headers: HeadersInit): Reader {
-  const read = new Map<string, Promise<Row>>();
+  const read = new Map<string, Promise<Row | null>>();
   return (entity, id) => {
     const key = `${entity}/${id}`;
-    if (!read.has(key)) read.set(key, callOperation(entity, 'get', { id, headers }).then(readJson));
+    if (!read.has(key)) {
+      read.set(key, callOperation(entity, 'get', { id, headers }).then((res) => (DENIED.has(res.status) ? null : readJson(res))));
+    }
     return read.get(key)!;
   };
 }
 
-async function resolve(entity: string, row: Row, [head, ...rest]: string[], read: Reader): Promise<unknown> {
-  const value = row[head];
+async function resolve(entity: string, row: Row | null, [head, ...rest]: string[], read: Reader): Promise<unknown> {
+  const value = row?.[head];
   if (!rest.length || value === null || value === undefined) return value;
   const target = REFS[entity][head];
   return resolve(target, await read(target, value as Id), rest, read);
@@ -152,7 +157,7 @@ async function project(collection: string, row: Row, read: Reader): Promise<Row>
   return { [key]: row[key], ...Object.fromEntries(values) };
 }
 
-/** Every record of a UI collection, projected through its field paths. */
+/** Every record of a UI collection, projected through its field paths; a path through a record the caller may not read has no value. */
 export async function listCollection<T = Row>(collection: string, headers: HeadersInit = {}): Promise<T[]> {
   const read = reader(headers);
   const rows = await listRecords<Row>(COLLECTIONS[collection].entity, headers);
@@ -161,6 +166,6 @@ export async function listCollection<T = Row>(collection: string, headers: Heade
 
 /** One record of a UI collection, projected through its field paths. */
 export async function readCollection<T = Row>(collection: string, id: Id, headers: HeadersInit = {}): Promise<T> {
-  const read = reader(headers);
-  return project(collection, await read(COLLECTIONS[collection].entity, id), read) as Promise<T>;
+  const { entity } = COLLECTIONS[collection];
+  return project(collection, await callOperation(entity, 'get', { id, headers }).then(readJson), reader(headers)) as Promise<T>;
 }
