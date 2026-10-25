@@ -23,6 +23,7 @@ entities:
     fields:
       id: { type: id }
       title: { type: string, required: true }
+      score: { type: number }
   note:
     fields:
       id: { type: id }
@@ -42,6 +43,10 @@ repositories:
       byTitle:
         query:
           sql: "SELECT title FROM tasks WHERE title = :title"
+          params: { title: $title }
+      scores:
+        query:
+          sql: "SELECT score FROM tasks WHERE title = :title"
           params: { title: $title }
   notes:
     entity: note
@@ -68,6 +73,7 @@ services:
     extends: auditable
     operations:
       byTitle: true
+      scores: true
   notes: { repository: notes }
   titles:
     repository: titles
@@ -89,6 +95,7 @@ controllers:
       countAll: { method: GET, path: /stats/count }
       echo: { method: POST, path: "/echo/{id}", access: "*" }
       byTitle: { method: GET, path: "/by-title/{title}" }
+      scores: { method: GET, path: "/scores/{title}" }
   notes:
     service: notes
     base_path: /notes
