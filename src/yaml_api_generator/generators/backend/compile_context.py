@@ -23,6 +23,7 @@ from ...ir.when import WhenExpr
 from ...utils.strings import to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
+SAML_REQUIREMENTS = ("python3-saml", "python-multipart")
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,10 @@ class ProviderBindingDescriptor:
     @property
     def relations_data(self) -> list[dict[str, Any]]:
         return [r.as_dict() for r in self.relations]
+
+    def related_collections(self, owner: str) -> list[str]:
+        """Collections the relations point at, apart from the ``owner`` identity collection."""
+        return list(dict.fromkeys(r.collection for r in self.relations if r.collection != owner))
 
 
 @dataclass(frozen=True)
@@ -365,13 +370,25 @@ class AuthConfig:
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
     @property
+    def has_external_login(self) -> bool:
+        """An app-trust OIDC or SAML provider: the app runs its login flow and issues one-time codes."""
+        return self.has_app_oidc_auth or self.has_saml_auth
+
+    @property
     def uses_jwt(self) -> bool:
         """JWT helpers and JWT_SECRET are needed whenever the app mints its own tokens.
 
-        Password login and app-trust OIDC/SAML callbacks issue bearer JWTs.
+        Password login and external login callbacks issue bearer JWTs.
         Pure idp-trust providers never mint a session token.
         """
-        return self.has_password_auth or self.has_app_oidc_auth or self.has_saml_auth
+        return self.has_password_auth or self.has_external_login
+
+    @property
+    def requirements(self) -> tuple[str, ...]:
+        return (
+            *(("httpx",) if self.has_oidc_auth or self.has_saml_auth else ()),
+            *(SAML_REQUIREMENTS if self.has_saml_auth else ()),
+        )
 
 
 @dataclass(frozen=True)

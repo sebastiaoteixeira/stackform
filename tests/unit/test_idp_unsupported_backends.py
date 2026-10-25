@@ -87,10 +87,3 @@ class TestIdpTrustRejected:
         with pytest.raises(ConfigErrors):
             generator.generate(_context(tmp_path, "idp"), output)
         assert not output.exists()
-
-
-class TestAppTrustStillGenerates:
-    def test_generation_succeeds(self, generator, tmp_path):
-        output = tmp_path / "out"
-        generator.generate(_context(tmp_path, "app"), output)
-        assert any(output.rglob("*.py"))

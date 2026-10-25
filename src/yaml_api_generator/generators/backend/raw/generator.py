@@ -5,6 +5,7 @@ from jinja2 import Environment
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
+from yaml_api_generator.parsers.transformers.provider_validation import reject_external_login
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
@@ -17,10 +18,8 @@ from ..utils import (
 )
 from ..validation import (
     reject_cookie_delivery,
-    reject_dpop,
     reject_file_fields,
     reject_idp_trust,
-    reject_pkce,
     reject_session_refresh,
     reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
@@ -43,11 +42,10 @@ class RawASGIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "raw")
         reject_cookie_delivery(context, "raw")
-        reject_dpop(context, "raw")
+        reject_external_login(context.auth.providers, "raw")
         reject_file_fields(context, "raw")
         reject_idp_trust(context, "raw")
         reject_session_refresh(context, "raw")
-        reject_pkce(context, "raw")
         reject_unsigned_session_algorithm(context)
         reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)

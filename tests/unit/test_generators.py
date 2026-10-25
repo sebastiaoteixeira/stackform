@@ -323,10 +323,11 @@ def test_oidc_callback_redirects_with_code_not_token(tmp_path):
     gen = FastAPIGenerator()
     gen.generate(ctx, tmp_path)
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    exchange_src = (tmp_path / "routes" / "external_login.py").read_text()
     assert "?code={code}" in oidc_src
     assert "?token=" not in oidc_src
-    assert '@router.post("/auth/exchange")' in oidc_src
-    assert "redeem_login_code(code)" in oidc_src
+    assert '@router.post("/auth/exchange")' in exchange_src
+    assert "redeem_login_code(code)" in exchange_src
     assert 'issue_login_code(str(subject), "users", "mongo")' in oidc_src
 
 

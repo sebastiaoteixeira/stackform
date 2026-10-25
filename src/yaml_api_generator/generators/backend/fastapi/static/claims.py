@@ -4,6 +4,8 @@ from typing import Any
 def resolve_claim_path(claims: dict[str, Any], path: str) -> Any | None:
     if not path or not path.strip():
         return None
+    if path in claims:
+        return claims[path]
 
     current: Any = claims
     for segment in path.split("."):

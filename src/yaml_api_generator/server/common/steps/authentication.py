@@ -2,7 +2,7 @@ import base64
 from typing import Any
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
-from ..auth import idp, oidc, verify_password
+from ..auth import idp, provisioning, verify_password
 from ..auth.jwt import SessionTokens
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
 from ..request_context import RequestContext
@@ -74,7 +74,7 @@ async def _resolve_idp_principal(
                 return _build_service_principal(claims, identity, binding)
 
             collection = collections[collection_name]
-            record = await oidc.resolve_record(
+            record = await provisioning.resolve_record(
                 claims, binding, collection, registry.for_collection(collection_name),
                 is_idp=True,
                 collections=collections,
@@ -147,7 +147,7 @@ async def _resolve_jwt_principal(
         return None
 
     identity = identity_collections.get(collection_name)
-    if identity is None or not identity.has_password:
+    if identity is None:
         return None
 
     id_field = identity_id_fields.get(collection_name)

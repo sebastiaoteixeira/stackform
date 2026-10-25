@@ -298,6 +298,12 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
             auth_imports.append("from .session import router as session_router")
 
+        if context.auth.has_external_login:
+            (routes_dir / "external_login.py").write_text(
+                env.get_template("external_login_routes.py.jinja").render(auth=context.auth, ctx=context)
+            )
+            auth_imports.append("from .external_login import router as external_login_router")
+
         if context.auth.has_app_oidc_auth:
             (routes_dir / "oidc_routes.py").write_text(
                 env.get_template("oidc_routes.py.jinja").render(
@@ -309,7 +315,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.auth.has_saml_auth:
             (routes_dir / "saml_routes.py").write_text(
                 env.get_template("saml_routes.py.jinja").render(
-                    auth=context.auth, ctx=context
+                    auth=context.auth, base_prefix=base_prefix, ctx=context
                 )
             )
             auth_imports.append("from .saml_routes import router as saml_router")
@@ -428,7 +434,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "postgres.py").write_text(
                 env.get_template("postgres.py.jinja").render(ctx=context)
             )
-        if context.auth.has_app_oidc_auth:
+        if context.auth.has_external_login:
             (deps_dir / "login_codes.py").write_text(
                 env.get_template("login_codes.py.jinja").render(auth=context.auth)
             )
@@ -436,10 +442,12 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "idp_auth.py").write_text(
                 (_STATIC_DIR / "idp_auth.py").read_text()
             )
-        if context.auth.has_oidc_auth:
+        if context.auth.has_oidc_auth or context.auth.has_saml_auth:
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
+        if context.auth.has_saml_auth:
+            (deps_dir / "saml.py").write_text(runtime_module_source("saml"))
         (deps_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )

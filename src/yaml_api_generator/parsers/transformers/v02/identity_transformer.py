@@ -69,11 +69,11 @@ class IdentityTransformer:
                 raise ConfigErrors(roles_errors)
 
             via_bindings = [
-                IRProviderBinding(provider=entry, identifier=identifier or "")
+                IRProviderBinding(provider=entry, identifier=identifier)
                 if isinstance(entry, str)
                 else IRProviderBinding(
                     provider=entry["provider"],
-                    identifier=entry.get("identifier", identifier or ""),
+                    identifier=entry.get("identifier", identifier),
                     claim_mapping=entry.get("claim_mapping", {}),
                     auto_provision=entry.get("auto_provision", True),
                     relations={
@@ -85,7 +85,6 @@ class IdentityTransformer:
                     },
                 )
                 for entry in via
-                if isinstance(entry, dict) or identifier
             ]
             bindings = tuple(via_bindings)
             identity_collections[repo_name] = IRIdentityCollection(

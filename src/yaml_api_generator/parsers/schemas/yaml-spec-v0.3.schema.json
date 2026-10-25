@@ -393,12 +393,14 @@
       "then": {
         "properties": {
           "pkce": false,
-          "dpop": false
+          "dpop": false,
+          "client_secret": false
         }
       },
       "else": {
         "properties": {
-          "issuer": false
+          "issuer": false,
+          "audiences": false
         }
       }
     },

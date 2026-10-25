@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from yaml_api_generator.parsers.transformers.file_validation import reject_file_fields
+from yaml_api_generator.parsers.transformers.provider_validation import reject_external_login
 
 from ..common.context_builder import build_runtime_context
 from ..common.loader import create_repositories, ensure_spec_dir_importable
@@ -26,6 +27,7 @@ def build_raw_app(yaml_file: str, schema_file: str | Path | None = None) -> ASGI
         {collection.entity_name: collection.fields for collection in ir.collections.values()},
         "raw",
     )
+    reject_external_login(ir.providers, "raw")
     install_vendored_packages(ir.vendored_imports)
     ctx = build_runtime_context(ir)
 

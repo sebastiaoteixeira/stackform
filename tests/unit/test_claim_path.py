@@ -1,4 +1,5 @@
 import pytest
+from yaml_api_generator.generators.backend.fastapi.static import claims as generated_claims
 from yaml_api_generator.server.common.utils.field_access import resolve_claim_path
 
 
@@ -49,3 +50,11 @@ def test_blank_path_returns_none() -> None:
 def test_path_resolving_to_list_returns_list() -> None:
     result = resolve_claim_path(CLAIMS, "realm_access.roles")
     assert result == ["admin", "user"]
+
+
+@pytest.mark.parametrize(
+    "resolve", [resolve_claim_path, generated_claims.resolve_claim_path], ids=["dev-server", "generated"]
+)
+def test_exact_key_with_dots_wins_over_nested_walk(resolve) -> None:
+    assert resolve({"urn:oid:2.5.4.10": "ACME"}, "urn:oid:2.5.4.10") == "ACME"
+    assert resolve({"org.code": "flat", "org": {"code": "nested"}}, "org.code") == "flat"

@@ -31,6 +31,8 @@ BASE_SPECS = {
 
 OIDC_V01 = {"type": "oidc", "client_id": "id", "client_secret": "secret"}
 SAML = {"type": "saml", "idp_metadata_url": "https://idp/metadata", "sp_entity_id": "sp"}
+OIDC = {"type": "oidc", "client_id": "id", "discovery_url": "https://idp/.well-known/openid-configuration"}
+OIDC_IDP = {**OIDC, "trust": "idp", "audiences": ["id"]}
 ACCESS_RULE = ("controllers", "posts", "access", 0)
 TITLE = ("fields", "title")
 
@@ -62,6 +64,22 @@ REJECTED = {
     "saml-issuer": (("0.2", "0.3"), ("providers", "corp"), {**SAML, "issuer": "x"}, "'issuer' was unexpected"),
     "saml-audience": (("0.2", "0.3"), ("providers", "corp"), {**SAML, "audience": "x"}, "'audience' was unexpected"),
     "saml-trust": (("0.2", "0.3"), ("providers", "corp"), {**SAML, "trust": "idp"}, "'trust' was unexpected"),
+    "oidc-idp-client-secret": (
+        ("0.2", "0.3"), ("providers", "corp"), {**OIDC_IDP, "client_secret": "x"}, "False schema does not allow"
+    ),
+    "oidc-app-audiences": (
+        ("0.2", "0.3"), ("providers", "corp"), {**OIDC, "audiences": ["x"]}, "False schema does not allow"
+    ),
+    "oidc-app-issuer": (("0.2", "0.3"), ("providers", "corp"), {**OIDC, "issuer": "x"}, "False schema does not allow"),
+    "via-provider-without-identifier": (
+        ("0.2", "0.3"), ("entities", "post", "auth"), {"via": ["corp"]}, "'corp' is not of type 'object'"
+    ),
+    "via-binding-without-identifier": (
+        ("0.2", "0.3"),
+        ("entities", "post", "auth"),
+        {"via": [{"provider": "corp"}]},
+        "'identifier' is a required property",
+    ),
     "api-name": (("0.2", "0.3"), ("api", "name"), "blog", "'name' was unexpected"),
     "root-input": (("0.3",), ("input",), ["orgId"], "'input' was unexpected"),
     "auth-bindings": (
@@ -137,3 +155,15 @@ def test_invalid_examples_report_schema_errors_instead_of_crashing(name):
     with pytest.raises(ConfigErrors) as exc_info:
         load_and_generate_ir(str(EXAMPLES_INVALID / name))
     assert {error.code for error in exc_info.value.errors} == {"SCHEMA_VALIDATION_ERROR"}
+
+
+@pytest.mark.parametrize("version", ["0.2", "0.3"])
+@pytest.mark.parametrize("via", [["corp"], [{"provider": "corp"}]], ids=["string", "binding"])
+def test_via_inherits_the_entity_identifier(tmp_path, version, via):
+    spec = copy.deepcopy(BASE_SPECS[version])
+    spec["providers"] = {"corp": OIDC}
+    spec["entities"]["post"] |= {"type": "auth", "auth": {"identifier": "title", "via": via}}
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump(spec))
+    (binding,) = load_and_generate_ir(str(path)).ir.identityCollections["posts"].bindings
+    assert (binding.provider, binding.identifier) == ("corp", "title")

@@ -317,6 +317,26 @@
         "roles": {
           "type": "string"
         }
+      },
+      "if": {
+        "not": {
+          "required": [
+            "identifier"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "via": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "identifier"
+              ]
+            }
+          }
+        }
       }
     },
     "RolesConfig": {
@@ -479,9 +499,15 @@
           "trust"
         ]
       },
+      "then": {
+        "properties": {
+          "client_secret": false
+        }
+      },
       "else": {
         "properties": {
-          "issuer": false
+          "issuer": false,
+          "audiences": false
         }
       }
     },

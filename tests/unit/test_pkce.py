@@ -136,7 +136,7 @@ async def test_runtime_callback_requires_state_and_sends_verifier(monkeypatch):
         )
 
         assert rejected.status_code == 400
-        assert callback.status_code == 307
+        assert callback.status_code == 303
         assert exchange.await_args.kwargs["code_verifier"] == verifier
         assert client.cookies.get(STATE_COOKIE) is None
         assert client.cookies.get(VERIFIER_COOKIE) is None

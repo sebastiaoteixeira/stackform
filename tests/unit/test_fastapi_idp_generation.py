@@ -223,8 +223,9 @@ class TestIdpCallbackGeneration:
         ctx = _ctx_from_fixture("auth-oidc.yaml")
         FastAPIGenerator().generate(ctx, tmp_path)
         src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+        exchange = (tmp_path / "routes" / "external_login.py").read_text()
         assert "issue_login_code" in src
-        assert "issue_session" in src
+        assert "issue_session" in exchange
         assert "issue_idp_code" not in src
 
     def test_app_login_codes_has_no_issue_idp(self, tmp_path):

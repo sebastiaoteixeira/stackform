@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.ir.api import IROIDCProvider
-from yaml_api_generator.server.common.auth import oidc
+from yaml_api_generator.server.common.auth import oidc, provisioning
 from yaml_api_generator.server.common.auth.login_codes import LoginCodeStore
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.server_context import (
@@ -161,10 +161,8 @@ async def test_app_callback_does_not_expose_idp_token(monkeypatch):
 
     from yaml_api_generator.server.common.auth import login_codes as lc_module
 
-    result = await oidc.handle_callback(
-        provider, binding, collection, repo=fake_repo,
-        code="auth-code", callback_url="http://localhost/cb",
-    )
+    claims = await oidc.fetch_claims(provider, code="auth-code", callback_url="http://localhost/cb")
+    result = await provisioning.issue_login_code(claims, binding, collection, fake_repo, {}, None)
 
     redeemed = lc_module.login_codes.redeem(result)
     assert redeemed is not None

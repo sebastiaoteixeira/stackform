@@ -1,0 +1,67 @@
+{#- Shared by every provider whose login flow the app runs: map claims to a local record,
+    resolve its relations and redirect to the frontend with a one-time login code. -#}
+
+{#- ``bound`` holds the (identity collection, binding, provider) triples a routes module serves. -#}
+{% macro repository_imports(bound) -%}
+{% set names = [] %}
+{% for col, binding, provider in bound %}
+{% set _ = names.extend([col.name] + binding.related_collections(col.name)) %}
+{% endfor %}
+{% for name in names | unique %}
+from dependencies.repositories import get_{{ name }}_repository
+{% endfor %}
+{%- endmacro %}
+
+{% macro repository_params(col, binding) -%}
+repo=Depends(get_{{ col.name }}_repository){% for target in binding.related_collections(col.name) %}, {{ target }}_repo=Depends(get_{{ target }}_repository){% endfor %}
+{%- endmacro %}
+
+{% macro sign_in(col, binding, sym) %}
+    claim_mapping: dict[str, str] = {{ binding.claim_mapping | tojson }}
+    user_fields: dict[str, Any] = {
+        local_field: resolved
+        for local_field, claim in claim_mapping.items()
+        if (resolved := resolve_claim_path(claims, claim)) is not None
+    }
+    if "{{ binding.identifier }}" not in user_fields:
+        user_fields["{{ binding.identifier }}"] = claims.get("email") or claims.get("login") or claims.get("sub")
+
+{% if binding.relations %}
+    _repo_by_collection: dict[str, Any] = {"{{ col.name }}": repo{% for target in binding.related_collections(col.name) %}, "{{ target }}": {{ target }}_repo{% endfor %}}
+
+    async def _lookup_{{ sym }}(coll: str, query: dict) -> dict | None:
+        target_repo = _repo_by_collection[coll]
+        if len(query) == 1:
+            field, value = next(iter(query.items()))
+            return await target_repo.find_by(field, value)
+        records = await target_repo.list()
+        return next((r for r in records if all(r.get(f) == v for f, v in query.items())), None)
+
+    _fk_fields = await resolve_relations(claims, {{ binding.relations_data | tojson }}, _lookup_{{ sym }})
+{% else %}
+    _fk_fields: dict[str, Any] = {}
+{% endif %}
+
+{% if binding.auto_provision %}
+    record = await repo.upsert_by("{{ binding.identifier }}", {**user_fields, **_fk_fields})
+    subject = record.get("{{ col.id_field }}")
+{% else %}
+    existing = await repo.find_by("{{ binding.identifier }}", user_fields.get("{{ binding.identifier }}"))
+    if existing is None:
+        raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+{% if binding.relations %}
+    if _fk_fields:
+        await repo.update(existing.get("{{ col.id_field }}"), _fk_fields)
+{% endif %}
+    subject = existing.get("{{ col.id_field }}")
+{% endif %}
+
+    code = await issue_login_code(str(subject), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")
+    # 303 so the browser follows a POSTed SAML assertion with a GET
+    response = RedirectResponse(url=f"{_frontend_url(request)}/auth/callback?code={code}", status_code=303)
+{%- endmacro %}
+
+{% macro frontend_url() %}
+def _frontend_url(request: Request) -> str:
+    return settings.FRONTEND_URL or str(request.base_url).rstrip("/")
+{% endmacro %}

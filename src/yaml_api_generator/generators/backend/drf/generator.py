@@ -3,6 +3,7 @@ from pathlib import Path
 from jinja2 import Environment
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.parsers.transformers.provider_validation import reject_external_login
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
@@ -14,10 +15,8 @@ from ..utils import (
 )
 from ..validation import (
     reject_cookie_delivery,
-    reject_dpop,
     reject_file_fields,
     reject_idp_trust,
-    reject_pkce,
     reject_session_refresh,
     reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
@@ -52,11 +51,10 @@ class DRFGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "drf")
         reject_cookie_delivery(context, "drf")
-        reject_dpop(context, "drf")
+        reject_external_login(context.auth.providers, "drf")
         reject_file_fields(context, "drf")
         reject_idp_trust(context, "drf")
         reject_session_refresh(context, "drf")
-        reject_pkce(context, "drf")
         reject_unsigned_session_algorithm(context)
         reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)

@@ -546,9 +546,10 @@ def test_binding_relation_unknown_collection_raises() -> None:
             "user": {
                 "type": "auth",
                 "auth": {
-                    "bindings": [
+                    "via": [
                         {
                             "provider": "keycloak",
+                            "identifier": "email",
                             "relations": {
                                 "organizationId": {
                                     "collection": "totally_unknown_collection",
@@ -568,7 +569,10 @@ def test_binding_relation_unknown_collection_raises() -> None:
         },
     }
     errors = validate_spec_bindings(spec)
-    assert any(e.code == "BINDING_RELATION_COLLECTION_NOT_FOUND" for e in errors)
+    assert [(e.code, e.path) for e in errors] == [(
+        "BINDING_RELATION_COLLECTION_NOT_FOUND",
+        "entities.user.auth.via[0].relations.organizationId.collection",
+    )]
 
 
 def test_binding_relation_known_collection_parses_cleanly() -> None:
@@ -582,9 +586,10 @@ def test_binding_relation_known_collection_parses_cleanly() -> None:
             "user": {
                 "type": "auth",
                 "auth": {
-                    "bindings": [
+                    "via": [
                         {
                             "provider": "keycloak",
+                            "identifier": "email",
                             "relations": {
                                 "organizationId": {
                                     "collection": "organizations",
