@@ -65,10 +65,13 @@ export function {{ entity.name | pascal_case }}StackedForm({
         )}
 
         <form id="stacked-form" onSubmit={handleSubmit} style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: '14px' {{ "}}" }}>
-          {% for field in entity.fields.values() %}
-          {% if field.name != entity.pk_field and not field.readonly %}
+          {% for field in entity.writable_fields %}
           {{ field_input(field) }}
-          {% endif %}
+          {% endfor %}
+          {% for field in entity.credential_fields %}
+          {mode === 'create' && (
+          {{ field_input(field) }}
+          )}
           {% endfor %}
         </form>
       </div>

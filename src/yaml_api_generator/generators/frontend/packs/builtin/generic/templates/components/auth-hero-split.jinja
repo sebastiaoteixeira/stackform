@@ -1,36 +1,20 @@
+{% from 'macros/field_input.jinja' import field_input %}
 {% set identifier = entity.auth_identifier %}
-{% set register_fields = entity.signup_fields %}
+{% set login_fields = [identifier] + (entity.credential_fields | map(attribute='name') | list) %}
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ExternalProviders } from '../__generated__/App';
+import { SIGNUP_FIELDS, formValues, payload } from '../__generated__/fields';
 import { callOperation } from '../__generated__/records';
 
-{% macro input_type(field) %}{% if field.type == 'number' %}number{% elif field.type == 'datetime' %}datetime-local{% elif field.type == 'boolean' %}checkbox{% elif field.name == identifier %}{{ identifier }}{% else %}text{% endif %}{% endmacro %}
-
-{% macro field_input(field) -%}
-          <div style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 5 {{ "}}" }}>
-            <label style={{ "{{" }} display: 'flex', alignItems: 'center', gap: 4, color: 'var(--wf-ink-dim)', fontSize: 13 {{ "}}" }}>
-              {{ field.name | replace("_", " ") | title }}{% if field.required %} <span style={{ "{{" }} color: 'var(--wf-danger)' {{ "}}" }}>*</span>{% endif %}
-            </label>
-            <input
-              name="{{ field.name }}"
-              type="{{ input_type(field) | trim }}"
-              value={formData.{{ field.name }}}
-              onChange={e => setFormData({ ...formData, {{ field.name }}: e.target.value })}
-              {{ 'required' if field.required else '' }}
-              style={{ "{{" }} border: '1.5px solid var(--wf-line-strong)', borderRadius: 5, background: 'var(--wf-surface)', padding: '0 12px', minHeight: 36, fontSize: 14, color: 'var(--wf-ink)', outline: 'none' {{ "}}" }}
-            />
-          </div>
-{%- endmacro %}
+const FIELDS = SIGNUP_FIELDS[{{ entity.name | tojson }}];
 
 export default function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [error, setError] = useState('');
-  const [formData, setFormData] = useState({
-    {% for f in register_fields %}{{ f.name }}: '',
-    {% endfor %}password: '',
-    confirmPassword: '',
-  });
+  const [values, setValues] = useState(() => formValues(FIELDS));
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const setValue = (name: string, value: unknown) => setValues(prev => ({ ...prev, [name]: value }));
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -39,14 +23,13 @@ export default function Login() {
     setError('');
     try {
       if (mode === 'register') {
-        if (formData.password !== formData.confirmPassword) {
+        if (values.password !== confirmPassword) {
           setError('Passwords do not match');
           return;
         }
-        const { confirmPassword, ...submitData } = formData;
         const res = await callOperation('{{ entity.name }}', 'register', {
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(submitData),
+          body: JSON.stringify(payload(FIELDS, values)),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -55,7 +38,7 @@ export default function Login() {
         setMode('login');
         return;
       }
-      await login(formData.{{ identifier }}, formData.password);
+      await login(String(values[{{ identifier | tojson }}]), String(values.password));
       navigate('/');
     } catch (err: any) {
       setError(err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
@@ -101,29 +84,11 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 12 {{ "}}" }}>
-          {/* Login fields (always visible) */}
-{{ field_input(register_fields[0]) }}
-
-          {/* Register-only fields */}
-          {% for field in register_fields if field.name != identifier %}
-          {mode === 'register' && (
-{{ field_input(field) }}
-          )}
-          {% endfor %}
-
-          <div style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 5 {{ "}}" }}>
-            <label style={{ "{{" }} display: 'flex', alignItems: 'center', gap: 4, color: 'var(--wf-ink-dim)', fontSize: 13 {{ "}}" }}>
-              Password <span style={{ "{{" }} color: 'var(--wf-danger)' {{ "}}" }}>*</span>
-            </label>
-            <input
-              name="password"
-              type="password"
-              value={formData.password}
-              onChange={e => setFormData({ ...formData, password: e.target.value })}
-              required
-              style={{ "{{" }} border: '1.5px solid var(--wf-line-strong)', borderRadius: 5, background: 'var(--wf-surface)', padding: '0 12px', minHeight: 36, fontSize: 14, color: 'var(--wf-ink)', outline: 'none' {{ "}}" }}
-            />
-          </div>
+{% for field in entity.signup_fields %}
+          {% if field.name not in login_fields %}{mode === 'register' && ({% endif %}
+          {{ field_input(field, id_prefix='login-') }}
+          {% if field.name not in login_fields %})}{% endif %}
+{% endfor %}
 
           {mode === 'register' && (
           <div style={{ "{{" }} display: 'flex', flexDirection: 'column', gap: 5 {{ "}}" }}>
@@ -133,8 +98,8 @@ export default function Login() {
             <input
               name="confirmPassword"
               type="password"
-              value={formData.confirmPassword}
-              onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
               required
               style={{ "{{" }} border: '1.5px solid var(--wf-line-strong)', borderRadius: 5, background: 'var(--wf-surface)', padding: '0 12px', minHeight: 36, fontSize: 14, color: 'var(--wf-ink)', outline: 'none' {{ "}}" }}
             />

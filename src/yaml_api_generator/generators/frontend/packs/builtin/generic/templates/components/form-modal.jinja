@@ -55,10 +55,13 @@ export function {{ entity.name | pascal_case }}ModalForm({
 
         {/* Modal body */}
         <form id="modal-form" onSubmit={handleSubmit} className="space-y-4">
-          {% for field in entity.fields.values() %}
-          {% if field.name != entity.pk_field and not field.readonly %}
+          {% for field in entity.writable_fields %}
           {{ field_input(field) }}
-          {% endif %}
+          {% endfor %}
+          {% for field in entity.credential_fields %}
+          {mode === 'create' && (
+          {{ field_input(field) }}
+          )}
           {% endfor %}
         </form>
 

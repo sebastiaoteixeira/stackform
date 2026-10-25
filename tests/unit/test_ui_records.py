@@ -45,6 +45,8 @@ entities:
     fields:
       id: { type: id }
       handle: { type: string, required: true, unique: true }
+      age: { type: number }
+      active: { type: boolean, default: true }
   ledger:
     fields: &rows
       id: { type: id }
@@ -141,10 +143,12 @@ ui:
         code: { from: note.entry.code }
   views:
     ledger: { path: /ledger, component: crud, props: { collection: ledger } }
+    members: { path: /members, component: crud, props: { collection: member } }
     signin: { path: /signin, component: auth-hero-split, props: {} }
 """
 
 DRIVER = """
+import { CREDENTIAL_FIELDS, ENTITY_FIELDS, SIGNUP_FIELDS, formValues, payload } from './fields.ts';
 import { callOperation, listCollection, listRecords, readCollection, readJson } from './records.ts';
 
 const nativeFetch = globalThis.fetch;
@@ -153,6 +157,7 @@ globalThis.fetch = (path, init) => nativeFetch(process.env.ORIGIN + path, init);
 const json = { 'Content-Type': 'application/json' };
 const send = (entity, operation, { body, ...request } = {}) =>
   callOperation(entity, operation, { headers: json, body: body && JSON.stringify(body), ...request }).then(readJson);
+const entered = (fields, inputs) => payload(fields, { ...formValues(fields), ...inputs });
 
 const report = {};
 for (const entity of ['ledger', 'page', 'feed', 'stream']) {
@@ -163,9 +168,16 @@ const [top] = await listRecords('ledger');
 report.updated = Number((await send('ledger', 'update', { id: top.id, body: { rank: 99 } })).rank);
 report.fetched = Number((await send('ledger', 'get', { id: top.id })).rank);
 report.anonymousDelete = await send('ledger', 'delete', { id: top.id }).catch((error) => error.message);
-await send('member', 'register', { body: { handle: 'ana', password: 'correct-horse' } });
+await send('member', 'register', { body: entered(SIGNUP_FIELDS.member, { handle: 'ana', age: '', password: 'correct-horse' }) });
 const session = await send('member', 'login', { body: { handle: 'ana', password: 'correct-horse' } });
 report.token = typeof session.token;
+const newMember = { ...ENTITY_FIELDS.member, ...CREDENTIAL_FIELDS.member };
+const created = await send('member', 'create', {
+  headers: { ...json, Authorization: `Bearer ${session.token}` },
+  body: entered(newMember, { handle: 'bo', age: '7', password: 'battery-staple' }),
+});
+report.created = [created.age, created.active];
+report.createdSignsIn = typeof (await send('member', 'login', { body: { handle: 'bo', password: 'battery-staple' } })).token;
 const note = await send('note', 'create', { body: { body: 'hello', entry: top.id } });
 const projected = ({ id, text, code }) => [id === note.id, text, code];
 report.projected = (await listCollection('notes')).map(projected);
@@ -211,7 +223,7 @@ def test_routes_come_from_the_controllers_serving_each_entity(project):
         "login": ("POST", "/members/login"),
     }
     assert member.serves_login
-    assert [field.name for field in member.signup_fields] == ["handle"]
+    assert [field.name for field in member.signup_fields] == ["handle", "age", "active", "password"]
 
 
 def test_identity_without_login_registers_through_its_public_create():
@@ -278,8 +290,19 @@ def test_sign_in_submits_the_declared_identifier(project):
 
     assert "callOperation('member', 'login'" in app
     assert "handle: identifier" in app
-    assert "formData.handle" in (generated / "pages/Signin.tsx").read_text()
+    assert 'login(String(values["handle"])' in (generated / "pages/Signin.tsx").read_text()
 
+
+def test_sign_up_and_new_identity_forms_send_typed_fields_and_credentials(project):
+    generated = project / "generated/frontend/src"
+    form = (generated / "pages/MembersForm.tsx").read_text()
+    auth = (generated / "__generated__/auth.tsx").read_text()
+    hook = (generated / "__generated__/useRecordForm.ts").read_text()
+
+    assert re.search(r"\{mode === 'create' && \(\s*<div className=\"wf-field\">\s*<label htmlFor=\"password\"", form)
+    assert 'type="password"' in form
+    assert "...CREDENTIAL_FIELDS[entity]" in hook
+    assert "payload(FIELDS, mode === 'login'" in auth
 
 def test_specs_without_login_render_no_sign_in():
     files = _rendered(EXAMPLES / "v03/crud-pagination/spec.yaml")
@@ -348,6 +371,8 @@ def test_generated_data_layer_drives_every_server(project, tmp_path, server):
         "fetched": 99,
         "anonymousDelete": "Authentication required",
         "token": "string",
+        "created": [7, True],
+        "createdSignsIn": "string",
         "projected": [[True, "hello", "c6"]],
         "read": [True, "hello", "c6"],
     }

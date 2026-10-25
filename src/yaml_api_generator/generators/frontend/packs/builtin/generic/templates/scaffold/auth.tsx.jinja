@@ -1,6 +1,11 @@
+{% from 'macros/field_input.jinja' import field_input %}
 {% set entity = context.entities.values() | selectattr('serves_login') | first %}
 {% if entity %}
+{% set login_fields = [entity.auth_identifier] + (entity.credential_fields | map(attribute='name') | list) %}
 import { useState } from 'react';
+import { SIGNUP_FIELDS, formValues, payload } from './fields';
+
+const FIELDS = SIGNUP_FIELDS[{{ entity.name | tojson }}];
 
 interface AuthProps {
   mode?: 'login' | 'register';
@@ -19,17 +24,15 @@ export function Auth({
   providers = [],
   defaultRole{% if entity.roles %} = '{{ entity.roles.default }}'{% endif %}
 }: AuthProps) {
-  const [formData, setFormData] = useState({ {% for field in entity.signup_fields %}{{ field.name }}: '', {% endfor %}password: '' });
+  const [values, setValues] = useState(() => formValues(FIELDS));
   const [rememberMe, setRememberMe] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit?.(mode === 'login' ? { {{ entity.auth_identifier }}: formData.{{ entity.auth_identifier }}, password: formData.password } : formData);
+    onSubmit?.(payload(FIELDS, mode === 'login' ? { {% for name in login_fields %}{{ name | tojson }}: values[{{ name | tojson }}], {% endfor %}} : values));
   };
 
-  const handleFieldChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const setValue = (name: string, value: unknown) => setValues(prev => ({ ...prev, [name]: value }));
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-wf-bg px-4">
@@ -54,39 +57,10 @@ export function Auth({
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
 {% for field in entity.signup_fields %}
-            {% if field.name != entity.auth_identifier %}{mode === 'register' && ({% endif %}
-              <div className="flex flex-col gap-1.5">
-                <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
-                  {{ field.name | replace('_', ' ') | capitalize }}
-                  {% if field.required %}<span className="text-wf-danger font-title">*</span>{% endif %}
-                </label>
-                <input
-                  type="{{ 'email' if 'email' in field.name else 'number' if field.type == 'number' else 'text' }}"
-                  name="{{ field.name }}"
-                  value={formData.{{ field.name }}}
-                  onChange={handleFieldChange}
-                  {% if field.required %}required{% endif %}
-                  className="wf-input"
-                />
-              </div>
-            {% if field.name != entity.auth_identifier %})}{% endif %}
+            {% if field.name not in login_fields %}{mode === 'register' && ({% endif %}
+            {{ field_input(field, id_prefix='auth-') }}
+            {% if field.name not in login_fields %})}{% endif %}
 {% endfor %}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
-                Password
-                <span className="text-wf-danger font-title">*</span>
-              </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleFieldChange}
-                required
-                placeholder={mode === 'register' ? 'min 8 chars' : undefined}
-                className="wf-input"
-              />
-            </div>
 
             {mode === 'register' && defaultRole && (
               <div className="bg-wf-fill border border-dashed border-wf-line rounded-wf p-3">

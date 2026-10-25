@@ -65,10 +65,13 @@ export function {{ entity.name | pascal_case }}PreviewForm({
       <div className="p-6" style={{ "{{" }} display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' {{ "}}" }}>
         {/* Form column */}
         <form id="preview-form" onSubmit={handleSubmit} className="space-y-4">
-          {% for field in entity.fields.values() %}
-          {% if field.name != entity.pk_field and not field.readonly %}
+          {% for field in entity.writable_fields %}
           {{ field_input(field) }}
-          {% endif %}
+          {% endfor %}
+          {% for field in entity.credential_fields %}
+          {mode === 'create' && (
+          {{ field_input(field) }}
+          )}
           {% endfor %}
         </form>
 

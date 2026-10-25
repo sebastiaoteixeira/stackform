@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from './App';
-import { ENTITY_FIELDS, formValues, payload } from './fields';
+import { CREDENTIAL_FIELDS, ENTITY_FIELDS, formValues, payload } from './fields';
 import { ROUTES, callOperation, readJson } from './records';
 
 /**
  * The form state of one `entity` record: a new one, or the one `entityId`
  * (by default the route's `:id`) names, which is loaded and edited through
- * the entity's edit operation.
+ * the entity's edit operation. A new identity also takes its credentials.
  */
 export function useRecordForm<T = Record<string, unknown>>(entity: string, entityId?: string) {
-  const fields = ENTITY_FIELDS[entity];
   const { id: routeId } = useParams<{ id: string }>();
   const id = entityId ?? routeId;
+  const fields = id ? ENTITY_FIELDS[entity] : { ...ENTITY_FIELDS[entity], ...CREDENTIAL_FIELDS[entity] };
   const { token } = useAuth();
   const [values, setValues] = useState(() => formValues(fields));
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

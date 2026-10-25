@@ -100,6 +100,8 @@ class EntityFieldInfo:
         return self.config.get("readonly", False)
 
 
+PASSWORD_FIELD = EntityFieldInfo("password", {"type": "string", "format": "password", "required": True})
+
 @dataclass
 class AuthProviderInfo:
     name: str
@@ -151,11 +153,20 @@ class EntityInfo:
         return next((op for op in ("update", "replace") if op in self.routes), None)
 
     @property
+    def writable_fields(self) -> list[EntityFieldInfo]:
+        return [f for f in self.fields.values() if not f.readonly]
+
+    @property
+    def credential_fields(self) -> list[EntityFieldInfo]:
+        """What a password identity sends only when it is created, besides its fields."""
+        return [PASSWORD_FIELD] if self.auth_identifier else []
+
+    @property
     def signup_fields(self) -> list[EntityFieldInfo]:
-        """Writable fields a new identity fills in, identifier first; roles take their default."""
+        """Writable fields a new identity fills in, identifier first, then its credentials; roles take their default."""
         excluded = {self.pk_field, self.roles.field if self.roles else None}
-        writable = [f for f in self.fields.values() if not f.readonly and f.name not in excluded]
-        return sorted(writable, key=lambda f: f.name != self.auth_identifier)
+        writable = [f for f in self.writable_fields if f.name not in excluded]
+        return sorted(writable, key=lambda f: f.name != self.auth_identifier) + self.credential_fields
 
 
 @dataclass

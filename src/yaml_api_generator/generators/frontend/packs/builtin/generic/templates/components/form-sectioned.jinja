@@ -8,7 +8,7 @@ interface {{ entity.name | pascal_case }}SectionedFormProps {
   basePath?: string;
 }
 
-{% set all_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | list %}
+{% set all_fields = entity.writable_fields %}
 
 {% set basic_fields = [] %}
 {% set content_fields = [] %}
@@ -135,6 +135,11 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                   {{ field_input(field, setter='change') }}
                   {% endfor %}
                   {% endif %}
+                  {% for field in entity.credential_fields %}
+                  {mode === 'create' && (
+                  {{ field_input(field, setter='change') }}
+                  )}
+                  {% endfor %}
                 </div>
               </div>
             )}

@@ -12,16 +12,23 @@ export type FieldConfig = {
 export type Fields = Record<string, FieldConfig>;
 export type FormValues = Record<string, unknown>;
 
-/** The fields a client may send for each entity: every declared field except its id and readonly ones. */
-export const ENTITY_FIELDS: Record<string, Fields> = {
+{% macro fields_by_entity(name, attribute) %}
+export const {{ name }}: Record<string, Fields> = {
 {% for entity in entities.values() %}
   {{ entity.name | tojson }}: {
-{% for field in entity.fields.values() if not field.readonly %}
+{% for field in entity[attribute] %}
     {{ field.name | tojson }}: {{ field.config | tojson }},
 {% endfor %}
   },
 {% endfor %}
 };
+{% endmacro %}
+/** The fields a client may send for each entity: every declared field except its id and readonly ones. */
+{{ fields_by_entity('ENTITY_FIELDS', 'writable_fields') }}
+/** What each identity sends only when it is created: the password its login checks. */
+{{ fields_by_entity('CREDENTIAL_FIELDS', 'credential_fields') }}
+/** What each identity registers with: its identifier first, then its other fields and credentials. */
+{{ fields_by_entity('SIGNUP_FIELDS', 'signup_fields') }}
 
 const STRUCTURED = new Set(['object', 'array']);
 
