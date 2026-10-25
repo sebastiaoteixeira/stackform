@@ -84,7 +84,7 @@ vocabulary:
 | `public` | No authentication. The only way to opt a route out of protection. |
 | `"*"` | Any valid principal from any auth entity. |
 | `<entity>:*` | Any principal whose identity collection is `<entity>` -- any member of that auth entity. |
-| `<entity>:<role>` | A principal of `<entity>` whose role (exact match) is `<role>`. |
+| `<entity>:<role>` | A principal of `<entity>` holding `<role>`, directly or through the role hierarchy. |
 | `<role>` | Bare role; allowed only when a single auth entity exists (otherwise `ACCESS_AMBIGUOUS_ROLE`). |
 
 Roles come from the entity's enum field named by `auth.roles: <enumFieldName>` (with
@@ -123,16 +123,13 @@ controllers:
       delete: { access: user:admin }
 ```
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## See Also
 

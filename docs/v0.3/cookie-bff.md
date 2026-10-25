@@ -20,7 +20,7 @@ session:
 
 On login the server sets a `Secure; HttpOnly; SameSite=Lax` cookie named
 `session` carrying the app JWT, and a second, JavaScript-readable
-`csrf_token` cookie. The login body no longer contains `token`; it returns the
+`csrf_token` cookie. The login body carries no `token`; it returns the
 safe user record plus the freshly minted `csrf_token`.
 
 Principal resolution reads the `session` cookie when no `Authorization` header
@@ -44,7 +44,7 @@ it back in the `x-csrf-token` header on every mutating call.
 When `session.refresh` is also enabled, the refresh token is delivered in a
 third `HttpOnly` cookie (`refresh_token`). The `/refresh` route reads it from
 the cookie rather than the request body, rotates it, and re-sets all cookies.
-Rotation and reuse detection are unchanged.
+Rotation and reuse detection work as with body delivery.
 
 The refresh cookie remains CSRF-protected when the short-lived session cookie
 has expired. A client must therefore retain and submit the current CSRF token

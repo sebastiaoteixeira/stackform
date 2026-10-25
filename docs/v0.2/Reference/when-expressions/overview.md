@@ -5,16 +5,13 @@ description: Conditional expressions evaluated against the authenticated princip
 
 Conditional expressions evaluated against the authenticated principal and a fetched document inside ABAC access rules. A `when:` expression turns a static role/identity rule into an ownership or attribute check (for example, "the requester is the owner of this record").
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## Syntax
 
@@ -87,10 +84,9 @@ The names are the author's choice -- substitute whatever you declared in `given:
 
 | Path | Description |
 |------|-------------|
-| `principal` | Bare reference (no `.`) resolves to the bound identity's primary-key value (its `sub`). |
 | `principal.sub` | The identity's primary-key value (string). |
 | `principal.identity_collection` | The name of the identity's collection. |
-| `principal.roles` | The identity's role list (loaded from the auth record's `roles`/`role` field). |
+| `principal.roles` | The identity's roles: the `auth.roles` field, or the managed `_auth.roles`. |
 | `principal.record.fieldName` | Any field on the identity's stored record. Stored fields live under `record`, not directly on the symbol. |
 | `document.fieldName` | A field on the fetched document the symbol is bound to. |
 
@@ -145,8 +141,8 @@ choice, exactly like `principal` and `document`.
 
 ### Reading parts in `when:`
 
-Access on the bound symbol is **part-qualified**: you always name the part, then
-the key.
+A symbol bound to the whole request (`request` or `request:<type>`) is
+**part-qualified**: you name the part, then the key.
 
 ```yaml
 when: req.body.role equals 'admin'
@@ -155,6 +151,9 @@ when: req.query.scope equals 'all'
 when: req.header.authorization not equals ''
 when: req.cookie.session not equals ''
 ```
+
+A symbol bound to one part holds that part, so you name the key directly:
+`member.role` for `member: request.body`, `org.orgId` for `org: request.path`.
 
 The binding value in `given:` is only the binding itself (`request`,
 `request.body`, `request:createMembership`). Part-qualified leaf access such as
@@ -168,7 +167,8 @@ the body), and on `request.body`, `request.query`, `request.path`. It is
 rejected on a single leaf and on `header` or `cookie` (which are not typeable),
 failing generation with `REQUEST_TYPE_ON_LEAF`.
 
-`request.path.<name>` must name a `{name}` present in that route's composed path
+A path parameter read in `when:` (`req.path.<name>`, or `org.<name>` for
+`org: request.path`) must name a `{name}` present in that route's composed path
 template (the existing `{id}` of CRUD routes, or an explicit route such as
 `/{orgId}/members`). An undeclared name fails with
 `REQUEST_PATH_PARAM_NOT_DECLARED`.
@@ -179,8 +179,8 @@ Request resolution is fail-safe: a missing leaf resolves to `null`, it never
 raises. `req.body.x` where the body has no `x` is `null`, the same as a missing
 principal or document field.
 
-A typed body is validated **before** authorization. If the body does not match
-the bound DTO or entity, the request returns 422 and the rule never runs. The
+A typed body is validated against the bound DTO or entity: a request the rules
+admit whose body does not match returns 422. The
 parts are sourced as follows: `body` from the parsed JSON body, `path` from the
 route's URL parameters, `query` from the query string, `header` from the request
 headers (lowercased keys), and `cookie` from the request cookies.
@@ -274,7 +274,7 @@ Non-owners are denied. The owner falls through to the trailing `then: allow`.
 
 - **Missing document field.** `document.X` where `X` does not exist resolves to `null`.
 
-- **Precedence.** `not` binds tightest, then `and`, then `or`. So `A or B and C` means `A or (B and C)`. There is no parenthesis grouping; split complex logic into the list form instead.
+- **Precedence.** `not` binds tightest, then `and`, then `or`. So `A or B and C` means `A or (B and C)`. Parentheses override it: `(A or B) and C`.
 
 - **`principal.sub` type.** Always a string (the principal's primary-key value, stringified).
 

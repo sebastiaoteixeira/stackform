@@ -53,16 +53,13 @@ The login/register endpoints in the rest of this page assume the `api:` block ab
 so the URLs are `/api/v1/...`. Drop `version` and they become `/api/...`; drop the
 whole `api:` block and `basePath` still defaults to `/api`.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## Register and login are off by default
 
@@ -87,10 +84,9 @@ The provider is configured under the entity's `auth:` block.
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `identifier` | effectively yes | string (field name) | The field used as the login username. Not schema-enforced, but login needs it. Common values: `email`, `username`. |
-| `via` | effectively yes | string or list | Built-in providers to enable. Use `password` here; may be a list (for example `[password, apiKey]`) to combine built-in providers. A list entry may also be an object declaring an inline provider binding (`provider`, `identifier`, `claim_mapping`, `auto_provision`) -- equivalent to an `auth.bindings` entry. See [Auth overview](./overview.md#auth-block). |
+| `identifier` | yes, with `via: password` | string (field name) | The field used as the login username (`AUTH_IDENTIFIER_REQUIRED` when missing). Common values: `email`, `username`. |
+| `via` | yes, for password login | string or list | Providers to enable. Use `password` here; a list (for example `[password, apiKey]`) combines providers. A list entry may also be a binding object (`provider`, `identifier`, `claim_mapping`, `auto_provision`, `relations`) that attaches an OIDC or SAML provider. See [Auth overview](./overview.md#auth-block) and [Claim mapping](./claim-mapping.md). |
 | `roles` | no | string (field name) | Names an existing `enum` field that carries the principal's role. See [Roles overview](../roles/overview.md). |
-| `bindings` | no | list | External identity providers (OIDC/SAML). See [Login, SSO, and the token flow](./login-and-sso.md) and [Claim mapping](./claim-mapping.md). |
 
 The `identifier` field should declare `unique: true` so two accounts cannot share a
 login value. The datastore enforces that declaration with a SQL unique constraint

@@ -52,16 +52,13 @@ Type: access value (see [access-control](./access-control.md)). Optional. Defaul
 
 Default access rule applied to every operation. Individual operations override it with their own `access`. If you omit `access` on a minified controller, every operation defaults to `public`, so an entity is only protected once you set a non-public value. Protection is wired only when an identity entity (a `type: auth` entity) exists; with no auth entity in the spec, even non-public routes stay open.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ### `operations`
 
@@ -127,7 +124,7 @@ The `access` value selects who may call an operation:
 - `public` - no authentication required.
 - `"*"` - any authenticated principal.
 - `<entity>:*` - any principal from that auth entity.
-- `<entity>:<role>` - a principal from that entity holding the role (exact match).
+- `<entity>:<role>` - a principal from that entity holding the role, directly or through the role hierarchy.
 - `<role>` - shorthand for the single auth entity in the spec; ambiguous (ACCESS_AMBIGUOUS_ROLE) when more than one auth entity exists, and an error (ACCESS_NO_AUTH_ENTITY) when there is none.
 - a list of rules, including ABAC `given`/`when` rules.
 

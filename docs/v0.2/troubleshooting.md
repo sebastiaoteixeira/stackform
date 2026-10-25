@@ -86,9 +86,9 @@ Common codes:
   `principal.sub equals document.ownerId`, or `document.status equals 'published'`).
   Bare `true`/`false` literals are not accepted; compare against a quoted string instead.
 - A stored field on the authenticated record is read via `principal.record.<field>`
-  (bare `principal` is the subject id from the token).
-- Keywords are case-insensitive, but there is no parenthesis grouping; combine clauses
-  with `and`/`or`.
+  (`principal.sub` is the subject id from the token).
+- Keywords are case-insensitive, and parentheses group clauses
+  joined with `and`/`or`.
 
 ## MongoDB connection refused
 
@@ -220,16 +220,13 @@ You are authenticated but an access rule denied the request -- the wrong role, a
 `<entity>:*` scope you are not in, or an ownership/`when` rule that did not match.
 Check the access rules on the controller for that operation.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## JWT_SECRET warning
 
@@ -257,7 +254,7 @@ block in the spec, and exit 1 with one of:
 
 ## SSO and external auth
 
-External providers are attached through `auth.bindings` and need a reachable provider.
+External providers are attached through a binding object in `auth.via` and need a reachable provider.
 Common callback failures (status from `GET /api/v1/{collection}/auth/{provider}/callback`):
 
 - `401 {"detail": "Token exchange failed"}` -- the authorization code could not be

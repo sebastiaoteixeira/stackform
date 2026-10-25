@@ -5,7 +5,7 @@ description: Declare reusable named components composed from the generic pack's 
 
 The `ui.components` block lets you declare named components built from the
 building blocks shipped by the frontend pack (`generic` is the only built-in
-pack today). A declared component can then be referenced by a view or nested
+pack). A declared component can then be referenced by a view or nested
 inside another component.
 
 The whole `ui` block is free-form in the JSON schema (`{"type": "object"}`):
@@ -106,7 +106,7 @@ a declared prop of the component. Otherwise generation fails with `render uses
 $ref '<name>' but it's not in declared props`. Declared props are not checked
 for being unused.
 
-## Rendering behavior today
+## Rendering behavior
 
 The render tree is fully parsed and validated, but the generic pack renders only
 the root pack component of a view. When a view references a declared component,
@@ -115,11 +115,10 @@ component and renders that component's template, driven by the view's entity and
 collection props.
 
 The abstract render tree (nested nodes, `$ref` wiring, literal props inside
-`render`) is validated and recorded but is not yet composed into the generated
-output by the `generic` pack. In practice, declaring a component is useful for
-naming and for choosing the root pack component (and, via `crud`/`split-pane`,
-its sub-components through component references); deeper hand-authored trees are
-accepted but inert until a pack consumes them.
+`render`) is validated and recorded for packs; the `generic` pack renders only the
+root pack component. With the `generic` pack, a declared component names a view
+and chooses its root pack component (and, via `crud`/`split-pane`, its
+sub-components through component references).
 
 ## Using a component in a view
 

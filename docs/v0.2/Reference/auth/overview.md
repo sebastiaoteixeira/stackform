@@ -35,37 +35,36 @@ entities:
         default: user
 ```
 
-Roles are an ordinary `enum` field named by `auth.roles`. The role's allowed values
-and the default assigned on create come from that field's `values:` and `default:`.
+A record's roles come from one of two places:
 
-> **Note:** A standalone entity-level `roles: { values, default, hierarchy }` block is
-> NOT wired in v0.2 and is silently ignored. Use `auth.roles: <enumFieldName>` pointing
-> at an `enum` field. Role hierarchy is covered under "Role hierarchy" below.
+- **A role field.** `auth.roles` names an `enum` field of the entity. Its `values:`
+  are the roles and its `default:` is the role a new record gets.
+- **Managed roles.** An entity-level `roles: { values, default, hierarchy }` block
+  keeps the roles in the record's internal `_auth` namespace, outside the API's
+  fields. See [roles overview](../roles/overview.md).
 
 ## Behavior
 
 - **Parse time:** declaring `type: auth` requires an `auth:` block (schema validation).
-  The `auth.identifier` and `auth.via` keys are optional in the JSON schema, but a
-  password or API-key provider cannot resolve a principal without them, so treat them
-  as effectively required. If `auth.roles` is set, the named field must exist
-  (`AUTH_ROLES_FIELD_NOT_FOUND`) and be of `type: enum` (`AUTH_ROLES_FIELD_NOT_ENUM`).
+  A `password` or `apiKey` entity must set `auth.identifier`
+  (`AUTH_IDENTIFIER_REQUIRED`) to one of its fields
+  (`AUTH_IDENTIFIER_FIELD_NOT_FOUND`), and an `apiKey` entity must declare an
+  `apiKey` field (`AUTH_API_KEY_FIELD_MISSING`). If `auth.roles` is set, the named
+  field must exist (`AUTH_ROLES_FIELD_NOT_FOUND`) and be of `type: enum`
+  (`AUTH_ROLES_FIELD_NOT_ENUM`).
 - **Compile time:** register and login endpoints are generated only when enabled via
   `api.operations.auth: { register: true, login: true }` (off by default). For
   password-based auth, a `password` input is injected into the create model.
 - **Runtime:** principals authenticated via this entity receive a JWT whose `sub` is the
   identity record's primary-key value. The entity participates in access rules as
-  `<entityName>:*` and `<entityName>:<role>`.
-
-> **Enforcement status**
->
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
-> are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+  `<entityName>:*` and `<entityName>:<role>`, and a role also matches every role its
+  hierarchy includes. A request that fails every rule gets 401 when it carries no
+  valid credentials and 403 otherwise; a missing record answers 404 before ownership
+  is checked.
+- **Role grants:** a caller sets a role field only to roles it holds itself. On
+  create, a record naming other roles gets the default role instead; on update, the
+  role change is dropped. Managed roles are never written through the API: a new
+  record gets `roles.default`.
 
 ## Options
 
@@ -85,24 +84,25 @@ Effects:
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `identifier` | effectively yes | string (field name) | The field used as the login username (for password) or matched value. Not schema-enforced, but auth cannot resolve a principal without it. |
-| `via` | effectively yes | string, list of strings, or list of objects | Built-in methods (`"password"`, `"apiKey"`) as strings, and/or inline provider bindings as objects (see below). |
+| `identifier` | for `password` and `apiKey`, and for names in `via` | string (field name) | The field used as the login username (for password) or the matched value. |
+| `via` | no | string, list of strings, or list of objects | The providers users sign in through (see below). Without it the entity signs no one in. |
 | `roles` | no | string (field name) | Names an `enum` field that holds the principal's role. See [roles overview](../roles/overview.md). |
-| `bindings` | no | list of objects | External identity providers (OIDC/SAML). Each entry sets `provider`, `identifier`, optional `claim_mapping` and `auto_provision`. See [claim mapping](./claim-mapping.md). |
 
-`via` accepts plain strings for the built-in `password` and `apiKey` methods. A list
-entry may instead be an object that declares an external provider binding inline,
-equivalent to adding the same entry under `auth.bindings`. Each object takes:
+`via` accepts a provider name, a list of names, or a list of binding objects. A
+name uses the entity's `auth.identifier`; `password` and `apiKey` are built in, and
+any other name must be a key of `providers:` (`AUTH_VIA_UNKNOWN_PROVIDER`). A
+binding object takes:
 
 | Key | Required | Type | Description |
 |-----|----------|------|-------------|
-| `provider` | yes | string | Name of the configured external provider (OIDC/SAML). |
-| `identifier` | no | string (field name) | Field matched against the provider's principal. Defaults to `auth.identifier`. |
-| `claim_mapping` | no | map (string → string) | Maps provider claims onto entity fields. See [claim mapping](./claim-mapping.md). |
+| `provider` | yes | string | `password`, `apiKey`, or the name of a provider declared under `providers:` (`BINDING_PROVIDER_NOT_FOUND`). |
+| `identifier` | no | string (field name) | Field matched against the provider's principal. Defaults to `auth.identifier`, and must be a field of the entity (`BINDING_IDENTIFIER_FIELD_NOT_FOUND`). |
+| `claim_mapping` | no | map (string to string) | Maps entity fields to provider claims. See [claim mapping](./claim-mapping.md). |
 | `auto_provision` | no | boolean | Create a local record on first login when no match exists. Defaults to `true`. |
+| `relations` | no | map | Fills a foreign key from a record whose fields match claims. See [claim mapping](./claim-mapping.md). |
 
-Bindings declared in `via` are merged with any under `auth.bindings`; a `via` binding
-wins if both name the same `provider`.
+A list holds either names or binding objects; name a built-in provider in a list of
+objects as `- provider: password`.
 
 ```yaml
 entities:
@@ -111,29 +111,39 @@ entities:
     auth:
       identifier: email
       via:
-        - password
+        - provider: password
         - provider: google
           identifier: email
-          claim_mapping: { email: email, name: displayName }
+          claim_mapping: { email: email, displayName: name }
           auto_provision: true
       roles: role
 ```
 
 ### Role hierarchy
 
-A role hierarchy can be declared in a top-level `roles:` map keyed by entity name:
+A hierarchy is declared in the entity's managed `roles:` block. Each key lists the
+roles it includes, transitively:
 
 ```yaml
-roles:
+entities:
   user:
-    admin: [moderator]
-    moderator: [user]
+    type: auth
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
 ```
 
-This is parsed and reaches the generated React UI's RBAC matrix, but it is NOT applied
-during backend access enforcement: a principal with role `admin` does NOT inherit
-`moderator`'s permissions. Only exact role matches are checked today. See
-[roles hierarchy](../roles/hierarchy.md).
+A principal with role `admin` then matches rules for `user:moderator` and
+`user:user` too. See [roles hierarchy](../roles/hierarchy.md).
 
 ## How a request is authenticated
 
@@ -141,7 +151,7 @@ The generated backend resolves a principal by trying credentials in this order:
 
 1. **Bearer JWT** (`Authorization: Bearer <jwt>`) -- used for password-based entities.
    The token carries only `sub` and `identity_collection`; the identity record and its
-   roles are loaded from MongoDB on every request, so role changes apply immediately.
+   roles are loaded from the datastore on every request, so role changes apply immediately.
 2. **API key** (`X-API-Key: <key>`, or `Authorization: Bearer <key>`) -- matched against
    the top-level `apiKey` field of each `apiKey` entity.
 3. **HTTP Basic** (`Authorization: Basic <base64(identifier:password)>`) -- the identifier
@@ -151,11 +161,11 @@ The generated backend resolves a principal by trying credentials in this order:
 The resolved principal exposes:
 - `principal.sub` -- the primary-key value of the matched record.
 - `principal.identity_collection` -- the entity/collection that matched.
-- `principal.roles` -- read from the `auth.roles` enum field (falling back to a `roles`
-  or `role` field if `auth.roles` is unset).
+- `principal.roles` -- read from the `auth.roles` enum field, or from the managed
+  roles under `_auth` when the entity declares a `roles:` block.
 - `principal.record` -- the matched record. Stored fields are referenced in `when` rules
   as `principal.record.<field>`. In the generated FastAPI/DRF backends this is the raw
-  MongoDB document (including the internal `_auth` namespace); the `stackform run` dev
+  stored record (including the internal `_auth` namespace); the `stackform run` dev
   server passes a sanitized record.
 
 ## Internal Storage
@@ -165,11 +175,11 @@ internal `_auth` namespace. The hash format is
 `pbkdf2$sha256$<rounds>$<salt>$<hash>` (PBKDF2-HMAC-SHA256, default 390000 rounds,
 configurable via `PASSWORD_HASH_ROUNDS`).
 
-Roles are NOT stored under `_auth` -- they live in the declared `enum` field and are read
-from there at request time.
+A role field lives in the record like any other field. Managed roles live under
+`_auth.roles` and are read from there at request time.
 
 ```
-# MongoDB document (internal)
+# Stored record (internal)
 { "id": "abc", "email": "alice@example.com", "role": "admin",
   "_auth": { "passwordHash": "pbkdf2$sha256$390000$..." } }
 ```
@@ -183,7 +193,7 @@ is the raw document; do not rely on access rules to hide `_auth` there.
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `JWT_SECRET` | dev placeholder | HS256 signing secret for issued tokens. Set a strong value in production. |
-| `JWT_EXPIRATION_HOURS` | `24` | Token lifetime in hours. |
+| `JWT_EXPIRATION_HOURS` | `24` | Token lifetime in hours when `session.ttl` is unset; `session.ttl` sets it in seconds. |
 | `PASSWORD_HASH_ROUNDS` | `390000` | PBKDF2-SHA256 iteration count for password hashing. |
 
 ## Examples
@@ -317,8 +327,8 @@ access: apiClient:enterprise
 - **Password is never stored.** Only `_auth.passwordHash` is persisted, using
   PBKDF2-SHA256 with 390000 iterations by default.
 
-- **Entity without `auth.roles`.** The entity still authenticates principals but has no
-  roles. `access: public`, `access: "*"`, and `access: user:*` still work;
+- **Entity without roles.** With neither `auth.roles` nor a `roles:` block, the
+  entity still authenticates principals but has no roles. `access: public`, `access: "*"`, and `access: user:*` still work;
   `access: user:admin` will never match because no role values exist.
 
 ## Errors
@@ -328,6 +338,15 @@ access: apiClient:enterprise
 | `type: auth` without `auth:` block | schema validation | `auth` is required when type is "auth" |
 | `auth.roles` names a missing field | `AUTH_ROLES_FIELD_NOT_FOUND` | "Roles field 'X' not found in entity 'Y'" |
 | `auth.roles` field is not an enum | `AUTH_ROLES_FIELD_NOT_ENUM` | "Roles field 'X' must be of type 'enum'" |
+| `password` or `apiKey` entity without `auth.identifier` | `AUTH_IDENTIFIER_REQUIRED` | "Auth entity 'Y' uses via password but declares no identifier" |
+| `auth.identifier` names a missing field | `AUTH_IDENTIFIER_FIELD_NOT_FOUND` | "Auth identifier 'X' not found in entity 'Y'" |
+| `apiKey` entity without an `apiKey` field | `AUTH_API_KEY_FIELD_MISSING` | "Auth entity 'Y' uses via apiKey but declares no apiKey field" |
+| `via` names an undeclared provider | `AUTH_VIA_UNKNOWN_PROVIDER` | "Auth entity 'Y' uses via 'X', which is not a declared provider" |
+| Binding names an undeclared provider | `BINDING_PROVIDER_NOT_FOUND` | "Auth entity 'Y' binds undeclared provider 'X'" |
+| Binding `identifier` names a missing field | `BINDING_IDENTIFIER_FIELD_NOT_FOUND` | "Binding identifier 'X' not found in entity 'Y'" |
+| `roles.default` not in `roles.values` | `ROLES_DEFAULT_UNKNOWN_ROLE` | "Default role 'X' is not one of the declared roles" |
+| `roles.hierarchy` names an undeclared role | `ROLES_HIERARCHY_UNKNOWN_ROLE` | "Role hierarchy references undeclared role 'X'" |
+| `roles.hierarchy` is cyclic | `ROLES_HIERARCHY_CYCLE` | "Role hierarchy for 'Y' is cyclic through 'X'" |
 | `password` declared in `fields:` | `AUTH_PASSWORD_FIELD_FORBIDDEN` | "Password input is implicit when auth.via includes password" |
 | `passwordHash` declared in `fields:` | `AUTH_PASSWORD_HASH_FIELD_FORBIDDEN` | "passwordHash is implicit storage when auth.via includes password" |
 | Unscoped role with multiple auth entities | `ACCESS_AMBIGUOUS_ROLE` | "Unscoped role 'X' is ambiguous with multiple auth entities; use 'entity:X'" |

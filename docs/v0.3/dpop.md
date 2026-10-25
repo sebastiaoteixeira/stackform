@@ -64,4 +64,4 @@ new proof containing that nonce.
 - Existing `401 Token exchange failed` and `401 Failed to fetch user info`
   responses surface provider rejection after the single nonce retry.
 - `BACKEND_FEATURE_UNSUPPORTED` - a DRF or raw ASGI build requested DPoP.
-- `TRUST_IDP_APP_FIELD_FORBIDDEN` - `dpop` was set on a `trust: idp` provider.
+- `SCHEMA_VALIDATION_ERROR` - `dpop` was set on a `trust: idp` provider.

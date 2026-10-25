@@ -9,22 +9,19 @@ ABAC is access control based on attributes of the request, the authenticated use
 
 A key concept used throughout ABAC rules is `principal.sub`. The `sub` (short for "subject") is the authenticated user's primary-key value -- their `id`. There are no built-in root symbols: `principal` is just the conventional name for the identity you bind in the rule's `given:` block, and `.sub` is the main way to compare "who is making this request" against "who owns this document." Every root a `when:` references must be declared in `given:`, or generation aborts with `WHEN_UNBOUND_SYMBOL`.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## Authors can edit their own notes
 
 Role-based rules cover broad access (e.g., all moderators can edit any note), but they cannot express "only the author can edit their own note." ABAC rules solve this by comparing attributes of the authenticated user against attributes of the document being accessed.
 
-Roles come from an enum field referenced by `auth.roles`. The standalone entity-level `roles:` block (with `values`/`default`/`hierarchy`) is not wired in v0.2 -- declare an `enum` field and point `auth.roles` at it instead.
+Roles come from an enum field referenced by `auth.roles`, as in Tutorial 06.
 
 ```yaml
 version: "0.2"
@@ -32,6 +29,10 @@ version: "0.2"
 api:
   basePath: /api
   version: v1
+  operations:
+    auth:
+      register: true
+      login: true
 
 mongo:
   uri: mongodb://localhost:27017
@@ -105,7 +106,7 @@ With `api: { basePath: /api, version: v1 }`, the routes are `PATCH /api/v1/notes
 
 Two notes about this spec:
 
-- `register` and `login` are not generated unless you enable them. The minified `users` controller above lists them under `operations:`, which generates `POST /api/v1/users/register` and `POST /api/v1/users/login`.
+- `register` and `login` are generated only when `api.operations.auth` enables them, as `POST /api/v1/users/register` and `POST /api/v1/users/login`. Their entries under the `users` controller's `operations:` set their access; naming an operation that is not enabled fails generation with `DESUGAR_OPERATION_NOT_EXPOSED`.
 - A minified controller defaults to `access: public`. Setting `access: public` here is explicit; the per-operation rules on `create`/`update`/`delete` override it for those operations.
 
 ## How given/when/then works
@@ -114,7 +115,7 @@ Each item in the `access:` list is evaluated top-to-bottom. The first matching r
 
 ```yaml
 access:
-  - moderator                           # rule 1: allow moderators (exact role match)
+  - moderator                           # rule 1: allow moderators
   - given:
       principal: identity:user          # bind the authenticated user under "principal"
       document: notes                   # load the target document under "document"
@@ -174,7 +175,7 @@ Operands and references:
 - `principal.record.fieldName` -- any stored field on the authenticated user's record. Use `principal.record.<field>`, not `principal.<field>`.
 - `document.fieldName` -- any field on the document being accessed.
 
-Operators: `equals`, `not equals`, `in`, `not in`, `and`, `or`, `not`. The right-hand side of a comparison is either another field reference or a single-quoted string. Use the words (`equals`), not symbols (`==`). String values must be wrapped in single quotes; `in`/`not in` take a bracketed list of single-quoted strings. There is no parenthesis grouping; combine conditions with `and`/`or`/`not`.
+Operators: `equals`, `not equals`, `in`, `not in`, `is null`, `is not null`, `and`, `or`, `not`. The right-hand side of a comparison is either another field reference or a single-quoted string. Use the words (`equals`), not symbols (`==`). String values must be wrapped in single quotes; `in`/`not in` take a bracketed list of single-quoted strings. Combine conditions with `and`/`or`/`not` and group them with parentheses; `is null` and `is not null` test for a missing value.
 
 A `when:` value may also be a YAML list of expressions, which are AND-ed together:
 
@@ -186,9 +187,18 @@ when:
 
 **Note:** On `create` operations there is no existing document yet, so rules with `document:` bindings cannot run a post-fetch check. Use principal-only rules (role checks, `"*"`) to control create access. The example above guards `create` with `access: "*"` (any authenticated user).
 
-## Accepted but not yet enforced
+## Refusal reasons
 
-The optional `filter:`, `writeFields:`, and `reason:` keys on a rule object are parsed and validated, but do not change enforcement today. Treat them as forward-looking metadata; access is decided solely by principal match, role match, and the `when` condition.
+A rule object may carry a `reason:`. When a `then: deny` rule decides, its `reason` is the detail of the 403 response. When no rule matches, the detail is the `reason` of the first allow rule that has one, or `Forbidden`.
+
+```yaml
+access:
+  - given: { document: notes }
+    when: document.status in ['archived']
+    then: deny
+    reason: Archived notes are read-only
+  - moderator
+```
 
 ## Key points
 
@@ -196,4 +206,4 @@ The optional `filter:`, `writeFields:`, and `reason:` keys on a rule object are 
 - `document:` in `given:` references the repository (collection) name (`notes`), not the entity name.
 - `given:` symbol names are arbitrary; `principal`/`document` are conventions, not reserved words.
 - `then: deny` combined with a fallback `then: allow` is a common pattern for inverse logic.
-- Roles are an enum field selected by `auth.roles`; only exact role matches are enforced (hierarchy is inert today).
+- Roles are an enum field selected by `auth.roles`; a `roles.hierarchy` lets a role include others (Tutorial 06).

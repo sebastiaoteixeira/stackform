@@ -11,16 +11,13 @@ The `api:` block below sets `basePath: /api` and `version: v1`, so every route
 is served under `/api/v1/...` (for example `POST /api/v1/users/login`). Change
 those two values and all URLs shift accordingly.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ```yaml
 version: "0.2"
@@ -53,6 +50,12 @@ entities:
       via: password
       # Roles come from an enum field named here; the field must exist below.
       roles: role
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
@@ -80,13 +83,6 @@ entities:
     fields:
       code: { type: string }
       name: { type: string, required: true }
-
-# Optional: role hierarchy is parsed and reaches the React RBAC matrix, but it is
-# NOT applied during access enforcement today (only exact role matches count).
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:
@@ -174,13 +170,10 @@ controllers:
   `post` at build time. `country` uses `pk: code` instead, so it has a natural
   string key and no auto-generated id (the client supplies `code` on create).
 
-- Roles. The working mechanism is `auth.roles: role` plus an enum field named
-  `role` (with `values` and a `default`). The role is read from that field at
-  request time; new users get `user` from the field's `default`. A standalone
-  entity-level `roles: { values, default, hierarchy }` block is silently ignored
-  by v0.2 -- do not use it. The top-level `roles:` map keyed by the auth entity
-  name (`user`) is parsed and feeds the React RBAC matrix, but hierarchy is not
-  yet applied during enforcement.
+- Roles. `auth.roles: role` names an enum field `role` (with `values` and a
+  `default`). The role is read from that field at request time; new users get
+  `user`. The `roles:` block's `hierarchy` makes `admin` include `moderator` and
+  `moderator` include `user`, so an `admin` passes every `moderator` rule.
 
 - Repositories and CRUD. All six CRUD operations (list, get, create, update,
   replace, delete) are enabled by default, so none of these repositories needs a

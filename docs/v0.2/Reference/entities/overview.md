@@ -16,16 +16,21 @@ entities:
     extends: parentName      # optional
     type: auth               # optional, default: base ("auth" marks an identity provider)
     pk: fieldName            # optional, natural primary key
-    auth:                    # required in practice when type: auth
+    auth:                    # required with type: auth
       identifier: fieldName
-      via: password          # or apiKey, or [password, apiKey]
-      roles: enumFieldName   # optional, names an enum field that holds the role
-      bindings:              # optional, external identity providers (OIDC/SAML)
+      via:                   # password, apiKey, or binding objects for OIDC/SAML providers
+        - password
         - provider: providerName
           identifier: fieldName
+      roles: enumFieldName   # optional, names an enum field that holds the role
+    roles:                   # optional, only with type: auth
+      values: [roleA, roleB]
+      default: roleB
+      hierarchy:
+        roleA: [roleB]
     fields:
       fieldName:
-        type: <fieldType>
+        type: string         # see Field types
         # ... field options
 ```
 
@@ -37,12 +42,13 @@ entities:
 | `extends` | no | string (entity name) | none | Inherits fields, `type`, and `auth` from the named parent entity. |
 | `type` | no | `"base"` or `"auth"` | `"base"` | `"auth"` marks the entity as an identity provider. |
 | `pk` | no | string (field name) | none | Designates a field as the natural primary key. |
-| `auth` | effectively required if `type: auth` | object | none | Authentication configuration block. |
+| `auth` | yes with `type: auth` | object | none | Authentication configuration block. |
+| `roles` | no; only with `type: auth` | object | none | Declared roles, their default and hierarchy. |
 | `fields` | required unless inheriting via `extends:` | map | none | Field definitions. |
 
 ### `abstract`
 
-When `true`, the entity is a template only. It does not produce a collection and cannot be bound to a repository. Abstract entities are removed during desugaring; only a repository's `entity:` binding is checked against them, raising `DESUGAR_ABSTRACT_REFERENCED` if a repository points at one. A plain `ref:` field that names an abstract (or unknown) entity is not validated.
+When `true`, the entity is a template only. It does not produce a collection and cannot be bound to a repository. Abstract entities are removed during desugaring; only a repository's `entity:` binding is checked against them, raising `DESUGAR_ABSTRACT_REFERENCED` if a repository points at one. A `ref:` field may name an abstract entity; an unknown name raises `REF_TARGET_NOT_FOUND`.
 
 ### `extends`
 
@@ -50,7 +56,7 @@ Inherits from the named entity: all `fields`, and also the parent's `type` and `
 
 ### `type`
 
-`"base"` (the default) is an ordinary entity. `"auth"` marks the entity as an identity provider, enabling authentication behavior (login, registration, token issuance). In practice this requires an `auth:` block. See [auth overview](../auth/overview.md).
+`"base"` (the default) is an ordinary entity. `"auth"` marks the entity as an identity provider, enabling authentication behavior (login, registration, token issuance) configured by its `auth:` block. See [auth overview](../auth/overview.md).
 
 ### `pk`
 
@@ -58,11 +64,30 @@ Designates an existing field as the natural primary key. When `pk:` is set, no s
 
 ### `auth`
 
-Authentication configuration for `type: auth` entities. Holds `identifier`, `via`, an optional `roles` (the name of an enum field carrying the role), and optional `bindings` for external providers. The `password` and `passwordHash` fields are implicit when `via` includes `password` -- declaring them yourself is rejected. See [auth overview](../auth/overview.md).
+Authentication configuration for `type: auth` entities. Holds `identifier`, `via` (credential providers and binding objects for external providers), and an optional `roles` (the name of an enum field carrying the role). The `password` and `passwordHash` fields are implicit when `via` includes `password` -- declaring them yourself is rejected. See [auth overview](../auth/overview.md).
 
 ### `roles`
 
-There is no entity-level `roles:` block in v0.2. To give an auth entity roles, declare an `enum` field and point `auth.roles` at it:
+An auth entity holds roles in one of two ways. A `roles:` block declares managed roles, kept out of the entity's fields:
+
+```yaml
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+    roles:
+      values: [admin, editor, viewer]
+      default: viewer
+      hierarchy:
+        admin: [editor]
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+```
+
+Or `auth.roles` names an `enum` field that holds the role:
 
 ```yaml
 entities:
@@ -81,7 +106,7 @@ entities:
         default: viewer
 ```
 
-The role value is read from that enum field at request time. The new-user default comes from the enum field's own `default:`, not from any separate role config. Role hierarchy is configured by a separate top-level `roles:` map (a sibling of `entities:`), keyed by auth-entity name; that hierarchy is parsed but not yet applied during enforcement -- only exact role matches are checked. See [roles overview](../roles/overview.md).
+Roles are read at request time, from the enum field or from the managed store. A `roles:` block may accompany the enum field to add a hierarchy. See [roles overview](../roles/overview.md).
 
 ### `fields`
 
@@ -89,9 +114,9 @@ Map of field name to field definition. Required unless the entity fully inherits
 
 ## Behavior
 
-- **Parse time:** Entity names are validated for uniqueness. `extends:` references are resolved (fields, `type`, and `auth` inherited) and circular chains are rejected. Abstract entities are stripped during desugaring. An auth entity's `auth.roles` must name an existing `enum` field.
+- **Parse time:** Entity names are validated for uniqueness. `extends:` references are resolved (fields, `type`, and `auth` inherited) and circular chains are rejected. Abstract entities are stripped during desugaring. An auth entity's `auth.roles` must name an existing `enum` field, and a `roles:` block must keep its default and hierarchy within its `values`.
 - **Compile time:** The collection and resource name come from the **repository** name that binds the entity (free-form; no pluralization). An entity referenced by two repositories produces two collections.
-- **Runtime:** Each repository-bound entity produces a collection. Roles are read from the configured enum field.
+- **Runtime:** Each repository-bound entity produces a collection. Roles are read from the configured enum field or the managed store.
 
 ## Examples
 
@@ -134,12 +159,12 @@ entities:
         type: enum
         values: [admin, moderator, user]
         default: user
-
-# Optional hierarchy (UI/declarative only; not applied during enforcement)
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
 ```
 
 ### Inheritance with abstract base
@@ -191,6 +216,11 @@ entities:
 | Repository binds an abstract entity | `DESUGAR_ABSTRACT_REFERENCED` | "Repository 'X' references abstract entity 'Y'" |
 | `auth.roles` names a missing field | `AUTH_ROLES_FIELD_NOT_FOUND` | "Roles field 'X' not found in entity 'Y'" |
 | `auth.roles` field is not an enum | `AUTH_ROLES_FIELD_NOT_ENUM` | "Roles field 'X' must be of type 'enum'" |
+| `roles.default` is not in `roles.values` | `ROLES_DEFAULT_UNKNOWN_ROLE` | "Default role 'X' is not one of the declared roles" |
+| `roles.hierarchy` names an undeclared role | `ROLES_HIERARCHY_UNKNOWN_ROLE` | "Role hierarchy references undeclared role 'X'" |
+| `roles.hierarchy` is cyclic | `ROLES_HIERARCHY_CYCLE` | "Role hierarchy for 'Y' is cyclic through 'X'" |
+| `ref:` names an undeclared entity | `REF_TARGET_NOT_FOUND` | "Field references undeclared record type 'X'" |
+| `type: auth` without `auth`, or `roles` without `type: auth` | `SCHEMA_VALIDATION_ERROR` | |
 | Declaring `password` on an auth entity | `AUTH_PASSWORD_FIELD_FORBIDDEN` | "Password input is implicit when auth.via includes password" |
 | Declaring `passwordHash` on an auth entity | `AUTH_PASSWORD_HASH_FIELD_FORBIDDEN` | "passwordHash is implicit storage when auth.via includes password" |
 

@@ -3,22 +3,11 @@ title: "Claim Mapping and Auto-Provision"
 description: How an external provider's identity claims (OIDC, SAML) map to entity fields on a per-binding basis, and whether a new record is created automatically on first SSO login.
 ---
 
-External providers are attached to an auth entity through `auth.bindings`. Each binding
-names a configured `provider`, the local `identifier` field used to match an existing
-record, an optional `claim_mapping` (provider claim -> entity field), and `auto_provision`
-(create a record on first login). Claim mapping and auto-provision are properties of a
-binding, not of `auth.via`. `via` is for the built-in `password` and `apiKey` providers.
-
-> **Enforcement status**
->
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
-> are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+External providers are attached to an auth entity through binding objects in
+`auth.via`. Each binding names a configured `provider`, the local `identifier` field
+used to match an existing record, an optional `claim_mapping` (entity field ->
+provider claim), `auto_provision` (create a record on first login) and `relations`
+(fill a foreign key from claims).
 
 ## Syntax
 
@@ -35,8 +24,8 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password
-      bindings:
+      via:
+        - provider: password
         - provider: myoidc
           identifier: email
           claim_mapping:
@@ -56,14 +45,16 @@ There is no built-in inference of well-known endpoints for any provider name.
 
 ## Behavior
 
-- **Parse time:** A binding requires `provider` and `identifier`. `claim_mapping` keys are
-  taken verbatim; they are not validated against `fields:`. `auto_provision` defaults to
-  `true`.
+- **Parse time:** A binding requires `provider`, which must be `password`, `apiKey` or
+  a key of `providers:` (`BINDING_PROVIDER_NOT_FOUND`). `identifier` defaults to
+  `auth.identifier` and must name a field of the entity
+  (`BINDING_IDENTIFIER_FIELD_NOT_FOUND`). `claim_mapping` keys are taken verbatim.
+  `auto_provision` defaults to `true`.
 - **Runtime (SSO login):** The provider returns claims. For every `entity field: claim`
-  pair in `claim_mapping`, if that claim is present in the provider response, the value is
-  copied to the entity field. The binding's `identifier` value is used to look up an
-  existing record. If none is found and `auto_provision: true`, a record is created from
-  the mapped fields.
+  pair in `claim_mapping`, a present claim is converted to the type of the entity
+  field and copied to it; a value the field cannot hold is left out. The binding's
+  `identifier` value looks up an existing record. If none is found and
+  `auto_provision: true`, a record is created from the mapped fields.
 
 ## Options
 
@@ -78,7 +69,9 @@ claim_mapping:
 ```
 
 Only the keys you list are copied. There is no automatic mapping of identically named
-claims; an unmapped claim is ignored.
+claims; an unmapped claim is ignored. A claim name is read verbatim first, then as a
+dotted path into nested claims (`realm_access.roles`), where a `*` segment selects the
+sole entry of an object.
 
 If the binding's `identifier` field is not produced by `claim_mapping`, the engine fills
 it from a fallback so the user can still be matched:
@@ -94,12 +87,30 @@ attribute's first value is used).
 
 | Value | Behavior |
 |-------|----------|
-| `true` (default) | If no record matches the binding `identifier`, create one from the mapped claim values. The generated id is a `uuid4`. No role is assigned at provision time. |
+| `true` (default) | If no record matches the binding `identifier`, create one from the mapped claim values. No role is assigned at provision time. |
 | `false` | If no record matches, return 403 with detail `User not found and auto-provisioning is disabled`. The user must already exist. |
 
-A provisioned record contains only the mapped claim fields plus the generated id. Any
-field with a YAML `default:` is not auto-filled by the SSO path, and no role is set, so a
-default role for SSO users must come from another flow.
+A provisioned record contains only the mapped claim fields, the filled relations and
+a generated id. A field's YAML `default:` is not applied by the SSO path, and no role
+is set, so a role for SSO users must come from another flow.
+
+### `relations`
+
+Fills a foreign key of the identity record with the id of a record in another
+collection whose fields match claims:
+
+```yaml
+relations:
+  orgId:                      # foreign key on the identity entity
+    collection: orgs
+    match:
+      slug: org               # orgs.slug must equal the "org" claim
+```
+
+The key must be a field of the entity (`BINDING_RELATION_FIELD_NOT_FOUND`),
+`collection` a declared collection (`BINDING_RELATION_COLLECTION_NOT_FOUND`), and each
+`match` key a field of that collection (`BINDING_RELATION_MATCH_FIELD_NOT_FOUND`).
+When a matched claim is absent or no record matches, the foreign key is set to `null`.
 
 ## Examples
 
@@ -125,8 +136,8 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password
-      bindings:
+      via:
+        - provider: password
         - provider: myoidc
           identifier: email
           claim_mapping:
@@ -147,7 +158,7 @@ On first SSO login (the browser visits `GET /api/v1/my-collection/auth/myoidc`):
 2. `email`, `name`, and `picture` are read from the claims; `displayName` and `avatarUrl`
    are populated via `claim_mapping`, and `email` is the identifier.
 3. No record matches that `email`, so `auto_provision: true` creates one with `email`,
-   `displayName`, `avatarUrl`, and a generated `uuid4` id.
+   `displayName`, `avatarUrl`, and a generated id.
 4. A single-use login code is minted and the browser is redirected to
    `{FRONTEND_URL}/auth/callback?code=<code>`; the SPA redeems it at
    `/auth/exchange` for the application JWT. Subsequent logins match the existing record.
@@ -157,8 +168,8 @@ On first SSO login (the browser visits `GET /api/v1/my-collection/auth/myoidc`):
 ```yaml
 auth:
   identifier: email
-  via: password
-  bindings:
+  via:
+    - provider: password
     - provider: myoidc
       identifier: email
       claim_mapping:
@@ -172,14 +183,13 @@ record matches the binding `identifier`, the SSO callback returns 403 with detai
 
 ## What a successful SSO login returns
 
-The two SSO callbacks differ in shape:
+Both callbacks end the same way: the engine mints a single-use login code and
+redirects to `{FRONTEND_URL}/auth/callback?code=<code>` (when `FRONTEND_URL` is unset,
+the request base URL is used). The SPA then `POST`s the code to `/auth/exchange` and
+receives the application's own JWT, not the provider token.
 
-- **OIDC** (`GET .../auth/{provider}/callback?code=...`): on success, the engine mints a
-  single-use login code and issues a 302 redirect to `{FRONTEND_URL}/auth/callback?code=<code>`
-  (when `FRONTEND_URL` is unset, the request base URL is used). The SPA then `POST`s the code
-  to `/auth/exchange` and receives the application's own JWT, not the provider token.
-- **SAML** (`POST .../auth/{provider}/callback`): on success, the engine returns JSON
-  `{"token": "<jwt>", "user": {...}}` with `_id` and `_auth` stripped from the user object.
+- **OIDC** (`GET .../auth/{provider}/callback?code=...`) answers with a 302 redirect.
+- **SAML** (`POST .../auth/{provider}/callback`) answers with a 303 redirect.
 
 With `api: { basePath: /api, version: v1 }`, the OIDC routes are
 `/api/v1/{collection}/auth/{provider}` and `/api/v1/{collection}/auth/{provider}/callback`,
@@ -211,20 +221,21 @@ providers:
 ## Edge Cases
 
 - **Missing claim from provider.** If a mapped claim is absent from the provider response,
-  the corresponding entity field is simply omitted from the created record (not set to
-  `null`).
+  the corresponding entity field is omitted from the created record (not set to `null`).
 
 - **Mapping to a non-existent entity field.** `claim_mapping` keys are not validated against
   `fields:` at parse time. The mapped value is written to the record verbatim, but a field
-  not declared in the Pydantic model is stripped from CRUD API responses.
+  not declared on the entity is stripped from CRUD API responses.
 
-- **`identifier` not in `claim_mapping`.** The engine fills the identifier from the fallback
-  (OIDC: `email`/`login`/`sub`; SAML: `NameID`). If none of those are present either, the
-  lookup uses an empty value and likely fails to match.
+- **`identifier` not in the claims.** The engine fills the identifier from the fallback
+  (OIDC: `email`/`login`/`sub`; SAML: `NameID`). If none yields a value the identifier
+  field can hold, the sign-in is refused with 401.
 
-- **Existing user.** If a record already matches the binding `identifier`, that record is
-  used and a fresh application JWT is issued. Mapped claims are NOT written back to the
-  existing record; only new records receive claim data.
+- **Existing user.** If a record already matches the binding `identifier`, every
+  sign-in brings its mapped fields and relations up to date; its id never changes.
+
+- **Unique conflict.** A sign-in that would give the record a unique value another
+  record already holds is refused with 401.
 
 ## Errors
 
@@ -233,7 +244,9 @@ providers:
 | OIDC token exchange fails | 401 | `Token exchange failed` |
 | OIDC userinfo fetch fails | 401 | `Failed to fetch user info` |
 | Provider token already expired | 401 | `Token expired` |
-| SAML assertion error / not authenticated | 401 | `SAML error: ...` / `SAML authentication failed` |
+| SAML response invalid or not authenticated | 401 | `SAML authentication failed: ...` |
+| No claim yields a usable identifier | 401 | `The provider's claims carry no usable '<identifier>'` |
+| Signing in would duplicate a unique value | 401 | |
 | No matching record and `auto_provision: false` | 403 | `User not found and auto-provisioning is disabled` |
 
 ## See Also

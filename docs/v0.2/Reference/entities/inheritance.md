@@ -67,7 +67,7 @@ Marks an entity as a template. Abstract entities:
 - Cannot be bound to a repository (a repository's `entity:` pointing at an abstract entity raises `DESUGAR_ABSTRACT_REFERENCED`).
 - Are removed before route generation.
 
-A field with `type: ref` may still name an abstract entity as its target; `ref:` targets are not validated against the abstract/concrete distinction. Only repository `entity:` bindings are checked.
+A field with `type: ref` may name an abstract entity as its target; `ref:` must only name a declared entity (`REF_TARGET_NOT_FOUND`). Only repository `entity:` bindings reject abstract entities.
 
 ## Primary key requirement
 
@@ -167,7 +167,7 @@ The child's `name` field completely replaces the parent's. `user` has `id` and `
 
 - **Abstract entities cannot be referenced by repositories.** If a repository's `entity:` points to an abstract entity, the parser raises `DESUGAR_ABSTRACT_REFERENCED`.
 
-- **Abstract `ref:` targets are not validated.** A `type: ref` field may name an abstract entity. The abstract entity is simply removed during resolution; no error is raised for the dangling reference.
+- **Abstract `ref:` targets.** A `type: ref` field may name an abstract entity. A name that is not a declared entity raises `REF_TARGET_NOT_FOUND`.
 
 - **Circular inheritance.** If `a extends b` and `b extends a` (directly or transitively), the parser raises `ENTITY_CIRCULAR_EXTENDS`.
 

@@ -86,12 +86,12 @@ The minted token carries identity only:
 - `sub` is the record's id-field value; access rules read it as `principal.sub`.
 - `identity_collection` names which auth entity the principal belongs to.
 - Roles are NOT in the token. On every request the app re-loads the record from
-  its repository by the configured id field and re-reads the role from the
-  entity's role field, so a role change takes effect on the next request without
-  re-issuing a token.
+  its repository by the configured id field and re-reads its roles, so a role
+  change takes effect on the next request without re-issuing a token.
 
-Tokens are signed HS256 with `JWT_SECRET` and expire after `JWT_EXPIRATION_HOURS`
-(default 24). See [Environment variables](../configuration/environment-variables.md).
+Tokens are signed HS256 with `JWT_SECRET` and expire after `session.ttl` seconds,
+or after `JWT_EXPIRATION_HOURS` (default 24) when `session.ttl` is unset. See
+[Environment variables](../configuration/environment-variables.md).
 
 ## Credential resolution order
 
@@ -113,7 +113,7 @@ If none resolve, the request is unauthenticated and protected routes return 401.
 
 ## OIDC single sign-on
 
-Attach an OIDC provider to the auth entity through `auth.bindings` (not `via`).
+Attach an OIDC provider to the auth entity through a binding object in `auth.via`.
 `discovery_url` is effectively required -- the app fetches the provider's
 `.well-known/openid-configuration` from it at request time; there is no built-in
 inference for "well-known" providers.
@@ -131,8 +131,8 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password
-      bindings:
+      via:
+        - provider: password
         - provider: myoidc
           identifier: email
           claim_mapping:
@@ -175,12 +175,17 @@ sequenceDiagram
 
 Notes on the callback:
 
-- Claims are copied into the new/looked-up record only for keys present in
-  `claim_mapping`. A claim absent from the IdP response is omitted (not set to null).
+- Claims are copied into the new or matched record only for keys present in
+  `claim_mapping`, converted to the field's type. A claim absent from the IdP
+  response is omitted (not set to null). Every sign-in brings a matched record's
+  mapped fields up to date.
 - If `claim_mapping` does not fill the binding's `identifier`, the app falls back to
-  the `email`, then `login`, then `sub` claim for the identifier value.
-- A provisioned record gets a server-generated id (uuid4).
-- Token exchange failure, userinfo failure, or an expired token each return 401.
+  the `email`, then `login`, then `sub` claim for the identifier value. Claims that
+  yield no usable identifier return 401.
+- A provisioned record gets a server-generated id.
+- Token exchange failure, userinfo failure, an expired token, or a sign-in that
+  would duplicate a unique value each return 401. A callback whose `state` does
+  not match the login that started it returns 400 (`Invalid OIDC state`).
 - The app JWT never travels in a redirect URL. The callback instead mints a
   single-use login code and redirects to `{FRONTEND_URL}/auth/callback?code=<code>`.
   If `FRONTEND_URL` is unset, the app's own base URL is used. The React login page
@@ -230,8 +235,8 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password
-      bindings:
+      via:
+        - provider: password
         - provider: mysaml
           identifier: email
           claim_mapping:
@@ -247,14 +252,18 @@ SAML routes (all under `/api/v1/{collection}/auth/{provider}`):
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `.../auth/{provider}` | Begin login; 302 to the IdP. |
-| POST | `.../auth/{provider}/callback` | Assertion Consumer Service. Returns JSON `{token, user}`. |
+| POST | `.../auth/{provider}/callback` | Assertion Consumer Service. 303 to `{FRONTEND_URL}/auth/callback?code=<code>`. |
 | GET | `.../auth/{provider}/metadata` | Service-provider metadata XML. |
+| GET | `.../auth/{provider}/logout` | Redirect to the IdP's single logout service. |
 
-The ACS callback returns the app JWT and the record as JSON (the `_id` and `_auth`
-fields are stripped), rather than a 302 redirect. A SAML error or a failed assertion
-returns 401; `auto_provision: false` with no matching record returns 403. The
-identifier falls back to the SAML NameID when `claim_mapping` does not supply it. IdP
-metadata is fetched at request time from `idp_metadata_url`.
+The ACS callback ends like the OIDC callback: it mints a single-use login code and
+redirects to the frontend, which redeems the code at `/api/v1/auth/exchange`. A
+missing or malformed `SAMLResponse` returns 400; a failed assertion, a response
+that answers no pending login, or a replayed assertion returns 401;
+`auto_provision: false` with no matching record returns 403. The identifier falls
+back to the SAML NameID when `claim_mapping` does not supply it. IdP metadata is
+fetched at request time from `idp_metadata_url`. See
+[SAML provider](../providers/saml.md).
 
 ## Listing configured providers
 
@@ -273,9 +282,9 @@ endpoint to render one SSO button per provider, alongside the password login for
 | Variable | Used by | Purpose |
 |----------|---------|---------|
 | `JWT_SECRET` | all login paths | HS256 signing secret. Set a strong value in production. |
-| `JWT_EXPIRATION_HOURS` | all login paths | Token lifetime in hours (default 24). |
+| `JWT_EXPIRATION_HOURS` | all login paths | Token lifetime in hours when `session.ttl` is unset (default 24). |
 | `PASSWORD_HASH_ROUNDS` | password register/login | PBKDF2 iteration count (default 390000). |
-| `FRONTEND_URL` | OIDC callback | Base for the `.../auth/callback?code=` redirect. |
+| `FRONTEND_URL` | OIDC and SAML callbacks | Base for the `.../auth/callback?code=` redirect. |
 | `<PROVIDER>_CLIENT_SECRET` | OIDC token exchange | Each confidential provider's client secret (e.g. `KEYCLOAK_CLIENT_SECRET`), a `SecretStr` setting read at run time. Emitted only when the provider declares a `client_secret`. |
 
 Provider `${VAR}` placeholders are interpolated from the environment at build time

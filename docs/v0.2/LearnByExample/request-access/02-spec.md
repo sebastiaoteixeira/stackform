@@ -1,23 +1,28 @@
 ---
 title: "Spec"
-description: The full YAML for the organization-membership API with a DTO-typed create body and a request.path.orgId access rule.
+description: The full YAML for the organization-membership API with a DTO-typed request binding and a request.path.orgId access rule.
 ---
 
-The full spec. The `dto:` root declares the request shape; the `membership`
-controller declares an explicit nested route whose `{orgId}` token is read in the
-access rule through `request.path.orgId`.
+The full spec. The `dto:` root declares the request shape; the `memberships`
+controller exposes only `create`, on a route whose `{orgId}` token the access rule
+reads through `req.path.orgId`.
 
 ```yaml
+version: "0.2"
+
 api:
   basePath: /api
   version: v1
   operations:
     auth:
+      register: true
       login: true
 
 dto:
   createMembership:
     fields:
+      orgId: { type: ref, ref: org, required: true }
+      userId: { type: ref, ref: user, required: true }
       role:
         type: enum
         values: [admin, member, viewer]
@@ -31,13 +36,12 @@ entities:
     type: auth
     auth:
       identifier: email
-      secret: password
+      via: password
       roles: role
     fields:
       id: { type: id }
-      email: { type: string, required: true, format: email }
-      password: { type: string, required: true }
-      orgId: { type: ref, ref: org, required: true }
+      email: { type: string, required: true, unique: true, format: email }
+      orgId: { type: ref, ref: org }
       role:
         type: enum
         values: [admin, member, viewer]
@@ -59,83 +63,109 @@ entities:
         required: true
       note: { type: string }
 
+repositories:
+  users: { entity: user }
+  memberships: { entity: membership }
+
+services:
+  users: {}
+  memberships: {}
+
 controllers:
-  membership:
-    service: membership
-    base_path: /orgs/{orgId}/members
-    access: "*"
+  users:
+    service: users
+    base_path: /users
+    access: user:admin
     operations:
-      list:
-        access: org:*
+      register: { access: public }
+      login: { access: public }
+
+  memberships:
+    service: memberships
+    base_path: /orgs
+    operations:
+      list: false
+      get: false
+      update: false
+      replace: false
+      delete: false
       create:
+        path: /{orgId}/members
         access:
-          - org:admin
+          - user:admin
           - given:
               principal: identity:user
-              org: request.path
-              member: request.body:createMembership
+              req: request:createMembership
             when:
-              - org.path.orgId equals principal.record.orgId
-              - member.body.role not equals 'admin'
+              - req.path.orgId equals principal.record.orgId
+              - req.body.orgId equals req.path.orgId
+              - req.body.role not equals 'admin'
 ```
 
 ## Walkthrough
 
-### The DTO validates the body first
+### The DTO validates the body
 
-`member: request.body:createMembership` binds the request body and validates it
-against the `createMembership` DTO before authorization. The DTO requires `role`
-to be one of `admin`, `member`, `viewer`. A body that omits `role` or sends an
-out-of-set value returns 422 — the rule never runs.
+`req: request:createMembership` binds the whole request and validates its body
+against the `createMembership` DTO. The DTO requires `orgId`, `userId`, and a `role`
+that is one of `admin`, `member`, `viewer`, and rejects any other key. A body that
+omits `role` or sends an out-of-set value returns 422.
 
-The DTO is a request shape only: it has no `id`, no repository, no route. If you
-add `type: id`, `unique`, or `format` to a DTO field, generation fails with
-`DTO_FORBIDS_PERSISTENCE_ATTR`.
+The DTO is a request shape only: it has no `id`, no repository, no route. A DTO
+field that declares `type: id` or `unique` fails generation with
+`SCHEMA_VALIDATION_ERROR`.
 
 ### The path parameter is read from the route template
 
-The controller's `base_path` is `/orgs/{orgId}/members`, so the composed create
-route is `POST /api/v1/orgs/{orgId}/members`. `{orgId}` is an OpenAPI `in: path`
-parameter. The rule binds the path map with `org: request.path` and reads the
-token in `when:` as `org.path.orgId`.
+The `create` operation's `path` is `/{orgId}/members` under `base_path: /orgs`, so
+the composed route is `POST /api/v1/orgs/{orgId}/members`. `{orgId}` is an OpenAPI
+`in: path` parameter, read in `when:` as `req.path.orgId`. A `base_path` itself may
+not hold a path token (`CONTROLLER_BASE_PATH_INVALID`).
 
-If you wrote `org.path.tenantId` (a token the route does not declare), generation
+If you wrote `req.path.tenantId` (a token the route does not declare), generation
 would fail with `REQUEST_PATH_PARAM_NOT_DECLARED`.
 
-### The two conditions
+### The three conditions
 
 ```yaml
 when:
-  - org.path.orgId equals principal.record.orgId
-  - member.body.role not equals 'admin'
+  - req.path.orgId equals principal.record.orgId
+  - req.body.orgId equals req.path.orgId
+  - req.body.role not equals 'admin'
 ```
 
-The list form ANDs both. The caller must belong to the organization named in the
-URL, and may not assign the `admin` role. An `org:admin` principal skips both
-checks via the first rule in the list.
+The list form ANDs them. The caller must belong to the organization named in the
+URL, the body must name that same organization, and the caller may not assign the
+`admin` role. A `user:admin` principal skips all three through the first rule in
+the list.
 
 ### Why a document rule would not work here
 
 `create` has no fetched record, so a `document:` binding never resolves for it.
-The data the rule needs — the path's `orgId` and the body's `role` — lives only on
-the request. That is exactly what the request bindings expose. See
+The data the rule needs (the path's `orgId` and the body's `orgId` and `role`)
+lives only on the request. That is exactly what the request bindings expose. See
 [Access control: Request access](../../Reference/controllers/access-control.md).
+
+### Accounts
+
+Registration is public and takes `orgId` from the body; every other `users` route
+requires `user:admin`. A new user's `role` is `member`: a caller sets `role` only
+to a role it holds itself.
 
 ## Try it
 
-A member of org `acme` adding a viewer to their own org:
+A member of an organization adding a viewer to it:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/orgs/acme/members \
-  -H "Authorization: Bearer $TOKEN" \
+curl -X POST "http://localhost:8000/api/v1/orgs/$ORG/members" \
+  -u ann@example.com:pw \
   -H "Content-Type: application/json" \
-  -d '{"userId": "u-123", "role": "viewer"}'
+  -d "{\"orgId\": \"$ORG\", \"userId\": \"$USER_ID\", \"role\": \"viewer\"}"
 ```
 
-The same member trying to assign `admin` is denied with 403; a body with an
-invalid `role` is rejected with 422 before the rule runs; a member acting on a
-different org's URL is denied because `org.path.orgId` does not match their
-`principal.record.orgId`.
+The same member trying to assign `admin` gets 403; a body with an invalid `role`
+gets 422; a member acting on a different organization's URL, or naming a different
+`orgId` in the body, gets 403; a request without credentials gets 401.
 
 ## See Also
 

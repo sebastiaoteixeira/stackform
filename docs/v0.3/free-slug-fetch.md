@@ -100,10 +100,8 @@ Each method returns the affected document, or `None` when the complete predicate
 does not match. The built-in MongoDB and SQL adapters and all generated
 repositories implement this contract.
 
-## v0.2 compatibility
+## In v0.2
 
-v0.2 built-in single-record ops always use the `{id}` convention. Runtime and
-generated backends continue to load directly by `id`, and a missing runtime
-parameter yields the exact legacy message `Missing route parameter: id`.
-Freely-named and nested record predicates are enabled only when the spec version
-is `0.3`.
+v0.2 built-in single-record operations use the `{id}` path parameter and load
+the record by `id`; a missing parameter answers `Missing route parameter: id`.
+Freely-named and nested record predicates are v0.3 only.

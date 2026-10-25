@@ -1,14 +1,14 @@
 ---
 title: "Tutorial 10: External Auth Providers"
-description: Add an external OIDC provider (Google) alongside password login using auth.bindings.
+description: Add an external OIDC provider (Google) alongside password login with a binding object in auth.via.
 ---
 
-**Concept introduced:** Adding an external OIDC provider alongside password login via `auth.bindings`.
+**Concept introduced:** Adding an external OIDC provider alongside password login with a binding object in `auth.via`.
 
-Password login is configured through `auth.via`. External identity providers (OIDC,
-SAML) are configured separately: declare the provider once under the top-level
-`providers:` block, then attach it to an auth entity through `auth.bindings`. Each
-binding generates its own login flow that ends in the same app-issued JWT, so your
+Every sign-in method of an auth entity is listed in `auth.via`. External identity
+providers (OIDC, SAML) are declared once under the top-level `providers:` block, then
+attached to an auth entity by a binding object in `auth.via`. Each binding generates
+its own login flow that ends in the same app-issued JWT, so your
 access rules work identically no matter how the user signed in.
 
 ## Adding Google OIDC to the user entity
@@ -47,15 +47,15 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password
-      roles: role
-      bindings:
+      via:
+        - provider: password
         - provider: google
           identifier: email
           claim_mapping:
             email: email
             displayName: name
           auto_provision: true
+      roles: role
     fields:
       email: { type: string, required: true, unique: true }
       displayName: { type: string, required: true }
@@ -107,14 +107,14 @@ controllers:
           - given:
               principal: identity:user
               document: notes
-            when: principal equals document.authorId
+            when: principal.sub equals document.authorId
       delete:
         access:
           - moderator
           - given:
               principal: identity:user
               document: notes
-            when: principal equals document.authorId
+            when: principal.sub equals document.authorId
       publish:
         method: POST
         path: "/{id}/publish"
@@ -122,7 +122,7 @@ controllers:
           - given:
               principal: identity:user
               document: notes
-            when: principal equals document.authorId
+            when: principal.sub equals document.authorId
 ```
 
 What to notice in this spec:
@@ -131,23 +131,19 @@ What to notice in this spec:
   generated backend reads the provider's `authorization_endpoint`, `token_endpoint`,
   and `userinfo_endpoint` from that document. There is no built-in discovery for
   "well-known" providers; always supply the URL.
-- `auth.via: password` keeps password login. The Google provider is attached through
-  `auth.bindings`, NOT through `via`. `via` is only for the built-in `password` and
-  `apiKey` methods.
+- `auth.via` lists `password`, which keeps password login, and a binding object for
+  the Google provider.
 - `claim_mapping` and `auto_provision` live INSIDE each binding, not on the entity.
-- Roles come from an enum field named by `auth.roles: role`. A standalone
-  entity-level `roles:` block is silently ignored in v0.2; see Tutorial 06.
+- Roles come from an enum field named by `auth.roles: role`; see Tutorial 06. A
+  provisioned user gets the field's default role.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## Generated OIDC routes
 
@@ -158,6 +154,7 @@ automatically for each OIDC binding:
 |--------|------|-------------|
 | GET | /api/v1/users/auth/google | Redirect to Google's authorization endpoint |
 | GET | /api/v1/users/auth/google/callback | Handle the OAuth2 `code` callback, issue a JWT, then 302 to the frontend |
+| GET | /api/v1/users/auth/google/logout | Redirect to Google's end-session endpoint |
 | GET | /api/v1/users/auth/providers | List the external providers bound to this entity |
 
 The routes are mounted at `{basePath}[/{version}]/{collection}/auth/...`, where
@@ -258,22 +255,27 @@ provider still uses the OIDC config shape (`type: oidc`, `client_id`,
 ```yaml
 auth:
   identifier: email          # default identifier field for this entity
-  via: password              # built-in methods only (password, apiKey)
-  roles: role                # enum field that holds the role
-  bindings:
+  via:
+    - provider: password     # built-in password login
     - provider: google       # references providers.google
       identifier: email      # field matched against the mapped claims
       claim_mapping:         # map OIDC claims to entity fields
         email: email         # entity_field: oidc_claim
         displayName: name
       auto_provision: true   # create the user on first login (default true)
+  roles: role                # enum field that holds the role
 ```
 
-- `claim_mapping` copies only the listed claims (`entity_field: claim_name`). Claims
-  are not auto-mapped by matching names. If a mapped claim is absent in the provider
-  response, that field is simply omitted (not set to null).
+- `claim_mapping` copies only the listed claims (`entity_field: claim_name`),
+  converted to each field's type. Claims are not auto-mapped by matching names. If a
+  mapped claim is absent in the provider response, that field is simply omitted (not
+  set to null). Every sign-in brings an existing user's mapped fields up to date.
 - If the binding `identifier` field is not produced by the claim mapping, the
-  backend falls back to the `email`, `login`, or `sub` claim to populate it.
+  backend falls back to the `email`, `login`, or `sub` claim to populate it. Claims
+  that yield no identifier return 401, as does a sign-in that would duplicate a
+  unique value.
+- A binding may also carry `relations`, which fill a foreign key from claims; see
+  [Claim mapping](../Reference/auth/claim-mapping.md).
 - `auto_provision` defaults to `true`: the first login creates a user record. Set it
   to `false` to require the user to already exist; an unmatched login then returns
   `403 User not found and auto-provisioning is disabled`.
@@ -285,8 +287,8 @@ marks fields as `required`, make sure the mapping covers them or set sensible
 
 ## SAML providers
 
-SAML follows the same binding model. Declare a SAML provider and attach it via
-`auth.bindings`:
+SAML follows the same binding model. Declare a SAML provider and attach it with a
+binding object in `auth.via`:
 
 ```yaml
 providers:
@@ -300,8 +302,8 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password
-      bindings:
+      via:
+        - provider: password
         - provider: corp
           identifier: email
           claim_mapping:
@@ -310,11 +312,11 @@ entities:
 ```
 
 A SAML binding generates `GET /api/v1/users/auth/corp` (login), a
-`POST /api/v1/users/auth/corp/callback` assertion-consumer endpoint that returns
-`{"token": ..., "user": {...}}` (with `_id`/`_auth` stripped), and a
-`GET /api/v1/users/auth/corp/metadata` endpoint serving the service-provider XML.
-`auto_provision` defaults to `true` here too; when disabled, an unmatched assertion
-returns 403.
+`POST /api/v1/users/auth/corp/callback` assertion-consumer endpoint that, like the
+OIDC callback, redirects (303) to `{FRONTEND_URL}/auth/callback?code=<code>` for the
+SPA to exchange, a `GET /api/v1/users/auth/corp/metadata` endpoint serving the
+service-provider XML, and `GET /api/v1/users/auth/corp/logout`. `auto_provision`
+defaults to `true` here too; when disabled, an unmatched assertion returns 403.
 
 ## Environment variables
 
@@ -334,7 +336,7 @@ is different: the generated backend reads it at **run time** via a `SecretStr`
 setting (the `<PROVIDER>_CLIENT_SECRET` pattern), so it must also be present in the
 environment when you `run`, `build`-and-launch, or deploy -- not only at build time.
 Keep the literal secret out of the YAML in every case. `FRONTEND_URL` controls where
-the OIDC callback redirects after a successful login.
+the OIDC and SAML callbacks redirect after a successful login.
 
 **Note:** Testing OIDC locally requires a real OAuth app registered with the
 provider. For Google, create one at
@@ -346,9 +348,9 @@ on its default address, that is
 ## Key points
 
 - The top-level `providers:` section defines external OIDC/SAML providers; each is
-  inert until an auth entity binds it through `auth.bindings`.
-- `via:` is for the built-in `password` and `apiKey` methods. External providers are
-  attached through `auth.bindings`, where `claim_mapping` and `auto_provision` live.
+  inert until an auth entity binds it in `auth.via`.
+- `auth.via` lists `password`, `apiKey`, and binding objects for external providers;
+  `claim_mapping`, `auto_provision`, and `relations` live in the binding object.
 - OIDC providers require `discovery_url`; there is no well-known-provider inference.
 - `auto_provision` defaults to `true`; with it disabled an unmatched login returns 403.
 - All login methods (password, OIDC, SAML) issue the same app JWT, so access rules

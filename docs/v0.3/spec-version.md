@@ -1,6 +1,6 @@
 ---
 title: Spec version 0.3
-description: Opt in to the v0.3 spec, a superset of v0.2, and the reserved-vs-active where operators.
+description: Opt in to the v0.3 spec, what it adds to v0.2, and the operators a where binding accepts.
 ---
 
 ## Opting in
@@ -11,60 +11,38 @@ Select the spec version at the top of your file:
 version: "0.3"
 ```
 
-A `version: "0.3"` spec runs the same shared validation and desugaring pipeline as
-v0.2 and is transformed by `V03Transformer`, which subclasses the v0.2 transformer.
-A `version: "0.2"` spec is unaffected and behaves exactly as before. An unknown
-version (for example `"9.9"`) is rejected with the `UNSUPPORTED_VERSION` error.
+A `version: "0.3"` spec runs the same validation and desugaring pipeline as
+v0.2. An unknown version (for example `"9.9"`) is rejected with the
+`UNSUPPORTED_VERSION` error.
 
-## Compatibility with v0.2
+## Differences from v0.2
 
-Most v0.2 specs remain valid under v0.3. The exceptions are the dead access-rule
-`filter` and `writeFields` keys: neither was enforced, and both are rejected in
-v0.3 to prevent a false sense of authorization. The v0.3 schema lives at
-`parsers/schemas/yaml-spec-v0.3.schema.json` and derives from v0.2 with these
-changes:
+A v0.2 spec is a valid v0.3 spec once its `imports` entries use the object form
+described below. The v0.3 schema lives at
+`parsers/schemas/yaml-spec-v0.3.schema.json` and extends v0.2 with:
 
 - **[`where` binding form](./given-where.md)** &mdash; access-rule `given:`
   values may bind a record by predicate over fields, `$`-sigil symbols, and
   literals (for example `orders where ownerId = $userId and orgId = $orgId`).
 - **[service `input:` / `with:`](./service-input.md)** &mdash; a service declares,
   validates, and forwards request values to a repository operation or handler.
-- **[controller / access-rule `bind:`](./controller-bind.md)** &mdash; the matched
+- **[access-rule `bind:`](./controller-bind.md)** &mdash; the matched
   authorization rule supplies trusted values for a service's declared inputs.
-- **[access-rule `reason:`](./access-reason.md)** &mdash; an explicit matching deny
-  may return a safe, rule-specific explanation in the 403 response.
-- **[vendored `imports:`](./vendored-imports.md)** &mdash; an `imports` entry may
-  be an object that copies a custom-handler package into the generated target and
+- **[vendored `imports:`](./vendored-imports.md)** &mdash; each `imports` entry is
+  an object that copies a custom-handler package into the generated target and
   merges its dependencies into the manifest.
+- **[pagination](./pagination.md)** &mdash; `pagination:` on a list route or
+  operation override.
+- **[file fields](./file-fields.md), [file datastores](./file-datastores.md) and
+  [file endpoints](./file-endpoints.md)** &mdash; `type: file` fields, `api.files`,
+  `repositories.<name>.files` and the `filesystem`/`s3` datastores.
+- **[PKCE](./pkce.md) and [DPoP](./dpop.md)** &mdash; `pkce` and `dpop` on an OIDC
+  provider.
 - **`$`-sigil slugs** &mdash; symbolic references such as `$userId`, resolved at
   build or call time.
-- **[removed access-rule `filter`](./removed-filter-key.md)** &mdash; v0.3 rejects
-  this unenforced legacy key with `ACCESS_FILTER_REMOVED`.
-- **[removed access-rule `writeFields`](./removed-write-fields-key.md)** &mdash;
-  v0.3 rejects this unenforced legacy rule key with
-  `ACCESS_WRITE_FIELDS_REMOVED`.
 
-Service `input:` / `with:`, controller `bind:`, and explainable denial reasons
-are implemented in the runtime server and generated backends. A construct is
-not listed as implemented until its parser, runtime behavior, generated output,
-tests, and reference docs are present.
+## `where` operators
 
-## `where` operators: active vs reserved
-
-The `where` operator set is reserved so that specs written against future v0.3
-releases stay within the schema's character set today. Only a subset is active:
-
-| Operator | Status |
-| --- | --- |
-| `=` | Active |
-| `and` | Active |
-| `!=` | Reserved (not yet implemented) |
-| `<` | Reserved (not yet implemented) |
-| `<=` | Reserved (not yet implemented) |
-| `>` | Reserved (not yet implemented) |
-| `>=` | Reserved (not yet implemented) |
-| `in` | Reserved (not yet implemented) |
-
-Reserved operators pass the schema but are rejected by the where parser with
-`WHERE_OPERATOR_UNSUPPORTED`, so a spec using one does not build. Use only `=`
-and `and`.
+A `where` binding compares fields with `=` and joins comparisons with `and`.
+The operators `!=`, `<`, `<=`, `>`, `>=` and `in` are rejected with
+`WHERE_OPERATOR_UNSUPPORTED`.

@@ -78,13 +78,11 @@ With `basePath: /api` and `version: v1`, the notes routes live under
 
 - `required: true` -- field must be present on create (and on replace). On update,
   every field is optional.
-- `default: value` -- declared on the generated model, but applied only when the
-  client actually sends the field. Bodies are persisted with
-  `model_dump(exclude_unset=True)`, so a field you omit is NOT written, even if it
-  has a default. Send the field explicitly if you want the default value stored.
-- `readonly: true` -- the field is dropped from create/update/replace request models
-  entirely. Clients cannot set it; it is populated server-side or left unset. Good
-  for audit columns like `createdAt`.
+- `default: value` -- stored on create and replace when the client omits the
+  field. A required field with a default may be omitted.
+- `readonly: true` -- clients may not send the field; a write body that carries it
+  is rejected with 422. Its default, if any, is still stored on create. Good for
+  audit columns like `createdAt`.
 - `unique: true` -- creates a SQL unique constraint or MongoDB unique partial
   index. A duplicate write is rejected with `409 Conflict`; the response names
   the field when the datastore supplies it without exposing the conflicting value.
@@ -101,15 +99,10 @@ document is stored):
 | `minLength` | `string` (and `ref`) | string length must be `>= minLength` |
 | `maxLength` | `string` (and `ref`) | string length must be `<= maxLength` |
 | `values` | `enum` | value must be one of the listed values |
+| `format` | `string` | value must be a valid `email`, `uri`, `e164`, `uuidv4` or `uuidv7` |
 
-The following is accepted in the schema but is metadata-only -- declarative,
-surfaced to the UI, and never enforced on write:
-
-- `format: email | uri | e164` on a string -- a hint, not a validator. The generated
-  backend does not check the value matches the format.
-
-The lifecycle below shows where a single field value is checked, accepted as
-metadata, or stripped during a create request:
+The lifecycle below shows where a single field value is checked during a create
+request:
 
 ```mermaid
 flowchart TD
@@ -117,14 +110,13 @@ flowchart TD
   B -- No --> R1[Reject: Unknown fields]
   B -- Yes --> C{Type and min/max/length OK?}
   C -- No --> R2[Reject: validation error]
-  C -- Yes --> D{Required and missing?}
+  C -- Yes --> D{Required, missing and no default?}
   D -- Yes --> R3[Reject: Missing required fields]
-  D -- No --> E[format: accepted metadata]
-  E --> U{unique constraint satisfied?}
+  D -- No --> U{unique constraint satisfied?}
   U -- No --> R4[Reject: 409 Conflict]
   U -- Yes --> F{Value sent by client?}
   F -- Yes --> S1[Stored]
-  F -- No, has default --> S2[Stripped by exclude_unset: default not persisted]
+  F -- No, has default --> S2[Default stored]
   F -- No, type id --> S3[Server-generated id]
 ```
 
@@ -145,17 +137,17 @@ entity/repository:
 authorId: { type: ref, ref: author, required: true }
 ```
 
-The value is stored and validated only as a string -- there is no UUID-format check,
-no foreign-key integrity, and the target entity is NOT verified to exist at
-generation time. A typo in `ref:` is not caught when you build; the field simply
-holds whatever string you send. Relationships are covered in tutorial 03.
+The value is stored and validated as a string, with no foreign-key integrity. The
+target must be a declared entity; a typo in `ref:` fails generation with
+`REF_TARGET_NOT_FOUND`. Relationships are covered in tutorial 03.
 
 ## Typed objects and arrays
 
-`object` accepts free-form JSON by default. To document an inner shape, add
-`properties:` (each value is itself a field config) and optionally
-`additionalProperties: false`. `array` requires an `items:` sub-schema; the item can
-be any field type, including an `object`:
+`object` accepts free-form JSON by default. To check an inner shape, add
+`properties:` (each value is itself a field config); keys outside `properties` are
+then rejected unless `additionalProperties: true`. `array` requires an `items:`
+sub-schema that every element must satisfy; the item can be any field type,
+including an `object`:
 
 ```yaml
 metadata:

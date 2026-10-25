@@ -29,10 +29,12 @@ Access   ::= "public"
 | `public` | No principal is required. |
 | `"*"` | Any authenticated principal. Quote it so YAML does not treat `*` as an alias. |
 | `<entity>:*` | Any principal from the named `type: auth` entity. |
-| `<entity>:<role>` | A principal from that auth entity with the exact declared role. |
-| `<role>` | The exact role on the only auth entity; rejected as ambiguous when multiple auth entities exist. |
+| `<entity>:<role>` | A principal from that auth entity holding the role. |
+| `<role>` | The role on the only auth entity; rejected as ambiguous when multiple auth entities exist. |
 
-Role inheritance is not applied: role matching is exact. A missing `access:` is
+A principal holds its own roles and every role they inherit through
+`entities.<entity>.roles.hierarchy`, so with `editor: [viewer]` an editor passes
+a `viewer` rule. A missing `access:` is
 treated as public and emits the `PUBLIC_ROUTE` build warning. An explicit
 `access: public` also emits a warning so accidental exposure is visible during
 generation.
@@ -58,27 +60,45 @@ access:
 AccessRule ::= {
   given?: GivenBindings,
   when?: WhenExpression | [WhenExpression, ...],
-  role?: String,
   then?: "allow" | "deny",
   reason?: String,
   bind?: SymbolBinding
 }
 ```
 
-At least one of `given`, `when`, `then`, or `role` is required. `then` defaults
-to `allow`. `role:` requires the principal to hold that role, and requires an
-identity binding in `given:` to hold it. See
-[Access-rule `role:`](access-role.md). Rules are evaluated in order; the first
-matching rule decides the request. A matching deny returns 403, and no matching
-rule also returns 403. Missing or invalid credentials on a non-public route
-return 401.
+At least one of `given`, `when`, or `then` is required, and any other key is
+rejected with `SCHEMA_VALIDATION_ERROR`. `then` defaults to `allow`. Rules are
+evaluated in order; the first matching rule decides the request. A matching deny
+returns 403. When no rule matches, an anonymous caller gets 401 and a signed-in
+one gets 403. A non-public route answers 401 to a request whose token or
+password does not authenticate.
 
-In v0.3, `reason:` supplies the safe 403 detail only when its explicit deny rule
-matches. See [Explainable access denials](access-reason.md). The former
-access-rule `filter` key is rejected with `ACCESS_FILTER_REMOVED`; use a
-[`where` binding](#where-bindings) to select a record. `writeFields` is also
-rejected in v0.3 because no backend enforces it; restrict accepted values through
-a service input contract or custom handler instead.
+To require a role together with a condition, keep the role in an `enum` field
+of the identity record named by `entities.<entity>.auth.roles` and test it in
+`when:`, for example `principal.record.role in ['editor', 'admin']`.
+
+`reason:` supplies the safe 403 detail; see
+[Explainable access denials](access-reason.md). To fix the value of
+a field a client must not choose, declare it `readonly: true` and supply it
+through [`bind:`](#access-rule-bind).
+
+### Row filtering on list routes
+
+On a `list` route, a rule whose `when:` reads the bound collection becomes a row
+filter: the datastore query returns only the rows the rule admits.
+
+```yaml
+operations:
+  list:
+    access:
+      - admin
+      - given:
+          principal: identity:user
+          document: sensitive_data
+        when: principal.sub equals document.owner_id
+```
+
+An admin lists every row; any other signed-in user lists only their own.
 
 ## `given:` bindings
 
@@ -113,8 +133,8 @@ RequestPart     ::= "body" | "path" | "query" | "header" | "cookie"
 A type suffix is valid only for the whole request (where it types the body) or
 for `body`, `path`, and `query`. Headers and cookies are not typeable. A body
 binding is rejected on `get`, `list`, and `delete` because those operations do
-not carry a body. A typed request is validated before authorization; invalid
-input returns 422 and the access rule does not run.
+not carry a body. Authentication runs before the body is read, so an anonymous
+caller gets 401 whatever the body holds.
 
 Every root used by `when:` must be a key in that same rule's `given:` map. Route
 slugs are not ambient inside `when:`. Refer to
@@ -184,8 +204,8 @@ integers, decimals (including `.5` and `3.`), and exponents such as `1e3` or
 
 Each rule receives its own fetched bindings, so equal symbol names in different
 rules do not collide. A predicate miss makes only that rule fail; it never
-returns 404. Evaluation continues, and the final result is the normal 403 if no
-rule allows the request. This prevents the route from revealing whether the
+returns 404. Evaluation continues, and the final result is the normal 401 or
+403 if no rule allows the request. This prevents the route from revealing whether the
 selected record exists. See [The `where` binding form](given-where.md) for the
 complete parser and runtime contract.
 
@@ -271,10 +291,10 @@ atomically to reads and writes. See
 | Status | Condition |
 | --- | --- |
 | 401 | A non-public route has no valid principal. |
-| 403 | An explicit deny matches, no rule allows, or a `where` lookup misses. |
+| 403 | A signed-in caller meets an explicit deny, no allowing rule, or a `where` lookup miss. |
 | 404 | An authorized single-record operation's route locator matches no target. |
 | 409 | A datastore unique constraint rejects a write. |
-| 422 | Request/service input validation fails. |
+| 422 | Request/service input validation fails, including a client value for a `readonly` field. |
 
 The first matching rule decides access. Document-dependent rules run after the
 route record is fetched; `where` bindings are isolated per rule. A v0.3 deny
@@ -300,8 +320,6 @@ fields hold upload metadata, so they cannot be compared in `when:` or `where`.
 | `ACCESS_NO_AUTH_ENTITY` | A bare role is used without any auth entity. |
 | `ACCESS_AMBIGUOUS_ROLE` | A bare role is used with multiple auth entities. |
 | `ACCESS_RULE_INVALID` | An access list/rule has an invalid shape or unsafe combination. |
-| `ACCESS_FILTER_REMOVED` | A v0.3 rule uses the removed `filter` key. |
-| `ACCESS_WRITE_FIELDS_REMOVED` | A v0.3 rule uses the unenforced `writeFields` key. |
 | `WHEN_EXPR_INVALID` | A `when:` expression is empty or has trailing tokens. |
 | `WHEN_OPERAND_MISSING` | An operator has no following operand. |
 | `WHEN_OPERAND_INVALID` | An operand is not a field reference or supported literal. |
@@ -336,8 +354,6 @@ fields hold upload metadata, so they cannot be compared in `when:` or `where`.
 
 | Code | Condition |
 | --- | --- |
-| `SERVICE_INPUT_UNSUPPORTED` | Service `input:` or `with:` is used before v0.3. |
-| `BIND_UNSUPPORTED` | Access-rule `bind:` is used before v0.3. |
 | `SERVICE_INPUT_INVALID` | `input:` is not a non-empty field map or DTO list. |
 | `SERVICE_INPUT_FIELD_INVALID` | An inline input field type or `required` flag is invalid. |
 | `SERVICE_INPUT_DTO_NOT_FOUND` | An `input:` list names an unknown DTO. |
@@ -350,7 +366,7 @@ fields hold upload metadata, so they cannot be compared in `when:` or `where`.
 ## Version boundary
 
 `where`, service `input:`/`with:`, access-rule `bind:`, unified
-`UNDEFINED_SYMBOL`, rule-specific deny reasons, token-derived record locators,
-and derived file endpoints are v0.3 behavior. v0.2 retains its existing access
-values, identity/document/request bindings, `{id}` single-record convention, and
-legacy symbol errors.
+`UNDEFINED_SYMBOL`, token-derived record locators, pagination and file
+endpoints are v0.3 only. A v0.2 spec binds identities, documents and requests,
+fetches single records by `{id}`, and reports `WHEN_UNBOUND_SYMBOL` for an
+unbound `when:` operand.

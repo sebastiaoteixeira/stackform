@@ -26,7 +26,7 @@ imports:
   identifier and must not collide with a module the backend generator emits.
 - `requires` — optional dependency specifiers merged into `requirements.txt`.
 
-Call sites are unchanged: a handler still reads `handler: handlers.publish`. The
+A handler names the import alias, as in `handler: handlers.publish`. The
 alias (`handlers`) resolves to the vendored `package`, so the generated backend
 emits `import app_handlers` / `await app_handlers.publish(**kwargs)` — never the
 author-side dotted path.
@@ -84,19 +84,19 @@ one output directory neither shadows generated code nor keeps deleted files.
 
 ## Version gate
 
-- **v0.2** is untouched: an `imports` entry is a bare dotted string that is
-  imported (not vendored), and repository-operation handlers stay verbatim.
-- **v0.3 without an `imports` block** keeps the same handler semantics: a dotted
-  handler is emitted verbatim and imported from the target environment.
-- **v0.3 with an `imports` block** requires the object form and opts the whole
-  spec into vendoring: every handler must name a vendored package, and a
-  bare-string entry is rejected. There is no back-compatibility shim.
+- **v0.2**: an `imports` entry is a bare dotted string that is imported (not
+  vendored), and repository-operation handlers stay verbatim.
+- **v0.3 without an `imports` block**: a dotted handler is emitted verbatim and
+  imported from the target environment.
+- **v0.3 with an `imports` block**: every entry is the object form and the whole
+  spec is vendored, so every handler must name a vendored package. A
+  bare-string entry is rejected with `SCHEMA_VALIDATION_ERROR`.
 
 ## Build errors
 
 | Code | Cause |
 | --- | --- |
-| `IMPORT_BARE_STRING` | A v0.3 `imports` entry uses the bare dotted-string form instead of the vendored object. |
+| `SCHEMA_VALIDATION_ERROR` | An `imports` entry is not an object with `path` and `package`, or carries another key. |
 | `IMPORT_PACKAGE_COLLISION` | Two entries vendor the same `package` name. |
 | `IMPORT_SOURCE_OUTSIDE_SPEC` | An entry's `path` resolves outside the directory holding the spec. |
 | `IMPORT_SOURCE_MISSING` | An entry's `path` is not an existing directory. |

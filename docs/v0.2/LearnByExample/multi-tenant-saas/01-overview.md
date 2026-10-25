@@ -29,16 +29,13 @@ So a request to the orgs collection is `GET /api/v1/orgs`, login is
 - Resources scoped to organizations
 - Ownership/ABAC `when` rules that compare the request principal against the fetched record
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## Entities
 
@@ -135,11 +132,8 @@ build with `ACCESS_UNKNOWN_ENTITY`. Use the list form above.
 
 ## Tiered API clients
 
-The spec carries a standalone `roles:` block on `apiClient` (free, premium,
-enterprise) with a hierarchy. That entity-level `roles:` block is not consumed in
-v0.2, so the tier hierarchy is inert: an `enterprise` client does not automatically
-satisfy `access: apiClient:premium`. To make client tiers work as enforced roles,
-declare an enum field and point `auth.roles` at it:
+Client tiers (free, premium, enterprise) are the roles of `apiClient`: an enum
+field named by `auth.roles`, with a `roles:` block that ranks them:
 
 ```yaml
 apiClient:
@@ -148,6 +142,12 @@ apiClient:
     identifier: clientId
     via: apiKey
     roles: tier
+  roles:
+    values: [free, premium, enterprise]
+    default: free
+    hierarchy:
+      enterprise: [premium]
+      premium: [free]
   fields:
     clientId: { type: string, required: true, unique: true }
     name: { type: string, required: true }
@@ -157,9 +157,8 @@ apiClient:
       default: free
 ```
 
-A rule like `access: apiClient:enterprise` then matches a client whose `tier` is
-exactly `enterprise`. Cross-tier inheritance is not applied (see the enforcement note
-above).
+A rule like `access: apiClient:premium` then matches a client whose `tier` is
+`premium` or `enterprise`.
 
 ## Ownership rules and the document caveat
 

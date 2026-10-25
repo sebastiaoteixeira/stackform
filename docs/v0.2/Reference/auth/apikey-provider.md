@@ -64,22 +64,19 @@ at `/api/v1/my-collection`.
   `sub` set to the record's id field, `record` set to the full document, and `roles`
   taken from the entity's roles field (see Roles below).
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## Options
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `identifier` | effectively required | string (field name) | Names the field that identifies the client (for example `clientId`). Not used for API key matching, but conventionally declared `unique: true`. |
+| `identifier` | yes | string (field name) | Names the field that identifies the client (for example `clientId`; `AUTH_IDENTIFIER_REQUIRED` when missing). Not used for API key matching, but conventionally declared `unique: true`. |
 | `via` | yes | string or list | Must include `apiKey`. A list (for example `[apiKey, password]`) enables more than one credential type on the same entity. |
 | `roles` | no | string (field name) | Names an `enum` field whose value becomes the principal's role. See Roles. |
 
@@ -174,10 +171,9 @@ which the backend tries before treating a bearer value as an API key.
 
 ## Roles
 
-The entity-level `roles: { values, default, hierarchy }` block is parsed but not wired
-into the backend in v0.2 -- it does not assign a default role on create and its
-hierarchy is inert. To attach a role to an API client, declare an `enum` field and
-point `auth.roles` at it:
+To attach a role to an API client, declare an `enum` field and point `auth.roles` at
+it, or declare managed roles in a `roles:` block (see
+[Roles overview](../roles/overview.md)):
 
 ```yaml
 entities:
@@ -199,8 +195,8 @@ entities:
 ```
 
 The principal's role is read from the named field (`tier` here). Access rules then
-match it exactly with `entity:role`, for example `apiClient:enterprise`. Role
-hierarchy is not applied during enforcement; only exact matches pass.
+match it with `entity:role`, for example `apiClient:enterprise`. A `roles.hierarchy`
+lets one tier include others (see [Role hierarchy](../roles/hierarchy.md)).
 
 ## Errors
 
