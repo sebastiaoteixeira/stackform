@@ -21,7 +21,7 @@ from typing import Any, ClassVar
 from ...constants import CRUD_OPERATIONS
 from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService, IRServiceBase
 from ...ir.when import WhenExpr
-from ...utils.strings import to_py_identifier
+from ...utils.strings import to_pascal_case, to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
 
@@ -295,8 +295,12 @@ class RouteDescriptor:
 
     @property
     def view_name(self) -> str:
-        """Class name of the view serving every method on this route's path."""
-        return f"View{to_py_identifier(self.relative_path)}"
+        """Class name of the view serving every method on this route's path; ``/reports/{id}`` is ``ReportsByIdView``."""
+        segments = (
+            f"By{to_pascal_case(segment[1:-1])}" if segment.startswith("{") else to_pascal_case(segment)
+            for segment in self.relative_path.split("/")
+        )
+        return f"{''.join(segments)}View"
 
     @property
     def django_path(self) -> str:

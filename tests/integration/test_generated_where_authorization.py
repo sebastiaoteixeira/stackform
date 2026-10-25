@@ -570,7 +570,7 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         views.resolve_principal = principal
         handler_views.get_database = lambda: db
         handler_views.resolve_principal = principal
-        request = SimpleNamespace(data={{}}, query_params={{}}, headers={{}}, COOKIES={{}})
+        request = SimpleNamespace(data={{}}, body=b"", query_params={{}}, headers={{}}, COOKIES={{}})
 
         application_module = types.ModuleType("app")
         handlers_module = types.ModuleType("app.handlers")
@@ -584,46 +584,46 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         sys.modules["app.handlers"] = handlers_module
 
         async def verify():
-            response = await views.ReportsListView().get(
+            response = await views.ReportsByOrganizationIdView().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data
             assert response.data[0]["id"] == "r1"
 
             db["organizations"].documents = []
-            response = await handler_views.HandlerRun1View().post(
+            response = await handler_views.AuditByOrganizationIdView().post(
                 request, organizationId="org-1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            response = await handler_views.HandlerRun1View().post(
+            response = await handler_views.AuditByOrganizationIdView().post(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data
             assert response.data == {{"authorized": True}}
 
-            response = await views.ReportsDetailView().get(
+            response = await views.ReportsByOrganizationIdByIdView().get(
                 request, organizationId="org-1", id="r1"
             )
             assert response.status_code == 200, response.data
             assert response.data["organizationId"] == "org-1"
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "other"}}]
-            response = await views.ReportsDetailView().get(
+            response = await views.ReportsByOrganizationIdByIdView().get(
                 request, organizationId="org-1", id="r1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = []
             db["teams"].documents = []
-            response = await views.ReportsListView().get(
+            response = await views.ReportsByOrganizationIdView().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            response = await views.ReportsListView().get(
+            response = await views.ReportsByOrganizationIdView().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data
