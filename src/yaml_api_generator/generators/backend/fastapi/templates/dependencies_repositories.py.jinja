@@ -27,3 +27,12 @@ get_{{ col.name }}_repository = repository_provider({{ col.class_name }}Reposito
 get_{{ col.name }}_repository = repository_provider({{ col.class_name }}Repository, get_mongo_db)
 {% endif %}
 {% endfor %}
+
+
+def expiring_repositories() -> list:
+    """One repository per collection whose rows expire, bound to the connected datastore."""
+    return [
+{% for col in collections if col.expires %}
+        {{ col.class_name }}Repository({{ "get_pg_db" if col.is_sql else "get_mongo_db" }}()),
+{% endfor %}
+    ]

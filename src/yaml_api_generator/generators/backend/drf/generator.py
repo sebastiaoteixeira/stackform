@@ -10,6 +10,7 @@ from ..utils import (
     find_identity,
     group_by_collection,
     pagination_config,
+    lifecycle_runtime_modules,
     runtime_module_source,
 )
 from ..validation import (
@@ -94,6 +95,8 @@ class DRFGenerator(TemplateBasedGenerator):
         (api_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )
+        for module in lifecycle_runtime_modules(uses_mongo=True, uses_sql=False):
+            (api_dir / f"{module}.py").write_text(runtime_module_source(module))
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
@@ -275,6 +278,8 @@ class DRFGenerator(TemplateBasedGenerator):
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
+                    "lifecycle": ctx.collections[col_name]["lifecycle"],
+                    "lifecycle_package": "api",
                     "conflict_import": "api.conflicts",
                     "pagination_import": "api.pagination",
                 },

@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 
 from .when import WhenExpr
 from ..constants import CRUD_OPERATIONS
+from ..runtime.lifecycle import Lifecycle
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,7 @@ class IROperation:
     name: str
     query: dict | None = None
     handler: str | None = None
+    include_deleted: bool = False
 
 
 @dataclass(frozen=True)
@@ -246,6 +248,7 @@ class IRCollection:
     datastore: str | None = None
     files: dict[str, IRFileField] = field(default_factory=dict)
     file_store: str | None = None
+    lifecycle: Lifecycle = Lifecycle()
 
 
 @dataclass(frozen=True)

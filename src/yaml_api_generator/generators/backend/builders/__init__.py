@@ -71,13 +71,17 @@ class ContextBuilder:
                 "fields": col.fields,
                 "datastore": datastore,
                 "datastore_type": ds.type if ds is not None else "mongodb",
+                "lifecycle": col.lifecycle,
             }
 
         datastore_types = {n: c["datastore_type"] for n, c in raw_collections.items()}
         auth = self._auth.build_auth_config(
             identity_map, document.collections, document.providers, datastore_types
         )
-        repository_operations = self._repository.build_repository_operations(document.repositories)
+        repository_operations = self._repository.build_repository_operations(
+            document.repositories,
+            {name: col.lifecycle for name, col in document.collections.items()},
+        )
 
         datastores: dict[str, dict] = {}
         for name, ds in document.datastores.items():

@@ -49,11 +49,15 @@ class BaseRepository(ABC):
         collection_name: str,
         query: dict[str, Any],
         bindings: dict[str, Any],
+        include_deleted: bool = False,
     ) -> Any:
         """Execute a declarative custom operation. Overridden per backend."""
         raise NotImplementedError(
             f"{type(self).__name__} does not support custom operations"
         )
+
+    async def purge_expired(self) -> None:
+        """Erase the rows whose time to live has passed."""
 
     @abstractmethod
     def connect(self) -> None:

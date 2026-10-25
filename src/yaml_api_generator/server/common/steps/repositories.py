@@ -279,6 +279,7 @@ def RepositoryOperationStep(
     collection_name: str,
     query: dict[str, Any],
     id_field: str,
+    include_deleted: bool = False,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
         params = {**ctx.url_params, **(ctx.service_inputs or {})}
@@ -288,7 +289,9 @@ def RepositoryOperationStep(
             "params": params,
             "body": ctx.body or {},
         }
-        result = await _repository(ctx).run_operation(collection_name, query, bindings)
+        result = await _repository(ctx).run_operation(
+            collection_name, query, bindings, include_deleted=include_deleted
+        )
         ctx.response = _normalize_operation_result(result, id_field)
         return ctx
 

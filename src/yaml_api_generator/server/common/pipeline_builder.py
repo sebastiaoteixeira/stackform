@@ -316,7 +316,9 @@ class PipelineBuilder:
         descriptor = self._ctx.operations.get(collection_name, {}).get(operation)
         if descriptor is not None:
             if descriptor.query is not None:
-                return RepositoryOperationStep(collection_name, descriptor.query, id_field)
+                return RepositoryOperationStep(
+                    collection_name, descriptor.query, id_field, descriptor.include_deleted
+                )
             if descriptor.handler is not None:
                 return _import_handler(descriptor.handler)
         raise ValueError(f"Unsupported operation: {operation}")

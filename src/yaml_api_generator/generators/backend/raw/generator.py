@@ -12,6 +12,7 @@ from ..utils import (
     find_identity,
     group_by_collection,
     pagination_config,
+    lifecycle_runtime_modules,
     runtime_module_source,
     write_environment_files,
 )
@@ -105,6 +106,8 @@ class RawASGIGenerator(TemplateBasedGenerator):
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_dependencies(env, context, output_dir)
+        for module in lifecycle_runtime_modules(uses_mongo=True, uses_sql=False):
+            (output_dir / "dependencies" / f"{module}.py").write_text(runtime_module_source(module))
         self._render_single_file(
             env, context, output_dir,
             SingleFileRenderConfig(
@@ -210,6 +213,8 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     "id_field": ctx.collections[col_name]["id_field"],
                     "id_field_format": ctx.collections[col_name]["id_format"],
                     "custom_operations": ctx.repository_operations.get(col_name, []),
+                    "lifecycle": ctx.collections[col_name]["lifecycle"],
+                    "lifecycle_package": "dependencies",
                     "conflict_import": "conflicts",
                     "pagination_import": "pagination",
                 },

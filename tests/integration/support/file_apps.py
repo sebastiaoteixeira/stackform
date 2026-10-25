@@ -13,7 +13,7 @@ from uuid import uuid4
 import httpx
 
 from .minio import object_keys
-from .network import free_port, wait_until
+from .network import free_port, listening
 
 SPEC = Path(__file__).parents[3] / "examples" / "v03" / "files" / "spec.yaml"
 CLIENT_ID = "files-demo"
@@ -75,13 +75,6 @@ class GeneratedBackend(Backend):
 BACKENDS = (RunBackend(), GeneratedBackend())
 
 
-def _serving(url: str) -> bool:
-    try:
-        return httpx.get(f"{url}/openapi.json", timeout=1).is_success
-    except httpx.HTTPError:
-        return False
-
-
 @contextmanager
 def serve(
     backend: Backend, workdir: Path, *, discovery_url: str, s3_endpoint: str, mongo_uri: str
@@ -97,13 +90,6 @@ def serve(
         "OIDC_DISCOVERY_URL": discovery_url,
     }
     command, cwd = backend.command(workdir, env, port)
-    url, log = f"http://127.0.0.1:{port}", workdir / "server.log"
-    with log.open("wb") as output:
-        process = subprocess.Popen(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT)
-        try:
-            if not wait_until(lambda: process.poll() is not None or _serving(url)) or process.poll() is not None:
-                raise RuntimeError(f"{backend.name} server did not start:\n{log.read_text()}")
-            yield FileApi(url, disk, s3_endpoint, scope)
-        finally:
-            process.terminate()
-            process.wait(timeout=10)
+    url = f"http://127.0.0.1:{port}"
+    with listening(command, cwd=cwd, env=env, probe=f"{url}/openapi.json", log=workdir / "server.log"):
+        yield FileApi(url, disk, s3_endpoint, scope)

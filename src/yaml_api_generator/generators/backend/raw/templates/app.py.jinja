@@ -8,7 +8,11 @@ from conflicts import ConflictError
 from settings import settings
 
 {% set create_mongo_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
-from dependencies.mongodb import connect_db, close_db, get_database{% if create_mongo_indexes %}, initialize_indexes{% endif %}
+from dependencies.lifecycle import Purger
+from dependencies.mongodb import connect_db, close_db, get_database{{ ", initialize_indexes" if create_mongo_indexes }}
+{% for name in ctx.expiring_collections %}
+from repositories.{{ name }} import {{ name | capitalize_collection }}Repository
+{% endfor %}
 
 {% set collections = routes | map(attribute='collection') | unique | select | list %}
 {% for col_name in collections %}
@@ -58,6 +62,15 @@ ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), 
 {% endif %}
 
 
+def _expiring_repositories() -> list:
+    db = get_database()
+    return [
+{% for name in ctx.expiring_collections %}
+        {{ name | capitalize_collection }}Repository(db),
+{% endfor %}
+    ]
+
+
 class ASGIApp:
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] == "lifespan":
@@ -75,8 +88,11 @@ class ASGIApp:
 {% if create_mongo_indexes %}
                 await initialize_indexes({{ ctx.mongo_unique_indexes | tojson }})
 {% endif %}
+                self._purger = Purger(repository.purge_expired for repository in _expiring_repositories())
+                self._purger.start()
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
+                await self._purger.stop()
                 await close_db()
                 await send({"type": "lifespan.shutdown.complete"})
                 return

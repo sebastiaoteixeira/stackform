@@ -1,0 +1,93 @@
+{% for op in custom_operations | default([]) %}
+{% set q = op.query %}
+{% if q %}
+{% set target = q.get("collection") %}
+{% set col_expr = "self._db[\"" ~ target ~ "\"]" if target else "self._col" %}
+{% if op.include_deleted %}
+{% set scope = "MongoLifecycle()" %}
+{% elif target %}
+{% set scope = "MongoLifecycle(" ~ (op.target_lifecycle | py_constructor) ~ ")" %}
+{% else %}
+{% set scope = "self._lifecycle" %}
+{% endif %}
+{% set visible = scope ~ ".visible(filter)" %}
+{% set cmd = q.command %}
+{% if cmd == "find" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> list[dict[str, Any]]:
+        cursor = {{ col_expr }}.find({{ visible }})
+        docs = await cursor.to_list(length=None)
+        return [self._normalize(d) for d in docs]
+{% elif cmd == "findOne" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one({{ visible }})
+        return self._normalize(doc)
+{% elif cmd == "aggregate" %}
+
+    async def {{ op.name }}(self, pipeline: list) -> list[dict[str, Any]]:
+        cursor = await {{ col_expr }}.aggregate({{ scope }}.pipeline(pipeline))
+        return await cursor.to_list(length=None)
+{% elif cmd == "countDocuments" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> int:
+        return await {{ col_expr }}.count_documents({{ visible }})
+{% elif cmd == "estimatedDocumentCount" %}
+
+    async def {{ op.name }}(self) -> int:
+        return await {{ col_expr }}.estimated_document_count()
+{% elif cmd == "distinct" %}
+
+    async def {{ op.name }}(self, key: str, filter: dict[str, Any]) -> list:
+        return await {{ col_expr }}.distinct(key, {{ visible }})
+{% elif cmd == "insertOne" %}
+
+    @_translate_conflict
+    async def {{ op.name }}(self, document: dict[str, Any]) -> dict[str, Any]:
+        await {{ col_expr }}.insert_one(document)
+        return self._normalize(document)
+{% elif cmd == "insertMany" %}
+
+    @_translate_conflict
+    async def {{ op.name }}(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        await {{ col_expr }}.insert_many(documents)
+        return [self._normalize(d) for d in documents]
+{% elif cmd in ("updateOne", "findOneAndUpdate") %}
+
+    @_translate_conflict
+    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_update({{ visible }}, update, return_document=ReturnDocument.AFTER)
+        return self._normalize(doc)
+{% elif cmd == "updateMany" %}
+
+    @_translate_conflict
+    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> Any:
+        return await {{ col_expr }}.update_many({{ visible }}, update)
+{% elif cmd in ("replaceOne", "findOneAndReplace") %}
+
+    @_translate_conflict
+    async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_replace({{ visible }}, replacement, return_document=ReturnDocument.AFTER)
+        return self._normalize(doc)
+{% elif cmd in ("deleteOne", "findOneAndDelete") %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
+        doc = await {{ col_expr }}.find_one_and_delete({{ visible }})
+        return self._normalize(doc)
+{% elif cmd == "deleteMany" %}
+
+    async def {{ op.name }}(self, filter: dict[str, Any]) -> Any:
+        return await {{ col_expr }}.delete_many({{ visible }})
+{% elif cmd == "bulkWrite" %}
+
+    @_translate_conflict
+    async def {{ op.name }}(self, requests: list) -> Any:
+        return await {{ col_expr }}.bulk_write(requests)
+{% endif %}
+{% else %}
+
+    async def {{ op.name }}(self, **kwargs: Any) -> Any:
+        import {{ op.handler.rsplit(".", 1)[0] }}
+        return await {{ op.handler }}(**kwargs)
+{% endif %}
+{% endfor %}

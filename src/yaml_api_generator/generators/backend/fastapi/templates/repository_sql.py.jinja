@@ -1,6 +1,9 @@
 {% set class_name = collection_name | capitalize_collection %}
 import sqlalchemy as sa
 
+{% if lifecycle.removal or lifecycle.expiry %}
+from dependencies.lifecycle import Expiry, Lifecycle
+{% endif %}
 from dependencies.postgres import metadata
 from ._sql_ops import SQLRepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
 
@@ -22,3 +25,6 @@ class {{ class_name }}Repository({% for op in operations %}{{ op | capitalize }}
     ID_FIELD = "{{ id_field }}"
     ID_FORMAT = "{{ id_field_format }}"
     TABLE = {{ collection_name }}_table
+{% if lifecycle.removal or lifecycle.expiry %}
+    LIFECYCLE = {{ lifecycle | py_constructor }}
+{% endif %}

@@ -1,3 +1,5 @@
+from collections import defaultdict
+from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -7,6 +9,8 @@ from bson.errors import InvalidId
 from pymongo import AsyncMongoClient, ReturnDocument
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
+from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.runtime.mongo_lifecycle import MongoLifecycle
 from .base import BaseRepository, ConflictError
 from .bindings import resolve
 from ..pagination import Page, Primitives, expand_bound
@@ -93,11 +97,19 @@ class MongoRepositoryConfig:
 
 
 class MongoRepository(BaseRepository):
-    def __init__(self, config: MongoRepositoryConfig, manage_indexes: bool = True):
+    def __init__(
+        self,
+        config: MongoRepositoryConfig,
+        collections: Iterable[IRCollection] = (),
+        manage_indexes: bool = True,
+    ):
         self._config = config
         self._client: Any | None = None
         self._db: Any | None = None
         self._id_fields: dict[str, str] = {}
+        self._lifecycles = defaultdict(
+            MongoLifecycle, {c.name: MongoLifecycle(c.lifecycle) for c in collections}
+        )
         self.manage_indexes = manage_indexes
 
     def register_id_field(self, collection_name: str, id_field: str) -> None:
@@ -127,15 +139,19 @@ class MongoRepository(BaseRepository):
             partialFilterExpression=unique_index_partial_filter(field_name),
         )
 
+    async def purge_expired(self) -> None:
+        for name, lifecycle in self._lifecycles.items():
+            await lifecycle.purge(self.collection(name))
+
     async def list(self, collection_name: str) -> list[dict[str, Any]]:
-        cursor = self.collection(collection_name).find({})
+        cursor = self.collection(collection_name).find(self._visible(collection_name))
         documents = await cursor.to_list(length=None)
         return [self._normalize_document_required(document) for document in documents]
 
     async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
         target = self.collection(collection_name)
         bound_clauses = _mongo_bounds(primitives.bounds)
-        query = {"$and": bound_clauses} if bound_clauses else {}
+        query = self._visible(collection_name, {"$and": bound_clauses} if bound_clauses else {})
         cursor = target.find(query)
         if primitives.sort:
             cursor = cursor.sort(
@@ -149,21 +165,23 @@ class MongoRepository(BaseRepository):
         rows = [self._normalize_document_required(d) for d in documents]
         total = None
         if primitives.count == "exact":
-            total = await target.count_documents({})
+            total = await target.count_documents(self._visible(collection_name))
         return Page(rows=rows, total=total)
 
     async def get(
         self, collection_name: str, document_id: str
     ) -> dict[str, Any] | None:
         document = await self.collection(collection_name).find_one(
-            self._match_filter(document_id, collection_name)
+            self._visible(collection_name, self._match_filter(document_id, collection_name))
         )
         return self._normalize_document(document)
 
     async def find_one(
         self, collection_name: str, criteria: dict[str, Any]
     ) -> dict[str, Any] | None:
-        document = await self.collection(collection_name).find_one(dict(criteria))
+        document = await self.collection(collection_name).find_one(
+            self._visible(collection_name, criteria)
+        )
         return self._normalize_document(document)
 
     async def update_by(
@@ -177,7 +195,9 @@ class MongoRepository(BaseRepository):
             return await self.find_one(collection_name, criteria)
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_update(
-                dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+                self._visible(collection_name, criteria),
+                {"$set": changes},
+                return_document=ReturnDocument.AFTER,
             )
         return self._normalize_document(document)
 
@@ -190,15 +210,17 @@ class MongoRepository(BaseRepository):
         replacement = {**payload, **criteria}
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_replace(
-                dict(criteria), replacement, return_document=ReturnDocument.AFTER
+                self._visible(collection_name, criteria),
+                replacement,
+                return_document=ReturnDocument.AFTER,
             )
         return self._normalize_document(document)
 
     async def delete_by(
         self, collection_name: str, criteria: dict[str, Any]
     ) -> dict[str, Any] | None:
-        document = await self.collection(collection_name).find_one_and_delete(
-            dict(criteria)
+        document = await self._lifecycles[collection_name].remove(
+            self.collection(collection_name), criteria
         )
         return self._normalize_document(document)
 
@@ -236,7 +258,7 @@ class MongoRepository(BaseRepository):
     ) -> dict[str, Any] | None:
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_update(
-                self._match_filter(document_id, collection_name),
+                self._visible(collection_name, self._match_filter(document_id, collection_name)),
                 {"$set": payload},
                 return_document=ReturnDocument.AFTER,
             )
@@ -251,7 +273,7 @@ class MongoRepository(BaseRepository):
         payload[self._id_fields.get(collection_name, "id")] = document_id
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_replace(
-                self._match_filter(document_id, collection_name),
+                self._visible(collection_name, self._match_filter(document_id, collection_name)),
                 payload,
                 return_document=ReturnDocument.AFTER,
             )
@@ -260,46 +282,49 @@ class MongoRepository(BaseRepository):
     async def delete(
         self, collection_name: str, document_id: str
     ) -> dict[str, Any] | None:
-        document = await self.collection(collection_name).find_one_and_delete(
-            self._match_filter(document_id, collection_name)
+        return await self.delete_by(
+            collection_name, self._match_filter(document_id, collection_name)
         )
-        return self._normalize_document(document)
 
     async def run_operation(
         self,
         collection_name: str,
         query: dict[str, Any],
         bindings: dict[str, Any],
+        include_deleted: bool = False,
     ) -> Any:
+        name = query.get("collection") or collection_name
+        lifecycle = MongoLifecycle() if include_deleted else self._lifecycles[name]
         with _as_conflict():
-            return await self._run_operation(collection_name, query, bindings)
+            return await self._run_operation(self.collection(name), lifecycle, query, bindings)
 
     async def _run_operation(
         self,
-        collection_name: str,
+        target: Any,
+        lifecycle: MongoLifecycle,
         query: dict[str, Any],
         bindings: dict[str, Any],
     ) -> Any:
         command = query.get("command")
-        target = self.collection(query.get("collection") or collection_name)
         get = lambda field: resolve(query.get(field), bindings)
+        criteria = lifecycle.visible(get("filter"))
 
         if command == "find":
-            cursor = target.find(get("filter") or {})
+            cursor = target.find(criteria)
             docs = await cursor.to_list(length=None)
             return [self._normalize_document_required(d) for d in docs]
         if command == "findOne":
-            return self._normalize_document(await target.find_one(get("filter") or {}))
+            return self._normalize_document(await target.find_one(criteria))
         if command == "aggregate":
-            cursor = await target.aggregate(get("pipeline") or [])
+            cursor = await target.aggregate(lifecycle.pipeline(get("pipeline") or []))
             docs = await cursor.to_list(length=None)
             return [self._normalize_document_required(d) for d in docs]
         if command == "countDocuments":
-            return await target.count_documents(get("filter") or {})
+            return await target.count_documents(criteria)
         if command == "estimatedDocumentCount":
             return await target.estimated_document_count()
         if command == "distinct":
-            return await target.distinct(query.get("key"), get("filter") or {})
+            return await target.distinct(query.get("key"), criteria)
         if command == "insertOne":
             document = get("document") or {}
             await target.insert_one(document)
@@ -310,21 +335,21 @@ class MongoRepository(BaseRepository):
             return [self._normalize_document_required(d) for d in documents]
         if command in ("updateOne", "findOneAndUpdate"):
             doc = await target.find_one_and_update(
-                get("filter") or {}, get("update") or {}, return_document=ReturnDocument.AFTER
+                criteria, get("update") or {}, return_document=ReturnDocument.AFTER
             )
             return self._normalize_document(doc)
         if command in ("replaceOne", "findOneAndReplace"):
             doc = await target.find_one_and_replace(
-                get("filter") or {}, get("replacement") or {}, return_document=ReturnDocument.AFTER
+                criteria, get("replacement") or {}, return_document=ReturnDocument.AFTER
             )
             return self._normalize_document(doc)
         if command in ("deleteOne", "findOneAndDelete"):
-            return self._normalize_document(await target.find_one_and_delete(get("filter") or {}))
+            return self._normalize_document(await target.find_one_and_delete(criteria))
         if command == "updateMany":
-            result = await target.update_many(get("filter") or {}, get("update") or {})
+            result = await target.update_many(criteria, get("update") or {})
             return {"matched": result.matched_count, "modified": result.modified_count}
         if command == "deleteMany":
-            result = await target.delete_many(get("filter") or {})
+            result = await target.delete_many(criteria)
             return {"deleted": result.deleted_count}
 
         raise ValueError(f"Unsupported query command: {command}")
@@ -344,6 +369,9 @@ class MongoRepository(BaseRepository):
         if normalized is None:
             raise RuntimeError("Expected document")
         return normalized
+
+    def _visible(self, collection_name: str, criteria: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._lifecycles[collection_name].visible(criteria)
 
     def _match_filter(self, document_id: str, collection_name: str | None = None) -> dict[str, Any]:
         id_field = self._id_fields.get(collection_name, "id") if collection_name else "id"

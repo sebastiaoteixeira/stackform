@@ -16,6 +16,8 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from {{ conflict_import }} import ConflictError
+from {{ lifecycle_package }}.lifecycle import Expiry, Lifecycle
+from {{ lifecycle_package }}.mongo_lifecycle import MongoLifecycle
 from {{ pagination_import }} import Page, Primitives, expand_bound
 
 
@@ -79,10 +81,12 @@ def _translate_conflict(operation):
 class {{ class_name }}Repository:
     COLLECTION = "{{ collection_name }}"
     ID_FIELD = "{{ id_field }}"
+    LIFECYCLE = {{ lifecycle | py_constructor }}
 
     def __init__(self, db: AsyncDatabase) -> None:
         self._col = db[self.COLLECTION]
         self._db = db
+        self._lifecycle = MongoLifecycle(self.LIFECYCLE)
 
     def _match_filter(self, document_id: str) -> dict[str, Any]:
         return {self.ID_FIELD: document_id}
@@ -93,14 +97,16 @@ class {{ class_name }}Repository:
             return None
         return {k: v for k, v in doc.items() if k != "_id"}
 
+    async def purge_expired(self) -> None:
+        await self._lifecycle.purge(self._col)
+
     async def list(self) -> list[dict[str, Any]]:
-        cursor = self._col.find({})
+        cursor = self._col.find(self._lifecycle.visible())
         docs = await cursor.to_list(length=None)
         return [self._normalize(d) for d in docs]
 
     async def paginate(self, primitives: Primitives) -> Page:
-        query = _pagination_filter(primitives)
-        cursor = self._col.find(query)
+        cursor = self._col.find(self._lifecycle.visible(_pagination_filter(primitives)))
         if primitives.sort:
             cursor = cursor.sort(
                 [(key.field, -1 if key.descending else 1) for key in primitives.sort]
@@ -111,18 +117,17 @@ class {{ class_name }}Repository:
             cursor = cursor.limit(primitives.limit)
         documents = await cursor.to_list(length=None)
         total = (
-            await self._col.count_documents({})
+            await self._col.count_documents(self._lifecycle.visible())
             if primitives.count == "exact"
             else None
         )
         return Page([self._normalize(document) for document in documents], total)
 
     async def get(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one(self._match_filter(document_id))
-        return self._normalize(doc)
+        return await self.find_one(self._match_filter(document_id))
 
     async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one(dict(criteria)))
+        return self._normalize(await self._col.find_one(self._lifecycle.visible(criteria)))
 
     @_translate_conflict
     async def update_by(
@@ -132,7 +137,7 @@ class {{ class_name }}Repository:
         if not changes:
             return await self.find_one(criteria)
         doc = await self._col.find_one_and_update(
-            dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+            self._lifecycle.visible(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
         )
         return self._normalize(doc)
 
@@ -142,12 +147,12 @@ class {{ class_name }}Repository:
     ) -> dict[str, Any] | None:
         replacement = {**data, **criteria}
         doc = await self._col.find_one_and_replace(
-            dict(criteria), replacement, return_document=ReturnDocument.AFTER
+            self._lifecycle.visible(criteria), replacement, return_document=ReturnDocument.AFTER
         )
         return self._normalize(doc)
 
     async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one_and_delete(dict(criteria)))
+        return self._normalize(await self._lifecycle.remove(self._col, criteria))
 
     @_translate_conflict
     async def create(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -166,7 +171,7 @@ class {{ class_name }}Repository:
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
         doc = await self._col.find_one_and_update(
-            self._match_filter(document_id),
+            self._lifecycle.visible(self._match_filter(document_id)),
             {"$set": data},
             return_document=ReturnDocument.AFTER,
         )
@@ -177,113 +182,12 @@ class {{ class_name }}Repository:
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
         doc = await self._col.find_one_and_replace(
-            self._match_filter(document_id),
+            self._lifecycle.visible(self._match_filter(document_id)),
             data,
             return_document=ReturnDocument.AFTER,
         )
         return self._normalize(doc)
 
     async def delete(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_delete(self._match_filter(document_id))
-        return self._normalize(doc)
-{% for op in custom_operations | default([]) %}
-{% set q = op.query %}
-{% set col_expr = "self._db[\"" + q["collection"] + "\"]" if q and q.get("collection") else "self._col" %}
-{% if q %}
-{% set cmd = q.command %}
-{% if cmd == "find" %}
-
-    async def {{ op.name }}(self, filter: dict[str, Any]) -> list[dict[str, Any]]:
-        cursor = {{ col_expr }}.find(filter)
-        docs = await cursor.to_list(length=None)
-        return [self._normalize(d) for d in docs]
-{% elif cmd == "findOne" %}
-
-    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await {{ col_expr }}.find_one(filter)
-        return self._normalize(doc)
-{% elif cmd == "aggregate" %}
-
-    async def {{ op.name }}(self, pipeline: list) -> list[dict[str, Any]]:
-        cursor = await {{ col_expr }}.aggregate(pipeline)
-        return await cursor.to_list(length=None)
-{% elif cmd == "countDocuments" %}
-
-    async def {{ op.name }}(self, filter: dict[str, Any]) -> int:
-        return await {{ col_expr }}.count_documents(filter)
-{% elif cmd == "estimatedDocumentCount" %}
-
-    async def {{ op.name }}(self) -> int:
-        return await {{ col_expr }}.estimated_document_count()
-{% elif cmd == "distinct" %}
-
-    async def {{ op.name }}(self, key: str, filter: dict[str, Any]) -> list:
-        return await {{ col_expr }}.distinct(key, filter)
-{% elif cmd == "insertOne" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, document: dict[str, Any]) -> dict[str, Any]:
-        await {{ col_expr }}.insert_one(document)
-        return self._normalize(document)
-{% elif cmd == "insertMany" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        await {{ col_expr }}.insert_many(documents)
-        return [self._normalize(d) for d in documents]
-{% elif cmd == "updateOne" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
-        return self._normalize(doc)
-{% elif cmd == "updateMany" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> Any:
-        return await {{ col_expr }}.update_many(filter, update)
-{% elif cmd == "replaceOne" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
-        return self._normalize(doc)
-{% elif cmd == "deleteOne" %}
-
-    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await {{ col_expr }}.find_one_and_delete(filter)
-        return self._normalize(doc)
-{% elif cmd == "deleteMany" %}
-
-    async def {{ op.name }}(self, filter: dict[str, Any]) -> Any:
-        return await {{ col_expr }}.delete_many(filter)
-{% elif cmd == "findOneAndUpdate" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, filter: dict[str, Any], update: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await {{ col_expr }}.find_one_and_update(filter, update, return_document=ReturnDocument.AFTER)
-        return self._normalize(doc)
-{% elif cmd == "findOneAndReplace" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, filter: dict[str, Any], replacement: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await {{ col_expr }}.find_one_and_replace(filter, replacement, return_document=ReturnDocument.AFTER)
-        return self._normalize(doc)
-{% elif cmd == "findOneAndDelete" %}
-
-    async def {{ op.name }}(self, filter: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await {{ col_expr }}.find_one_and_delete(filter)
-        return self._normalize(doc)
-{% elif cmd == "bulkWrite" %}
-
-    @_translate_conflict
-    async def {{ op.name }}(self, requests: list) -> Any:
-        return await {{ col_expr }}.bulk_write(requests)
-{% endif %}
-{% else %}
-
-    async def {{ op.name }}(self, **kwargs: Any) -> Any:
-        import {{ op.handler.rsplit(".", 1)[0] }}
-        return await {{ op.handler }}(**kwargs)
-{% endif %}
-{% endfor %}
+        return await self.delete_by(self._match_filter(document_id))
+{% include "mongo_custom_operations.py.jinja" %}

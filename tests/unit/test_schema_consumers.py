@@ -24,7 +24,6 @@ UNENFORCED = {
     "defaultPageSize": "0.1 api.pagination",
     "maxPageSize": "0.1 api.pagination",
     "enableStandard": "0.1 security.headers (D16)",
-    "softDelete": "0.1 collections (D19)",
     "additionalProperties": "object field option",
 }
 

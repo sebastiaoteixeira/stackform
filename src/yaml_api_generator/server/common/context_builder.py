@@ -74,7 +74,10 @@ def _build_operations(
     return {
         repo_name: {
             op_name: RuntimeOperationDescriptor(
-                name=op.name, query=op.query, handler=op.handler
+                name=op.name,
+                query=op.query,
+                handler=op.handler,
+                include_deleted=op.include_deleted,
             )
             for op_name, op in repo.operations.items()
         }

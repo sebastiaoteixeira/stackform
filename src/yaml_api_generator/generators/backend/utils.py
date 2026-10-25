@@ -12,7 +12,18 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 
 _RUNTIME_MODULES = frozenset(
-    {"dpop", "pagination", "files", "multipart", "file_requests", "filesystem_store", "s3_store"}
+    {
+        "dpop",
+        "pagination",
+        "files",
+        "multipart",
+        "file_requests",
+        "filesystem_store",
+        "s3_store",
+        "lifecycle",
+        "mongo_lifecycle",
+        "sql_lifecycle",
+    }
 )
 
 
@@ -20,6 +31,15 @@ def runtime_module_source(name: str) -> str:
     if name not in _RUNTIME_MODULES:
         raise ValueError(f"Unknown runtime module: {name}")
     return files("yaml_api_generator.runtime").joinpath(f"{name}.py").read_text()
+
+
+def lifecycle_runtime_modules(*, uses_mongo: bool, uses_sql: bool) -> tuple[str, ...]:
+    """The runtime modules that keep removed and expired rows out of each datastore's queries."""
+    return (
+        "lifecycle",
+        *(("mongo_lifecycle",) if uses_mongo else ()),
+        *(("sql_lifecycle",) if uses_sql else ()),
+    )
 
 
 def write_environment_files(

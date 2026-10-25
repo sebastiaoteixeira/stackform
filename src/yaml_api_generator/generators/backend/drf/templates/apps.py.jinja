@@ -1,5 +1,9 @@
-{% if ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
+{% set create_mongo_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
+{% if create_mongo_indexes or ctx.expiring_collections %}
 import asyncio
+{% endif %}
+{% if ctx.expiring_collections %}
+import threading
 {% endif %}
 
 from django.apps import AppConfig
@@ -12,7 +16,29 @@ class ApiConfig(AppConfig):
     def ready(self):
         from api.authentication.mongodb import connect_db
         connect_db()
-{% if ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
+{% if create_mongo_indexes %}
         from api.authentication.mongodb import initialize_indexes
         asyncio.run(initialize_indexes({{ ctx.mongo_unique_indexes | tojson }}))
+{% endif %}
+{% if ctx.expiring_collections %}
+        threading.Thread(target=asyncio.run, args=(_purge_expired_rows(),), daemon=True).start()
+
+
+async def _purge_expired_rows() -> None:
+    """Runs on its own thread and event loop, so it holds its own MongoDB client."""
+    from pymongo import AsyncMongoClient
+
+    from api.lifecycle import Purger
+    from api.settings import settings
+{% for name in ctx.expiring_collections %}
+    from api.repositories.{{ name }} import {{ name | capitalize_collection }}Repository
+{% endfor %}
+
+    db = AsyncMongoClient(settings.MONGO_URI)[settings.MONGO_DB]
+    repositories = [
+{% for name in ctx.expiring_collections %}
+        {{ name | capitalize_collection }}Repository(db),
+{% endfor %}
+    ]
+    await Purger(repository.purge_expired for repository in repositories).run()
 {% endif %}

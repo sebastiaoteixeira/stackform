@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.runtime.sql_lifecycle import SQLLifecycle
 from .base import BaseRepository, ConflictError
 from .bindings import resolve
 from .sql_schema import table_from_collection
@@ -88,6 +89,7 @@ class SQLRepository(BaseRepository):
         cols = list(collections)
         self._tables = {c.name: table_from_collection(c, self._metadata) for c in cols}
         self._id_fields = {c.name: c.idField for c in cols}
+        self._lifecycles = {c.name: SQLLifecycle(self._tables[c.name], c.lifecycle) for c in cols}
         self._engine: AsyncEngine | None = None
         self._schema_ready = False
         self._lock = asyncio.Lock()
@@ -104,18 +106,21 @@ class SQLRepository(BaseRepository):
             self._engine = None
             self._schema_ready = False
 
+    async def purge_expired(self) -> None:
+        engine = await self._engine_ready()
+        for lifecycle in self._lifecycles.values():
+            await lifecycle.purge(engine)
+
     async def list(self, collection_name: str) -> list[dict[str, Any]]:
         table = self._table(collection_name)
         async with await self._connection() as conn:
-            result = await conn.execute(sa.select(table))
+            result = await conn.execute(sa.select(table).where(*self._visible(collection_name, {})))
             return [dict(row._mapping) for row in result]
 
     async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
         table = self._table(collection_name)
-        bound_clauses = self._bounds_clauses(table, primitives.bounds)
-        stmt = sa.select(table)
-        if bound_clauses:
-            stmt = stmt.where(sa.and_(*bound_clauses))
+        visible = self._visible(collection_name, {})
+        stmt = sa.select(table).where(*self._bounds_clauses(table, primitives.bounds), *visible)
         for key in primitives.sort:
             column = table.c[key.field]
             stmt = stmt.order_by(column.desc() if key.descending else column.asc())
@@ -127,7 +132,7 @@ class SQLRepository(BaseRepository):
             rows = [dict(row._mapping) for row in await conn.execute(stmt)]
             total = None
             if primitives.count == "exact":
-                count_stmt = sa.select(sa.func.count()).select_from(table)
+                count_stmt = sa.select(sa.func.count()).select_from(table).where(*visible)
                 total = (await conn.execute(count_stmt)).scalar()
         return Page(rows=rows, total=total)
 
@@ -143,19 +148,14 @@ class SQLRepository(BaseRepository):
         return clauses
 
     async def get(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
-        table = self._table(collection_name)
-        async with await self._connection() as conn:
-            result = await conn.execute(
-                sa.select(table).where(self._id_column(collection_name) == document_id)
-            )
-            return self._one(result)
+        return await self.find_one(collection_name, self._id_criteria(collection_name, document_id))
 
     async def find_one(
         self, collection_name: str, criteria: dict[str, Any]
     ) -> dict[str, Any] | None:
         statement = (
             sa.select(self._table(collection_name))
-            .where(*self._criteria(collection_name, criteria))
+            .where(*self._visible(collection_name, criteria))
             .limit(1)
         )
         async with await self._connection() as conn:
@@ -177,7 +177,7 @@ class SQLRepository(BaseRepository):
             return await self.find_one(collection_name, criteria)
         statement = (
             sa.update(table)
-            .where(*self._criteria(collection_name, criteria))
+            .where(*self._visible(collection_name, criteria))
             .values(**values)
             .returning(table)
         )
@@ -201,7 +201,7 @@ class SQLRepository(BaseRepository):
         }
         statement = (
             sa.update(table)
-            .where(*self._criteria(collection_name, criteria))
+            .where(*self._visible(collection_name, criteria))
             .values(**values)
             .returning(table)
         )
@@ -212,11 +212,8 @@ class SQLRepository(BaseRepository):
     async def delete_by(
         self, collection_name: str, criteria: dict[str, Any]
     ) -> dict[str, Any] | None:
-        table = self._table(collection_name)
-        statement = (
-            sa.delete(table)
-            .where(*self._criteria(collection_name, criteria))
-            .returning(table)
+        statement = self._lifecycles[collection_name].remove(
+            *self._criteria(collection_name, criteria)
         )
         async with await self._begin() as conn:
             return self._one(await conn.execute(statement))
@@ -258,7 +255,7 @@ class SQLRepository(BaseRepository):
             async with await self._begin() as conn:
                 result = await conn.execute(
                     sa.update(table)
-                    .where(self._id_column(collection_name) == document_id)
+                    .where(*self._visible(collection_name, self._id_criteria(collection_name, document_id)))
                     .values(**values)
                     .returning(table)
                 )
@@ -278,27 +275,21 @@ class SQLRepository(BaseRepository):
             async with await self._begin() as conn:
                 result = await conn.execute(
                     sa.update(table)
-                    .where(self._id_column(collection_name) == document_id)
+                    .where(*self._visible(collection_name, self._id_criteria(collection_name, document_id)))
                     .values(**values)
                     .returning(table)
                 )
                 return self._one(result)
 
     async def delete(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
-        table = self._table(collection_name)
-        async with await self._begin() as conn:
-            result = await conn.execute(
-                sa.delete(table)
-                .where(self._id_column(collection_name) == document_id)
-                .returning(table)
-            )
-            return self._one(result)
+        return await self.delete_by(collection_name, self._id_criteria(collection_name, document_id))
 
     async def run_operation(
         self,
         collection_name: str,
         query: dict[str, Any],
         bindings: dict[str, Any],
+        include_deleted: bool = False,
     ) -> Any:
         sql = query.get("sql")
         if not sql:
@@ -317,8 +308,8 @@ class SQLRepository(BaseRepository):
     def _column(self, collection_name: str, field: str) -> sa.Column:
         return self._table(collection_name).c[field]
 
-    def _id_column(self, collection_name: str) -> sa.Column:
-        return self._column(collection_name, self._id_fields[collection_name])
+    def _id_criteria(self, collection_name: str, document_id: str) -> dict[str, Any]:
+        return {self._id_fields[collection_name]: document_id}
 
     def _criteria(
         self, collection_name: str, criteria: dict[str, Any]
@@ -326,6 +317,14 @@ class SQLRepository(BaseRepository):
         return tuple(
             self._column(collection_name, field) == value
             for field, value in criteria.items()
+        )
+
+    def _visible(
+        self, collection_name: str, criteria: dict[str, Any]
+    ) -> tuple[sa.ColumnElement[bool], ...]:
+        return (
+            *self._criteria(collection_name, criteria),
+            *self._lifecycles[collection_name].visible(),
         )
 
     def _known_columns(

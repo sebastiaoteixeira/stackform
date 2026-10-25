@@ -30,6 +30,7 @@ class RuntimeOperationDescriptor:
     name: str
     query: dict | None = None
     handler: str | None = None
+    include_deleted: bool = False
 
 
 @dataclass(frozen=True)

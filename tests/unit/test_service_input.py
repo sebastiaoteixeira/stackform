@@ -342,7 +342,7 @@ async def test_runtime_repository_operation_receives_forwarded_values():
         def __init__(self):
             self.bindings = None
 
-        async def run_operation(self, collection, query, bindings):
+        async def run_operation(self, collection, query, bindings, include_deleted=False):
             self.bindings = bindings
             return {"id": bindings["lookup"], "state": bindings["state"]}
 

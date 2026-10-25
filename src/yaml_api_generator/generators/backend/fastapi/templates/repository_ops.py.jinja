@@ -10,6 +10,8 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from conflicts import ConflictError
+from dependencies.lifecycle import Lifecycle
+from dependencies.mongo_lifecycle import MongoLifecycle
 from dependencies.pagination import Page, Primitives, expand_bound
 
 
@@ -85,10 +87,12 @@ class RepositoryBase:
     COLLECTION: str
     ID_FIELD: str
     ID_FORMAT: str = "natural"
+    LIFECYCLE = Lifecycle()
 
     def __init__(self, db: AsyncDatabase) -> None:
         self._db = db
         self._col = db[self.COLLECTION]
+        self._lifecycle = MongoLifecycle(self.LIFECYCLE)
         self._generate_id = make_id_generator(self.ID_FORMAT)
 
     def _match_filter(self, document_id: str) -> dict[str, Any]:
@@ -107,11 +111,14 @@ class RepositoryBase:
             return None
         return {k: v for k, v in doc.items() if k != "_id"}
 
+    async def purge_expired(self) -> None:
+        await self._lifecycle.purge(self._col)
+
     async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one({field: value}))
+        return await self.find_one({field: value})
 
     async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one(dict(criteria)))
+        return self._normalize(await self._col.find_one(self._lifecycle.visible(criteria)))
 
     @_translate_conflict
     async def update_by(
@@ -121,7 +128,7 @@ class RepositoryBase:
         if not changes:
             return await self.find_one(criteria)
         doc = await self._col.find_one_and_update(
-            dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+            self._lifecycle.visible(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
         )
         return self._normalize(doc)
 
@@ -131,12 +138,12 @@ class RepositoryBase:
     ) -> dict[str, Any] | None:
         replacement = {**data, **criteria}
         doc = await self._col.find_one_and_replace(
-            dict(criteria), replacement, return_document=ReturnDocument.AFTER
+            self._lifecycle.visible(criteria), replacement, return_document=ReturnDocument.AFTER
         )
         return self._normalize(doc)
 
     async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one_and_delete(dict(criteria)))
+        return self._normalize(await self._lifecycle.remove(self._col, criteria))
 
     @_translate_conflict
     async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -161,13 +168,12 @@ class RepositoryBase:
 
 class ListOp:
     async def list(self) -> list[dict[str, Any]]:
-        cursor = self._col.find({})
+        cursor = self._col.find(self._lifecycle.visible())
         docs = await cursor.to_list(length=None)
         return [self._normalize(d) for d in docs]
 
     async def paginate(self, primitives: Primitives) -> Page:
-        query = _pagination_filter(primitives)
-        cursor = self._col.find(query)
+        cursor = self._col.find(self._lifecycle.visible(_pagination_filter(primitives)))
         if primitives.sort:
             cursor = cursor.sort(
                 [(key.field, -1 if key.descending else 1) for key in primitives.sort]
@@ -178,7 +184,7 @@ class ListOp:
             cursor = cursor.limit(primitives.limit)
         documents = await cursor.to_list(length=None)
         total = (
-            await self._col.count_documents({})
+            await self._col.count_documents(self._lifecycle.visible())
             if primitives.count == "exact"
             else None
         )
@@ -187,8 +193,7 @@ class ListOp:
 
 class GetOp:
     async def get(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one(self._match_filter(document_id))
-        return self._normalize(doc)
+        return await self.find_one(self._match_filter(document_id))
 
 
 class CreateOp:
@@ -200,7 +205,7 @@ class UpdateOp:
     @_translate_conflict
     async def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         doc = await self._col.find_one_and_update(
-            self._match_filter(document_id),
+            self._lifecycle.visible(self._match_filter(document_id)),
             {"$set": data},
             return_document=ReturnDocument.AFTER,
         )
@@ -212,7 +217,7 @@ class ReplaceOp:
     async def replace(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         data[self.ID_FIELD] = document_id
         doc = await self._col.find_one_and_replace(
-            self._match_filter(document_id),
+            self._lifecycle.visible(self._match_filter(document_id)),
             data,
             return_document=ReturnDocument.AFTER,
         )
@@ -221,5 +226,4 @@ class ReplaceOp:
 
 class DeleteOp:
     async def delete(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_delete(self._match_filter(document_id))
-        return self._normalize(doc)
+        return await self.delete_by(self._match_filter(document_id))

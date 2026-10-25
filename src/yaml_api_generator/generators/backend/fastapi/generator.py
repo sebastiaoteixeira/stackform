@@ -10,6 +10,7 @@ from ..utils import (
     extract_identity_fields,
     find_identity,
     group_by_collection,
+    lifecycle_runtime_modules,
     pagination_config,
     runtime_module_source,
     write_environment_files,
@@ -20,7 +21,6 @@ from ..validation import (
     validate_datastore_layout,
 )
 from . import access_filters, sql_filters, type_mapper
-from .runtime_literals import py_constructor
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
@@ -55,7 +55,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["pagination_config"] = pagination_config
         env.filters["sql_column"] = sql_filters.sql_column
-        env.filters["py_constructor"] = py_constructor
         env.filters["rule_to_python"] = access_filters.rule_to_python
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
@@ -379,6 +378,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "id_field_format": meta["id_format"],
                 "collection_type": meta["type"],
                 "fields": meta["fields"],
+                "lifecycle": meta["lifecycle"],
                 "custom_operations": ctx_ops if (ctx_ops := context.repository_operations.get(col_name, [])) else [],
                 "generated_base": generated_base(col_name),
             }
@@ -443,6 +443,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
         (deps_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )
+        for module in lifecycle_runtime_modules(uses_mongo=uses_mongo, uses_sql=uses_sql):
+            (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
         if any(context.repository_operations.values()):
@@ -487,6 +489,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "name": col_name,
                 "class_name": to_pascal_case(col_name),
                 "is_sql": context.collection_datastore_type(col_name) in ("postgres", "postgresql"),
+                "expires": col_name in context.expiring_collections,
             }
             for col_name in context.collections
         ]

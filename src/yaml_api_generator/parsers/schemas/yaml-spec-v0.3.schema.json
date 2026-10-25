@@ -671,7 +671,14 @@
     "RepositoryConfig": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [{ "$ref": "yaml-spec-v0.2.schema.json#/$defs/RepositoryLifecycleRules" }],
       "properties": {
+        "softDelete": {
+          "type": "string"
+        },
+        "ttl": {
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/TtlConfig"
+        },
         "abstract": {
           "type": "boolean"
         },

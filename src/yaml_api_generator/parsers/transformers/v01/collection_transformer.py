@@ -7,7 +7,11 @@ import re
 from typing import Any, cast
 
 from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.parsers.transformers.lifecycle_binding import bind_lifecycle
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+from yaml_api_generator.runtime.lifecycle import Lifecycle
+
+SOFT_DELETE_FIELD = "deletedAt"
 
 FIELD_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 
@@ -58,13 +62,22 @@ class CollectionTransformer:
             if id_field is None or id_format is None:
                 continue
 
+            lifecycle = Lifecycle(
+                removal=SOFT_DELETE_FIELD if collection_data.get("softDelete") else None
+            )
+            bound_fields, lifecycle_errors = bind_lifecycle(
+                lifecycle, fields, f"collections.{name}"
+            )
+            id_field_errors.extend(lifecycle_errors)
+
             collections[name] = IRCollection(
                 name=name,
                 entity_name=name,
                 type=collection_type,
                 idField=id_field,
                 idFormat=id_format,
-                fields=fields,
+                fields=bound_fields,
+                lifecycle=lifecycle,
             )
 
         return collections, collection_access_policies, id_field_errors

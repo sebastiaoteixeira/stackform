@@ -9,6 +9,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from yaml_api_generator.runtime.lifecycle import Purger
+
 from ..common.context_builder import build_runtime_context
 from ..common.files import build_file_stores, build_record_files
 from ..common.loader import create_repositories, ensure_spec_dir_importable, initialize_indexes
@@ -94,6 +96,9 @@ def build_app(yaml_file: str, schema_file: str | Path | None = None) -> FastAPI:
             for store in stores.values():
                 await store.open()
                 stack.push_async_callback(store.close)
+            purger = Purger(repository.purge_expired for repository in registry.all())
+            purger.start()
+            stack.push_async_callback(purger.stop)
             yield
 
     app = FastAPI(lifespan=lifespan)

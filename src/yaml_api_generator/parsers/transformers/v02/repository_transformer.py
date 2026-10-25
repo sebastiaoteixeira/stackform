@@ -165,7 +165,10 @@ class RepositoryTransformer:
                                 ))
 
                 ops_dict[op_name] = IROperation(
-                    name=op_name, query=query, handler=handler_resolver(handler)
+                    name=op_name,
+                    query=query,
+                    handler=handler_resolver(handler),
+                    include_deleted=op_cfg.get("includeDeleted", False),
                 )
 
             if entity is None and not ops_dict and not abstract:

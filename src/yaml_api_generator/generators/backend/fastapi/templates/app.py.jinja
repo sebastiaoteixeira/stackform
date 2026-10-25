@@ -33,6 +33,8 @@ from dependencies.postgres import connect_db as connect_pg, close_db as close_pg
 from dependencies.files import FileError
 from dependencies.file_stores import close_file_stores, open_file_stores
 {% endif %}
+from dependencies.lifecycle import Purger
+from dependencies.repositories import expiring_repositories
 from routes import api_router
 {% if ctx.auth.uses_jwt and ctx.session.uses_asymmetric %}
 from routes.jwks import router as jwks_router
@@ -53,7 +55,10 @@ async def lifespan(app: FastAPI):
 {% if ctx.has_files %}
     await open_file_stores()
 {% endif %}
+    purger = Purger(repository.purge_expired for repository in expiring_repositories())
+    purger.start()
     yield
+    await purger.stop()
 {% if ctx.has_files %}
     await close_file_stores()
 {% endif %}
