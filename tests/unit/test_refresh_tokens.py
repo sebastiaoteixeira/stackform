@@ -88,11 +88,14 @@ class TestGeneration:
         assert "refresh_token" not in plain_login
         assert "/refresh" not in plain_login
 
-    def test_login_route_on_emits_refresh(self, refresh_ctx, tmp_path):
-        FastAPIGenerator().generate(refresh_ctx, tmp_path)
-        login = (tmp_path / "routes" / "login.py").read_text()
-        assert '"/users/refresh"' in login
-        assert "refresh_token" in login
+    def test_refresh_route_emitted_only_when_on(self, plain_ctx, refresh_ctx, tmp_path):
+        plain_dir, refresh_dir = tmp_path / "off", tmp_path / "on"
+        FastAPIGenerator().generate(plain_ctx, plain_dir)
+        FastAPIGenerator().generate(refresh_ctx, refresh_dir)
+        refresh = (refresh_dir / "routes" / "refresh.py").read_text()
+        assert '"/users/refresh"' in refresh
+        assert "refresh_token" in refresh
+        assert not (plain_dir / "routes" / "refresh.py").exists()
 
     def test_jwt_utils_off_has_no_refresh_helpers(self, plain_ctx, tmp_path):
         FastAPIGenerator().generate(plain_ctx, tmp_path)
@@ -181,7 +184,7 @@ class TestRotationRuntime:
         tokens, _, jw = self._wire(refresh_ctx, tmp_path)
 
         async def scenario():
-            first = await tokens.issue_session("user-1", "user")
+            first = await tokens.issue_session("user-1", "users")
             rotated = await tokens.rotate_session(first["refresh_token"])
             assert rotated is not None
             assert rotated["refresh_token"] != first["refresh_token"]
@@ -194,7 +197,7 @@ class TestRotationRuntime:
         tokens, collection, _ = self._wire(refresh_ctx, tmp_path)
 
         async def scenario():
-            first = await tokens.issue_session("user-1", "user")
+            first = await tokens.issue_session("user-1", "users")
             await tokens.rotate_session(first["refresh_token"])
             replay = await tokens.rotate_session(first["refresh_token"])
             assert replay is None
@@ -206,7 +209,7 @@ class TestRotationRuntime:
         tokens, _, _ = self._wire(refresh_ctx, tmp_path)
 
         async def scenario():
-            first = await tokens.issue_session("user-1", "user")
+            first = await tokens.issue_session("user-1", "users")
             second = await tokens.rotate_session(first["refresh_token"])
             await tokens.rotate_session(first["refresh_token"])
             assert await tokens.rotate_session(second["refresh_token"]) is None
@@ -221,7 +224,7 @@ class TestRotationRuntime:
         tokens, _, jw = self._wire(refresh_ctx, tmp_path)
 
         async def scenario():
-            issued = await tokens.issue_session("user-1", "user")
+            issued = await tokens.issue_session("user-1", "users")
             assert jw.decode_refresh_token(issued["refresh_token"]) is not None
             assert jw.decode_jwt_token(issued["refresh_token"]) is None
 
@@ -229,7 +232,7 @@ class TestRotationRuntime:
 
     def test_records_carry_an_expiry_for_ttl_cleanup(self, refresh_ctx, tmp_path):
         tokens, collection, _ = self._wire(refresh_ctx, tmp_path)
-        asyncio.run(tokens.issue_session("user-1", "user"))
+        asyncio.run(tokens.issue_session("user-1", "users"))
         assert collection.docs[0]["expires_at"] is not None
 
 

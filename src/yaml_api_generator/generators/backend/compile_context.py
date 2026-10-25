@@ -19,41 +19,22 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from ...constants import CRUD_OPERATIONS
-from ...ir.api import CallerDemand, IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService, IRServiceBase
+from ...ir.api import (
+    CallerDemand,
+    IRFileField,
+    IRPagination,
+    IRProvider,
+    IRProviderBinding,
+    IRRolesConfig,
+    IRService,
+    IRServiceBase,
+)
 from ...ir.when import WhenExpr
 from ...runtime.access import Roles
 from ...utils.strings import to_pascal_case, to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
-
-
-@dataclass(frozen=True)
-class ProviderRelationDescriptor:
-    fk_field: str
-    collection: str
-    id_field: str
-    match: dict[str, str]
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "fk_field": self.fk_field,
-            "collection": self.collection,
-            "id_field": self.id_field,
-            "match": self.match,
-        }
-
-
-@dataclass(frozen=True)
-class ProviderBindingDescriptor:
-    provider: str
-    identifier: str
-    claim_mapping: dict[str, str]
-    auto_provision: bool
-    relations: list[ProviderRelationDescriptor]
-
-    @property
-    def relations_data(self) -> list[dict[str, Any]]:
-        return [r.as_dict() for r in self.relations]
+SAML_REQUIREMENTS = ("python3-saml", "python-multipart")
 
 
 @dataclass(frozen=True)
@@ -334,7 +315,7 @@ class FileRouteDescriptor:
 @dataclass(frozen=True)
 class IdentityCollectionDescriptor:
     name: str
-    bindings: list[ProviderBindingDescriptor]
+    bindings: tuple[IRProviderBinding, ...]
     id_field: str
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
@@ -378,7 +359,7 @@ class IdentityCollectionDescriptor:
     def role_store(self) -> Roles:
         return Roles(self.roles_field, self.default_role)
 
-    def get_binding(self, provider: str) -> "ProviderBindingDescriptor | None":
+    def get_binding(self, provider: str) -> IRProviderBinding | None:
         return next((b for b in self.bindings if b.provider == provider), None)
 
 
@@ -408,6 +389,11 @@ class AuthConfig:
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
     @property
+    def has_external_login(self) -> bool:
+        """An app-trust OIDC or SAML provider: the app runs its login flow and issues one-time codes."""
+        return self.has_app_oidc_auth or self.has_saml_auth
+
+    @property
     def login_identities(self) -> list[IdentityCollectionDescriptor]:
         return [identity for identity in self.identity_collections if identity.serves_login]
 
@@ -415,10 +401,17 @@ class AuthConfig:
     def uses_jwt(self) -> bool:
         """JWT helpers and JWT_SECRET are needed whenever the app mints its own tokens.
 
-        Password login and app-trust OIDC/SAML callbacks issue bearer JWTs.
+        Password login and external login callbacks issue bearer JWTs.
         Pure idp-trust providers never mint a session token.
         """
-        return self.has_password_auth or self.has_app_oidc_auth or self.has_saml_auth
+        return self.has_password_auth or self.has_external_login
+
+    @property
+    def requirements(self) -> tuple[str, ...]:
+        return (
+            *(("httpx",) if self.has_oidc_auth or self.has_saml_auth else ()),
+            *(SAML_REQUIREMENTS if self.has_saml_auth else ()),
+        )
 
 
 @dataclass(frozen=True)

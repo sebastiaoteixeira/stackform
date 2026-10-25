@@ -1,5 +1,5 @@
+import ast
 import asyncio
-import re
 import time
 import types
 from pathlib import Path
@@ -13,9 +13,9 @@ from yaml_api_generator.generators.backend.compile_context import (
     AuthConfig,
     IdentityCollectionDescriptor,
     IdpProviderDescriptor,
-    ProviderBindingDescriptor,
 )
 from yaml_api_generator.generators.backend.fastapi import access_filters
+from yaml_api_generator.generators.backend.fastapi.runtime_literals import py_constructor
 from yaml_api_generator.server.common.steps.authorization import _principal_has_role
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.runtime.access import role_names
@@ -27,7 +27,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeIdentityDescriptor,
 )
 from yaml_api_generator.server.common.steps.authentication import _resolve_idp_principal
-from yaml_api_generator.server.common.utils.field_access import resolve_claim_path
+from yaml_api_generator.runtime.claims import resolve_claim_path
 from yaml_api_generator.utils.strings import to_py_identifier
 from tests.unit.support.repositories import InMemoryRepository
 
@@ -128,13 +128,12 @@ def _render_auth_py(roles_field, claim_mapping):
     env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), keep_trailing_newline=True)
     env.filters["py_literal"] = access_filters.py_literal
     env.filters["py_identifier"] = to_py_identifier
+    env.filters["py_constructor"] = py_constructor
     provider = _provider()
-    binding = ProviderBindingDescriptor(
+    binding = IRProviderBinding(
         provider="keycloak",
         identifier="email",
         claim_mapping=claim_mapping,
-        auto_provision=True,
-        relations=[],
     )
     identity = IdentityCollectionDescriptor(
         name="users",
@@ -175,13 +174,19 @@ def _exec_roles_from_claims(source):
     return module._roles_from_claims
 
 
+def _emitted_roles_claim(source):
+    sign_ins = next(
+        node.value for node in ast.parse(source).body
+        if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", None) == "_IDP_SIGN_INS"
+    )
+    (sign_in,) = sign_ins.elts
+    return ast.literal_eval(sign_in.args[3])
+
+
 class TestEmittedRolesFromClaims:
     def test_emitted_roles_claim_path_is_mapped_claim_not_local_name(self):
         source = _render_auth_py(_LOCAL_ROLES_FIELD, {"email": "email", _LOCAL_ROLES_FIELD: _ROLES_CLAIM})
-        match = re.search(r"_roles_claim_path = (.+)", source)
-        assert match is not None
-        assert match.group(1).strip() == repr(_ROLES_CLAIM)
-        assert "'orgRole'" not in match.group(1)
+        assert _emitted_roles_claim(source) == _ROLES_CLAIM
 
     def test_emitted_roles_from_claims_resolves_dotted_path(self):
         source = _render_auth_py(_LOCAL_ROLES_FIELD, {"email": "email", _LOCAL_ROLES_FIELD: _ROLES_CLAIM})
@@ -190,8 +195,7 @@ class TestEmittedRolesFromClaims:
 
     def test_emitted_roles_use_mapped_path_when_local_key_absent(self):
         source = _render_auth_py(_LOCAL_ROLES_FIELD, {"email": "email", _LOCAL_ROLES_FIELD: _ROLES_CLAIM})
-        match = re.search(r"_roles_claim_path = (.+)", source)
-        emitted_path = eval(match.group(1).strip())
+        emitted_path = _emitted_roles_claim(source)
         fn = _exec_roles_from_claims(source)
         claims = {"realm_access": {"roles": ["editor"]}}
         assert _LOCAL_ROLES_FIELD not in claims

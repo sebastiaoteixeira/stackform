@@ -155,9 +155,10 @@ class BaseRepository(ABC):
         )
         if existing is None:
             return await self.create(collection_name, payload)
-        document_id = existing.get(self._id_field(collection_name))
-        updated = await self.update(collection_name, str(document_id), payload)
-        return updated if updated is not None else {**existing, **payload}
+        id_field = self._id_field(collection_name)
+        changes = {field: value for field, value in payload.items() if field != id_field}
+        updated = await self.update(collection_name, str(existing.get(id_field)), changes)
+        return updated if updated is not None else {**existing, **changes}
 
     def _id_field(self, collection_name: str) -> str:
         return "id"

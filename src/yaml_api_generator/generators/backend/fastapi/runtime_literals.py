@@ -7,7 +7,10 @@ _IR_PREFIX = "IR"
 
 
 def py_constructor(value: Any) -> str:
-    """`IRFileField(...)` becomes the source of `FileField(...)`, recursively."""
+    """`IRFileField(...)` becomes the source of `FileField(...)`, recursively through dicts."""
+    if isinstance(value, dict):
+        entries = ", ".join(f"{py_constructor(key)}: {py_constructor(item)}" for key, item in value.items())
+        return f"{{{entries}}}"
     if not is_dataclass(value):
         return repr(value)
     arguments = ", ".join(

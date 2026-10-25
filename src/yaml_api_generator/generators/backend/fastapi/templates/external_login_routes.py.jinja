@@ -1,0 +1,50 @@
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
+{% if ctx.session.uses_cookie %}
+from fastapi.responses import JSONResponse
+{% endif %}
+
+from dependencies.login_codes import redeem_login_code
+from dependencies.session_tokens import issue_session
+{% if ctx.session.uses_cookie %}
+from dependencies.session_cookie import issue_csrf_token, set_session_cookies
+{% endif %}
+
+router = APIRouter()
+
+
+@router.post("/auth/exchange")
+async def exchange_login_code(request: Request, payload: dict[str, str]) -> Any:
+    code = payload.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+    redeemed = await redeem_login_code(code)
+    if redeemed is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired code")
+    subject, identity_collection, _ = redeemed
+    session = await issue_session(subject, identity_collection)
+{% if ctx.session.uses_cookie %}
+    csrf_token = issue_csrf_token()
+    response = JSONResponse({"csrf_token": csrf_token})
+    set_session_cookies(response, request, session["token"], csrf_token{% if ctx.session.refresh %}, session["refresh_token"]{% endif %})
+    return response
+{% else %}
+    return session
+{% endif %}
+{% for col in auth.identity_collections %}
+{% set ext_providers = [] %}
+{% for binding in col.bindings %}
+{% set _p = auth.providers.get(binding.provider) %}
+{% if _p and not _p.is_idp %}
+{% set _ = ext_providers.append({"name": binding.provider, "type": _p.type}) %}
+{% endif %}
+{% endfor %}
+{% if ext_providers %}
+
+
+@router.get("/{{ col.name }}/auth/providers")
+async def list_{{ col.name }}_auth_providers() -> list[dict[str, str]]:
+    return {{ ext_providers | tojson }}
+{% endif %}
+{% endfor %}

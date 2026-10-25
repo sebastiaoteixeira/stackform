@@ -9,29 +9,15 @@ from pydantic import BaseModel, Field
 
 from dependencies.auth import verify_password
 {% if ctx.session.uses_cookie %}
-{% if ctx.session.refresh %}
-from dependencies.session_cookie import issue_csrf_token, refresh_token_from_request, set_session_cookies
-{% else %}
 from dependencies.session_cookie import issue_csrf_token, set_session_cookies
-{% endif %}
 {% endif %}
 {% for identity in auth.login_identities %}
 from dependencies.repositories import get_{{ identity.name }}_repository
 {% endfor %}
-{% if ctx.session.refresh %}
-from dependencies.session_tokens import issue_session, rotate_session
-{% else %}
 from dependencies.session_tokens import issue_session
-{% endif %}
 
 router = APIRouter()
 
-{% if ctx.session.refresh and not ctx.session.uses_cookie %}
-
-class RefreshPayload(BaseModel):
-    refresh_token: str = Field(..., min_length=1)
-
-{% endif %}
 {% for identity in auth.login_identities %}
 {% set class_name = identity.name | capitalize_collection %}
 
@@ -67,30 +53,4 @@ async def login_{{ identity.name }}(payload: {{ class_name }}LoginPayload{% if c
 
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
-{% if ctx.session.refresh %}
-{% if ctx.session.uses_cookie %}
-
-@router.post("{{ identity.refresh_path }}", tags=["{{ identity.name | capitalize_collection }}"])
-async def refresh_{{ identity.name }}(request: Request) -> Any:
-    presented = refresh_token_from_request(request)
-    if presented is None:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-    rotated = await rotate_session(presented)
-    if rotated is None:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-    csrf_token = issue_csrf_token()
-    response = JSONResponse({"csrf_token": csrf_token})
-    set_session_cookies(response, request, rotated["token"], csrf_token, rotated["refresh_token"])
-    return response
-{% else %}
-
-@router.post("{{ identity.refresh_path }}", tags=["{{ identity.name | capitalize_collection }}"])
-async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
-    rotated = await rotate_session(payload.refresh_token)
-    if rotated is None:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-    return rotated
-
-{% endif %}
-{% endif %}
 {% endfor %}

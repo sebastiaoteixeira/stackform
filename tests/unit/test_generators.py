@@ -266,24 +266,25 @@ def test_oidc_callback_redirects_with_code_not_token(tmp_path):
     gen = FastAPIGenerator()
     gen.generate(ctx, tmp_path)
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    exchange_src = (tmp_path / "routes" / "external_login.py").read_text()
     assert "?code={code}" in oidc_src
     assert "?token=" not in oidc_src
-    assert '@router.post("/auth/exchange")' in oidc_src
-    assert "redeem_login_code(code)" in oidc_src
-    assert 'issue_login_code(str(subject), "users", "mongo")' in oidc_src
+    assert '@router.post("/auth/exchange")' in exchange_src
+    assert "redeem_login_code(code)" in exchange_src
+    assert 'issue_login_code(str(record["id"]), "users", "mongo")' in oidc_src
 
 
 def test_oidc_callback_uses_repository_not_raw_datastore(tmp_path):
-    """User lookup/provisioning goes through the injected repository, so the
-    callback is datastore-agnostic instead of hardcoding the Mongo client."""
+    """Sign-in goes through the shared provisioning runtime over the collection repository,
+    so the callback is datastore-agnostic instead of hardcoding the Mongo client."""
     ctx = _ctx_from_fixture("auth-oidc.yaml")
     gen = FastAPIGenerator()
     gen.generate(ctx, tmp_path)
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
     assert "get_database" not in oidc_src
     assert "insert_one" not in oidc_src and "find_one" not in oidc_src
-    assert "Depends(get_users_repository)" in oidc_src
-    assert 'repo.upsert_by("email"' in oidc_src
+    assert "from dependencies.repositories import repository" in oidc_src
+    assert '_users_keycloak_binding.sign_in(claims, repository, "users")' in oidc_src
 
 
 def test_oidc_login_codes_stored_in_collection_datastore(tmp_path):
@@ -361,7 +362,7 @@ def test_oidc_login_codes_use_sql_backend_for_sql_identity(tmp_path):
     assert "_MongoLoginCodes" not in store_src
     assert "metadata" in store_src and "returning(" in store_src
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
-    assert 'issue_login_code(str(subject), "users", "sql")' in oidc_src
+    assert 'issue_login_code(str(record["id"]), "users", "sql")' in oidc_src
 
 
 def test_shared_service_provider_defined_exactly_once(tmp_path):

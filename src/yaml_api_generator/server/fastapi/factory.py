@@ -2,6 +2,7 @@ import os
 import re
 import secrets
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -28,9 +29,10 @@ from yaml_api_generator.runtime.file_requests import (
 )
 from yaml_api_generator.runtime.multipart import file_download_responses, file_upload_body
 from yaml_api_generator.ir import payload_fields
-from yaml_api_generator.ir.api import IRDto, IROIDCProvider, IRProviderBinding
+from yaml_api_generator.ir.api import IRDto, IROIDCProvider, IRProviderBinding, IRSAMLProvider
+from yaml_api_generator.runtime.saml import SAMLServiceProvider
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
-from ..common.auth import oidc
+from ..common.auth import oidc, provisioning
 from ..common.auth.login_codes import login_codes
 from ..common.auth.session_tokens import SessionTokens
 from ..common.server_context import (
@@ -353,70 +355,123 @@ def register_provider_routes(
     registry: RepositoryRegistry,
     session_tokens: SessionTokens,
 ) -> None:
-    """Mount OIDC provider routes for each identity collection that binds one.
+    """Mount the external provider routes of every identity collection that binds one.
 
-    Reaches parity with the generated backend's oidc_routes for the dev server:
-    a provider-listing endpoint, the login redirect, the callback, and the
-    shared one-time-code exchange.
+    Reaches parity with the generated backend: a provider listing per collection,
+    each provider's login flow, and the shared one-time-code exchange.
     """
     auth = ctx.auth
     base_prefix = _base_prefix(ctx)
-    has_oidc = False
+    has_external_login = False
 
     for name, identity in auth.identity_collections.items():
         bound = [
-            (binding, auth.providers.get(binding.provider))
+            (binding, auth.providers[binding.provider])
             for binding in identity.bindings
-            if auth.providers.get(binding.provider) is not None
+            if binding.provider in auth.providers
         ]
         if not bound:
             continue
 
-        listing = [{"name": b.provider, "type": p.type} for b, p in bound]
         app.add_api_route(
             f"{base_prefix}/{name}/auth/providers",
-            _providers_listing_endpoint(listing),
+            _providers_listing_endpoint([{"name": b.provider, "type": p.type} for b, p in bound]),
             methods=["GET"],
         )
-
+        login = _ExternalLogin(ctx.collections[name], registry, ctx.collections)
         for binding, provider in bound:
-            if not isinstance(provider, IROIDCProvider):
-                continue
-            login_path = f"{base_prefix}/{name}/auth/{binding.provider}"
-            app.add_api_route(
-                f"{login_path}/logout", _oidc_logout_endpoint(provider), methods=["GET"]
+            _PROVIDER_ROUTES[type(provider)](
+                app, f"{base_prefix}/{name}/auth/{binding.provider}", provider, binding, login
             )
-            if provider.is_idp:
-                continue
-            has_oidc = True
-            collection = ctx.collections[name]
-            callback_path = f"{login_path}/callback"
-            dpop = _load_dpop_factory(provider) if provider.dpop else None
-            app.add_api_route(
-                login_path,
-                _oidc_login_endpoint(provider, callback_path, name),
-                methods=["GET"],
-            )
-            app.add_api_route(
-                callback_path,
-                _oidc_callback_endpoint(
-                    provider,
-                    binding,
-                    collection,
-                    registry,
-                    callback_path,
-                    collections=ctx.collections,
-                    dpop=dpop,
-                ),
-                methods=["GET"],
-            )
+            has_external_login = has_external_login or not provider.is_idp
 
-    if has_oidc:
+    if has_external_login:
         app.add_api_route(
             f"{base_prefix}/auth/exchange",
             _exchange_endpoint(session_tokens, uses_cookie=ctx.session.uses_cookie),
             methods=["POST"],
         )
+
+
+@dataclass(frozen=True)
+class _ExternalLogin:
+    """Signs a provider-authenticated user into one identity collection."""
+
+    collection: RuntimeCollectionDescriptor
+    registry: RepositoryRegistry
+    collections: dict[str, RuntimeCollectionDescriptor]
+
+    async def redirect(
+        self, request: Request, claims: dict[str, Any], binding: IRProviderBinding
+    ) -> RedirectResponse:
+        try:
+            record = await provisioning.provider_binding(binding).sign_in(
+                claims, provisioning.records_of(self.registry, self.collections), self.collection.name
+            )
+        except provisioning.REFUSALS as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        if record is None:
+            raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+        code = login_codes.issue(str(record[self.collection.id_field]), self.collection.name)
+        # 303 so the browser follows a POSTed SAML assertion with a GET
+        return RedirectResponse(url=f"{_frontend_url(request)}/auth/callback?code={code}", status_code=303)
+
+
+def _frontend_url(request: Request) -> str:
+    return os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
+
+
+def _mount_oidc_routes(
+    app: FastAPI,
+    login_path: str,
+    provider: IROIDCProvider,
+    binding: IRProviderBinding,
+    login: _ExternalLogin,
+) -> None:
+    app.add_api_route(f"{login_path}/logout", _oidc_logout_endpoint(provider), methods=["GET"])
+    if provider.is_idp:
+        return
+    callback_path = f"{login_path}/callback"
+    dpop = _load_dpop_factory(provider) if provider.dpop else None
+    app.add_api_route(
+        login_path,
+        _oidc_login_endpoint(provider, callback_path, login.collection.name),
+        methods=["GET"],
+    )
+    app.add_api_route(
+        callback_path,
+        _oidc_callback_endpoint(provider, binding, login, callback_path, dpop=dpop),
+        methods=["GET"],
+    )
+
+
+def _mount_saml_routes(
+    app: FastAPI,
+    login_path: str,
+    provider: IRSAMLProvider,
+    binding: IRProviderBinding,
+    login: _ExternalLogin,
+) -> None:
+    sp = SAMLServiceProvider(provider.idp_metadata_url, provider.sp_entity_id, login_path)
+
+    async def callback_endpoint(request: Request) -> RedirectResponse:
+        response = await login.redirect(request, await sp.claims(request), binding)
+        sp.forget_request(response)
+        return response
+
+    async def metadata_endpoint(request: Request) -> Response:
+        return Response(await sp.metadata(request), media_type="application/xml")
+
+    async def logout_endpoint(request: Request) -> RedirectResponse:
+        return RedirectResponse(url=await sp.logout_redirect(request, _frontend_url(request)))
+
+    app.add_api_route(login_path, sp.login, methods=["GET"])
+    app.add_api_route(sp.callback_path, callback_endpoint, methods=["POST"])
+    app.add_api_route(f"{login_path}/metadata", metadata_endpoint, methods=["GET"])
+    app.add_api_route(sp.logout_path, logout_endpoint, methods=["GET"])
+
+
+_PROVIDER_ROUTES = {IROIDCProvider: _mount_oidc_routes, IRSAMLProvider: _mount_saml_routes}
 
 
 def _providers_listing_endpoint(listing: list[dict[str, str]]):
@@ -485,8 +540,9 @@ def _oidc_login_endpoint(
 
 def _oidc_logout_endpoint(provider: IROIDCProvider):
     async def endpoint(request: Request) -> RedirectResponse:
-        post_logout = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
-        return RedirectResponse(url=await oidc.build_logout_redirect(provider, post_logout))
+        return RedirectResponse(
+            url=await oidc.build_logout_redirect(provider, _frontend_url(request))
+        )
 
     return endpoint
 
@@ -494,10 +550,8 @@ def _oidc_logout_endpoint(provider: IROIDCProvider):
 def _oidc_callback_endpoint(
     provider: IROIDCProvider,
     binding: IRProviderBinding,
-    collection: RuntimeCollectionDescriptor,
-    registry: RepositoryRegistry,
+    login: _ExternalLogin,
     callback_path: str,
-    collections: dict[str, RuntimeCollectionDescriptor] | None = None,
     dpop: DPoPProofFactory | None = None,
 ):
     async def endpoint(
@@ -505,7 +559,7 @@ def _oidc_callback_endpoint(
         code: str,
         state: str | None = None,
     ) -> RedirectResponse:
-        state_cookie = _oidc_cookie_name(collection.name, provider.name, "state")
+        state_cookie = _oidc_cookie_name(login.collection.name, provider.name, "state")
         expected_state = request.cookies.get(state_cookie)
         if (
             not state
@@ -514,23 +568,16 @@ def _oidc_callback_endpoint(
         ):
             raise HTTPException(status_code=400, detail="Invalid OIDC state")
         verifier_cookie = _oidc_cookie_name(
-            collection.name, provider.name, "pkce_verifier"
+            login.collection.name, provider.name, "pkce_verifier"
         )
         verifier = request.cookies.get(verifier_cookie) if provider.pkce else None
         if provider.pkce and not verifier:
             raise HTTPException(status_code=400, detail="Missing PKCE verifier")
-        repo = registry.for_collection(collection.name)
         callback_url = str(request.base_url).rstrip("/") + callback_path
-        login_code = await oidc.handle_callback(
-            provider, binding, collection, repo, code, callback_url,
-            collections=collections, registry=registry,
-            code_verifier=verifier,
-            dpop=dpop,
+        claims = await oidc.fetch_claims(
+            provider, code, callback_url, code_verifier=verifier, dpop=dpop
         )
-        frontend_url = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
-        response = RedirectResponse(
-            url=f"{frontend_url}/auth/callback?code={login_code}"
-        )
+        response = await login.redirect(request, claims, binding)
         response.delete_cookie(state_cookie, path=callback_path)
         if provider.pkce:
             response.delete_cookie(verifier_cookie, path=callback_path)

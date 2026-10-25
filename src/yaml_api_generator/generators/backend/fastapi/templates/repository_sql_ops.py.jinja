@@ -204,7 +204,7 @@ class SQLRepositoryBase:
         statement = pg_insert(self.TABLE).values(**values)
         statement = statement.on_conflict_do_update(
             index_elements=[key_field],
-            set_={k: statement.excluded[k] for k in values if k != key_field},
+            set_={k: statement.excluded[k] for k in values if k != self.ID_FIELD},
         ).returning(self.TABLE)
         async with self._engine.begin() as conn:
             result = await conn.execute(statement)

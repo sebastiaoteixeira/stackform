@@ -17,9 +17,7 @@ asyncpg
 {% endif %}
 pyjwt[crypto]
 uuid_utils
-{% if ctx.auth.has_oidc_auth %}httpx
-{% endif %}
-{% for req in ctx.file_requirements %}
+{% for req in (ctx.auth.requirements + ctx.file_requirements) | unique %}
 {{ req }}
 {% endfor %}
 {% for req in ctx.vendored_requirements %}

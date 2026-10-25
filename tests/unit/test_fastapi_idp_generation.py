@@ -223,8 +223,9 @@ class TestIdpCallbackGeneration:
         ctx = _ctx_from_fixture("auth-oidc.yaml")
         FastAPIGenerator().generate(ctx, tmp_path)
         src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+        exchange = (tmp_path / "routes" / "external_login.py").read_text()
         assert "issue_login_code" in src
-        assert "issue_session" in src
+        assert "issue_session" in exchange
         assert "issue_idp_code" not in src
 
     def test_app_login_codes_has_no_issue_idp(self, tmp_path):
@@ -389,23 +390,13 @@ NESTED_CLAIMS = {"sub": "user-1", "profile": {"email": "nested@example.com"}}
 RECORD = {"id": "user-1", "email": "nested@example.com", "name": "Nested"}
 
 
-class Cursor:
+class Records:
     def __init__(self, documents):
         self._documents = documents
 
-    async def to_list(self, length=None):
-        return self._documents
-
-
-class Collection:
-    def __init__(self, documents):
-        self._documents = documents
-
-    def find(self, query):
-        return Cursor(self._documents)
-
-    async def find_one(self, query):
-        return None
+    async def find_one(self, criteria):
+        matches = (doc for doc in self._documents if all(doc.get(k) == v for k, v in criteria.items()))
+        return next(matches, None)
 
 
 class Request:
@@ -426,8 +417,9 @@ async def resolve(issuer, documents):
         return NESTED_CLAIMS
 
     idp_auth.verify_idp_token = verify_idp_token
+    auth.repository = lambda collection: Records(documents)
     try:
-        return {"principal": await auth.resolve_principal(Request(), {"users": Collection(documents)})}
+        return {"principal": await auth.resolve_principal(Request())}
     except HTTPException as error:
         return {"status": error.status_code, "detail": error.detail}
 
@@ -446,7 +438,7 @@ asyncio.run(main())
 
 @pytest.fixture(scope="module")
 def resolved_principals(tmp_path_factory):
-    """Run the generated resolve_principal against a stubbed IdP and Mongo."""
+    """Run the generated resolve_principal against a stubbed IdP and identity repository."""
     tmp_path = tmp_path_factory.mktemp("idp-behaviour")
     spec = tmp_path / "spec.yaml"
     spec.write_text(textwrap.dedent(_BEHAVIOUR_SPEC))

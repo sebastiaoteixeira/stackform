@@ -1,0 +1,43 @@
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+{% if ctx.session.uses_cookie %}
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+from dependencies.session_cookie import issue_csrf_token, refresh_token_from_request, set_session_cookies
+{% else %}
+from pydantic import BaseModel, Field
+{% endif %}
+from dependencies.session_tokens import rotate_session
+
+router = APIRouter()
+{% if not ctx.session.uses_cookie %}
+
+
+class RefreshPayload(BaseModel):
+    refresh_token: str = Field(..., min_length=1)
+{% endif %}
+
+
+async def _rotated(presented: str | None) -> dict[str, str]:
+    rotated = await rotate_session(presented) if presented else None
+    if rotated is None:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    return rotated
+{% for identity in auth.identity_collections if identity.issues_jwt %}
+
+
+@router.post("{{ identity.refresh_path }}", tags=["{{ identity.name | capitalize_collection }}"])
+{% if ctx.session.uses_cookie %}
+async def refresh_{{ identity.name }}(request: Request) -> Any:
+    rotated = await _rotated(refresh_token_from_request(request))
+    csrf_token = issue_csrf_token()
+    response = JSONResponse({"csrf_token": csrf_token})
+    set_session_cookies(response, request, rotated["token"], csrf_token, rotated["refresh_token"])
+    return response
+{% else %}
+async def refresh_{{ identity.name }}(payload: RefreshPayload) -> Any:
+    return await _rotated(payload.refresh_token)
+{% endif %}
+{% endfor %}

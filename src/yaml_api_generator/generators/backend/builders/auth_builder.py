@@ -3,14 +3,12 @@
 Converts IR identity collections and providers into auth configuration descriptors.
 """
 
-from collections.abc import Iterable
 from typing import Any
 
 from yaml_api_generator.ir import (
     IRCollection,
     IRIdentityCollection,
     IROIDCProvider,
-    IRProviderBinding,
     IRSAMLProvider,
     flatten_role_hierarchy,
 )
@@ -18,8 +16,6 @@ from ..compile_context import (
     AuthConfig,
     IdpProviderDescriptor,
     IdentityCollectionDescriptor,
-    ProviderBindingDescriptor,
-    ProviderRelationDescriptor,
 )
 
 
@@ -71,24 +67,17 @@ class AuthBuilder:
         role_hierarchies: dict[str, dict[str, set[str]]] = {}
         idp_providers = self._build_idp_providers(providers)
 
-        external_app = {
-            n for n, p in providers.items()
-            if isinstance(p, (IROIDCProvider, IRSAMLProvider)) and not p.is_idp
-        }
         for name, identity in identity_map.items():
             col = collections[name]
-            issues_jwt = identity.has_password or any(
-                b.provider in external_app for b in identity.bindings
-            )
             descriptors.append(
                 IdentityCollectionDescriptor(
                     name=name,
-                    bindings=self._build_bindings(identity.bindings, collections),
+                    bindings=identity.bindings,
                     id_field=col.idField,
                     id_format=col.idFormat,
                     roles=identity.roles,
                     roles_field=identity.roles_field,
-                    issues_jwt=issues_jwt,
+                    issues_jwt=identity.issues_sessions(providers),
                     datastore_type=datastore_types.get(name, "mongodb"),
                     login=identity.login,
                     default_role=identity.default_role(col),
@@ -115,31 +104,6 @@ class AuthBuilder:
             providers=providers,
             role_hierarchies=role_hierarchies,
         )
-
-    @staticmethod
-    def _build_bindings(
-        bindings: Iterable[IRProviderBinding],
-        collections: dict[str, IRCollection],
-    ) -> list[ProviderBindingDescriptor]:
-        result = []
-        for b in bindings:
-            relations = [
-                ProviderRelationDescriptor(
-                    fk_field=fk_field,
-                    collection=rel.collection,
-                    id_field=collections[rel.collection].idField if rel.collection in collections else "id",
-                    match=dict(rel.match),
-                )
-                for fk_field, rel in b.relations.items()
-            ]
-            result.append(ProviderBindingDescriptor(
-                provider=b.provider,
-                identifier=b.identifier,
-                claim_mapping=dict(b.claim_mapping),
-                auto_provision=b.auto_provision,
-                relations=relations,
-            ))
-        return result
 
     @staticmethod
     def _build_idp_providers(providers: dict[str, Any]) -> list[IdpProviderDescriptor]:

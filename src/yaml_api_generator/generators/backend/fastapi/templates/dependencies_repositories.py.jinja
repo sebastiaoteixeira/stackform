@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Any, Callable
 
 from fastapi import Depends
 
@@ -20,10 +20,19 @@ def repository_provider(repo_cls: type, db_dep: Callable) -> Callable:
     return provide
 
 
+_REPOSITORIES: dict[str, tuple[type, Callable]] = {
 {% for col in collections %}
-{% if col.is_sql %}
-get_{{ col.name }}_repository = repository_provider({{ col.class_name }}Repository, get_pg_db)
-{% else %}
-get_{{ col.name }}_repository = repository_provider({{ col.class_name }}Repository, get_mongo_db)
-{% endif %}
+    "{{ col.name }}": ({{ col.class_name }}Repository, {{ "get_pg_db" if col.is_sql else "get_mongo_db" }}),
+{% endfor %}
+}
+
+
+def repository(collection: str) -> Any:
+    """The repository of ``collection``, for code that runs outside request dependencies."""
+    repo_cls, get_db = _REPOSITORIES[collection]
+    return repo_cls(get_db())
+
+
+{% for col in collections %}
+get_{{ col.name }}_repository = repository_provider(*_REPOSITORIES["{{ col.name }}"])
 {% endfor %}

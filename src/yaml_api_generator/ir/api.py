@@ -20,7 +20,7 @@ eliminating repeated YAML parsing and validation.
 """
 
 import re
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
@@ -536,6 +536,11 @@ def flatten_role_hierarchy(
 class IRProviderRelation:
     collection: str
     match: dict[str, str] = field(default_factory=dict)
+    id_field: str = "id"
+    match_types: dict[str, str] = field(default_factory=dict)
+
+
+CREDENTIAL_PROVIDERS = frozenset({"password", "apiKey"})
 
 
 @dataclass(frozen=True)
@@ -545,6 +550,12 @@ class IRProviderBinding:
     claim_mapping: dict[str, str] = field(default_factory=dict)
     auto_provision: bool = True
     relations: dict[str, IRProviderRelation] = field(default_factory=dict)
+    field_types: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def stores_credential(self) -> bool:
+        """``password`` and ``apiKey`` bindings take their secret from a body field named after the provider."""
+        return self.provider in CREDENTIAL_PROVIDERS
 
 
 @dataclass(frozen=True)
@@ -575,6 +586,12 @@ class IRIdentityCollection:
 
     def get_binding(self, provider: str) -> "IRProviderBinding | None":
         return next((b for b in self.bindings if b.provider == provider), None)
+
+    def issues_sessions(self, providers: Mapping[str, IRProvider]) -> bool:
+        """Password login and every login flow the app runs itself end in an app-issued session."""
+        return self.has_password or any(
+            not providers[b.provider].is_idp for b in self.bindings if b.provider in providers
+        )
 
 
 @dataclass(frozen=True)

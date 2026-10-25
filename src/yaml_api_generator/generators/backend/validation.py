@@ -132,42 +132,6 @@ def reject_cookie_delivery(context: CompileContext, backend: str) -> None:
     )
 
 
-def _reject_oidc_client_option(
-    context: CompileContext,
-    backend: str,
-    option: str,
-) -> None:
-    providers = [
-        name
-        for name, provider in context.auth.providers.items()
-        if getattr(provider, option, False)
-    ]
-    if not providers:
-        return
-    names = ", ".join(sorted(providers))
-    raise ConfigErrors(
-        [
-            ConfigError(
-                code="BACKEND_FEATURE_UNSUPPORTED",
-                message=(
-                    f"OIDC {option.upper()} for provider(s) {names} is not supported by the "
-                    f"'{backend}' backend"
-                ),
-                path="providers",
-                hint=f"Generate for the 'fastapi' backend, or disable {option.upper()}",
-            )
-        ]
-    )
-
-
-def reject_pkce(context: CompileContext, backend: str) -> None:
-    _reject_oidc_client_option(context, backend, "pkce")
-
-
-def reject_dpop(context: CompileContext, backend: str) -> None:
-    _reject_oidc_client_option(context, backend, "dpop")
-
-
 def reject_unsigned_session_algorithm(context: CompileContext) -> None:
     """Reject a session algorithm choice on a spec that mints no session tokens."""
     if not context.session.uses_asymmetric or context.auth.uses_jwt:

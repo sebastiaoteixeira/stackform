@@ -141,9 +141,9 @@ class TestCookieGeneration:
 
     def test_refresh_reads_cookie_not_body(self, cookie_refresh_ctx, tmp_path):
         FastAPIGenerator().generate(cookie_refresh_ctx, tmp_path)
-        login = (tmp_path / "routes" / "login.py").read_text()
-        assert "refresh_token_from_request(request)" in login
-        assert "class RefreshPayload" not in login
+        refresh = (tmp_path / "routes" / "refresh.py").read_text()
+        assert "refresh_token_from_request(request)" in refresh
+        assert "class RefreshPayload" not in refresh
         assert "REFRESH_COOKIE" in (tmp_path / "dependencies" / "session_cookie.py").read_text()
 
     def test_logout_route_clears_all_cookies(self, cookie_refresh_ctx, tmp_path):
@@ -161,13 +161,13 @@ class TestCookieGeneration:
         ir = load_and_generate_ir(str(VALID_DIR / "auth-oidc.yaml")).ir
         ir = replace(ir, session=replace(ir.session, delivery="cookie"))
         FastAPIGenerator().generate(build_context(ir), tmp_path)
-        oidc = (tmp_path / "routes" / "oidc_routes.py").read_text()
+        exchange = (tmp_path / "routes" / "external_login.py").read_text()
 
-        assert 'response = JSONResponse({"csrf_token": csrf_token})' in oidc
-        assert 'set_session_cookies(response, request, session["token"], csrf_token)' in oidc
-        assert "return session" not in oidc
+        assert 'response = JSONResponse({"csrf_token": csrf_token})' in exchange
+        assert 'set_session_cookies(response, request, session["token"], csrf_token)' in exchange
+        assert "return session" not in exchange
 
-    def test_saml_callback_delivers_cookie_without_body_token(
+    def test_saml_login_exchange_delivers_cookie_without_body_token(
         self, cookie_ctx, tmp_path
     ):
         identity = cookie_ctx.auth.identity_collections[0]
@@ -188,11 +188,13 @@ class TestCookieGeneration:
         )
         FastAPIGenerator().generate(replace(cookie_ctx, auth=saml_auth), tmp_path)
         saml = (tmp_path / "routes" / "saml_routes.py").read_text()
+        exchange = (tmp_path / "routes" / "external_login.py").read_text()
 
         compile(saml, "saml_routes.py", "exec")
-        assert 'response = JSONResponse({"user": user, "csrf_token": csrf_token})' in saml
-        assert 'set_session_cookies(response, request, session["token"], csrf_token)' in saml
-        assert 'return {**session, "user": user}' not in saml
+        assert "/auth/callback?code={code}" in saml
+        assert "issue_session" not in saml
+        assert 'set_session_cookies(response, request, session["token"], csrf_token)' in exchange
+        assert "return session" not in exchange
 
     def test_generic_frontend_uses_cookie_transport_and_server_logout(self):
         ir = load_and_generate_ir(str(VALID_DIR / "auth-password-cookie.yaml")).ir

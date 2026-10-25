@@ -95,7 +95,6 @@ import logging as _logging
 
 from fastapi import HTTPException as _HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware as _BaseHTTPMiddleware
-from dependencies.mongodb import get_database as _get_database
 from dependencies.auth import _resolve_idp_principal as _resolve_idp, _find_idp_provider_for_issuer as _find_idp_provider
 from dependencies import idp_auth as _idp_auth
 
@@ -110,7 +109,7 @@ class _IdpProvisioningMiddleware(_BaseHTTPMiddleware):
                 token_issuer = _idp_auth.unverified_issuer(bearer_token)
                 if token_issuer is not None and await _find_idp_provider(token_issuer) is not None:
                     try:
-                        request.state.principal = await _resolve_idp(bearer_token, _get_database())
+                        request.state.principal = await _resolve_idp(bearer_token)
                     except _HTTPException as _exc:
                         return JSONResponse(status_code=_exc.status_code, content={"detail": _exc.detail})
                     except Exception:

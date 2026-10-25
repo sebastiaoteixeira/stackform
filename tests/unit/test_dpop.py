@@ -251,15 +251,7 @@ async def test_runtime_oidc_sends_bound_proofs(monkeypatch):
             return self.responses.pop(0)
 
     monkeypatch.setattr(oidc.httpx, "AsyncClient", Client)
-    await oidc.handle_callback(
-        provider,
-        binding,
-        collection,
-        repo,
-        "code",
-        "http://test/callback",
-        dpop=proof_factory,
-    )
+    await oidc.fetch_claims(provider, "code", "http://test/callback", dpop=proof_factory)
 
     token_headers = Client.calls[0][2]["headers"]
     userinfo_headers = Client.calls[1][2]["headers"]
@@ -309,15 +301,7 @@ async def test_non_dpop_token_is_rejected_before_userinfo(monkeypatch):
     monkeypatch.setattr(oidc, "_fetch_userinfo", userinfo)
 
     with pytest.raises(HTTPException) as raised:
-        await oidc.handle_callback(
-            provider,
-            binding,
-            collection,
-            InMemoryRepository(),
-            "code",
-            "http://test/callback",
-            dpop=_factory(),
-        )
+        await oidc.fetch_claims(provider, "code", "http://test/callback", dpop=_factory())
 
     assert raised.value.status_code == 401
     assert raised.value.detail == "Provider did not issue a DPoP-bound token"

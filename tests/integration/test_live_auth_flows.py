@@ -444,7 +444,7 @@ async def test_external_oidc_pkce_dpop_flow_over_live_http(oidc_provider, monkey
         callback = await client.get(
             authorization.headers["location"], follow_redirects=False
         )
-        assert callback.status_code in (302, 307)
+        assert callback.status_code == 303
         login_code = parse_qs(urlparse(callback.headers["location"]).query)["code"][0]
 
         exchange = await client.post("/api/auth/exchange", json={"code": login_code})

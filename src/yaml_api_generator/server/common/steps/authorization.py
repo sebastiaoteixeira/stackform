@@ -44,18 +44,13 @@ ForbiddenError = AccessDenied
 def _required_identity_fields(
     identity_collection: RuntimeIdentityDescriptor,
 ) -> tuple[str, ...]:
-    seen: set[str] = set()
-    fields: list[str] = []
-
-    for binding in identity_collection.bindings:
-        if binding.identifier and binding.identifier not in seen:
-            fields.append(binding.identifier)
-            seen.add(binding.identifier)
-        if binding.provider not in seen:
-            fields.append(binding.provider)
-            seen.add(binding.provider)
-
-    return tuple(fields)
+    fields = (
+        name
+        for binding in identity_collection.bindings
+        for name in (binding.identifier, binding.provider if binding.stores_credential else None)
+        if name
+    )
+    return tuple(dict.fromkeys(fields))
 
 
 def ValidateIdentityCreateStep(

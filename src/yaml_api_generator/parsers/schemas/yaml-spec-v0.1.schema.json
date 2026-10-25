@@ -141,7 +141,7 @@
       "additionalProperties": false,
       "required": ["identifier", "via"],
       "properties": {
-        "identifier": { "type": "string" },
+        "identifier": { "type": "string", "minLength": 1 },
         "via": {
           "oneOf": [
             { "type": "string" },

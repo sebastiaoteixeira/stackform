@@ -1,5 +1,5 @@
 import pytest
-from yaml_api_generator.server.common.utils.field_access import resolve_claim_path
+from yaml_api_generator.runtime.claims import claim_value, resolve_claim_path
 
 
 CLAIMS = {
@@ -49,3 +49,28 @@ def test_blank_path_returns_none() -> None:
 def test_path_resolving_to_list_returns_list() -> None:
     result = resolve_claim_path(CLAIMS, "realm_access.roles")
     assert result == ["admin", "user"]
+
+
+def test_exact_key_with_dots_wins_over_nested_walk() -> None:
+    assert resolve_claim_path({"urn:oid:2.5.4.10": "ACME"}, "urn:oid:2.5.4.10") == "ACME"
+    assert resolve_claim_path({"org.code": "flat", "org": {"code": "nested"}}, "org.code") == "flat"
+
+
+@pytest.mark.parametrize(
+    ("value", "field_type", "expected"),
+    [
+        ("ACME", "string", "ACME"),
+        (7, "string", "7"),
+        ("7", "number", 7.0),
+        (7, "number", 7.0),
+        ("seven", "number", None),
+        ("true", "boolean", True),
+        ("False", "boolean", False),
+        ("no", "boolean", None),
+        (["ACME", "BETA"], "string", None),
+        ({"code": "ACME"}, "string", None),
+        (None, "string", None),
+    ],
+)
+def test_claim_value_converts_scalars_to_the_matched_field_type(value, field_type, expected) -> None:
+    assert claim_value(value, field_type) == expected

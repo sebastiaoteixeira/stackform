@@ -1,0 +1,55 @@
+{% set uses_sql = auth.identity_collections | selectattr("is_sql") | list | length > 0 %}
+{% set uses_mongo = auth.identity_collections | rejectattr("is_sql") | list | length > 0 %}
+"""Consumed SAML assertion IDs, kept in the identity datastore so a replay fails on every worker."""
+
+import time
+
+_TABLE = "_saml_assertions"
+{% if uses_mongo %}
+
+from pymongo.errors import DuplicateKeyError
+
+from dependencies.mongodb import get_database as _get_mongo
+
+
+class _MongoAssertionLedger:
+    async def consume(self, assertion_id: str, expires_at: float) -> bool:
+        ledger = _get_mongo()[_TABLE]
+        await ledger.delete_many({"expires_at": {"$lt": time.time()}})
+        try:
+            await ledger.insert_one({"_id": assertion_id, "expires_at": expires_at})
+        except DuplicateKeyError:
+            return False
+        return True
+{% endif %}
+{% if uses_sql %}
+
+import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
+
+from dependencies.postgres import metadata, get_database as _get_pg
+
+_assertions_table = sa.Table(
+    _TABLE,
+    metadata,
+    sa.Column("assertion_id", sa.String, primary_key=True),
+    sa.Column("expires_at", sa.Float, nullable=False),
+)
+
+
+class _SqlAssertionLedger:
+    async def consume(self, assertion_id: str, expires_at: float) -> bool:
+        async with _get_pg().begin() as conn:
+            await conn.execute(sa.delete(_assertions_table).where(_assertions_table.c.expires_at < time.time()))
+        try:
+            async with _get_pg().begin() as conn:
+                await conn.execute(sa.insert(_assertions_table).values(assertion_id=assertion_id, expires_at=expires_at))
+        except IntegrityError:
+            return False
+        return True
+{% endif %}
+
+assertion_ledgers = {
+{% if uses_mongo %}    "mongo": _MongoAssertionLedger(),
+{% endif %}{% if uses_sql %}    "sql": _SqlAssertionLedger(),
+{% endif %}}

@@ -117,7 +117,7 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
             auth_providers = [
                 AuthProviderInfo(name=b.provider, type=ir.providers[b.provider].type)
                 for b in identity.bindings
-                if b.provider not in ("password", "apiKey") and b.provider in ir.providers
+                if not b.stores_credential and b.provider in ir.providers
             ]
 
         api_base_path = repo_to_base_path.get(col_name)

@@ -262,11 +262,23 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
             auth_imports.append("from .login import router as login_router")
 
+        if context.session.refresh:
+            (routes_dir / "refresh.py").write_text(
+                env.get_template("refresh_routes.py.jinja").render(auth=context.auth, ctx=context)
+            )
+            auth_imports.append("from .refresh import router as refresh_router")
+
         if context.session.uses_cookie:
             (routes_dir / "session.py").write_text(
                 env.get_template("session_routes.py.jinja").render()
             )
             auth_imports.append("from .session import router as session_router")
+
+        if context.auth.has_external_login:
+            (routes_dir / "external_login.py").write_text(
+                env.get_template("external_login_routes.py.jinja").render(auth=context.auth, ctx=context)
+            )
+            auth_imports.append("from .external_login import router as external_login_router")
 
         if context.auth.has_app_oidc_auth:
             (routes_dir / "oidc_routes.py").write_text(
@@ -279,7 +291,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         if context.auth.has_saml_auth:
             (routes_dir / "saml_routes.py").write_text(
                 env.get_template("saml_routes.py.jinja").render(
-                    auth=context.auth, ctx=context
+                    auth=context.auth, base_prefix=base_prefix, ctx=context
                 )
             )
             auth_imports.append("from .saml_routes import router as saml_router")
@@ -393,7 +405,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 env.get_template("postgres.py.jinja").render(ctx=context)
             )
             (deps_dir / "sql_types.py").write_text(runtime_module_source("sql_types"))
-        if context.auth.has_app_oidc_auth:
+        if context.auth.has_external_login:
             (deps_dir / "login_codes.py").write_text(
                 env.get_template("login_codes.py.jinja").render(auth=context.auth)
             )
@@ -401,9 +413,13 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "idp_auth.py").write_text(
                 (_STATIC_DIR / "idp_auth.py").read_text()
             )
-        if context.auth.has_oidc_auth:
-            (deps_dir / "claims.py").write_text(
-                (_STATIC_DIR / "claims.py").read_text()
+        if context.auth.has_oidc_auth or context.auth.has_saml_auth:
+            for module in ("claims", "provisioning"):
+                (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
+        if context.auth.has_saml_auth:
+            (deps_dir / "saml.py").write_text(runtime_module_source("saml"))
+            (deps_dir / "saml_assertions.py").write_text(
+                env.get_template("saml_assertions.py.jinja").render(auth=context.auth)
             )
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))

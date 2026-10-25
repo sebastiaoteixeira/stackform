@@ -247,7 +247,7 @@ class SQLRepository(BaseRepository):
         statement = pg_insert(table).values(**values)
         statement = statement.on_conflict_do_update(
             index_elements=[key_field],
-            set_={k: statement.excluded[k] for k in values if k != key_field},
+            set_={k: statement.excluded[k] for k in values if k != self._id_fields[collection_name]},
         ).returning(table)
         with _as_conflict():
             async with await self._begin() as conn:

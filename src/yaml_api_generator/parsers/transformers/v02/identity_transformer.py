@@ -70,26 +70,15 @@ class IdentityTransformer:
             if roles_errors:
                 raise ConfigErrors(roles_errors)
 
-            via_bindings = [
-                IRProviderBinding(provider=entry, identifier=identifier or "")
-                if isinstance(entry, str)
-                else IRProviderBinding(
-                    provider=entry["provider"],
-                    identifier=entry.get("identifier", identifier or ""),
-                    claim_mapping=entry.get("claim_mapping", {}),
-                    auto_provision=entry.get("auto_provision", True),
-                    relations={
-                        fk: IRProviderRelation(
-                            collection=spec["collection"],
-                            match=spec.get("match", {}),
-                        )
-                        for fk, spec in (entry.get("relations") or {}).items()
-                    },
+            bindings = tuple(
+                self._binding(
+                    entry if isinstance(entry, dict) else {"provider": entry},
+                    identifier,
+                    collections[repo_name],
+                    collections,
                 )
                 for entry in via
-                if isinstance(entry, dict) or identifier
-            ]
-            bindings = tuple(via_bindings)
+            )
             identity_collections[repo_name] = IRIdentityCollection(
                 name=repo_name,
                 bindings=bindings,
@@ -98,6 +87,40 @@ class IdentityTransformer:
                 login=repo_name in login_collections,
             )
         return identity_collections
+
+    def _binding(
+        self,
+        entry: dict[str, Any],
+        identifier: str | None,
+        identity: IRCollection,
+        collections: dict[str, IRCollection],
+    ) -> IRProviderBinding:
+        identifier = entry.get("identifier", identifier)
+        claim_mapping = entry.get("claim_mapping", {})
+        return IRProviderBinding(
+            provider=entry["provider"],
+            identifier=identifier,
+            claim_mapping=claim_mapping,
+            auto_provision=entry.get("auto_provision", True),
+            relations={
+                fk: self._relation(spec, collections[spec["collection"]])
+                for fk, spec in (entry.get("relations") or {}).items()
+            },
+            field_types={
+                name: identity.fields[name]["type"]
+                for name in (identifier, *claim_mapping)
+                if name in identity.fields
+            },
+        )
+
+    @staticmethod
+    def _relation(spec: dict[str, Any], target: IRCollection) -> IRProviderRelation:
+        return IRProviderRelation(
+            collection=target.name,
+            match=spec["match"],
+            id_field=target.idField,
+            match_types={field: target.fields[field]["type"] for field in spec["match"]},
+        )
 
     def validate_auth_fields(
         self,
