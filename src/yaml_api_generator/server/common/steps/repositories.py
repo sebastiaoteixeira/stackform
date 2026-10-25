@@ -1,12 +1,11 @@
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, cast
 
 from ..auth import hash_password
 from ..request_context import RequestContext
 from ..server_context import RuntimeIdentityDescriptor
 from yaml_api_generator.ir.api import IRPagination
-from yaml_api_generator.runtime.access import conjoin, matching
+from yaml_api_generator.runtime.access import RoleHierarchies, Roles, conjoin, held_roles, matching
 from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
 from ..utils.ids import generate_id as _generate_id
@@ -19,6 +18,10 @@ _NOT_FOUND_MESSAGE = "Resource not found"
 
 def _repository(ctx: RequestContext) -> BaseRepository:
     return cast(BaseRepository, ctx.repository)
+
+
+def _role_store(identity: RuntimeIdentityDescriptor | None) -> Roles:
+    return identity.role_store if identity else Roles()
 
 
 def _require_param(url_params: dict[str, str], token: str) -> str:
@@ -64,10 +67,11 @@ async def _fetch_record(
     return await _repository(ctx).get(collection_name, locator.document_id(ctx.url_params))
 
 
-def _payload(ctx: RequestContext) -> dict[str, Any]:
+def _record(ctx: RequestContext) -> dict[str, Any]:
+    """The values a write stores: the body, overridden by those the authorizing rule binds."""
     if not isinstance(ctx.body, dict):
         raise ValueError(_REQUEST_BODY_MESSAGE)
-    return cast(dict[str, Any], ctx.body)
+    return {**ctx.body, **(ctx.bound_inputs or {})}
 
 
 def _inject_canonical_id(
@@ -162,17 +166,18 @@ def RepositoryCreateStep(
     id_field: str,
     id_format: str,
     identity: RuntimeIdentityDescriptor | None = None,
-    assignable: bool = False,
+    hierarchies: RoleHierarchies | None = None,
     locator: RecordLocator | None = None,
 ) -> Step:
-    """A new identity record keeps the roles it names only when they are ``assignable``;
+    """A new identity record keeps the roles it names only when its caller holds them;
     a new record holds the values of the path parameters scoping the route."""
-    grant = partial(identity.role_store.granted, assignable=assignable) if identity else dict
+    roles = _role_store(identity)
     locator = locator or RecordLocator(id_field, None)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        scoped = {**_payload(ctx), **locator.scope_criteria(ctx.url_params)}
-        payload = _prepare_payload(grant(scoped), identity)
+        scoped = {**_record(ctx), **locator.scope_criteria(ctx.url_params)}
+        granted = roles.granted(scoped, held_roles(ctx.principal, hierarchies or {}))
+        payload = _prepare_payload(granted, identity)
         if id_format != "natural":
             payload[id_field] = _generate_id(id_format)
         result = await _repository(ctx).create(collection_name, payload)
@@ -188,11 +193,14 @@ def RepositoryUpdateStep(
     locator: RecordLocator | None = None,
     *,
     identity: RuntimeIdentityDescriptor | None = None,
+    hierarchies: RoleHierarchies | None = None,
 ) -> Step:
+    roles = _role_store(identity)
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), identity)
+        revised = roles.revised(_record(ctx), held_roles(ctx.principal, hierarchies or {}))
+        payload = _prepare_payload(revised, identity)
         if locator.is_scoped:
             result = await _repository(ctx).update_by(
                 collection_name, locator.criteria(ctx.url_params), payload
@@ -215,11 +223,14 @@ def RepositoryReplaceStep(
     locator: RecordLocator | None = None,
     *,
     identity: RuntimeIdentityDescriptor | None = None,
+    hierarchies: RoleHierarchies | None = None,
 ) -> Step:
+    roles = _role_store(identity)
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), identity)
+        revised = roles.revised(_record(ctx), held_roles(ctx.principal, hierarchies or {}))
+        payload = _prepare_payload(revised, identity)
         if locator.is_scoped:
             result = await _repository(ctx).replace_by(
                 collection_name, locator.criteria(ctx.url_params), payload

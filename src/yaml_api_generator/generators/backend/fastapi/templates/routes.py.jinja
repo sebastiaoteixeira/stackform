@@ -56,7 +56,10 @@ from dependencies.repositories import get_{{ where_collection }}_repository
 from dependencies.auth import {{ principal_dependencies | join(", ") }}
 {% endif %}
 {% if identity %}
-from dependencies.access import Roles
+from dependencies.access import Roles, held_roles
+{% if auth.enabled %}
+from dependencies.authorization import ROLE_HIERARCHIES
+{% endif %}
 {% endif %}
 {% set scoped_lists = crud_routes | selectattr("operation", "equalto", "list") | selectattr("record_parent_params") | list %}
 {% if auth.enabled and routes | selectattr("access_rules") | list %}
@@ -148,7 +151,7 @@ _files = record_files[{{ collection_name | tojson }}]
 {% endmacro %}
 
 {% macro bind_inputs(route) %}
-{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+{% if route.binds_inputs %}
     _bound_inputs = resolve_access_bind(_access_bindings, locals())
 {% else %}
     _bound_inputs = {}
@@ -247,7 +250,13 @@ _files = record_files[{{ collection_name | tojson }}]
 {% set partial = route.operation == "update" %}
 {% set sent_expr = "upload.payload" if files else 'payload.model_dump(mode="json", exclude_unset=True)' %}
 {% set record_expr = "upload.record" if files else 'payload.model_dump(mode="json"' ~ (", exclude_unset=True" if partial else "") ~ ")" %}
+{% set record_expr = "{**" ~ record_expr ~ ", **_bound_inputs}" if route.operation in ("create", "update", "replace") and route.binds_inputs else record_expr %}
 {% set record_expr = "{**" ~ record_expr ~ ", **" ~ record_criteria(route) ~ "}" if route.operation == "create" and route.record_parent_params else record_expr %}
+{% set record_expr = "{**upload.payload, **carried_files(_files, existing)}" if files and route.operation == "replace" else record_expr %}
+{% if identity and route.operation in ("create", "update", "replace") %}
+{% set held = "held_roles(principal, ROLE_HIERARCHIES)" if auth.enabled and route.needs_auth else "()" %}
+{% set record_expr = (identity.role_store | py_literal) ~ (".granted(" if route.operation == "create" else ".revised(") ~ record_expr ~ ", " ~ held ~ ")" %}
+{% endif %}
 {% if route.operation == "list" %}
 {% set rules_filter = auth.enabled and route.needs_auth and route.access_rules %}
 {% set row_filter_arg = ", _row_filter" if rules_filter or route.record_parent_params else "" %}
@@ -299,15 +308,10 @@ async def create_{{ collection_name }}({{ (payload_param(body_model) ~ extra_pat
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), sent_expr) }}
-{% if identity %}
-    return await svc.create({{ identity.role_store | py_literal }}.granted({{ record_expr }}, assignable={{ route.needs_auth | py_literal }}))
-{% else %}
     return await svc.create({{ record_expr }})
-{% endif %}
 
 
 {% elif route.operation in ("update", "replace") %}
-{% set record_expr = "{**upload.payload, **carried_files(_files, existing)}" if files and route.operation == "replace" else record_expr %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route, upload_body(body_model, partial) if partial else json_body(body_model)) }})
 async def {{ route.operation }}_{{ collection_name }}({{ route.record_id_param }}: str{{ payload_param(body_model) }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}{{ upload_param(route, body_model, partial) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
 {{ request_locals(route, sent_expr) }}

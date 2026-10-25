@@ -24,6 +24,7 @@ from yaml_api_generator.runtime.access import (
     Predicate,
     Unadmitted,
     decide,
+    held_roles,
     row_filter,
 )
 
@@ -85,22 +86,7 @@ def _principal_has_role(
     required_role: str,
     auth_config: RuntimeAuthConfig | None,
 ) -> bool:
-    principal_roles = principal.get("roles", [])
-    if required_role in principal_roles:
-        return True
-
-    if auth_config is None:
-        return False
-
-    identity_collection = principal.get("identity_collection", "")
-    entity_hierarchy = auth_config.role_hierarchies.get(identity_collection, {})
-
-    for role in principal_roles:
-        included = entity_hierarchy.get(role, set())
-        if required_role in included:
-            return True
-
-    return False
+    return required_role in held_roles(principal, auth_config.role_hierarchies if auth_config else {})
 
 
 def _rule_matches_principal(
@@ -127,7 +113,8 @@ def _resolve_identity_symbols(
     rule: RuntimeAccessRule,
     principal: dict | None,
 ) -> dict[str, dict | None]:
-    return {symbol_name: principal for symbol_name in rule.identity_symbols}
+    """The caller under every identity symbol of ``rule``, and always as ``principal``."""
+    return {symbol_name: principal for symbol_name in {"principal", *rule.identity_symbols}}
 
 
 def _resolve_document_symbols(

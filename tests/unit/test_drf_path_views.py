@@ -22,14 +22,13 @@ def _patterns(backend):
 
 
 def _grants(backend, view):
-    """The ``assignable`` flag of every role grant in ``view`` of the users module."""
+    """The roles every role grant in ``view`` of the users module lets its caller grant."""
     module = ast.parse((backend / "views" / "users.py").read_text())
     cls = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == view)
     return [
-        keyword.value.value
+        ast.unparse(call.args[1])
         for call in ast.walk(cls)
         if isinstance(call, ast.Call) and getattr(call.func, "attr", None) == "granted"
-        for keyword in call.keywords
     ]
 
 
@@ -45,8 +44,10 @@ def test_literal_paths_precede_parameterised_siblings(backend):
     assert paths.index("users/register") < paths.index("users/<str:id>")
 
 
-def test_register_grants_the_default_and_authenticated_create_the_requested_role(backend):
-    assert (_grants(backend, "View_users_register"), _grants(backend, "View_users")) == ([False], [True])
+def test_register_grants_no_role_and_authenticated_create_the_roles_its_caller_holds(backend):
+    assert (_grants(backend, "View_users_register"), _grants(backend, "View_users")) == (
+        ["()"], ["held_roles(_resolved_principal, ROLE_HIERARCHIES)"]
+    )
 
 
 def test_disabled_login_serves_no_login_route(backend):

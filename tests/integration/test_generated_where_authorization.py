@@ -177,7 +177,7 @@ def test_generated_fastapi_enforces_where_per_rule(tmp_path):
             organization_id = "org-1"
 
             async def list(self, primitives, predicate):
-                return [row for row in [{{"id": "r1", "title": "visible"}}] if predicate.matches(row)]
+                return [row for row in [{{"id": "r1", "organizationId": "org-1", "title": "visible"}}] if predicate.matches(row)]
 
             async def get(self, record_id):
                 return {{"id": record_id, "organizationId": "org-1", "title": "visible"}}
@@ -510,6 +510,7 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         views_module.APIView = APIView
         spectacular_utils.extend_schema = extend_schema
         auth_module._principal_has_role = lambda principal, role: role in principal.get("roles", [])
+        auth_module.ROLE_HIERARCHIES = {{}}
         auth_module.resolve_principal = lambda request, database: None
         auth_module.hash_password = lambda password: password
         mongodb_module.get_database = lambda: None

@@ -258,6 +258,10 @@ class RouteDescriptor:
     admits_anonymous: bool = False
 
     @property
+    def binds_inputs(self) -> bool:
+        return any(rule.bind for rule in self.access_rules or ())
+
+    @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:
         seen: dict[str, RequestSymbolDescriptor] = {}
         for rule in self.access_rules or ():

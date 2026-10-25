@@ -21,18 +21,14 @@ from pagination import build_response, map_request
 from dependencies.auth import resolve_principal
 {% endif %}
 import validation
-from access import EVERY_ROW, AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, matching, negate, one_of, row_filter, value_at
+from access import EVERY_ROW, AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, held_roles, is_null, matching, negate, one_of, row_filter, value_at
 
 
 ROLE_HIERARCHIES = {{ auth.role_hierarchies | role_hierarchies_py }}
 
 
 def _principal_has_role(principal: dict, required_role: str) -> bool:
-    roles = principal.get("roles", [])
-    if required_role in roles:
-        return True
-    hierarchy = ROLE_HIERARCHIES.get(principal.get("identity_collection", ""), {})
-    return any(required_role in hierarchy.get(role, set()) for role in roles)
+    return required_role in held_roles(principal, ROLE_HIERARCHIES)
 
 
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
@@ -109,6 +105,8 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% endif %}
 {% endmacro %}
 
+{% macro bound(route, record) %}{{ "{**" ~ record ~ ", **bound_inputs}" if route.binds_inputs else record }}{% endmacro %}
+
 {% macro bind_inputs(route) %}
 {% if route.access_rules %}
     bound_inputs = resolve_access_bind(access_bindings, locals())
@@ -182,19 +180,19 @@ async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers:
 {% elif route.operation == "create" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
+        data = {{ bound(route, "validation." ~ (route.typed_body_model or route.body_model) ~ ".conform(body)") }}
 {% if route.record_parent_params %}
         data = {**data, **{{ record_criteria(route) }}}
 {% endif %}
 {% if identity %}
-        data = {{ identity.role_store | py_literal }}.granted(data, assignable={{ route.needs_auth | py_literal }})
+        data = {{ identity.role_store | py_literal }}.granted(data, held_roles(principal, ROLE_HIERARCHIES))
 {% endif %}
         document = await service.create(data)
         return 200, document
 {% elif route.operation == "update" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
+        data = {{ bound(route, "validation." ~ (route.typed_body_model or route.body_model) ~ ".conform(body)") }}
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})
@@ -202,6 +200,9 @@ async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers:
         existing = await service.get(url_params["{{ route.record_id_param }}"])
 {% endif %}
 {{ post_fetch_authorize(route, "existing") | indent(4, true) }}
+{% endif %}
+{% if identity %}
+        data = {{ identity.role_store | py_literal }}.revised(data, held_roles(principal, ROLE_HIERARCHIES))
 {% endif %}
 {% if route.record_parent_params %}
         document = await service.update_by({{ record_criteria(route) }}, data)
@@ -212,7 +213,7 @@ async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers:
 {% elif route.operation == "replace" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
+        data = {{ bound(route, "validation." ~ (route.typed_body_model or route.body_model) ~ ".conform(body)") }}
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})
@@ -220,6 +221,9 @@ async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers:
         existing = await service.get(url_params["{{ route.record_id_param }}"])
 {% endif %}
 {{ post_fetch_authorize(route, "existing") | indent(4, true) }}
+{% endif %}
+{% if identity %}
+        data = {{ identity.role_store | py_literal }}.revised(data, held_roles(principal, ROLE_HIERARCHIES))
 {% endif %}
 {% if route.record_parent_params %}
         document = await service.replace_by({{ record_criteria(route) }}, data)

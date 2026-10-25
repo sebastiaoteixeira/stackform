@@ -2,17 +2,11 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from dependencies.access import held_roles
+
 
 ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | role_hierarchies_py }}
 
 
 def _principal_has_role(principal: dict, required_role: str) -> bool:
-    principal_roles = principal.get("roles", [])
-    if required_role in principal_roles:
-        return True
-    collection = principal.get("identity_collection", "")
-    entity_hierarchy = ROLE_HIERARCHIES.get(collection, {})
-    for role in principal_roles:
-        if required_role in entity_hierarchy.get(role, set()):
-            return True
-    return False
+    return required_role in held_roles(principal, ROLE_HIERARCHIES)

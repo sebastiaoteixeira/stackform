@@ -13,6 +13,7 @@ import pytest
 from jinja2 import Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import AuthConfig
+from yaml_api_generator.runtime import access
 from yaml_api_generator.generators.backend.fastapi import access_filters
 
 
@@ -51,11 +52,12 @@ def authz():
     deps_pkg = types.ModuleType("dependencies")
     deps_pkg.__path__ = []
     sys.modules.setdefault("dependencies", deps_pkg)
+    sys.modules["dependencies.access"] = access
 
     mod = _exec_module("dependencies.authorization", authz_src, {})
     yield mod
 
-    for key in ("dependencies.authorization", "dependencies"):
+    for key in ("dependencies.authorization", "dependencies.access", "dependencies"):
         sys.modules.pop(key, None)
 
 

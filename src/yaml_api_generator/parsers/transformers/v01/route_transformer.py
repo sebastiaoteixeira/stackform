@@ -1,12 +1,15 @@
 """Route and operations transformation for v0.1 specifications.
 
-Builds routes from collection operations and access policies.
+Builds routes from collection operations and access policies. A 0.1 ``when``
+names the route's record ``document`` without binding it, so the rule binds it
+here, as a 0.2 ``given: { document: <collection> }`` would.
 """
 
 from typing import Any
 
 from yaml_api_generator.ir.api import AUTHENTICATED
-from yaml_api_generator.ir import IRAccessRule, IRIdentityCollection, IROperations, IRRoute
+from yaml_api_generator.ir import IRAccessRule, IRDocumentBinding, IRIdentityCollection, IROperations, IRRoute
+from yaml_api_generator.ir.when import collect_roots
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 from yaml_api_generator.parsers.when_parser import parse_when_expr
 from yaml_api_generator.parsers.transformers.principal_resolver import resolve_principal
@@ -118,6 +121,7 @@ class RouteTransformer:
                 f"collections.{collection}.access.{operation}",
                 auth_entities,
                 entity_to_collection,
+                None if operation == "create" else IRDocumentBinding(collection=collection),
             )
             errors.extend(access_errors)
             method, path_template = self._ROUTE_MAPPING[operation]
@@ -139,13 +143,14 @@ class RouteTransformer:
         path: str,
         auth_entities: set[str],
         entity_to_collection: dict[str, str],
+        record: IRDocumentBinding | None,
     ) -> tuple[bool, list[IRAccessRule], list[ConfigError]]:
         if access is None:
             return True, [], []
         if isinstance(access, str):
-            return self._parse_access_items([access], path, auth_entities, entity_to_collection)
+            return self._parse_access_items([access], path, auth_entities, entity_to_collection, record)
         if isinstance(access, list):
-            return self._parse_access_items(access, path, auth_entities, entity_to_collection)
+            return self._parse_access_items(access, path, auth_entities, entity_to_collection, record)
         return True, [], []
 
     def _parse_access_items(
@@ -154,6 +159,7 @@ class RouteTransformer:
         path: str,
         auth_entities: set[str],
         entity_to_collection: dict[str, str],
+        record: IRDocumentBinding | None,
     ) -> tuple[bool, list[IRAccessRule], list[ConfigError]]:
         rules: list[IRAccessRule] = []
         errors: list[ConfigError] = []
@@ -178,11 +184,19 @@ class RouteTransformer:
                 errors.extend(when_errors)
             if self._is_bare_authenticated(resolved, when_expr):
                 continue
+            names_document = when_expr is not None and "document" in collect_roots(when_expr)
+            if names_document and record is None:
+                errors.append(ConfigError(
+                    code="ACCESS_RULE_INVALID",
+                    message="a create rule has no document to compare",
+                    path=f"{item_path}.when",
+                ))
             rules.append(
                 IRAccessRule(
                     principal=resolved.principal or AUTHENTICATED,
                     required_role=resolved.required_role,
                     when=when_expr,
+                    document_symbols={"document": record} if names_document and record else {},
                     **extras,
                 )
             )

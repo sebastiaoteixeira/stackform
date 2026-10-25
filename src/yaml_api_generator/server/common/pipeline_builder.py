@@ -304,16 +304,24 @@ class PipelineBuilder:
                 id_field,
                 collection.id_format,
                 identity,
-                assignable=not route.is_public,
+                hierarchies=self._ctx.auth.role_hierarchies,
                 locator=self._locator(route),
             )
         if operation == "update":
             return RepositoryUpdateStep(
-                collection_name, id_field, self._locator(route), identity=identity
+                collection_name,
+                id_field,
+                self._locator(route),
+                identity=identity,
+                hierarchies=self._ctx.auth.role_hierarchies,
             )
         if operation == "replace":
             return RepositoryReplaceStep(
-                collection_name, id_field, self._locator(route), identity=identity
+                collection_name,
+                id_field,
+                self._locator(route),
+                identity=identity,
+                hierarchies=self._ctx.auth.role_hierarchies,
             )
         if operation == "delete":
             return RepositoryDeleteStep(collection_name, id_field, self._locator(route))

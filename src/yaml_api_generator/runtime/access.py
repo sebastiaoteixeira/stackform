@@ -9,9 +9,10 @@ clause.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from functools import partial, reduce
+from itertools import chain
 from operator import eq
 from typing import Any
 from uuid import UUID
@@ -348,11 +349,27 @@ def role_names(held: Any) -> list[str]:
     return [held] if isinstance(held, str) else [str(role) for role in held or ()]
 
 
+RoleHierarchies = Mapping[str, Mapping[str, Collection[str]]]
+"""Per identity collection, the roles each role includes, flattened."""
+
+
+def held_roles(principal: Mapping[str, Any] | None, hierarchies: RoleHierarchies) -> set[str]:
+    """Roles ``principal`` holds directly or through its identity collection's flattened hierarchy."""
+    if principal is None:
+        return set()
+    names = role_names(principal.get("roles"))
+    hierarchy = hierarchies.get(principal.get("identity_collection", ""), {})
+    return {*names, *chain.from_iterable(hierarchy.get(role, ()) for role in names)}
+
+
 @dataclass(frozen=True)
 class Roles:
     """Where an identity record keeps its roles: its ``field``, or the managed store under
     ``_auth`` when it declares none, and the role a new record gets when its creator may
-    not choose one."""
+    not choose one.
+
+    A caller grants only roles it holds itself.
+    """
 
     field: str | None = None
     default: str | None = None
@@ -362,13 +379,25 @@ class Roles:
             document.get(self.field) if self.field else (document.get("_auth") or {}).get("roles")
         )
 
-    def granted(self, payload: dict[str, Any], assignable: bool) -> dict[str, Any]:
-        """``payload`` of a new record, keeping the roles it names only when ``assignable``."""
-        if assignable and self.field in payload:
+    def _grantable(self, payload: Mapping[str, Any], held: Collection[str]) -> bool:
+        return self.field in payload and set(role_names(payload[self.field])) <= set(held)
+
+    def _withheld(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in payload.items() if key != self.field}
+
+    def granted(self, payload: dict[str, Any], held: Collection[str]) -> dict[str, Any]:
+        """``payload`` of a new record, keeping the roles it names only when ``held`` covers them."""
+        if self.field and self._grantable(payload, held):
             return payload
-        record = {key: value for key, value in payload.items() if key != self.field}
+        record = self._withheld(payload)
         if self.default is None:
             return record
         if self.field:
             return {**record, self.field: self.default}
         return {**record, "_auth": {**record.get("_auth", {}), "roles": self.default}}
+
+    def revised(self, payload: dict[str, Any], held: Collection[str]) -> dict[str, Any]:
+        """``payload`` of a record change, dropping the roles it names unless ``held`` covers them."""
+        if self.field not in payload or self._grantable(payload, held):
+            return payload
+        return self._withheld(payload)

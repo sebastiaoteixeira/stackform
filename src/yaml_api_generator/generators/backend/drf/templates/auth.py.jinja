@@ -7,7 +7,7 @@ from typing import Any
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.request import Request
 
-from api.access import Roles
+from api.access import Roles, held_roles
 from api.authentication.mongodb import get_database
 {% if auth.uses_jwt %}
 from api.authentication.jwt_utils import decode_jwt_token
@@ -84,13 +84,7 @@ ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | ro
 
 
 def _principal_has_role(principal: dict | None, required_role: str) -> bool:
-    if principal is None:
-        return False
-    principal_roles = principal.get("roles", [])
-    if required_role in principal_roles:
-        return True
-    entity_hierarchy = ROLE_HIERARCHIES.get(principal.get("identity_collection", ""), {})
-    return any(required_role in entity_hierarchy.get(role, set()) for role in principal_roles)
+    return required_role in held_roles(principal, ROLE_HIERARCHIES)
 
 
 async def resolve_principal(request: Request, db) -> dict[str, Any] | None:

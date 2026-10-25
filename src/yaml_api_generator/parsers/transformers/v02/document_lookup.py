@@ -42,11 +42,11 @@ def _route_record(collection: IRCollection, route: IRRoute, path: str) -> dict[s
 def _where_binding(
     binding: IRDocumentBinding, collections: dict[str, IRCollection], route: IRRoute, path: str
 ) -> IRDocumentBinding:
-    if binding.where or (binding.id_param is None and route.serves_crud):
-        return binding
     collection = collections.get(binding.collection)
     if collection is None:
         raise _invalid(f"document binding references unknown collection '{binding.collection}'", path)
+    if binding.where or (binding.id_param is None and route.serves_crud):
+        return binding
     lookup = (
         {collection.idField: binding.id_param} if binding.id_param is not None
         else _route_record(collection, route, path)

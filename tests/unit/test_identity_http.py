@@ -1,5 +1,10 @@
 """Role assignment, login exposure and readonly fields over real HTTP, in the dev server and the generated FastAPI app."""
 
+import sqlite3
+from collections.abc import Callable
+from contextlib import closing
+from pathlib import Path
+
 import pytest
 
 from tests.unit.support.live_apps import SERVERS, serve, write_spec
@@ -60,6 +65,10 @@ controllers:
       create:
         access:
           - given: { principal: "identity:user" }
+      update:
+        access:
+          - given: { principal: "identity:user", document: users }
+            when: document.id equals principal.sub
   accounts:
     service: accounts
     base_path: /accounts
@@ -78,12 +87,25 @@ controllers:
     access: public
 """
 
-ADMIN = {"email": "admin@x.io", "password": "pw", "role": "admin"}
+ADMIN = {"email": "admin@x.io", "password": "pw"}
+
+
+def seed_admin(client, promote: Callable[[str], None]) -> None:
+    """Register ``ADMIN`` and raise it to admin in the store, past every route."""
+    client.post("/api/users/register", json=ADMIN)
+    promote(ADMIN["email"])
+
+
+def _promote_in_sqlite(store: Path, email: str) -> None:
+    with closing(sqlite3.connect(store)) as db, db:
+        db.execute("UPDATE users SET role = 'admin' WHERE email = ?", (email,))
 
 
 @pytest.fixture(scope="module", params=SERVERS, ids=lambda server: server.name)
 def client(request, tmp_path_factory):
-    with serve(request.param, write_spec(tmp_path_factory.mktemp(request.param.name), _SPEC)) as client:
+    directory = tmp_path_factory.mktemp(request.param.name)
+    with serve(request.param, write_spec(directory, _SPEC)) as client:
+        seed_admin(client, lambda email: _promote_in_sqlite(directory / "store.sqlite", email))
         yield client
 
 
@@ -106,13 +128,29 @@ def test_anonymous_create_gets_the_default_role(client):
     assert client.get("/api/accounts", auth=("c@x.io", "pw")).status_code == 403
 
 
-def test_authenticated_create_assigns_the_requested_role(client):
-    client.post("/api/users/register", json={"email": "d@x.io", "password": "pw"})
-
-    created = client.post("/api/users", json=ADMIN, auth=("d@x.io", "pw"))
+def test_create_assigns_a_requested_role_its_caller_holds(client):
+    created = client.post("/api/users", json={"email": "d@x.io", "password": "pw", "role": "admin"}, auth=_credentials(ADMIN))
 
     assert created.json()["role"] == "admin"
-    assert client.get("/api/users", auth=_credentials(ADMIN)).status_code == 200
+    assert client.get("/api/users", auth=("d@x.io", "pw")).status_code == 200
+
+
+def test_create_gives_the_default_for_a_role_its_caller_lacks(client):
+    client.post("/api/users/register", json={"email": "e@x.io", "password": "pw"})
+
+    created = client.post("/api/users", json={"email": "f@x.io", "password": "pw", "role": "admin"}, auth=("e@x.io", "pw"))
+
+    assert created.json()["role"] == "member"
+    assert client.get("/api/users", auth=("f@x.io", "pw")).status_code == 403
+
+
+def test_update_never_raises_a_role_its_caller_lacks(client):
+    me = client.post("/api/users/register", json={"email": "g@x.io", "password": "pw"}).json()
+
+    updated = client.patch(f"/api/users/{me['id']}", json={"role": "admin"}, auth=("g@x.io", "pw"))
+
+    assert (updated.status_code, updated.json()["role"]) == (200, "member")
+    assert client.get("/api/users", auth=("g@x.io", "pw")).status_code == 403
 
 
 def test_managed_roles_start_at_the_default(client):
@@ -128,10 +166,42 @@ def test_non_identity_role_fields_are_stored(client):
     assert (stored["role"], stored["roles"]) == ("editor", "all")
 
 
-def test_readonly_fields_are_never_written_by_clients(client):
-    client.post("/api/notes", json={"title": "forged", "stamp": "forged"})
+def test_readonly_fields_are_refused_on_every_write(client):
+    note = client.post("/api/notes", json={"title": "t"}).json()
 
+    writes = [
+        client.post("/api/notes", json={"title": "forged", "stamp": "forged"}),
+        client.patch(f"/api/notes/{note['id']}", json={"stamp": "forged"}),
+        client.put(f"/api/notes/{note['id']}", json={"title": "forged", "stamp": "forged"}),
+    ]
+
+    assert [write.status_code for write in writes] == [422, 422, 422]
     assert all(note.get("stamp") != "forged" for note in client.get("/api/notes").json())
+
+
+def test_an_empty_update_returns_the_record_unchanged(client):
+    note = client.post("/api/notes", json={"title": "t"}).json()
+
+    updated = client.patch(f"/api/notes/{note['id']}", json={})
+
+    assert (updated.status_code, updated.json()["title"]) == (200, "t")
+
+
+def test_replace_keeps_the_record_under_its_id(client):
+    note = client.post("/api/notes", json={"title": "t"}).json()
+
+    replaced = client.put(f"/api/notes/{note['id']}", json={"title": "u"})
+
+    assert replaced.json()["id"] == note["id"]
+    assert client.get(f"/api/notes/{note['id']}").json()["title"] == "u"
+
+
+def test_credentials_never_leave_the_server(client):
+    registered = client.post("/api/users/register", json={"email": "s@x.io", "password": "pw"}).json()
+
+    responses = [registered, *client.get("/api/users", auth=_credentials(ADMIN)).json()]
+
+    assert not any({"_auth", "password", "passwordHash"} & set(user) for user in responses)
 
 
 def test_disabled_login_serves_no_login_route(client):

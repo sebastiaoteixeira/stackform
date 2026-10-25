@@ -5,10 +5,11 @@
 {% endif %}
 {% endfor %}
 {% set login_view = ns.login_view %}
+{% set login_entity = context.entities[context.login_entities[0]] if context.login_entities else none %}
 import { useState, {% if context.identity_entities %}useEffect, {% endif %}createContext, useContext } from 'react';
 import { Routes, Route, Link, {% if context.identity_entities %}useNavigate, {% endif %}useLocation } from 'react-router-dom';
 import { API_BASE_URL } from './config';
-{% if context.identity_entities and not login_view %}
+{% if login_entity and not login_view %}
 import { Auth } from './auth.tsx';
 {% endif %}
 {% for view in views.values() %}
@@ -22,7 +23,9 @@ import {{ view.name | pascal_case }}Detail from '../pages/{{ view.name | pascal_
 interface AuthContextType {
   token: string | null;
   user: any | null;
+{% if login_entity %}
   login: (email: string, password: string) => Promise<void>;
+{% endif %}
   logout: () => Promise<void>;
 }
 
@@ -69,6 +72,7 @@ export function ExternalProviders({ collection }: { collection: string }) {
 
 {% if context.identity_entities and not login_view %}
 function LoginPage() {
+{% if login_entity %}
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [error, setError] = useState('');
   const { login } = useAuth();
@@ -79,7 +83,7 @@ function LoginPage() {
 
     try {
       if (mode === 'register') {
-        const res = await fetch(`${API_BASE_URL}/{{ identity_collection or "users" }}/register`, {
+        const res = await fetch(`${API_BASE_URL}/{{ login_entity.repository_name }}/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData),
@@ -98,10 +102,12 @@ function LoginPage() {
       setError(err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
     }
   };
+{% endif %}
 
   {% set auth_entity = context.entities[context.identity_entities[0]] if context.identity_entities else none %}
   return (
     <>
+{% if login_entity %}
       {error && (
         <div className="fixed top-4 right-4 max-w-md p-4 bg-wf-danger-soft border-l-[3px] border-wf-danger rounded-wf shadow-lg z-50">
           <p className="text-wf-ink text-sm">{error}</p>
@@ -112,6 +118,7 @@ function LoginPage() {
         onSubmit={handleSubmit}
         onToggleMode={() => setMode(mode === 'login' ? 'register' : 'login')}
       />
+{% endif %}
       <ExternalProviders collection="{{ auth_entity.repository_name }}" />
     </>
   );
@@ -174,8 +181,9 @@ function App() {
     }
   };
 
+{% if login_entity %}
   const login = async (email: string, password: string) => {
-    const res = await fetch(`${API_BASE_URL}/{{ identity_collection or 'users' }}/login`, {
+    const res = await fetch(`${API_BASE_URL}/{{ login_entity.repository_name }}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -194,6 +202,7 @@ function App() {
     {% endif %}
     setUser(data.user);
   };
+{% endif %}
 
   {% if context.identity_entities %}
   {% if context.session_delivery == 'cookie' %}
@@ -209,7 +218,7 @@ function App() {
   {% endif %}
 
   return (
-    <AuthContext.Provider value={{ "{{" }} token, user, login, logout {{ "}}" }}>
+    <AuthContext.Provider value={{ "{{" }} token, user, {% if login_entity %}login, {% endif %}logout {{ "}}" }}>
       <Routes>
         {% if context.identity_entities %}
         <Route path="/auth/callback" element={<AuthCallback onToken={handleExternalToken} />} />

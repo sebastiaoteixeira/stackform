@@ -1,7 +1,7 @@
 from importlib import import_module
 from typing import Any
 
-from access import AccessDenied, Decision, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, value_at
+from access import AccessDenied, Decision, all_of, conjoin, constant, decide, disjoin, equals, has_path, held_roles, is_null, negate, one_of, value_at
 from service_inputs import RawRequest, prepare_service_inputs, resolve_access_bind
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}{% for where_collection in route.where_collections %}
@@ -19,11 +19,7 @@ ROLE_HIERARCHIES = {{ auth.role_hierarchies | role_hierarchies_py }}
 
 
 def _principal_has_role(principal: dict, required_role: str) -> bool:
-    roles = principal.get("roles", [])
-    if required_role in roles:
-        return True
-    hierarchy = ROLE_HIERARCHIES.get(principal.get("identity_collection", ""), {})
-    return any(required_role in hierarchy.get(role, set()) for role in roles)
+    return required_role in held_roles(principal, ROLE_HIERARCHIES)
 
 
 {% for route in routes %}
