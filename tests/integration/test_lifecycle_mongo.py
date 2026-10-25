@@ -12,7 +12,7 @@ import pytest
 from pymongo import MongoClient
 
 from tests.integration.support.spec_apps import MONGO_BACKENDS, serve
-from tests.support.lifecycle import EXPIRED, MONGO_SPEC, MongoNotes, exercise_declared_deletes, verify
+from tests.support.lifecycle import EXPIRED, VERSIONS, MongoNotes, exercise_declared_deletes, mongo_spec, verify
 from yaml_api_generator.cli.compiler import compile_project
 from yaml_api_generator.runtime.mongo_lifecycle import EXPIRY_INDEX
 
@@ -42,7 +42,7 @@ def ttl_monitor(mongo_uri):
         client.admin.command("setParameter", 1, ttlMonitorSleepSecs=previous)
 
 
-def _spec(tmp_path: Path, text: str = MONGO_SPEC) -> Path:
+def _spec(tmp_path: Path, text: str) -> Path:
     spec = tmp_path / "notes.yaml"
     spec.write_text(text)
     return spec
@@ -54,9 +54,10 @@ def _database(mongo_uri: str) -> tuple[str, dict[str, str]]:
     return database, env
 
 
+@pytest.mark.parametrize("version", VERSIONS)
 @pytest.mark.parametrize("backend", MONGO_BACKENDS, ids=lambda backend: backend.name)
-def test_removed_and_expired_notes(tmp_path, mongo_uri, ttl_monitor, backend):
-    spec, (database, env) = _spec(tmp_path), _database(mongo_uri)
+def test_removed_and_expired_notes(tmp_path, mongo_uri, ttl_monitor, backend, version):
+    spec, (database, env) = _spec(tmp_path, mongo_spec(version=version)), _database(mongo_uri)
     verify(lambda: serve(backend, spec, env), MongoNotes(mongo_uri, database), exercise_declared_deletes)
     with MongoClient(mongo_uri) as client:
         index = client[database]["notes"].index_information()[EXPIRY_INDEX]
@@ -93,7 +94,8 @@ asyncio.run(main())
 """
 
 
-def test_drf_custom_operations_honour_include_deleted(tmp_path, mongo_uri):
+@pytest.mark.parametrize("version", VERSIONS)
+def test_drf_custom_operations_honour_include_deleted(tmp_path, mongo_uri, version):
     """Drives the DRF repository directly, covering it where no interpreter holds the DRF requirements."""
     database, _ = _database(mongo_uri)
     with MongoClient(mongo_uri) as client:
@@ -102,7 +104,7 @@ def test_drf_custom_operations_honour_include_deleted(tmp_path, mongo_uri):
             {"title": "removed", "deletedAt": datetime.now(UTC).isoformat()},
             {"title": "expired", "createdAt": datetime.fromisoformat(EXPIRED).replace(tzinfo=UTC)},
         ])
-    backend = _build(_spec(tmp_path), "drf")
+    backend = _build(_spec(tmp_path, mongo_spec(version=version)), "drf")
     assert compileall.compile_dir(str(backend), quiet=1)
     result = subprocess.run(
         [sys.executable, "-c", _QUERY_OPERATIONS, mongo_uri, database, "everything", "current"],

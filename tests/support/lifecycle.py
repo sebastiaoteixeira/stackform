@@ -15,7 +15,7 @@ from pymongo import MongoClient
 from tests.integration.support.network import wait_until
 
 _SPEC = """
-version: "0.2"
+version: "{version}"
 api:
   basePath: /api
   operations:
@@ -67,14 +67,19 @@ controllers:
 {controllers}
 """
 
-SQL_SPEC = _SPEC.format(
+VERSIONS = ("0.2", "0.3")
+"""The grammar versions declaring repository softDelete and ttl."""
+
+sql_spec = partial(
+    _SPEC.format,
     storage='datastores:\n  store: { type: postgres, dsn: "${SQL_DSN}", default: true }',
     operations='      everything: { includeDeleted: true, query: { sql: "SELECT * FROM notes" } }',
     services="",
     controllers="",
 )
 
-MONGO_SPEC = _SPEC.format(
+mongo_spec = partial(
+    _SPEC.format,
     storage="mongo:\n  uri: ${MONGO_URI:-mongodb://localhost:27017}\n  database: ${MONGO_DB:-notes}",
     operations=(
         "      everything: { includeDeleted: true, query: { command: find, filter: {} } }\n"
