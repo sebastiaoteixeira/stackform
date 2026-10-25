@@ -52,6 +52,9 @@ yaml_api_generator = [
   "generators/backend/*/templates/*.jinja",
   "generators/backend/shared/templates/*.jinja",
   "generators/backend/*/static/*.py",
+  "generators/frontend/packs/builtin/*/pack.yaml",
+  "generators/frontend/packs/builtin/*/templates/**/*.jinja",
+  "generators/frontend/shared/templates/**/*.jinja",
 ]
 
 [tool.pytest.ini_options]

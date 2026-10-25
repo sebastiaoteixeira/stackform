@@ -153,7 +153,7 @@ def _load_schema(schema_file: Path) -> dict[str, Any]:
     return schema
 
 
-def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
+def validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
     validator = Draft202012Validator(schema, registry=SCHEMA_REGISTRY)
     errors = sorted(
         validator.iter_errors(config),
@@ -209,7 +209,7 @@ def load_and_generate_ir(
         raise ConfigErrors(interpolation_errors)
 
     version = str(resolved.get("version", "0.1"))
-    schema_errors = _validate_schema(
+    schema_errors = validate_schema(
         resolved, _load_schema(_resolve_schema_path(version, schema_file))
     )
     if schema_errors:

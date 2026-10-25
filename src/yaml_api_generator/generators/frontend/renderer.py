@@ -4,11 +4,14 @@ import re
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, TemplateNotFound
 
 from yaml_api_generator.ir.ui import GeneratorContext, UIView
 from .output import OutputFile
 from yaml_api_generator.ir.pack_manifest import Pack
+
+SHARED_TEMPLATES = Path(__file__).parent / "shared" / "templates"
+"""Templates every pack may list in its scaffold, such as the `records.ts` data layer."""
 
 
 def render_templates(pack: Pack, context: GeneratorContext) -> list[OutputFile]:
@@ -50,7 +53,7 @@ def _render_scaffold(
 
     for item in context.pack_scaffold:
         template_path = f"scaffold/{item}.jinja"
-        content = _try_render(
+        content = _render(
             env,
             template_path,
             {
@@ -126,17 +129,12 @@ def _render_data_layer(
         )
 
     for col_name, collection in context.collections.items():
-        source_entity = None
-        for field in collection.fields.values():
-            source_entity = context.entities.get(field.source_entity)
-            if source_entity:
-                break
         content = _try_render(
             env,
             "hooks/useCollection.jinja",
             {
                 "collection": collection,
-                "entity": source_entity,
+                "entity": context.entities[collection.entity],
                 "context": context,
                 "pack_config": context.pack_config,
             },
@@ -229,7 +227,7 @@ def _render_views(
                 (f"{_pascal(view_name)}Detail", effective.get("detail", "detail-two-column")),
             ]
             for file_stem, sub_component in pages:
-                content = _try_render(env, f"components/{sub_component}.jinja", base_vars)
+                content = _render(env, f"components/{sub_component}.jinja", base_vars)
                 if content is not None:
                     files.append(OutputFile(
                         path=f"{output.pages_dir}/{file_stem}.{ext}",
@@ -237,7 +235,7 @@ def _render_views(
                         zone="editable",
                     ))
         else:
-            content = _try_render(env, f"components/{pack_component}.jinja", base_vars)
+            content = _render(env, f"components/{pack_component}.jinja", base_vars)
             if content is not None:
                 files.append(OutputFile(
                     path=f"{output.pages_dir}/{_pascal(view_name)}.{ext}",
@@ -347,7 +345,7 @@ def _parse_collection_ref(value: str) -> str | None:
 
 def _create_jinja_env(templates_dir: Path) -> Environment:
     env = Environment(
-        loader=FileSystemLoader(str(templates_dir)),
+        loader=ChoiceLoader([FileSystemLoader(templates_dir), FileSystemLoader(SHARED_TEMPLATES)]),
         keep_trailing_newline=True,
         trim_blocks=True,
         lstrip_blocks=True,
@@ -359,15 +357,21 @@ def _create_jinja_env(templates_dir: Path) -> Environment:
     return env
 
 
-def _try_render(
-    env: Environment, template_path: str, variables: dict[str, Any]
-) -> str | None:
+def _render(env: Environment, template_path: str, variables: dict[str, Any]) -> str | None:
+    """A template the pack declares; blank output means the spec needs no such file."""
     try:
         template = env.get_template(template_path)
-    except TemplateNotFound:
-        return None
+    except TemplateNotFound as missing:
+        raise ValueError(f"Pack has no template '{missing.name}'") from missing
     content = template.render(**variables)
     return content if content.strip() else None
+
+
+def _try_render(env: Environment, template_path: str, variables: dict[str, Any]) -> str | None:
+    """A data-layer template the pack may omit."""
+    if template_path not in env.list_templates():
+        return None
+    return _render(env, template_path, variables)
 
 
 def _pascal(name: str) -> str:

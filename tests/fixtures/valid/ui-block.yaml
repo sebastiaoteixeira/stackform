@@ -3,12 +3,8 @@ ui:
   frontend:
     pack: generic
   config:
-    dashboard:
-      title: My Dashboard
-      widgets:
-        - type: chart
-        - type: table
-    theme: dark
+    app_name: My Dashboard
+    require_auth: false
 collections:
   posts:
     fields:

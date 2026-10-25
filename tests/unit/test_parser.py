@@ -521,8 +521,7 @@ def test_schema_validation_failure_multiple_errors() -> None:
 def test_ui_block_extracted_and_preserved() -> None:
     result = load_and_generate_ir(str(VALID_DIR / "ui-block.yaml"))
     assert result.ui_block is not None
-    assert "dashboard" in result.ui_block["config"]
-    assert result.ui_block["config"]["theme"] == "dark"
+    assert result.ui_block["config"] == {"app_name": "My Dashboard", "require_auth": False}
 
 
 # --- Test 29: No UI block → ui_block=None ---

@@ -29,12 +29,17 @@
         "properties": {
           "fields": {
             "type": "object",
+            "minProperties": 1,
             "additionalProperties": {
               "type": "object",
               "additionalProperties": false,
               "required": ["from"],
               "properties": {
-                "from": { "type": "string", "minLength": 1 },
+                "from": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+                  "description": "Source entity, then a field path; every segment but the last is a ref the UI follows."
+                },
                 "format": { "type": "string" }
               }
             }

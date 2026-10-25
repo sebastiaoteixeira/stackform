@@ -54,8 +54,9 @@ export function {{ view.name | pascal_case }}Page() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {% if entity %}
-          {% for field_name, field in entity.fields.items() %}
-          {% if field.type != "id" and field.type != "datetime" and field.type != "ref" and (field.default is none or field.required) %}
+          {% for field in entity.signup_fields %}
+          {% set field_name = field.name %}
+          {% if field.type not in ("datetime", "ref") %}
           {% if field_name == entity.auth_identifier %}
           <div>
             <label htmlFor="{{ field_name }}" className="block text-sm font-medium text-gray-700 mb-1.5">

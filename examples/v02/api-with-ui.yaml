@@ -130,6 +130,7 @@ ui:
         collection: post-feed[id]
         title: $title
         body: $content
+        author: $authorName
     write-post:
       path: /posts/new
       component: form

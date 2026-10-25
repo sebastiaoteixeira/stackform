@@ -1,26 +1,22 @@
 import { useState, useEffect } from "react"
-import { apiFetch } from "../lib/api"
+import { listCollection, readCollection } from "../records"
+import { authHeaders } from "../lib/api"
+import type { {{ collection.name | pascal_case }}Item } from "../types"
 
+export function use{{ collection.name | pascal_case }}(): { data: {{ collection.name | pascal_case }}Item[] | null; loading: boolean; error: Error | null }
+export function use{{ collection.name | pascal_case }}(id: string): { data: {{ collection.name | pascal_case }}Item | null; loading: boolean; error: Error | null }
 export function use{{ collection.name | pascal_case }}(id?: string) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
-  const path = id
-    ? `/{{ entity.repository_name }}/${id}`
-    : `/{{ entity.repository_name }}`
-
   useEffect(() => {
     setLoading(true)
-    apiFetch(path)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`)
-        return res.json()
-      })
-      .then(setData)
-      .catch(setError)
-      .finally(() => setLoading(false))
-  }, [path])
+    const request = id === undefined
+      ? listCollection("{{ collection.name }}", authHeaders())
+      : readCollection("{{ collection.name }}", id, authHeaders())
+    request.then(setData).catch(setError).finally(() => setLoading(false))
+  }, [id])
 
   return { data, loading, error }
 }

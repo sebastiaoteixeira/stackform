@@ -14,8 +14,15 @@ interface Paging {
   sort: string[];
 }
 
+interface Projection {
+  entity: string;
+  key: string;
+  fields: Record<string, string[]>;
+}
+
 type Query = Record<string, string>;
 type Row = Record<string, unknown>;
+type Id = string | number;
 
 export const ROUTES: Record<string, Partial<Record<Operation, Route>>> = {
 {% for entity in entities.values() %}
@@ -38,8 +45,33 @@ const PAGING: Record<string, Paging> = {
 {% endfor %}
 };
 
+/** UI collections: each field is a path from the entity, following refs before its last segment. */
+export const COLLECTIONS: Record<string, Projection> = {
+{% for collection in collections.values() %}
+  {{ collection.name | tojson }}: {
+    entity: {{ collection.entity | tojson }},
+    key: {{ entities[collection.entity].pk_field | tojson }},
+    fields: {
+{% for field in collection.fields.values() %}
+      {{ field.name | tojson }}: {{ field.source_field_path | tojson }},
+{% endfor %}
+    },
+  },
+{% endfor %}
+};
+
+const REFS: Record<string, Record<string, string>> = {
+{% for entity in entities.values() %}
+  {{ entity.name | tojson }}: {
+{% for field in entity.fields.values() if field.ref_entity %}
+    {{ field.name | tojson }}: {{ field.ref_entity | tojson }},
+{% endfor %}
+  },
+{% endfor %}
+};
+
 export interface OperationRequest extends RequestInit {
-  id?: string | number;
+  id?: Id;
   query?: Query;
 }
 
@@ -92,4 +124,43 @@ export async function listRecords<T = any>(entity: string, headers: HeadersInit 
 export function displayValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '—';
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+type Reader = (entity: string, id: Id) => Promise<Row>;
+
+function reader(headers: HeadersInit): Reader {
+  const read = new Map<string, Promise<Row>>();
+  return (entity, id) => {
+    const key = `${entity}/${id}`;
+    if (!read.has(key)) read.set(key, callOperation(entity, 'get', { id, headers }).then(readJson));
+    return read.get(key)!;
+  };
+}
+
+async function resolve(entity: string, row: Row, [head, ...rest]: string[], read: Reader): Promise<unknown> {
+  const value = row[head];
+  if (!rest.length || value === null || value === undefined) return value;
+  const target = REFS[entity][head];
+  return resolve(target, await read(target, value as Id), rest, read);
+}
+
+async function project(collection: string, row: Row, read: Reader): Promise<Row> {
+  const { entity, key, fields } = COLLECTIONS[collection];
+  const values = await Promise.all(
+    Object.entries(fields).map(async ([name, path]) => [name, await resolve(entity, row, path, read)]),
+  );
+  return { [key]: row[key], ...Object.fromEntries(values) };
+}
+
+/** Every record of a UI collection, projected through its field paths. */
+export async function listCollection<T = Row>(collection: string, headers: HeadersInit = {}): Promise<T[]> {
+  const read = reader(headers);
+  const rows = await listRecords<Row>(COLLECTIONS[collection].entity, headers);
+  return Promise.all(rows.map((row) => project(collection, row, read))) as Promise<T[]>;
+}
+
+/** One record of a UI collection, projected through its field paths. */
+export async function readCollection<T = Row>(collection: string, id: Id, headers: HeadersInit = {}): Promise<T> {
+  const read = reader(headers);
+  return project(collection, await read(COLLECTIONS[collection].entity, id), read) as Promise<T>;
 }

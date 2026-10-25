@@ -114,9 +114,8 @@ ui:
     overwrite: always
   config:
     app_name: Blog Admin
-    theme:
-      primaryColor: "#3b82f6"
-      darkMode: false
+    colors:
+      accent: "#3b82f6"
   views:
     users_list:
       path: /users

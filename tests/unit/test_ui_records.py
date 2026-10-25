@@ -1,4 +1,4 @@
-"""The generated UI reaches the API through the routes, pagination, roles and access the spec declares."""
+"""The generated UI reaches the API through the routes, pagination, roles, access and projections the spec declares."""
 
 import json
 import os
@@ -56,6 +56,11 @@ entities:
     fields: *rows
   stream:
     fields: *rows
+  note:
+    fields:
+      id: { type: id }
+      body: { type: string, required: true }
+      entry: { type: ref, ref: ledger }
 
 repositories:
   members: { entity: member }
@@ -63,6 +68,7 @@ repositories:
   pages: { entity: page }
   feeds: { entity: feed }
   streams: { entity: stream }
+  notes: { entity: note }
 
 services:
   members: { repository: members }
@@ -70,6 +76,7 @@ services:
   pages: { repository: pages }
   feeds: { repository: feeds }
   streams: { repository: streams }
+  notes: { repository: notes }
 
 controllers:
   members:
@@ -120,16 +127,25 @@ controllers:
           strategy: keyset
           size: { default: 2, max: 3 }
           sort: [{ field: rank, dir: desc }, { field: code, dir: asc }]
+  notes:
+    service: notes
+    base_path: /notes
+    access: public
 
 ui:
   frontend: { pack: generic, output: ./frontend, overwrite: always }
+  collections:
+    notes:
+      fields:
+        text: { from: note.body }
+        code: { from: note.entry.code }
   views:
     ledger: { path: /ledger, component: crud, props: { collection: ledger } }
     signin: { path: /signin, component: auth-hero-split, props: {} }
 """
 
 DRIVER = """
-import { callOperation, listRecords, readJson } from './records.ts';
+import { callOperation, listCollection, listRecords, readCollection, readJson } from './records.ts';
 
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = (path, init) => nativeFetch(process.env.ORIGIN + path, init);
@@ -150,6 +166,10 @@ report.anonymousDelete = await send('ledger', 'delete', { id: top.id }).catch((e
 await send('member', 'register', { body: { handle: 'ana', password: 'correct-horse' } });
 const session = await send('member', 'login', { body: { handle: 'ana', password: 'correct-horse' } });
 report.token = typeof session.token;
+const note = await send('note', 'create', { body: { body: 'hello', entry: top.id } });
+const projected = ({ id, text, code }) => [id === note.id, text, code];
+report.projected = (await listCollection('notes')).map(projected);
+report.read = projected(await readCollection('notes', note.id));
 console.log(JSON.stringify(report));
 """
 
@@ -328,4 +348,6 @@ def test_generated_data_layer_drives_every_server(project, tmp_path, server):
         "fetched": 99,
         "anonymousDelete": "Authentication required",
         "token": "string",
+        "projected": [[True, "hello", "c6"]],
+        "read": [True, "hello", "c6"],
     }

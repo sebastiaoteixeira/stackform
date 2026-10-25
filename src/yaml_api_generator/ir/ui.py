@@ -31,6 +31,7 @@ class UICollectionField:
 @dataclass
 class UICollection:
     name: str
+    entity: str
     fields: dict[str, UICollectionField]
 
 
