@@ -7,6 +7,10 @@ from typing import Any, Protocol
 from .claims import claim_value, resolve_claim_path
 
 
+class SignInRefused(Exception):
+    """The claims cannot sign anyone into the identity collection."""
+
+
 class Records(Protocol):
     """The record operations sign-in needs from one collection."""
 
@@ -49,15 +53,15 @@ class ProviderBinding:
     claim_mapping: Mapping[str, str] = field(default_factory=dict)
     auto_provision: bool = True
     relations: Mapping[str, ProviderRelation] = field(default_factory=dict)
+    field_types: Mapping[str, str] = field(default_factory=dict)
 
     def mapped_fields(self, claims: dict[str, Any]) -> dict[str, Any]:
-        fields = {
-            local: value
-            for local, path in self.claim_mapping.items()
-            if (value := resolve_claim_path(claims, path)) is not None
-        }
-        fields.setdefault(self.identifier, claims.get("email") or claims.get("login") or claims.get("sub"))
-        return fields
+        """The claimed values of the identity fields; a value its field cannot hold stays unclaimed."""
+        claimed = {local: resolve_claim_path(claims, path) for local, path in self.claim_mapping.items()}
+        if claimed.get(self.identifier) is None:
+            claimed[self.identifier] = claims.get("email") or claims.get("login") or claims.get("sub")
+        fitted = {local: claim_value(value, self.field_types.get(local)) for local, value in claimed.items()}
+        return {local: value for local, value in fitted.items() if value is not None}
 
     async def sign_in(
         self,
@@ -70,10 +74,10 @@ class ProviderBinding:
 
         Every sign-in brings mapped fields and relations up to date; the record id never changes.
         """
-        fields = {
-            **self.mapped_fields(claims),
-            **{fk: await relation.resolve(claims, records) for fk, relation in self.relations.items()},
-        }
+        fields = self.mapped_fields(claims)
+        if self.identifier not in fields:
+            raise SignInRefused(f"The provider's claims carry no usable '{self.identifier}'")
+        fields |= {fk: await relation.resolve(claims, records) for fk, relation in self.relations.items()}
         if subject_field is not None:
             fields[subject_field] = str(claims["sub"])
         key_field = subject_field or self.identifier

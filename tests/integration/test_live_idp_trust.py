@@ -111,3 +111,18 @@ async def test_signing_in_again_keeps_the_user_and_refreshes_mapped_fields(clien
     users = (await client.get("/users", headers=second)).json()
 
     assert [user["name"] for user in users if user["id"] == "grace"] == ["Grace Hopper"]
+
+
+async def test_token_of_another_subject_claiming_a_taken_identifier_is_refused(client, issuer):
+    owner = issuer.bearer("linus", iss=CONFIGURED_ISSUER, email="linus@example.com")
+    impostor = issuer.bearer("mallory", iss=CONFIGURED_ISSUER, email="linus@example.com")
+
+    assert (await client.get("/users", headers=owner)).status_code == 200
+    assert (await client.get("/users", headers=impostor)).status_code == 401
+
+
+@pytest.mark.parametrize("email", [{"$ne": ""}, ["ada@example.com"]], ids=["operator", "list"])
+async def test_token_whose_identifier_claim_is_no_string_is_refused(client, issuer, email):
+    users = await client.get("/users", headers=issuer.bearer("mallory", iss=CONFIGURED_ISSUER, email=email))
+
+    assert users.status_code == 401

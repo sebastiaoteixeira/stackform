@@ -19,7 +19,7 @@ The IR serves as the single source of truth for code generation,
 eliminating repeated YAML parsing and validation.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
@@ -438,6 +438,7 @@ class IRProviderBinding:
     claim_mapping: dict[str, str] = field(default_factory=dict)
     auto_provision: bool = True
     relations: dict[str, IRProviderRelation] = field(default_factory=dict)
+    field_types: dict[str, str] = field(default_factory=dict)
 
     @property
     def stores_credential(self) -> bool:
@@ -462,6 +463,12 @@ class IRIdentityCollection:
 
     def get_binding(self, provider: str) -> "IRProviderBinding | None":
         return next((b for b in self.bindings if b.provider == provider), None)
+
+    def issues_sessions(self, providers: Mapping[str, IRProvider]) -> bool:
+        """Password login and every login flow the app runs itself end in an app-issued session."""
+        return self.has_password or any(
+            not providers[b.provider].is_idp for b in self.bindings if b.provider in providers
+        )
 
 
 @dataclass(frozen=True)

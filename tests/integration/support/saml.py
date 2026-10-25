@@ -47,13 +47,14 @@ def _self_signed(key: rsa.RSAPrivateKey) -> x509.Certificate:
 
 @dataclass(frozen=True)
 class AuthnRequest:
+    id: str
     acs_url: str
     sp_entity_id: str
 
     @classmethod
     def decode(cls, encoded: str) -> "AuthnRequest":
         root = ElementTree.fromstring(OneLogin_Saml2_Utils.decode_base64_and_inflate(encoded))
-        return cls(root.attrib["AssertionConsumerServiceURL"], root.findtext(f"{{{_ASSERTION}}}Issuer"))
+        return cls(root.attrib["ID"], root.attrib["AssertionConsumerServiceURL"], root.findtext(f"{{{_ASSERTION}}}Issuer"))
 
 
 Attributes = dict[str, str | list[str]]
@@ -99,8 +100,13 @@ class IdentityProvider:
   </md:IDPSSODescriptor>
 </md:EntityDescriptor>"""
 
-    def response(self, request: AuthnRequest) -> str:
-        """Base64 signed Response asserting the current subject to the requesting SP; a list attribute is multi-valued."""
+    def response(self, request: AuthnRequest, in_response_to: str | None = None) -> str:
+        """Base64 signed Response asserting the current subject to the requesting SP; a list attribute is multi-valued.
+
+        The response answers ``request`` unless ``in_response_to`` names another request, or ``""`` none at all.
+        """
+        answered = request.id if in_response_to is None else in_response_to
+        answering = f' InResponseTo="{escape(answered)}"' if answered else ""
         now = datetime.datetime.now(datetime.UTC)
         issued, expires = _instant(now), _instant(now + datetime.timedelta(minutes=5))
         attributes = "".join(
@@ -109,7 +115,7 @@ class IdentityProvider:
             + "</saml:Attribute>"
             for name, values in self.subject.attributes.items()
         )
-        document = f"""<samlp:Response xmlns:samlp="{_PROTOCOL}" xmlns:saml="{_ASSERTION}" ID="_{uuid.uuid4().hex}" Version="2.0" IssueInstant="{issued}" Destination="{escape(request.acs_url)}">
+        document = f"""<samlp:Response xmlns:samlp="{_PROTOCOL}" xmlns:saml="{_ASSERTION}" ID="_{uuid.uuid4().hex}" Version="2.0" IssueInstant="{issued}" Destination="{escape(request.acs_url)}"{answering}>
   <saml:Issuer>{self.metadata_url}</saml:Issuer>
   <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
   <saml:Assertion ID="_{uuid.uuid4().hex}" Version="2.0" IssueInstant="{issued}">
@@ -117,7 +123,7 @@ class IdentityProvider:
     <saml:Subject>
       <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{escape(self.subject.name_id)}</saml:NameID>
       <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
-        <saml:SubjectConfirmationData NotOnOrAfter="{expires}" Recipient="{escape(request.acs_url)}"/>
+        <saml:SubjectConfirmationData NotOnOrAfter="{expires}" Recipient="{escape(request.acs_url)}"{answering}/>
       </saml:SubjectConfirmation>
     </saml:Subject>
     <saml:Conditions NotBefore="{issued}" NotOnOrAfter="{expires}">

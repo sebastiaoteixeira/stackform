@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from tests.integration.support.apps import BACKENDS, Backend, launched
-from tests.integration.support.saml import IdentityProvider, live_identity_provider
+from tests.integration.support.saml import AuthnRequest, IdentityProvider, live_identity_provider
 
 pytestmark = pytest.mark.integration
 
@@ -21,6 +21,44 @@ SPEC = Path(__file__).parents[1] / "fixtures" / "valid" / "auth-saml.yaml"
 FRONTEND = "http://frontend.test"
 EMAIL = "ada@example.com"
 ORGANIZATION = "ACME"
+# An identity of nothing but its identifier, which the NameID fills, and sessions that refresh
+MINIMAL_SPEC = """
+version: "0.2"
+api:
+  basePath: /api
+  version: v1
+providers:
+  corporate:
+    type: saml
+    idp_metadata_url: "${SAML_IDP_METADATA_URL}"
+    sp_entity_id: https://sp.example.com/metadata
+datastores:
+  default:
+    type: postgres
+    dsn: ${DATABASE_URL}
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: corporate
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+repositories:
+  users:
+    entity: user
+services:
+  users:
+    repository: users
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+session:
+  refresh: true
+"""
 
 
 @pytest.fixture(scope="module")
@@ -62,6 +100,15 @@ def invitation_only_api(request, tmp_path_factory, identity_provider) -> Iterato
         yield url
 
 
+@pytest.fixture(scope="module", params=BACKENDS, ids=lambda backend: backend.name)
+def minimal_api(request, tmp_path_factory, identity_provider) -> Iterator[str]:
+    workdir = tmp_path_factory.mktemp(f"saml-minimal-{request.param.name}")
+    spec = workdir / "spec.yaml"
+    spec.write_text(MINIMAL_SPEC)
+    with _serve(request.param, spec, workdir, identity_provider) as url:
+        yield url
+
+
 @pytest.fixture
 async def client(api):
     async with httpx.AsyncClient(base_url=api, timeout=30) as client:
@@ -78,17 +125,28 @@ async def _identity_provider_post(client: httpx.AsyncClient, identity_provider: 
     return unescape(action), saml_response
 
 
+async def _pending_request(client: httpx.AsyncClient) -> AuthnRequest:
+    """Start login at the SP and return the AuthnRequest it sends the IdP."""
+    login = await client.get("/users/auth/corporate")
+    return AuthnRequest.decode(parse_qs(urlparse(login.headers["location"]).query)["SAMLRequest"][0])
+
+
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _signed_in(client: httpx.AsyncClient, identity_provider: IdentityProvider) -> str:
-    """Complete a login and return the app token the login code exchanges for."""
+async def _session(client: httpx.AsyncClient, identity_provider: IdentityProvider) -> dict:
+    """Complete a login and return the session the login code exchanges for."""
     action, saml_response = await _identity_provider_post(client, identity_provider)
     callback = await client.post(action, data={"SAMLResponse": saml_response})
     assert callback.status_code == 303
     code = parse_qs(urlparse(callback.headers["location"]).query)["code"][0]
-    return (await client.post("/auth/exchange", json={"code": code})).json()["token"]
+    return (await client.post("/auth/exchange", json={"code": code})).json()
+
+
+async def _signed_in(client: httpx.AsyncClient, identity_provider: IdentityProvider) -> str:
+    """Complete a login and return the app token the login code exchanges for."""
+    return (await _session(client, identity_provider))["token"]
 
 
 async def _user(client: httpx.AsyncClient, token: str) -> dict:
@@ -212,3 +270,45 @@ async def test_identity_record_is_created_without_provider_fields(client, identi
 
     assert created.is_success
     assert created.json()["email"] == "grace@example.com"
+
+
+@pytest.mark.parametrize("in_response_to", ["", "_another-request"], ids=["unsolicited", "another-request"])
+async def test_response_to_no_pending_login_is_rejected(client, identity_provider, in_response_to):
+    request = await _pending_request(client)
+
+    callback = await client.post(
+        request.acs_url, data={"SAMLResponse": identity_provider.response(request, in_response_to)}
+    )
+
+    assert callback.status_code == 401
+
+
+async def test_response_to_another_browsers_login_is_rejected(api, identity_provider):
+    async with httpx.AsyncClient(base_url=api, timeout=30) as requester:
+        action, saml_response = await _identity_provider_post(requester, identity_provider)
+    async with httpx.AsyncClient(base_url=api, timeout=30) as other:
+        callback = await other.post(action, data={"SAMLResponse": saml_response})
+
+    assert callback.status_code == 401
+
+
+async def test_name_id_alone_signs_in_an_identity_of_only_its_identifier(minimal_api, identity_provider):
+    async with httpx.AsyncClient(base_url=minimal_api, timeout=30) as client:
+        tokens = [await _signed_in(client, identity_provider) for _ in range(2)]
+        listings = [(await client.get("/users", headers=_bearer(token))).json() for token in tokens]
+
+    assert listings[0] == listings[1]
+    assert [user["email"] for user in listings[0]] == [EMAIL]
+
+
+async def test_session_of_a_saml_login_refreshes(minimal_api, identity_provider):
+    async with httpx.AsyncClient(base_url=minimal_api, timeout=30) as client:
+        session = await _session(client, identity_provider)
+        rotated = await client.post("/users/refresh", json={"refresh_token": session["refresh_token"]})
+        replayed = await client.post("/users/refresh", json={"refresh_token": session["refresh_token"]})
+        users = await client.get("/users", headers=_bearer(rotated.json()["token"]))
+
+    assert rotated.status_code == 200
+    assert replayed.status_code == 401
+    assert users.status_code == 200
+

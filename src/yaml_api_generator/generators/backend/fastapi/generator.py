@@ -292,6 +292,12 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
             auth_imports.append("from .login import router as login_router")
 
+        if context.session.refresh:
+            (routes_dir / "refresh.py").write_text(
+                env.get_template("refresh_routes.py.jinja").render(auth=context.auth, ctx=context)
+            )
+            auth_imports.append("from .refresh import router as refresh_router")
+
         if context.session.uses_cookie:
             (routes_dir / "session.py").write_text(
                 env.get_template("session_routes.py.jinja").render()

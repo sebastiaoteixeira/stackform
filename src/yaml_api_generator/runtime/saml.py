@@ -9,12 +9,14 @@ from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from onelogin.saml2.idp_metadata_parser import OneLogin_Saml2_IdPMetadataParser
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
+from starlette.responses import Response, RedirectResponse
 
 _POST_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
 _REDIRECT_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
 _EMAIL_NAME_ID = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
 _SLO_MESSAGES = frozenset({"SAMLRequest", "SAMLResponse"})
 _REPLAY_WINDOW_SECONDS = 300
+_REQUEST_COOKIE = "saml_request_id"
 
 
 def assertion_claims(attributes: dict[str, list[Any]], name_id: str | None) -> dict[str, Any]:
@@ -66,15 +68,34 @@ class SAMLServiceProvider:
     def logout_path(self) -> str:
         return f"{self.login_path}/logout"
 
-    async def login_redirect(self, request: Request) -> str:
-        return (await self._auth(request)).login()
+    async def login(self, request: Request) -> RedirectResponse:
+        """Redirect to the IdP, remembering the AuthnRequest so only its response is consumed."""
+        auth = await self._auth(request)
+        response = RedirectResponse(url=auth.login())
+        https = request.url.scheme == "https"
+        response.set_cookie(
+            _REQUEST_COOKIE,
+            auth.get_last_request_id(),
+            max_age=_REPLAY_WINDOW_SECONDS,
+            path=self.callback_path,
+            httponly=True,
+            secure=https,
+            # The IdP POSTs the response cross-site, which only a SameSite=None cookie survives
+            samesite="none" if https else "lax",
+        )
+        return response
+
+    def forget_request(self, response: Response) -> None:
+        response.delete_cookie(_REQUEST_COOKIE, path=self.callback_path)
 
     async def claims(self, request: Request) -> dict[str, Any]:
+        """The claims of the response the IdP POSTs to the callback, in answer to this browser's AuthnRequest."""
         auth = await self._auth(request)
         if "SAMLResponse" not in (await request.form()):
             raise HTTPException(status_code=400, detail="Missing SAMLResponse")
+        request_id = request.cookies.get(_REQUEST_COOKIE)
         try:
-            auth.process_response()
+            auth.process_response(request_id=request_id)
         except (ValueError, SyntaxError) as error:
             raise HTTPException(status_code=400, detail="Malformed SAMLResponse") from error
         if auth.get_errors() or not auth.is_authenticated():
@@ -82,6 +103,8 @@ class SAMLServiceProvider:
                 status_code=401,
                 detail=f"SAML authentication failed: {auth.get_last_error_reason() or 'not authenticated'}",
             )
+        if request_id is None or auth.get_last_response_in_response_to() != request_id:
+            raise HTTPException(status_code=401, detail="SAML response answers no pending login")
         expires_at = auth.get_last_assertion_not_on_or_after() or time.time() + _REPLAY_WINDOW_SECONDS
         if not await self.assertions.consume(auth.get_last_assertion_id(), expires_at):
             raise HTTPException(status_code=401, detail="SAML assertion already consumed")

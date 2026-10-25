@@ -422,9 +422,12 @@ class _ExternalLogin:
     async def redirect(
         self, request: Request, claims: dict[str, Any], binding: IRProviderBinding
     ) -> RedirectResponse:
-        record = await provisioning.provider_binding(binding).sign_in(
-            claims, provisioning.records_of(self.registry, self.collections), self.collection.name
-        )
+        try:
+            record = await provisioning.provider_binding(binding).sign_in(
+                claims, provisioning.records_of(self.registry, self.collections), self.collection.name
+            )
+        except provisioning.REFUSALS as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
         if record is None:
             raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
         code = login_codes.issue(str(record[self.collection.id_field]), self.collection.name)
@@ -469,11 +472,10 @@ def _mount_saml_routes(
 ) -> None:
     sp = SAMLServiceProvider(provider.idp_metadata_url, provider.sp_entity_id, login_path)
 
-    async def login_endpoint(request: Request) -> RedirectResponse:
-        return RedirectResponse(url=await sp.login_redirect(request))
-
     async def callback_endpoint(request: Request) -> RedirectResponse:
-        return await login.redirect(request, await sp.claims(request), binding)
+        response = await login.redirect(request, await sp.claims(request), binding)
+        sp.forget_request(response)
+        return response
 
     async def metadata_endpoint(request: Request) -> Response:
         return Response(await sp.metadata(request), media_type="application/xml")
@@ -481,7 +483,7 @@ def _mount_saml_routes(
     async def logout_endpoint(request: Request) -> RedirectResponse:
         return RedirectResponse(url=await sp.logout_redirect(request, _frontend_url(request)))
 
-    app.add_api_route(login_path, login_endpoint, methods=["GET"])
+    app.add_api_route(login_path, sp.login, methods=["GET"])
     app.add_api_route(sp.callback_path, callback_endpoint, methods=["POST"])
     app.add_api_route(f"{login_path}/metadata", metadata_endpoint, methods=["GET"])
     app.add_api_route(sp.logout_path, logout_endpoint, methods=["GET"])

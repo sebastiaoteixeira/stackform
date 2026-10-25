@@ -104,8 +104,13 @@ def _build_routes(document: IRDocument) -> list[RuntimeRouteDescriptor]:
     routes = [_runtime_route(route, document) for route in document.routes]
     routes += _password_login_routes(document, routes)
     if document.session.refresh:
-        routes += [_refresh_route(route) for route in routes if route.operation == "login"]
+        routes += _refresh_routes(document, routes)
     return routes
+
+
+def _base_path(document: IRDocument) -> str:
+    base_path = document.api.basePath
+    return f"{base_path}/{document.api.version}" if document.api.version else base_path
 
 
 def _password_login_routes(
@@ -114,13 +119,10 @@ def _password_login_routes(
     """A generated project serves one login route per password identity, whether or not a
     controller declares the operation; the development server serves the same surface."""
     declared = {route.collection for route in routes if route.operation == "login"}
-    base_path = document.api.basePath
-    if document.api.version:
-        base_path = f"{base_path}/{document.api.version}"
     return [
         RuntimeRouteDescriptor(
             method="POST",
-            path=f"{base_path}/{name}/login",
+            path=f"{_base_path(document)}/{name}/login",
             operation="login",
             collection=name,
             is_public=True,
@@ -183,14 +185,22 @@ def _build_file_routes(document: IRDocument) -> tuple[RuntimeFileRouteDescriptor
     )
 
 
-def _refresh_route(login: RuntimeRouteDescriptor) -> RuntimeRouteDescriptor:
-    return RuntimeRouteDescriptor(
-        method="POST",
-        path=f"{login.path.removesuffix('/login')}/refresh",
-        operation="refresh",
-        collection=login.collection,
-        is_public=True,
-    )
+def _refresh_routes(
+    document: IRDocument, routes: list[RuntimeRouteDescriptor]
+) -> list[RuntimeRouteDescriptor]:
+    """One refresh route per identity whose sign-ins end in an app-issued session, beside its login route."""
+    login_bases = {route.collection: route.path.removesuffix("/login") for route in routes if route.operation == "login"}
+    return [
+        RuntimeRouteDescriptor(
+            method="POST",
+            path=f"{login_bases.get(name, f'{_base_path(document)}/{name}')}/refresh",
+            operation="refresh",
+            collection=name,
+            is_public=True,
+        )
+        for name, identity in document.identityCollections.items()
+        if identity.issues_sessions(document.providers)
+    ]
 
 
 def _build_auth_config(

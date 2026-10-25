@@ -141,9 +141,9 @@ class TestCookieGeneration:
 
     def test_refresh_reads_cookie_not_body(self, cookie_refresh_ctx, tmp_path):
         FastAPIGenerator().generate(cookie_refresh_ctx, tmp_path)
-        login = (tmp_path / "routes" / "login.py").read_text()
-        assert "refresh_token_from_request(request)" in login
-        assert "class RefreshPayload" not in login
+        refresh = (tmp_path / "routes" / "refresh.py").read_text()
+        assert "refresh_token_from_request(request)" in refresh
+        assert "class RefreshPayload" not in refresh
         assert "REFRESH_COOKIE" in (tmp_path / "dependencies" / "session_cookie.py").read_text()
 
     def test_logout_route_clears_all_cookies(self, cookie_refresh_ctx, tmp_path):

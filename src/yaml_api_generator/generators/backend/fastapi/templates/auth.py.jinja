@@ -17,9 +17,10 @@ from settings import settings
 from dependencies.jwt_utils import decode_jwt_token
 {% endif %}
 {% if auth.has_idp_auth %}
+from conflicts import ConflictError
 from dependencies import idp_auth
 from dependencies.claims import resolve_claim_path
-from dependencies.provisioning import ProviderBinding, ProviderRelation
+from dependencies.provisioning import ProviderBinding, ProviderRelation, SignInRefused
 from dependencies.repositories import repository
 {% endif %}
 {% if ctx is defined and ctx.session.uses_cookie %}
@@ -197,7 +198,10 @@ async def _resolve_idp_principal(bearer_token: str) -> dict[str, Any]:
             "record": None,
             "identity_collection": None,
         }
-    record = await binding.sign_in(claims, repository, sign_in.collection, sign_in.id_field)
+    try:
+        record = await binding.sign_in(claims, repository, sign_in.collection, sign_in.id_field)
+    except (SignInRefused, ConflictError) as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
     if record is None:
         raise HTTPException(status_code=401, detail="User not found and auto-provisioning is disabled")
     return {"sub": sub, "identity_collection": sign_in.collection, "record": record, "roles": roles}

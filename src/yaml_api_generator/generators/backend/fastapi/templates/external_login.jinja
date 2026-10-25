@@ -3,13 +3,17 @@
 
 {#- ``bound`` holds the (identity collection, binding, provider) triples a routes module serves. -#}
 {% macro imports(bound) -%}
+from conflicts import ConflictError
 from dependencies.login_codes import issue_login_code
-from dependencies.provisioning import ProviderBinding{{ ", ProviderRelation" if bound | map(attribute=1) | selectattr("relations") | list }}
+from dependencies.provisioning import ProviderBinding{{ ", ProviderRelation" if bound | map(attribute=1) | selectattr("relations") | list }}, SignInRefused
 from dependencies.repositories import repository
 {%- endmacro %}
 
 {% macro sign_in(col, sym) %}
-    record = await _{{ sym }}_binding.sign_in(claims, repository, "{{ col.name }}")
+    try:
+        record = await _{{ sym }}_binding.sign_in(claims, repository, "{{ col.name }}")
+    except (SignInRefused, ConflictError) as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
     if record is None:
         raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
     code = await issue_login_code(str(record["{{ col.id_field }}"]), "{{ col.name }}", "{{ 'sql' if col.is_sql else 'mongo' }}")

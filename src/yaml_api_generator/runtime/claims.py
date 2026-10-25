@@ -36,14 +36,33 @@ def _boolean(value: Any) -> bool:
         raise ValueError(value) from None
 
 
-_CONVERTERS: dict[str, Callable[[Any], Any]] = {"number": float, "boolean": _boolean}
+def _items(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else [value]
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(value)
+    return value
+
+
+_STRUCTURED: dict[str, Callable[[Any], Any]] = {"array": _items, "object": _mapping}
+_SCALARS: dict[str, Callable[[Any], Any]] = {"number": float, "boolean": _boolean}
+
+
+def _fitted(value: Any, field_type: str | None) -> Any:
+    if field_type in _STRUCTURED:
+        return _STRUCTURED[field_type](value)
+    if isinstance(value, (list, dict)):
+        raise ValueError(value)
+    return _SCALARS.get(field_type, str)(value)
 
 
 def claim_value(value: Any, field_type: str | None) -> Any | None:
-    """``value`` as the field type expects it; ``None`` when absent, multi-valued or not convertible."""
-    if value is None or isinstance(value, (list, dict)):
+    """``value`` as a field of ``field_type`` holds it; ``None`` when absent or it does not fit."""
+    if value is None:
         return None
     try:
-        return _CONVERTERS.get(field_type, str)(value)
+        return _fitted(value, field_type)
     except ValueError:
         return None

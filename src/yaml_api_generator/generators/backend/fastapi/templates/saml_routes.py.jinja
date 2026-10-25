@@ -35,13 +35,14 @@ _{{ sym }}_binding = {{ binding | py_constructor }}
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}")
 async def saml_{{ sym }}_login(request: Request) -> RedirectResponse:
-    return RedirectResponse(url=await _{{ sym }}.login_redirect(request))
+    return await _{{ sym }}.login(request)
 
 
 @router.post("/{{ col.name }}/auth/{{ provider_name }}/callback")
 async def saml_{{ sym }}_callback(request: Request) -> RedirectResponse:
     claims = await _{{ sym }}.claims(request)
 {{ login.sign_in(col, sym) }}
+    _{{ sym }}.forget_request(response)
     return response
 
 

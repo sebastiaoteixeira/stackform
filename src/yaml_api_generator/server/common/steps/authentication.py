@@ -75,12 +75,15 @@ async def _resolve_idp_principal(
                 return _build_service_principal(claims, identity, binding)
 
             collection = collections[collection_name]
-            record = await provisioning.provider_binding(binding).sign_in(
-                claims,
-                provisioning.records_of(registry, collections),
-                collection_name,
-                collection.id_field,
-            )
+            try:
+                record = await provisioning.provider_binding(binding).sign_in(
+                    claims,
+                    provisioning.records_of(registry, collections),
+                    collection_name,
+                    collection.id_field,
+                )
+            except provisioning.REFUSALS as error:
+                raise UnauthorizedError(str(error)) from error
             if record is None:
                 raise UnauthorizedError("User not found and auto-provisioning is disabled")
             return _build_principal(

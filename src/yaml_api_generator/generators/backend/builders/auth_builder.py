@@ -63,15 +63,8 @@ class AuthBuilder:
         role_hierarchies: dict[str, dict[str, set[str]]] = {}
         idp_providers = self._build_idp_providers(providers)
 
-        external_app = {
-            n for n, p in providers.items()
-            if isinstance(p, (IROIDCProvider, IRSAMLProvider)) and not p.is_idp
-        }
         for name, identity in identity_map.items():
             col = collections[name]
-            issues_jwt = identity.has_password or any(
-                b.provider in external_app for b in identity.bindings
-            )
             descriptors.append(
                 IdentityCollectionDescriptor(
                     name=name,
@@ -80,7 +73,7 @@ class AuthBuilder:
                     id_format=col.idFormat,
                     roles=identity.roles,
                     roles_field=identity.roles_field,
-                    issues_jwt=issues_jwt,
+                    issues_jwt=identity.issues_sessions(providers),
                     datastore_type=datastore_types.get(name, "mongodb"),
                 )
             )
