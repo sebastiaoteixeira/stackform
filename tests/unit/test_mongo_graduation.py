@@ -23,6 +23,7 @@ from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from yaml_api_generator.server.common.loader import SchemaManagement, create_repositories
 from yaml_api_generator.server.common.repositories import MongoRepository
 from yaml_api_generator.server.common.repositories.sql import SQLRepository
+from yaml_api_generator.runtime import lifecycle
 
 
 _SPEC = """
@@ -159,6 +160,10 @@ def _generated_app_dependencies(initialize_indexes) -> dict[str, types.ModuleTyp
             "dependencies.postgres", connect_db=_noop, close_db=_noop
         ),
         "dependencies.security_headers": security_headers,
+        "dependencies.lifecycle": lifecycle,
+        "dependencies.repositories": _stub(
+            "dependencies.repositories", expiring_repositories=lambda: []
+        ),
         "conflicts": _stub("conflicts", ConflictError=_Conflict),
         "services": _stub("services"),
         "services.exceptions": _stub(

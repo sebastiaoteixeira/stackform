@@ -72,6 +72,7 @@ class ContextBuilder:
                 "fields": col.fields,
                 "datastore": datastore,
                 "datastore_type": ds.type if ds is not None else "mongodb",
+                "lifecycle": col.lifecycle,
             }
 
         datastore_types = {n: c["datastore_type"] for n, c in raw_collections.items()}

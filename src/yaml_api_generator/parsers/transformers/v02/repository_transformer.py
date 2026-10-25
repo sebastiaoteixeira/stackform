@@ -4,6 +4,7 @@ Validates CRUD operations, query commands, and operation definitions.
 """
 
 from collections.abc import Callable, Collection, Mapping
+from dataclasses import asdict
 from typing import Any
 
 from yaml_api_generator.ir import CRUD_OPERATIONS, IRCollection, IROperation, IRRepository
@@ -17,13 +18,20 @@ def _identity_handler(handler: str | None) -> str | None:
 
 
 def _targeted(query: Any, collections: Mapping[str, IRCollection]) -> Any:
-    """A query naming a collection inserts with that collection's ids; an undeclared one assigns none."""
+    """A query naming a collection inserts with that collection's ids and keeps to its lifecycle.
+
+    An undeclared collection assigns no ids and has no lifecycle.
+    """
     if not isinstance(query, dict) or "collection" not in query:
         return query
     target = collections.get(query["collection"])
     if target is None:
-        return {**query, "identity": None}
-    return with_identity(query, target.idField, target.idFormat)
+        return {**query, "identity": None, "lifecycle": {}}
+    return {"lifecycle": asdict(target.lifecycle), **with_identity(query, target.idField, target.idFormat)}
+
+
+def _including_deleted(query: Any, include_deleted: bool) -> Any:
+    return {**query, "includeDeleted": True} if include_deleted and isinstance(query, dict) else query
 
 
 class RepositoryTransformer:
@@ -178,7 +186,9 @@ class RepositoryTransformer:
 
                 ops_dict[op_name] = IROperation(
                     name=op_name,
-                    query=_targeted(query, collections or {}),
+                    query=_including_deleted(
+                        _targeted(query, collections or {}), op_cfg.get("includeDeleted", False)
+                    ),
                     handler=handler_resolver(handler),
                 )
 

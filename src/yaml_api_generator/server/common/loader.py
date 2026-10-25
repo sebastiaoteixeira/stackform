@@ -98,20 +98,21 @@ def build_registry(
 def _build_repository(
     name: str, datastore, ir: IRDocument, managed: SchemaManagement
 ) -> BaseRepository:
+    collections = [
+        col for col in ir.collections.values()
+        if (col.datastore or ir.default_datastore) == name
+    ]
     if isinstance(datastore, IRMongo):
         uri, database = mongo_connection_params(ir, name)
         return MongoRepository(
             MongoRepositoryConfig(uri=uri, database=database),
+            collections,
             manage_indexes=not managed.mongo,
         )
 
     if isinstance(datastore, IRPostgres):
         from .repositories.sql import SQLRepository
 
-        collections = [
-            col for col in ir.collections.values()
-            if (col.datastore or ir.default_datastore) == name
-        ]
         dsn = os.environ.get(f"YAML_API_DB_{name.upper()}_DSN", datastore.dsn)
         return SQLRepository(dsn=dsn, collections=collections, create_schema=not managed.sql)
 

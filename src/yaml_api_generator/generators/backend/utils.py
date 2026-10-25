@@ -16,7 +16,7 @@ _RUNTIME_MODULES = frozenset(
     {
         "access", "dpop", "saml", "claims", "provisioning", "pagination", "fields", "payloads", "files", "multipart",
         "file_requests", "filesystem_store", "s3_store", "sql_types", "operations", "ids", "mongo_operations",
-        "sql_operations", "handler_requests", "security_headers",
+        "sql_operations", "handler_requests", "security_headers", "lifecycle", "mongo_lifecycle", "sql_lifecycle",
     }
 )
 
@@ -32,7 +32,10 @@ def write_runtime_modules(directory: Path, names: Iterable[str]) -> None:
         (directory / f"{name}.py").write_text(runtime_module_source(name))
 
 
-MONGO_RUNTIME_MODULES = ("access", "pagination", "operations", "ids", "mongo_operations", "handler_requests")
+MONGO_RUNTIME_MODULES = (
+    "access", "pagination", "operations", "ids", "mongo_operations", "handler_requests", "lifecycle", "mongo_lifecycle",
+)
+SQL_RUNTIME_MODULES = ("sql_types", "sql_operations", "lifecycle", "sql_lifecycle")
 
 
 def write_environment_files(

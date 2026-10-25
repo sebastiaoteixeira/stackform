@@ -1,8 +1,9 @@
+from dataclasses import asdict
 from pathlib import Path
 
 from jinja2 import Environment
 
-from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
@@ -14,6 +15,8 @@ from ..inheritance import (
     service_base_class,
 )
 from ..utils import (
+    MONGO_RUNTIME_MODULES,
+    SQL_RUNTIME_MODULES,
     find_identity,
     group_by_collection,
     identity_service_context,
@@ -28,7 +31,6 @@ from ..validation import (
     validate_datastore_layout,
 )
 from . import access_filters, sql_filters, type_mapper
-from .runtime_literals import py_constructor
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
@@ -61,7 +63,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["pagination_config"] = pagination_config
         env.filters["sql_column"] = sql_filters.sql_column
-        env.filters["py_constructor"] = py_constructor
         env.filters["rule_to_predicate"] = access_filters.rule_to_predicate
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
@@ -355,6 +356,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "id_field_format": meta["id_format"],
                 "collection_type": meta["type"],
                 "fields": meta["fields"],
+                "lifecycle": meta["lifecycle"] if is_sql else asdict(meta["lifecycle"]),
                 "custom_operations": own_repository_operations(context, col_name),
                 "generated_base": repository_base_class(context, col_name),
             }
@@ -423,16 +425,16 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
-        write_runtime_modules(deps_dir, (
+        write_runtime_modules(deps_dir, dict.fromkeys((
             "access",
             "pagination",
             "payloads",
             "operations",
             "handler_requests",
-            *(("ids", "mongo_operations") if uses_mongo else ()),
-            *(("sql_operations",) if uses_sql else ()),
+            *(MONGO_RUNTIME_MODULES if uses_mongo else ()),
+            *(SQL_RUNTIME_MODULES if uses_sql else ()),
             *(("security_headers",) if context.app.security_headers else ()),
-        ))
+        )))
         self._render_file_dependencies(env, context, deps_dir)
 
         init_imports: list[str] = []
@@ -471,6 +473,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "name": col_name,
                 "class_name": to_pascal_case(col_name),
                 "is_sql": context.collection_datastore_type(col_name) in ("postgres", "postgresql"),
+                "expires": col_name in context.expiring_collections,
             }
             for col_name in context.collections
         ]

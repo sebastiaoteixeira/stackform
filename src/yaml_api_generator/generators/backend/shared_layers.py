@@ -1,5 +1,6 @@
 """The service and repository layers a backend renders from the shared templates."""
 
+from dataclasses import asdict
 from pathlib import Path
 
 from jinja2 import Environment
@@ -85,6 +86,7 @@ class SharedLayersGenerator(TemplateBasedGenerator):
                     "custom_operations": own_repository_operations(ctx, col_name),
                     "generated_base": repository_base_class(ctx, col_name),
                     "module_prefix": self.module_prefix,
+                    "lifecycle": asdict(ctx.collections[col_name]["lifecycle"]),
                 },
             )
         )

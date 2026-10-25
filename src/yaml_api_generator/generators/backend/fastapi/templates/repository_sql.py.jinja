@@ -8,6 +8,9 @@ from typing import Any
 {% if not is_abstract %}
 import sqlalchemy as sa
 
+{% if lifecycle.removal or lifecycle.expiry %}
+from dependencies.lifecycle import Expiry, Lifecycle
+{% endif %}
 from dependencies.postgres import metadata
 from dependencies.sql_types import IsoDateTime
 from ._sql_ops import SQLRepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}

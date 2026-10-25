@@ -491,6 +491,13 @@ class CompileContext:
         return tuple(dict.fromkeys(("files", "multipart", "file_requests", *store_modules))) if self.has_files else ()
 
     @property
+    def expiring_collections(self) -> tuple[str, ...]:
+        return tuple(
+            name for name, collection in self.collections.items()
+            if collection["lifecycle"].expiry is not None
+        )
+
+    @property
     def datastore_types(self) -> set[str]:
         return {ds["type"] for ds in self.datastores.values()}
 

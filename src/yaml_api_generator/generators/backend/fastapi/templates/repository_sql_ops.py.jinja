@@ -9,9 +9,11 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from conflicts import ConflictError
+from dependencies.lifecycle import Lifecycle
 from dependencies.operations import present, resolve
 from dependencies.access import EVERY_ROW, Predicate
 from dependencies.pagination import Page, Primitives, expand_bound
+from dependencies.sql_lifecycle import SQLLifecycle
 from dependencies.sql_operations import run_sql
 
 
@@ -97,13 +99,15 @@ class SQLRepositoryBase:
     ID_FIELD: str
     ID_FORMAT: str = "natural"
     TABLE: sa.Table
+    LIFECYCLE = Lifecycle()
 
     def __init__(self, engine) -> None:
         self._engine = engine
+        self._lifecycle = SQLLifecycle(self.TABLE, self.LIFECYCLE)
         self._generate_id = make_id_generator(self.ID_FORMAT)
 
-    def _id_col(self) -> sa.Column:
-        return self.TABLE.c[self.ID_FIELD]
+    def _id_criteria(self, document_id: str) -> dict[str, Any]:
+        return {self.ID_FIELD: document_id}
 
     def _known(self, data: dict[str, Any], drop_id: bool = False) -> dict[str, Any]:
         return {
@@ -115,10 +119,16 @@ class SQLRepositoryBase:
     def _criteria(self, criteria: dict[str, Any]) -> tuple[sa.ColumnElement[bool], ...]:
         return tuple(self.TABLE.c[field] == value for field, value in criteria.items())
 
+    def _visible(self, criteria: dict[str, Any]) -> tuple[sa.ColumnElement[bool], ...]:
+        return (*self._criteria(criteria), *self._lifecycle.visible())
+
     @staticmethod
     def _one(result: sa.Result) -> dict[str, Any] | None:
         row = result.first()
         return dict(row._mapping) if row is not None else None
+
+    async def purge_expired(self) -> None:
+        await self._lifecycle.purge(self._engine)
 
     @_translate_conflict
     async def run_operation(self, query: dict[str, Any], bindings: dict[str, Any]) -> Any:
@@ -126,16 +136,12 @@ class SQLRepositoryBase:
             return present(await run_sql(conn, resolve(query, bindings)), self.ID_FIELD)
 
     async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
-        async with self._engine.connect() as conn:
-            result = await conn.execute(
-                sa.select(self.TABLE).where(self.TABLE.c[field] == value)
-            )
-            return self._one(result)
+        return await self.find_one({field: value})
 
     async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
         async with self._engine.connect() as conn:
             result = await conn.execute(
-                sa.select(self.TABLE).where(*self._criteria(criteria)).limit(1)
+                sa.select(self.TABLE).where(*self._visible(criteria)).limit(1)
             )
             return self._one(result)
 
@@ -143,14 +149,14 @@ class SQLRepositoryBase:
     async def update_by(
         self, criteria: dict[str, Any], data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        changes = {field: value for field, value in data.items() if field not in criteria}
+        changes = self._known({field: value for field, value in data.items() if field not in criteria}, drop_id=True)
         if not changes:
             return await self.find_one(criteria)
         async with self._engine.begin() as conn:
             result = await conn.execute(
                 sa.update(self.TABLE)
-                .where(*self._criteria(criteria))
-                .values(**self._known(changes, drop_id=True))
+                .where(*self._visible(criteria))
+                .values(**changes)
                 .returning(self.TABLE)
             )
             return self._one(result)
@@ -168,7 +174,7 @@ class SQLRepositoryBase:
         async with self._engine.begin() as conn:
             result = await conn.execute(
                 sa.update(self.TABLE)
-                .where(*self._criteria(criteria))
+                .where(*self._visible(criteria))
                 .values(**values)
                 .returning(self.TABLE)
             )
@@ -176,11 +182,7 @@ class SQLRepositoryBase:
 
     async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
         async with self._engine.begin() as conn:
-            result = await conn.execute(
-                sa.delete(self.TABLE)
-                .where(*self._criteria(criteria))
-                .returning(self.TABLE)
-            )
+            result = await conn.execute(self._lifecycle.remove(*self._criteria(criteria)))
             return self._one(result)
 
     @_translate_conflict
@@ -214,13 +216,12 @@ class SQLRepositoryBase:
 class ListOp:
     async def list(self, predicate: Predicate = EVERY_ROW) -> list[dict[str, Any]]:
         async with self._engine.connect() as conn:
-            result = await conn.execute(sa.select(self.TABLE).where(predicate.sql(self.TABLE)))
+            result = await conn.execute(sa.select(self.TABLE).where(predicate.sql(self.TABLE), *self._visible({})))
             return [dict(row._mapping) for row in result]
 
     async def paginate(self, primitives: Primitives, predicate: Predicate = EVERY_ROW) -> Page:
-        statement = sa.select(self.TABLE).where(
-            predicate.sql(self.TABLE), *_pagination_bounds(self.TABLE, primitives)
-        )
+        visible = (predicate.sql(self.TABLE), *self._visible({}))
+        statement = sa.select(self.TABLE).where(*_pagination_bounds(self.TABLE, primitives), *visible)
         for key in primitives.sort:
             column = self.TABLE.c[key.field]
             statement = statement.order_by(
@@ -234,22 +235,14 @@ class ListOp:
             rows = [dict(row._mapping) for row in await conn.execute(statement)]
             total = None
             if primitives.count == "exact":
-                count_statement = (
-                    sa.select(sa.func.count())
-                    .select_from(self.TABLE)
-                    .where(predicate.sql(self.TABLE))
-                )
+                count_statement = sa.select(sa.func.count()).select_from(self.TABLE).where(*visible)
                 total = (await conn.execute(count_statement)).scalar()
         return Page(rows, total)
 
 
 class GetOp:
     async def get(self, document_id: str) -> dict[str, Any] | None:
-        async with self._engine.connect() as conn:
-            result = await conn.execute(
-                sa.select(self.TABLE).where(self._id_col() == document_id)
-            )
-            return self._one(result)
+        return await self.find_one(self._id_criteria(document_id))
 
 
 class CreateOp:
@@ -273,7 +266,7 @@ class ReplaceOp:
         async with self._engine.begin() as conn:
             result = await conn.execute(
                 sa.update(self.TABLE)
-                .where(self._id_col() == document_id)
+                .where(*self._visible(self._id_criteria(document_id)))
                 .values(**values)
                 .returning(self.TABLE)
             )
@@ -282,8 +275,4 @@ class ReplaceOp:
 
 class DeleteOp:
     async def delete(self, document_id: str) -> dict[str, Any] | None:
-        async with self._engine.begin() as conn:
-            result = await conn.execute(
-                sa.delete(self.TABLE).where(self._id_col() == document_id).returning(self.TABLE)
-            )
-            return self._one(result)
+        return await self.delete_by(self._id_criteria(document_id))

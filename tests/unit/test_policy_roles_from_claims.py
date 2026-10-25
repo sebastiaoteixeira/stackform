@@ -15,7 +15,7 @@ from yaml_api_generator.generators.backend.compile_context import (
     IdpProviderDescriptor,
 )
 from yaml_api_generator.generators.backend.fastapi import access_filters
-from yaml_api_generator.generators.backend.fastapi.runtime_literals import py_constructor
+from yaml_api_generator.generators.backend.runtime_literals import py_constructor
 from yaml_api_generator.server.common.steps.authorization import _principal_has_role
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.runtime.access import role_names

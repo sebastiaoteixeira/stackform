@@ -17,9 +17,7 @@ PACKAGE = Path(__file__).parents[2] / "src" / "yaml_api_generator"
 SCHEMAS = PACKAGE / "parsers" / "schemas"
 
 # Accepted by the schema but read by no consumer yet.
-UNENFORCED = {
-    "softDelete": "0.1 collections (D19)",
-}
+UNENFORCED: dict[str, str] = {}
 
 # Read by an external tool from a block the generator copies verbatim.
 VERBATIM = {

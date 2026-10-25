@@ -6,6 +6,10 @@ Validates entity definitions and builds collection IR objects.
 from typing import Any, cast
 
 from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.parsers.transformers.lifecycle_binding import (
+    bind_lifecycle,
+    lifecycle_from_config,
+)
 from yaml_api_generator.parsers.transformers.name_validation import validate_name
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
@@ -84,14 +88,21 @@ class CollectionTransformer:
                     continue
                 id_field, id_format = id_field_result, id_format_result
 
+            lifecycle = lifecycle_from_config(repo_cfg)
+            bound_fields, lifecycle_errors = bind_lifecycle(
+                lifecycle, fields, f"repositories.{repo_name}"
+            )
+            errors.extend(lifecycle_errors)
+
             collections[repo_name] = IRCollection(
                 name=repo_name,
                 entity_name=entity_name,
                 type=entity_type,
                 idField=id_field,
                 idFormat=id_format,
-                fields=fields,
+                fields=bound_fields,
                 datastore=repo_cfg.get("datastore") or default_datastore,
+                lifecycle=lifecycle,
             )
 
         return collections, errors

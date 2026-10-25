@@ -3,10 +3,11 @@
 A query value starting with ``$`` is a reference into ``HandlerRequest.bindings``
 (``{**params, "principal", "params", "body"}``); every other value passes
 through unchanged. Results are presented the way CRUD responses are: the
-datastore's own ``_id`` becomes the canonical id field and credential fields
-are hidden.
+datastore's own ``_id`` becomes the canonical id field, credential fields
+are hidden and timestamps read as ISO 8601 UTC strings.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 _HIDDEN_FIELDS = ("_auth", "password", "apiKey")
@@ -30,10 +31,17 @@ def _lookup(path: list[str], current: Any) -> Any:
     return current
 
 
+def present_value(value: Any) -> Any:
+    """`value` as a response shows it: a stored timestamp, naive in UTC, as an ISO 8601 UTC string."""
+    if isinstance(value, datetime):
+        return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
+    return value
+
+
 def present_document(document: dict[str, Any] | None, id_field: str) -> dict[str, Any] | None:
     if document is None:
         return None
-    presented = dict(document)
+    presented = {key: present_value(value) for key, value in document.items()}
     if id_field not in presented and presented.get("_id") is not None:
         presented[id_field] = str(presented["_id"])
     if id_field != "_id":

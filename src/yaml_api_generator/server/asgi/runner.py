@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from yaml_api_generator.ir import IRDocument
+from yaml_api_generator.runtime.lifecycle import Purger
 from ..common.server_context import RuntimeContext, RuntimeRouteDescriptor
 from ..common.loader import initialize_indexes
 from ..common.pipeline import Pipeline
@@ -27,6 +28,7 @@ class ASGIApp:
     def __init__(self, ctx: RuntimeContext, registry: RepositoryRegistry, ir: IRDocument | None = None) -> None:
         self._registry = registry
         self._ir = ir
+        self._purger = Purger(repository.purge_expired for repository in registry.all())
         self._routes: dict[str, list[_RouteEntry]] = {}
         builder = PipelineBuilder(ctx=ctx, registry=registry)
 
@@ -58,8 +60,10 @@ class ASGIApp:
             if message["type"] == "lifespan.startup":
                 if self._ir is not None:
                     await initialize_indexes(self._ir, self._registry)
+                self._purger.start()
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
+                await self._purger.stop()
                 for repository in self._registry.all():
                     await repository.close()
                 await send({"type": "lifespan.shutdown.complete"})

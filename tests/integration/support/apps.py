@@ -7,9 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-import httpx
-
-from .network import free_port, wait_until
+from .network import free_port, listening
 
 STACKFORM = str(Path(sys.executable).with_name("stackform"))
 
@@ -45,25 +43,11 @@ class GeneratedBackend(Backend):
 BACKENDS = (RunBackend(), GeneratedBackend())
 
 
-def _serving(url: str) -> bool:
-    try:
-        return httpx.get(f"{url}/openapi.json", timeout=1).is_success
-    except httpx.HTTPError:
-        return False
-
-
 @contextmanager
 def launched(backend: Backend, spec: Path, workdir: Path, env: dict[str, str]) -> Iterator[str]:
     """The URL of `spec` served by `backend` until the context exits."""
     port = free_port()
     command, cwd = backend.command(spec, workdir, env, port)
-    url, log = f"http://127.0.0.1:{port}", workdir / "server.log"
-    with log.open("wb") as output:
-        process = subprocess.Popen(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT)
-        try:
-            if not wait_until(lambda: process.poll() is not None or _serving(url)) or process.poll() is not None:
-                raise RuntimeError(f"{backend.name} server did not start:\n{log.read_text()}")
-            yield url
-        finally:
-            process.terminate()
-            process.wait(timeout=10)
+    url = f"http://127.0.0.1:{port}"
+    with listening(command, cwd=cwd, env=env, probe=f"{url}/openapi.json", log=workdir / "server.log"):
+        yield url

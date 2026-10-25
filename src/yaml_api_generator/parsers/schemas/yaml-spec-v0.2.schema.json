@@ -931,6 +931,73 @@
         },
         "handler": {
           "type": "string"
+        },
+        "includeDeleted": {
+          "type": "boolean"
+        }
+      },
+      "dependentRequired": {
+        "includeDeleted": ["query"]
+      }
+    },
+    "TtlConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "seconds"],
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "RepositoryLifecycleRules": {
+      "dependentRequired": {
+        "softDelete": ["entity"],
+        "ttl": ["entity"]
+      },
+      "if": {
+        "anyOf": [
+          { "required": ["softDelete"] },
+          { "required": ["ttl"] }
+        ]
+      },
+      "then": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "if": {
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "anyOf": [
+                      { "required": ["sql"] },
+                      {
+                        "required": ["command"],
+                        "properties": { "command": { "enum": ["bulkWrite", "estimatedDocumentCount"] } }
+                      }
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": ["includeDeleted"],
+                "properties": { "includeDeleted": { "const": true } }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "not": { "required": ["includeDeleted"] }
+            }
+          }
         }
       }
     },
@@ -993,7 +1060,14 @@
     "RepositoryConfig": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [{ "$ref": "#/$defs/RepositoryLifecycleRules" }],
       "properties": {
+        "softDelete": {
+          "type": "string"
+        },
+        "ttl": {
+          "$ref": "#/$defs/TtlConfig"
+        },
         "abstract": {
           "type": "boolean"
         },

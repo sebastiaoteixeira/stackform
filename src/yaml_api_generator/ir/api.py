@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 
 from .when import WhenExpr
 from ..constants import CRUD_OPERATIONS
+from ..runtime.lifecycle import Lifecycle
 
 _PATH_PARAM = re.compile(r"\{(\w+)\}")
 
@@ -263,6 +264,7 @@ class IRCollection:
     datastore: str | None = None
     files: dict[str, IRFileField] = field(default_factory=dict)
     file_store: str | None = None
+    lifecycle: Lifecycle = Lifecycle()
 
     def scope(self, params: Iterable[str], record_param: str | None) -> tuple[str, ...]:
         """The path parameters, besides the record's own, that name fields of this collection."""

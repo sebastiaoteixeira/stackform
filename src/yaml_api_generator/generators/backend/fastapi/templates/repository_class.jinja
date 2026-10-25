@@ -12,6 +12,9 @@ class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){%
 {% if root == "SQLRepositoryBase" %}
     TABLE = {{ collection_name }}_table
 {% endif %}
+{% if lifecycle.removal or lifecycle.expiry %}
+    LIFECYCLE = {{ lifecycle | py_constructor }}
+{% endif %}
 {% elif not operations %}
     pass
 {% endif %}

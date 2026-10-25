@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, ClassVar
+from typing import Callable, ClassVar
 
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, StrictUndefined
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext
+from yaml_api_generator.generators.backend.runtime_literals import py_constructor
 from yaml_api_generator.utils.strings import to_pascal_case
 
 from .utils import runtime_module_source
@@ -43,13 +44,15 @@ def template_environment(*template_dirs: Path) -> Environment:
     token Undefined, which is valid Python syntax and therefore survives every
     syntax-level check the generated project is put through.
     """
-    return Environment(
+    env = Environment(
         loader=ChoiceLoader([FileSystemLoader(str(d)) for d in template_dirs]),
         keep_trailing_newline=True,
         trim_blocks=True,
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
+    env.filters["py_constructor"] = py_constructor
+    return env
 
 
 class CodeGenerator(ABC):

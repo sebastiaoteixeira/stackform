@@ -4,7 +4,7 @@
 ``{"updateOne": {"filter": ..., "update": ..., "upsert": true}}``. A query's
 ``identity`` names the ``field`` and ``format`` of the id each document it
 inserts gets from ``run_mongo``'s ``new_id``; a document keeps an id it already
-has.
+has. A delete's ``removal`` is the update it applies in place of erasing rows.
 """
 
 from collections.abc import Awaitable, Callable
@@ -22,8 +22,10 @@ _BULK_REQUESTS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "updateOne": lambda spec: UpdateOne(spec["filter"], spec["update"], upsert=spec.get("upsert", False)),
     "updateMany": lambda spec: UpdateMany(spec["filter"], spec["update"], upsert=spec.get("upsert", False)),
     "replaceOne": lambda spec: ReplaceOne(spec["filter"], spec["replacement"], upsert=spec.get("upsert", False)),
-    "deleteOne": lambda spec: DeleteOne(spec["filter"]),
-    "deleteMany": lambda spec: DeleteMany(spec["filter"]),
+    "deleteOne": lambda spec: UpdateOne(spec["filter"], spec["removal"]) if spec.get("removal") else DeleteOne(spec["filter"]),
+    "deleteMany": lambda spec: (
+        UpdateMany(spec["filter"], spec["removal"]) if spec.get("removal") else DeleteMany(spec["filter"])
+    ),
 }
 
 
@@ -134,6 +136,10 @@ async def _replace_one(target: Any, query: dict[str, Any]) -> dict[str, Any] | N
 
 @_command("deleteOne", "findOneAndDelete")
 async def _delete_one(target: Any, query: dict[str, Any]) -> dict[str, Any] | None:
+    if removal := query.get("removal"):
+        return _stringified(await target.find_one_and_update(
+            _filter(query), removal, return_document=ReturnDocument.AFTER
+        ))
     return _stringified(await target.find_one_and_delete(_filter(query)))
 
 
@@ -145,8 +151,9 @@ async def _update_many(target: Any, query: dict[str, Any]) -> dict[str, int]:
 
 @_command("deleteMany")
 async def _delete_many(target: Any, query: dict[str, Any]) -> dict[str, int]:
-    result = await target.delete_many(_filter(query))
-    return {"deleted": result.deleted_count}
+    if removal := query.get("removal"):
+        return {"deleted": (await target.update_many(_filter(query), removal)).modified_count}
+    return {"deleted": (await target.delete_many(_filter(query))).deleted_count}
 
 
 @_command("bulkWrite")
