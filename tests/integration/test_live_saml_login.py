@@ -78,6 +78,24 @@ async def _identity_provider_post(client: httpx.AsyncClient, identity_provider: 
     return unescape(action), saml_response
 
 
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _signed_in(client: httpx.AsyncClient, identity_provider: IdentityProvider) -> str:
+    """Complete a login and return the app token the login code exchanges for."""
+    action, saml_response = await _identity_provider_post(client, identity_provider)
+    callback = await client.post(action, data={"SAMLResponse": saml_response})
+    assert callback.status_code == 303
+    code = parse_qs(urlparse(callback.headers["location"]).query)["code"][0]
+    return (await client.post("/auth/exchange", json={"code": code})).json()["token"]
+
+
+async def _user(client: httpx.AsyncClient, token: str) -> dict:
+    users = (await client.get("/users", headers=_bearer(token))).json()
+    return next(user for user in users if user["email"] == EMAIL)
+
+
 async def test_sign_in_resolves_relations_and_exchanges_the_login_code(client, identity_provider):
     organization = await client.post("/organizations", json={"name": "Acme Corporation", "code": ORGANIZATION})
     assert organization.status_code in (200, 201)
@@ -142,3 +160,55 @@ async def test_unknown_user_is_refused_without_auto_provision(invitation_only_ap
         callback = await client.post(action, data={"SAMLResponse": saml_response})
 
     assert callback.status_code == 403
+
+
+async def test_signing_in_again_keeps_the_user_and_refreshes_mapped_fields(client, identity_provider):
+    first_token = await _signed_in(client, identity_provider)
+    before = await _user(client, first_token)
+    with identity_provider.asserting({"displayName": "Ada King"}):
+        after = await _user(client, await _signed_in(client, identity_provider))
+
+    assert (after["id"], after["name"]) == (before["id"], "Ada King")
+    assert (await client.get("/users", headers=_bearer(first_token))).status_code == 200
+
+
+async def test_multi_valued_claim_leaves_the_relation_unset(client, identity_provider):
+    with identity_provider.asserting({"urn:oid:2.5.4.10": [ORGANIZATION, "BETA"]}):
+        token = await _signed_in(client, identity_provider)
+
+    assert (await _user(client, token))["organizationId"] is None
+
+
+async def test_string_claim_matches_a_number_field(client, identity_provider):
+    organization = await client.post("/organizations", json={"name": "Registered", "code": "REG", "registry": 42})
+    with identity_provider.asserting({"registryNumber": "42"}):
+        token = await _signed_in(client, identity_provider)
+
+    assert (await _user(client, token))["registeredOrganizationId"] == organization.json()["id"]
+
+
+@pytest.mark.parametrize(
+    "saml_response", ["not-base64!!", base64.b64encode(b"<unclosed").decode()], ids=["base64", "xml"]
+)
+async def test_malformed_response_is_a_bad_request(client, saml_response):
+    callback = await client.post("/users/auth/corporate/callback", data={"SAMLResponse": saml_response})
+
+    assert callback.status_code == 400
+
+
+async def test_replayed_assertion_is_rejected(client, identity_provider):
+    action, saml_response = await _identity_provider_post(client, identity_provider)
+
+    assert (await client.post(action, data={"SAMLResponse": saml_response})).status_code == 303
+    assert (await client.post(action, data={"SAMLResponse": saml_response})).status_code == 401
+
+
+async def test_identity_record_is_created_without_provider_fields(client, identity_provider):
+    token = await _signed_in(client, identity_provider)
+
+    created = await client.post(
+        "/users", json={"email": "grace@example.com", "name": "Grace Hopper"}, headers=_bearer(token)
+    )
+
+    assert created.is_success
+    assert created.json()["email"] == "grace@example.com"

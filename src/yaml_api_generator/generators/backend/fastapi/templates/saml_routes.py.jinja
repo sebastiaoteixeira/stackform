@@ -8,15 +8,12 @@
 {% endif %}
 {% endfor %}
 {% endfor %}
-from typing import Any
-
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 
-from dependencies.claims import resolve_claim_path, resolve_relations
-from dependencies.login_codes import issue_login_code
-{{ login.repository_imports(_bound) -}}
+{{ login.imports(_bound) }}
 from dependencies.saml import SAMLServiceProvider
+from dependencies.saml_assertions import assertion_ledgers
 from settings import settings
 
 router = APIRouter()
@@ -31,7 +28,9 @@ _{{ sym }} = SAMLServiceProvider(
     {{ provider.idp_metadata_url | py_literal }},
     {{ provider.sp_entity_id | py_literal }},
     "{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}",
+    assertion_ledgers["{{ 'sql' if col.is_sql else 'mongo' }}"],
 )
+_{{ sym }}_binding = {{ binding | py_constructor }}
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}")
@@ -40,9 +39,9 @@ async def saml_{{ sym }}_login(request: Request) -> RedirectResponse:
 
 
 @router.post("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def saml_{{ sym }}_callback(request: Request, {{ login.repository_params(col, binding) }}) -> RedirectResponse:
+async def saml_{{ sym }}_callback(request: Request) -> RedirectResponse:
     claims = await _{{ sym }}.claims(request)
-{{ login.sign_in(col, binding, sym) }}
+{{ login.sign_in(col, sym) }}
     return response
 
 

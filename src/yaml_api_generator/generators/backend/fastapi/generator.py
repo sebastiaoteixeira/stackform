@@ -443,11 +443,13 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 (_STATIC_DIR / "idp_auth.py").read_text()
             )
         if context.auth.has_oidc_auth or context.auth.has_saml_auth:
-            (deps_dir / "claims.py").write_text(
-                (_STATIC_DIR / "claims.py").read_text()
-            )
+            for module in ("claims", "provisioning"):
+                (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
         if context.auth.has_saml_auth:
             (deps_dir / "saml.py").write_text(runtime_module_source("saml"))
+            (deps_dir / "saml_assertions.py").write_text(
+                env.get_template("saml_assertions.py.jinja").render(auth=context.auth)
+            )
         (deps_dir / "pagination.py").write_text(
             runtime_module_source("pagination")
         )

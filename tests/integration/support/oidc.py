@@ -115,11 +115,21 @@ class _AuthorizationServerHandler(BaseHTTPRequestHandler):
         return
 
 
-@dataclass(frozen=True)
+@dataclass
 class AuthorizationServer:
     url: str
     client_secret: str
     userinfo: dict
+
+    @contextmanager
+    def asserting(self, claims: dict) -> Iterator["AuthorizationServer"]:
+        """Answer userinfo with ``claims`` over the current ones until the context exits."""
+        current = self.userinfo
+        self.userinfo = {**current, **claims}
+        try:
+            yield self
+        finally:
+            self.userinfo = current
 
     @property
     def discovery_url(self) -> str:

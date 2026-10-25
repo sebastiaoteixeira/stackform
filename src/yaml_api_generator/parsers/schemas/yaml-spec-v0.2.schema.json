@@ -291,7 +291,8 @@
       "additionalProperties": false,
       "properties": {
         "identifier": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "via": {
           "oneOf": [
@@ -376,7 +377,8 @@
           "type": "string"
         },
         "identifier": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "claim_mapping": {
           "type": "object",
@@ -402,6 +404,7 @@
               },
               "match": {
                 "type": "object",
+                "minProperties": 1,
                 "additionalProperties": {
                   "type": "string"
                 }

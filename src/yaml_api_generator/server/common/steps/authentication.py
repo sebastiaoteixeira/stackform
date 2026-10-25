@@ -2,13 +2,14 @@ import base64
 from typing import Any
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
+from yaml_api_generator.runtime.claims import resolve_claim_path
 from ..auth import idp, provisioning, verify_password
 from ..auth.jwt import SessionTokens
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
 from ..request_context import RequestContext
 from ..server_context import RuntimeCollectionDescriptor, RuntimeIdentityDescriptor
 from ..repositories import BaseRepository, RepositoryRegistry
-from ..utils.field_access import get_nested_field, resolve_claim_path
+from ..utils.field_access import get_nested_field
 from ..utils.document_matcher import find_document_with_password
 from . import Step
 from .authorization import UnauthorizedError
@@ -74,11 +75,11 @@ async def _resolve_idp_principal(
                 return _build_service_principal(claims, identity, binding)
 
             collection = collections[collection_name]
-            record = await provisioning.resolve_record(
-                claims, binding, collection, registry.for_collection(collection_name),
-                is_idp=True,
-                collections=collections,
-                registry=registry,
+            record = await provisioning.provider_binding(binding).sign_in(
+                claims,
+                provisioning.records_of(registry, collections),
+                collection_name,
+                collection.id_field,
             )
             if record is None:
                 raise UnauthorizedError("User not found and auto-provisioning is disabled")

@@ -18,45 +18,19 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
+from ...ir.api import (
+    IRFileField,
+    IRPagination,
+    IRProvider,
+    IRProviderBinding,
+    IRRolesConfig,
+    IRService,
+)
 from ...ir.when import WhenExpr
 from ...utils.strings import to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
 SAML_REQUIREMENTS = ("python3-saml", "python-multipart")
-
-
-@dataclass(frozen=True)
-class ProviderRelationDescriptor:
-    fk_field: str
-    collection: str
-    id_field: str
-    match: dict[str, str]
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "fk_field": self.fk_field,
-            "collection": self.collection,
-            "id_field": self.id_field,
-            "match": self.match,
-        }
-
-
-@dataclass(frozen=True)
-class ProviderBindingDescriptor:
-    provider: str
-    identifier: str
-    claim_mapping: dict[str, str]
-    auto_provision: bool
-    relations: list[ProviderRelationDescriptor]
-
-    @property
-    def relations_data(self) -> list[dict[str, Any]]:
-        return [r.as_dict() for r in self.relations]
-
-    def related_collections(self, owner: str) -> list[str]:
-        """Collections the relations point at, apart from the ``owner`` identity collection."""
-        return list(dict.fromkeys(r.collection for r in self.relations if r.collection != owner))
 
 
 @dataclass(frozen=True)
@@ -315,7 +289,7 @@ class FileRouteDescriptor:
 @dataclass(frozen=True)
 class IdentityCollectionDescriptor:
     name: str
-    bindings: list[ProviderBindingDescriptor]
+    bindings: tuple[IRProviderBinding, ...]
     id_field: str
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
@@ -340,7 +314,7 @@ class IdentityCollectionDescriptor:
         password_binding = self.get_binding("password")
         return password_binding.identifier if password_binding else None
 
-    def get_binding(self, provider: str) -> "ProviderBindingDescriptor | None":
+    def get_binding(self, provider: str) -> IRProviderBinding | None:
         return next((b for b in self.bindings if b.provider == provider), None)
 
 

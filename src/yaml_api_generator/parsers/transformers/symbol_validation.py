@@ -23,7 +23,7 @@ from yaml_api_generator.parsers.yaml_parser import ConfigError
 from yaml_api_generator.ir import IRSymbolRef
 from yaml_api_generator.parsers.where_parser import WhereBinding, parse_where_binding
 
-from .auth_validation import _resolved_fields
+from .entity_inheritance import inherited_fields
 from .symbol_resolution import SymbolScope
 from .v02.binding_classifier import BindingKind, binding_kind
 
@@ -408,7 +408,7 @@ def _unknown_fields(
 def _fields_by_collection(spec: dict[str, Any]) -> dict[str, frozenset[str]]:
     entities = spec.get("entities") or {}
     return {
-        name: frozenset(_resolved_fields(repo["entity"], entities))
+        name: frozenset(inherited_fields(repo["entity"], entities))
         for name, repo in (spec.get("repositories") or {}).items()
         if isinstance(repo, dict) and isinstance(entities.get(repo.get("entity")), dict)
     }

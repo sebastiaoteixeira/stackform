@@ -3,14 +3,12 @@
 Converts IR identity collections and providers into auth configuration descriptors.
 """
 
-from collections.abc import Iterable
 from typing import Any
 
 from yaml_api_generator.ir import (
     IRCollection,
     IRIdentityCollection,
     IROIDCProvider,
-    IRProviderBinding,
     IRSAMLProvider,
     flatten_role_hierarchy,
 )
@@ -18,8 +16,6 @@ from ..compile_context import (
     AuthConfig,
     IdpProviderDescriptor,
     IdentityCollectionDescriptor,
-    ProviderBindingDescriptor,
-    ProviderRelationDescriptor,
 )
 
 
@@ -79,7 +75,7 @@ class AuthBuilder:
             descriptors.append(
                 IdentityCollectionDescriptor(
                     name=name,
-                    bindings=self._build_bindings(identity.bindings, collections),
+                    bindings=identity.bindings,
                     id_field=col.idField,
                     id_format=col.idFormat,
                     roles=identity.roles,
@@ -108,31 +104,6 @@ class AuthBuilder:
             providers=providers,
             role_hierarchies=role_hierarchies,
         )
-
-    @staticmethod
-    def _build_bindings(
-        bindings: Iterable[IRProviderBinding],
-        collections: dict[str, IRCollection],
-    ) -> list[ProviderBindingDescriptor]:
-        result = []
-        for b in bindings:
-            relations = [
-                ProviderRelationDescriptor(
-                    fk_field=fk_field,
-                    collection=rel.collection,
-                    id_field=collections[rel.collection].idField if rel.collection in collections else "id",
-                    match=dict(rel.match),
-                )
-                for fk_field, rel in b.relations.items()
-            ]
-            result.append(ProviderBindingDescriptor(
-                provider=b.provider,
-                identifier=b.identifier,
-                claim_mapping=dict(b.claim_mapping),
-                auto_provision=b.auto_provision,
-                relations=relations,
-            ))
-        return result
 
     @staticmethod
     def _build_idp_providers(providers: dict[str, Any]) -> list[IdpProviderDescriptor]:

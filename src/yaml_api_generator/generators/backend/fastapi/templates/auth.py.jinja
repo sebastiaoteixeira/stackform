@@ -2,14 +2,12 @@ import base64
 import hashlib
 import hmac
 import secrets
+{% if auth.has_idp_auth %}
+from dataclasses import dataclass
+{% endif %}
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request
-{% if auth.has_idp_auth %}
-from pymongo.database import Database
-
-from dependencies.mongodb import get_database
-{% endif %}
 {% for identity in auth.identity_collections %}
 from dependencies.repositories import get_{{ identity.name }}_repository
 {% endfor %}
@@ -20,7 +18,9 @@ from dependencies.jwt_utils import decode_jwt_token
 {% endif %}
 {% if auth.has_idp_auth %}
 from dependencies import idp_auth
-from dependencies.claims import resolve_claim_path, resolve_relations
+from dependencies.claims import resolve_claim_path
+from dependencies.provisioning import ProviderBinding, ProviderRelation
+from dependencies.repositories import repository
 {% endif %}
 {% if ctx is defined and ctx.session.uses_cookie %}
 from dependencies.session_cookie import session_token_from_request
@@ -134,16 +134,38 @@ _IDP_ISSUERS: dict[str, dict] = {
 
 async def _find_idp_provider_for_issuer(token_issuer: str) -> dict | None:
     for provider_meta in _IDP_ISSUERS.values():
-        derived = await idp_auth.fetch_issuer(provider_meta["discovery_url"])
-        if derived == token_issuer:
+        issuer = provider_meta["issuer"] or await idp_auth.fetch_issuer(provider_meta["discovery_url"])
+        if issuer == token_issuer:
             return provider_meta
     return None
 
 
-async def _resolve_idp_principal(
-    bearer_token: str,
-    db: Database,
-) -> dict[str, Any]:
+@dataclass(frozen=True)
+class _IdpSignIn:
+    collection: str
+    id_field: str
+    binding: ProviderBinding
+    roles_claim: str | None
+
+
+_IDP_SIGN_INS: tuple[_IdpSignIn, ...] = (
+{% for identity in auth.identity_collections %}
+{% for binding in identity.bindings %}
+{% set provider = auth.providers.get(binding.provider) %}
+{% if provider and provider.is_idp %}
+    _IdpSignIn(
+        {{ identity.name | py_literal }},
+        {{ identity.id_field | py_literal }},
+        {{ binding | py_constructor }},
+        {{ (binding.claim_mapping.get(identity.roles_field, identity.roles_field) if identity.roles_field else None) | py_literal }},
+    ),
+{% endif %}
+{% endfor %}
+{% endfor %}
+)
+
+
+async def _resolve_idp_principal(bearer_token: str) -> dict[str, Any]:
     token_issuer = idp_auth.unverified_issuer(bearer_token)
     provider_meta = await _find_idp_provider_for_issuer(token_issuer) if token_issuer else None
     if provider_meta is None:
@@ -160,73 +182,30 @@ async def _resolve_idp_principal(
     if claims is None:
         raise HTTPException(status_code=401, detail="Invalid IdP token")
 
-    provider_name = provider_meta["name"]
-{% for identity in auth.identity_collections %}
-{% for binding in identity.bindings %}
-{% set provider = auth.providers.get(binding.provider) %}
-{% if provider and provider.is_idp %}
-    if provider_name == {{ binding.provider | py_literal }}:
-        claim_mapping: dict[str, str] = {{ binding.claim_mapping | tojson }}
-        _roles_claim_path = {{ (binding.claim_mapping.get(identity.roles_field, identity.roles_field) if identity.roles_field else None) | py_literal }}
-        user_fields: dict[str, Any] = {
-            local_field: resolved
-            for local_field, oidc_claim in claim_mapping.items()
-            if (resolved := resolve_claim_path(claims, oidc_claim)) is not None
+    sign_in = next((s for s in _IDP_SIGN_INS if s.binding.provider == provider_meta["name"]), None)
+    if sign_in is None:
+        raise HTTPException(status_code=401, detail="Untrusted token issuer")
+    binding = sign_in.binding
+    sub = str(claims["sub"])
+    roles = _roles_from_claims(claims, sign_in.roles_claim)
+    if resolve_claim_path(claims, binding.claim_mapping.get(binding.identifier, binding.identifier)) is None:
+        return {
+            "sub": sub,
+            "client_id": claims.get("azp") or claims.get("client_id") or sub,
+            "is_service": True,
+            "roles": roles,
+            "record": None,
+            "identity_collection": None,
         }
-        idp_sub = str(claims["sub"])
-        _identifier_oidc_claim = claim_mapping.get({{ binding.identifier | py_literal }}, {{ binding.identifier | py_literal }})
-        if resolve_claim_path(claims, _identifier_oidc_claim) is None:
-            return {
-                "sub": idp_sub,
-                "client_id": claims.get("azp") or claims.get("client_id") or idp_sub,
-                "is_service": True,
-                "roles": _roles_from_claims(claims, _roles_claim_path),
-                "record": None,
-                "identity_collection": None,
-            }
-        if "{{ binding.identifier }}" not in user_fields:
-            user_fields["{{ binding.identifier }}"] = (
-                claims.get("email") or claims.get("login") or idp_sub
-            )
-        col = db["{{ identity.name }}"]
-        cursor = col.find({})
-        docs = await cursor.to_list(length=None)
-        existing = next(
-            (d for d in docs if str(d.get("{{ identity.id_field }}", "")) == idp_sub),
-            None,
-        )
-{% set _relations_json = binding.relations_data | tojson %}
-        async def _lookup_{{ binding.provider | py_identifier }}(coll: str, query: dict) -> dict | None:
-            return await db[coll].find_one(query)
-        _fk_fields = await resolve_relations(claims, {{ _relations_json }}, _lookup_{{ binding.provider | py_identifier }})
-        if existing is not None:
-{% if binding.relations %}
-            if _fk_fields:
-                await col.update_one({"{{ identity.id_field }}": idp_sub}, {"$set": _fk_fields})
-                existing = {**existing, **_fk_fields}
-{% endif %}
-            return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": existing, "roles": _roles_from_claims(claims, _roles_claim_path)}
-{% if binding.auto_provision %}
-        payload = {**user_fields, **_fk_fields}
-        payload["{{ identity.id_field }}"] = idp_sub
-        created = await col.insert_one(payload)
-        payload["_id"] = created.inserted_id
-        return {"sub": idp_sub, "identity_collection": "{{ identity.name }}", "record": payload, "roles": _roles_from_claims(claims, _roles_claim_path)}
-{% else %}
+    record = await binding.sign_in(claims, repository, sign_in.collection, sign_in.id_field)
+    if record is None:
         raise HTTPException(status_code=401, detail="User not found and auto-provisioning is disabled")
-{% endif %}
-{% endif %}
-{% endfor %}
-{% endfor %}
-    raise HTTPException(status_code=401, detail="Untrusted token issuer")
+    return {"sub": sub, "identity_collection": sign_in.collection, "record": record, "roles": roles}
 
 {% endif %}
 
 async def resolve_principal(
     request: Request,
-{% if auth.has_idp_auth %}
-    db: Database | None = None,
-{% endif %}
     repositories: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     repositories = repositories or {}
@@ -243,9 +222,7 @@ async def resolve_principal(
 
 {% if auth.has_idp_auth %}
     if bearer_token is not None and idp_auth.unverified_issuer(bearer_token) is not None:
-        if db is None:
-            raise HTTPException(status_code=500, detail="IdP datastore is unavailable")
-        return await _resolve_idp_principal(bearer_token, db)
+        return await _resolve_idp_principal(bearer_token)
 {% endif %}
 
 {% if auth.uses_jwt %}
@@ -302,22 +279,13 @@ async def get_optional_principal(
 {% for identity in auth.identity_collections %}
     {{ identity.name }}_repository=Depends(get_{{ identity.name }}_repository),
 {% endfor %}
-{% if auth.has_idp_auth %}
-    db: Database = Depends(get_database),
-{% endif %}
 ) -> dict[str, Any] | None:
     repositories = {
 {% for identity in auth.identity_collections %}
         "{{ identity.name }}": {{ identity.name }}_repository,
 {% endfor %}
     }
-    return await resolve_principal(
-        request,
-{% if auth.has_idp_auth %}
-        db,
-{% endif %}
-        repositories=repositories,
-    )
+    return await resolve_principal(request, repositories=repositories)
 
 
 async def require_principal(

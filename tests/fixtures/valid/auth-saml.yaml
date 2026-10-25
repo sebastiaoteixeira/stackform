@@ -25,6 +25,7 @@ entities:
       id: { type: id }
       name: { type: string, required: true }
       code: { type: string, required: true, unique: true }
+      registry: { type: number }
   user:
     type: auth
     auth:
@@ -40,11 +41,16 @@ entities:
               collection: organizations
               match:
                 code: "urn:oid:2.5.4.10"
+            registeredOrganizationId:
+              collection: organizations
+              match:
+                registry: registryNumber
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }
       name: { type: string, required: true }
       organizationId: { type: ref, ref: organizations }
+      registeredOrganizationId: { type: ref, ref: organizations }
 repositories:
   organizations:
     entity: organization

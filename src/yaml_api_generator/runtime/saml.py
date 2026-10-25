@@ -1,7 +1,8 @@
 """SAML 2.0 service provider: login redirect, assertion consumer, metadata and single logout."""
 
+import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
@@ -13,6 +14,7 @@ _POST_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
 _REDIRECT_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
 _EMAIL_NAME_ID = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
 _SLO_MESSAGES = frozenset({"SAMLRequest", "SAMLResponse"})
+_REPLAY_WINDOW_SECONDS = 300
 
 
 def assertion_claims(attributes: dict[str, list[Any]], name_id: str | None) -> dict[str, Any]:
@@ -23,6 +25,29 @@ def assertion_claims(attributes: dict[str, list[Any]], name_id: str | None) -> d
     }
 
 
+class AssertionLedger(Protocol):
+    """Remembers consumed assertion IDs until they expire."""
+
+    async def consume(self, assertion_id: str, expires_at: float) -> bool:
+        """Record ``assertion_id``; ``False`` when it was already consumed."""
+        ...
+
+
+@dataclass
+class MemoryAssertionLedger:
+    """An ``AssertionLedger`` held by one process."""
+
+    _expiries: dict[str, float] = field(default_factory=dict)
+
+    async def consume(self, assertion_id: str, expires_at: float) -> bool:
+        now = time.time()
+        self._expiries = {seen: expiry for seen, expiry in self._expiries.items() if expiry >= now}
+        if assertion_id in self._expiries:
+            return False
+        self._expiries[assertion_id] = expires_at
+        return True
+
+
 @dataclass
 class SAMLServiceProvider:
     """The SP endpoints mounted under ``login_path``, trusting the IdP published at ``idp_metadata_url``."""
@@ -30,6 +55,7 @@ class SAMLServiceProvider:
     idp_metadata_url: str
     entity_id: str
     login_path: str
+    assertions: AssertionLedger = field(default_factory=MemoryAssertionLedger)
     _idp: dict[str, Any] | None = field(default=None, init=False, repr=False)
 
     @property
@@ -47,12 +73,18 @@ class SAMLServiceProvider:
         auth = await self._auth(request)
         if "SAMLResponse" not in (await request.form()):
             raise HTTPException(status_code=400, detail="Missing SAMLResponse")
-        auth.process_response()
+        try:
+            auth.process_response()
+        except (ValueError, SyntaxError) as error:
+            raise HTTPException(status_code=400, detail="Malformed SAMLResponse") from error
         if auth.get_errors() or not auth.is_authenticated():
             raise HTTPException(
                 status_code=401,
                 detail=f"SAML authentication failed: {auth.get_last_error_reason() or 'not authenticated'}",
             )
+        expires_at = auth.get_last_assertion_not_on_or_after() or time.time() + _REPLAY_WINDOW_SECONDS
+        if not await self.assertions.consume(auth.get_last_assertion_id(), expires_at):
+            raise HTTPException(status_code=401, detail="SAML assertion already consumed")
         return assertion_claims(auth.get_attributes(), auth.get_nameid())
 
     async def metadata(self, request: Request) -> str:

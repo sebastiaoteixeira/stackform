@@ -5,7 +5,7 @@ import datetime
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -24,6 +24,10 @@ _ASSERTION = "urn:oasis:names:tc:SAML:2.0:assertion"
 
 def _instant(moment: datetime.datetime) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _values(values: str | list[str]) -> list[str]:
+    return values if isinstance(values, list) else [values]
 
 
 def _self_signed(key: rsa.RSAPrivateKey) -> x509.Certificate:
@@ -52,13 +56,31 @@ class AuthnRequest:
         return cls(root.attrib["AssertionConsumerServiceURL"], root.findtext(f"{{{_ASSERTION}}}Issuer"))
 
 
+Attributes = dict[str, str | list[str]]
+
+
 @dataclass(frozen=True)
+class Subject:
+    name_id: str
+    attributes: Attributes
+
+
+@dataclass
 class IdentityProvider:
     url: str
     key: rsa.RSAPrivateKey
     certificate: x509.Certificate
-    name_id: str
-    attributes: dict[str, str]
+    subject: Subject
+
+    @contextmanager
+    def asserting(self, attributes: Attributes) -> Iterator["IdentityProvider"]:
+        """Assert ``attributes`` over the current ones until the context exits."""
+        current = self.subject
+        self.subject = replace(current, attributes={**current.attributes, **attributes})
+        try:
+            yield self
+        finally:
+            self.subject = current
 
     @property
     def metadata_url(self) -> str:
@@ -78,12 +100,14 @@ class IdentityProvider:
 </md:EntityDescriptor>"""
 
     def response(self, request: AuthnRequest) -> str:
-        """Base64 signed Response asserting ``name_id`` and ``attributes`` to the requesting SP."""
+        """Base64 signed Response asserting the current subject to the requesting SP; a list attribute is multi-valued."""
         now = datetime.datetime.now(datetime.UTC)
         issued, expires = _instant(now), _instant(now + datetime.timedelta(minutes=5))
         attributes = "".join(
-            f'<saml:Attribute Name="{escape(name)}"><saml:AttributeValue>{escape(value)}</saml:AttributeValue></saml:Attribute>'
-            for name, value in self.attributes.items()
+            f'<saml:Attribute Name="{escape(name)}">'
+            + "".join(f"<saml:AttributeValue>{escape(value)}</saml:AttributeValue>" for value in _values(values))
+            + "</saml:Attribute>"
+            for name, values in self.subject.attributes.items()
         )
         document = f"""<samlp:Response xmlns:samlp="{_PROTOCOL}" xmlns:saml="{_ASSERTION}" ID="_{uuid.uuid4().hex}" Version="2.0" IssueInstant="{issued}" Destination="{escape(request.acs_url)}">
   <saml:Issuer>{self.metadata_url}</saml:Issuer>
@@ -91,7 +115,7 @@ class IdentityProvider:
   <saml:Assertion ID="_{uuid.uuid4().hex}" Version="2.0" IssueInstant="{issued}">
     <saml:Issuer>{self.metadata_url}</saml:Issuer>
     <saml:Subject>
-      <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{escape(self.name_id)}</saml:NameID>
+      <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{escape(self.subject.name_id)}</saml:NameID>
       <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
         <saml:SubjectConfirmationData NotOnOrAfter="{expires}" Recipient="{escape(request.acs_url)}"/>
       </saml:SubjectConfirmation>
@@ -146,11 +170,11 @@ class _IdentityProviderHandler(BaseHTTPRequestHandler):
 
 
 @contextmanager
-def live_identity_provider(name_id: str, attributes: dict[str, str]) -> Iterator[IdentityProvider]:
+def live_identity_provider(name_id: str, attributes: Attributes) -> Iterator[IdentityProvider]:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     server = ThreadingHTTPServer(("127.0.0.1", 0), lambda *args: _IdentityProviderHandler(provider, *args))
     host, port = server.server_address
-    provider = IdentityProvider(f"http://{host}:{port}", key, _self_signed(key), name_id, attributes)
+    provider = IdentityProvider(f"http://{host}:{port}", key, _self_signed(key), Subject(name_id, attributes))
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

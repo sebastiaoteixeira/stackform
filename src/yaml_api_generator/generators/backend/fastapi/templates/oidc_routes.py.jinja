@@ -22,15 +22,13 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from dependencies.claims import resolve_claim_path, resolve_relations
 {% if _dpop_providers %}
 from dependencies.dpop import DPoPProofFactory, request_with_dpop
 {% endif %}
-from dependencies.login_codes import issue_login_code
-{{ login.repository_imports(_bound) -}}
+{{ login.imports(_bound) }}
 from settings import settings
 
 router = APIRouter()
@@ -47,6 +45,7 @@ _{{ provider_name | py_identifier }}_dpop = DPoPProofFactory.from_pem(
 {% set sym = (col.name ~ "_" ~ provider_name) | py_identifier %}
 
 _{{ sym }}_discovery: dict[str, Any] | None = None
+_{{ sym }}_binding = {{ binding | py_constructor }}
 
 
 async def _get_{{ sym }}_discovery() -> dict[str, Any]:
@@ -103,7 +102,7 @@ async def oidc_{{ sym }}_login(request: Request) -> RedirectResponse:
 
 
 @router.get("/{{ col.name }}/auth/{{ provider_name }}/callback")
-async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None = None, {{ login.repository_params(col, binding) }}) -> RedirectResponse:
+async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None = None) -> RedirectResponse:
     expected_state = request.cookies.get("{{ sym }}_state")
     if not state or not expected_state or not secrets.compare_digest(state, expected_state):
         raise HTTPException(status_code=400, detail="Invalid OIDC state")
@@ -148,25 +147,6 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None
             raise HTTPException(status_code=401, detail="Provider did not issue a DPoP-bound token")
         {% endif %}
 
-        {% if provider_name == "github" %}
-        {% if provider.dpop %}
-        userinfo_resp = await request_with_dpop(
-            client,
-            "GET",
-            "https://api.github.com/user",
-            _{{ provider_name | py_identifier }}_dpop,
-            access_token=token_data["access_token"],
-            headers={
-                "Authorization": f"DPoP {token_data['access_token']}",
-            },
-        )
-        {% else %}
-        userinfo_resp = await client.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"Bearer {token_data['access_token']}"},
-        )
-        {% endif %}
-        {% else %}
         userinfo_endpoint = discovery.get("userinfo_endpoint", "")
         {% if provider.dpop %}
         userinfo_resp = await request_with_dpop(
@@ -185,7 +165,6 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None
             headers={"Authorization": f"Bearer {token_data['access_token']}"},
         )
         {% endif %}
-        {% endif %}
         if userinfo_resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Failed to fetch user info")
         claims = userinfo_resp.json()
@@ -194,7 +173,7 @@ async def oidc_{{ sym }}_callback(request: Request, code: str, state: str | None
     if exp is not None and int(exp) < int(time.time()):
         raise HTTPException(status_code=401, detail="Token expired")
 
-{{ login.sign_in(col, binding, sym) }}
+{{ login.sign_in(col, sym) }}
     response.delete_cookie("{{ sym }}_state", path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback")
 {% if provider.pkce %}
     response.delete_cookie("{{ sym }}_pkce_verifier", path="{{ base_prefix }}/{{ col.name }}/auth/{{ provider_name }}/callback")

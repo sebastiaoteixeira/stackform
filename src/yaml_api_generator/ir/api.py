@@ -424,6 +424,11 @@ def flatten_role_hierarchy(
 class IRProviderRelation:
     collection: str
     match: dict[str, str] = field(default_factory=dict)
+    id_field: str = "id"
+    match_types: dict[str, str] = field(default_factory=dict)
+
+
+CREDENTIAL_PROVIDERS = frozenset({"password", "apiKey"})
 
 
 @dataclass(frozen=True)
@@ -433,6 +438,11 @@ class IRProviderBinding:
     claim_mapping: dict[str, str] = field(default_factory=dict)
     auto_provision: bool = True
     relations: dict[str, IRProviderRelation] = field(default_factory=dict)
+
+    @property
+    def stores_credential(self) -> bool:
+        """``password`` and ``apiKey`` bindings take their secret from a body field named after the provider."""
+        return self.provider in CREDENTIAL_PROVIDERS
 
 
 @dataclass(frozen=True)

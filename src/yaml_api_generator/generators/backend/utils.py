@@ -12,7 +12,18 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 
 _RUNTIME_MODULES = frozenset(
-    {"dpop", "saml", "pagination", "files", "multipart", "file_requests", "filesystem_store", "s3_store"}
+    {
+        "dpop",
+        "saml",
+        "claims",
+        "provisioning",
+        "pagination",
+        "files",
+        "multipart",
+        "file_requests",
+        "filesystem_store",
+        "s3_store",
+    }
 )
 
 

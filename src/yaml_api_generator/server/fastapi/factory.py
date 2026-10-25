@@ -422,14 +422,12 @@ class _ExternalLogin:
     async def redirect(
         self, request: Request, claims: dict[str, Any], binding: IRProviderBinding
     ) -> RedirectResponse:
-        code = await provisioning.issue_login_code(
-            claims,
-            binding,
-            self.collection,
-            self.registry.for_collection(self.collection.name),
-            self.collections,
-            self.registry,
+        record = await provisioning.provider_binding(binding).sign_in(
+            claims, provisioning.records_of(self.registry, self.collections), self.collection.name
         )
+        if record is None:
+            raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+        code = login_codes.issue(str(record[self.collection.id_field]), self.collection.name)
         # 303 so the browser follows a POSTed SAML assertion with a GET
         return RedirectResponse(url=f"{_frontend_url(request)}/auth/callback?code={code}", status_code=303)
 

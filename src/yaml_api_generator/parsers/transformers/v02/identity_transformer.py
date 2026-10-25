@@ -77,10 +77,7 @@ class IdentityTransformer:
                     claim_mapping=entry.get("claim_mapping", {}),
                     auto_provision=entry.get("auto_provision", True),
                     relations={
-                        fk: IRProviderRelation(
-                            collection=spec["collection"],
-                            match=spec.get("match", {}),
-                        )
+                        fk: self._relation(spec, collections[spec["collection"]])
                         for fk, spec in (entry.get("relations") or {}).items()
                     },
                 )
@@ -94,6 +91,15 @@ class IdentityTransformer:
                 roles_field=roles_field,
             )
         return identity_collections
+
+    @staticmethod
+    def _relation(spec: dict[str, Any], target: IRCollection) -> IRProviderRelation:
+        return IRProviderRelation(
+            collection=target.name,
+            match=spec["match"],
+            id_field=target.idField,
+            match_types={field: target.fields[field]["type"] for field in spec["match"]},
+        )
 
     def validate_auth_fields(
         self,

@@ -1,6 +1,5 @@
 import pytest
-from yaml_api_generator.generators.backend.fastapi.static import claims as generated_claims
-from yaml_api_generator.server.common.utils.field_access import resolve_claim_path
+from yaml_api_generator.runtime.claims import claim_value, resolve_claim_path
 
 
 CLAIMS = {
@@ -52,9 +51,26 @@ def test_path_resolving_to_list_returns_list() -> None:
     assert result == ["admin", "user"]
 
 
+def test_exact_key_with_dots_wins_over_nested_walk() -> None:
+    assert resolve_claim_path({"urn:oid:2.5.4.10": "ACME"}, "urn:oid:2.5.4.10") == "ACME"
+    assert resolve_claim_path({"org.code": "flat", "org": {"code": "nested"}}, "org.code") == "flat"
+
+
 @pytest.mark.parametrize(
-    "resolve", [resolve_claim_path, generated_claims.resolve_claim_path], ids=["dev-server", "generated"]
+    ("value", "field_type", "expected"),
+    [
+        ("ACME", "string", "ACME"),
+        (7, "string", "7"),
+        ("7", "number", 7.0),
+        (7, "number", 7.0),
+        ("seven", "number", None),
+        ("true", "boolean", True),
+        ("False", "boolean", False),
+        ("no", "boolean", None),
+        (["ACME", "BETA"], "string", None),
+        ({"code": "ACME"}, "string", None),
+        (None, "string", None),
+    ],
 )
-def test_exact_key_with_dots_wins_over_nested_walk(resolve) -> None:
-    assert resolve({"urn:oid:2.5.4.10": "ACME"}, "urn:oid:2.5.4.10") == "ACME"
-    assert resolve({"org.code": "flat", "org": {"code": "nested"}}, "org.code") == "flat"
+def test_claim_value_converts_scalars_to_the_matched_field_type(value, field_type, expected) -> None:
+    assert claim_value(value, field_type) == expected
