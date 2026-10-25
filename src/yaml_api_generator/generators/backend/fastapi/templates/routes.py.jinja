@@ -257,7 +257,7 @@ async def {{ route.operation }}_{{ collection_name }}(request: Request{% for nam
 {% elif route.operation == "list" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 {% set list_prefix = (extra_path_params(route) ~ request_param(route) ~ auth_param(route)) | trim(chars=", ") %}
-async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{{ where_repo_params(route) }}{% if route.pagination %}, limit: int | None = None{% if route.pagination.strategy == "offset" %}, offset: int | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
+async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{{ where_repo_params(route) }}{% if route.pagination %}, limit: str | None = None{% if route.pagination.strategy == "offset" %}, offset: str | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
 {{ request_locals(route, "None") }}
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}

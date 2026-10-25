@@ -99,6 +99,11 @@ def user(api):
     return {"id": registered["id"], "email": login["email"], "headers": {"Authorization": f"Bearer {token}"}}
 
 
+def test_registering_an_identity_returns_it_without_its_credentials(api):
+    login = {"email": f"{uuid4().hex}@example.com", "password": "correct-horse-battery"}
+    assert set(api.post("/api/users", json=login).json()) == {"id", "email"}
+
+
 def test_controllers_sharing_a_service_keep_their_own_access(api, user):
     title = uuid4().hex
     _create(api, "tasks", title=title)
@@ -123,3 +128,10 @@ def test_explicit_controller_route_is_public_at_its_overridden_path(api):
     assert response.status_code == 200, response.text
     assert isinstance(response.json(), int)
     assert api.get("/api/tasks-total").status_code == 404
+
+
+@pytest.mark.parametrize("parameter", ["limit", "offset"])
+def test_a_malformed_page_parameter_is_rejected_with_the_parameter_name(api, parameter):
+    response = api.get(f"/api/notes?{parameter}=abc")
+    assert response.status_code == 422
+    assert response.json() == {"detail": f"Invalid pagination parameter '{parameter}'"}

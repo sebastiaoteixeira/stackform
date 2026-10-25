@@ -48,7 +48,7 @@ repositories:
             - updateMany: { filter: { title: $old }, update: { $set: { title: $new } } }
   notes:
     entity: note
-    crud: [create]
+    crud: [create, list]
 
 services:
   users: { repository: users }
@@ -96,3 +96,6 @@ controllers:
     service: notes
     base_path: /notes
     access: public
+    operations:
+      list:
+        pagination: { strategy: offset, size: { default: 20, max: 100 } }
