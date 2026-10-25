@@ -18,8 +18,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
+from ...ir.api import CallerDemand, IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
 from ...ir.when import WhenExpr
+from ...runtime.access import Roles
 from ...utils.strings import to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
@@ -162,29 +163,25 @@ class S3StoreDescriptor(FileStoreDescriptor):
 @dataclass(frozen=True)
 class FieldDescriptor:
     name: str
-    type: str
-    required: bool
-    is_optional: bool
-    default: Any | None = None
-    constraints: dict[str, Any] = field(default_factory=dict)
-    enum_values: list[str] | None = None
-    array_item_type: str | None = None
-    ref_collection: str | None = None
+    config: dict[str, Any]
 
 
 @dataclass(frozen=True)
 class ModelDescriptor:
+    """A payload model; ``base`` names the model whose fields it extends."""
+
     name: str
     collection: str
     operation: str
     fields: list[FieldDescriptor]
+    base: str | None = None
+
 
 
 @dataclass(frozen=True)
 class DocumentBindingDescriptor:
     name: str
     collection: str
-    id_param: str | None = None
     where: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -219,7 +216,7 @@ class RequestSymbolDescriptor:
 
 
 @dataclass(frozen=True)
-class AccessRuleDescriptor:
+class AccessRuleDescriptor(CallerDemand):
     principal: str
     required_role: str | None = None
     identity_symbols: list[str] = field(default_factory=list)
@@ -258,6 +255,11 @@ class RouteDescriptor:
     service_input: dict[str, Any] = field(default_factory=dict)
     service_forwarding: dict[str, dict[str, Any]] = field(default_factory=dict)
     pagination: IRPagination | None = None
+    admits_anonymous: bool = False
+
+    @property
+    def binds_inputs(self) -> bool:
+        return any(rule.bind for rule in self.access_rules or ())
 
     @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:
@@ -282,6 +284,16 @@ class RouteDescriptor:
         if self.record_id_param is None or self.id_field is None:
             return parents
         return [*parents, (self.id_field, self.record_id_param)]
+
+    @property
+    def handler_name(self) -> str:
+        """A module-unique symbol: routes may share an operation and a collection, never a method and a path."""
+        return f"handle_{self.method.lower()}{to_py_identifier(self.relative_path)}"
+
+    @property
+    def view_name(self) -> str:
+        """The class serving every method of this route's path."""
+        return f"View{to_py_identifier(self.relative_path)}"
 
     @property
     def django_path(self) -> str:
@@ -317,6 +329,8 @@ class IdentityCollectionDescriptor:
     issues_jwt: bool = False
     datastore_type: str = "mongodb"
     id_format: str = "uuidv7"
+    login: bool = True
+    default_role: str | None = None
 
     @property
     def is_sql(self) -> bool:
@@ -334,6 +348,14 @@ class IdentityCollectionDescriptor:
     def identifier(self) -> str | None:
         password_binding = self.get_binding("password")
         return password_binding.identifier if password_binding else None
+
+    @property
+    def serves_login(self) -> bool:
+        return self.login and bool(self.identifier)
+
+    @property
+    def role_store(self) -> Roles:
+        return Roles(self.roles_field, self.default_role)
 
     def get_binding(self, provider: str) -> "ProviderBindingDescriptor | None":
         return next((b for b in self.bindings if b.provider == provider), None)
@@ -363,6 +385,10 @@ class AuthConfig:
     idp_providers: list[IdpProviderDescriptor] = field(default_factory=list)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
+
+    @property
+    def login_identities(self) -> list[IdentityCollectionDescriptor]:
+        return [identity for identity in self.identity_collections if identity.serves_login]
 
     @property
     def uses_jwt(self) -> bool:

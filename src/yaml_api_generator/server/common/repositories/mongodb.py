@@ -9,6 +9,7 @@ from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from .base import BaseRepository, ConflictError
 from .bindings import resolve
+from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from ..pagination import Page, Primitives, expand_bound
 
 
@@ -127,15 +128,18 @@ class MongoRepository(BaseRepository):
             partialFilterExpression=unique_index_partial_filter(field_name),
         )
 
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
-        cursor = self.collection(collection_name).find({})
+    async def list(
+        self, collection_name: str, predicate: Predicate = EVERY_ROW
+    ) -> list[dict[str, Any]]:
+        cursor = self.collection(collection_name).find(predicate.mongo())
         documents = await cursor.to_list(length=None)
         return [self._normalize_document_required(document) for document in documents]
 
-    async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
+    async def paginate(
+        self, collection_name: str, primitives: Primitives, predicate: Predicate = EVERY_ROW
+    ) -> Page:
         target = self.collection(collection_name)
-        bound_clauses = _mongo_bounds(primitives.bounds)
-        query = {"$and": bound_clauses} if bound_clauses else {}
+        query = {"$and": [predicate.mongo(), *_mongo_bounds(primitives.bounds)]}
         cursor = target.find(query)
         if primitives.sort:
             cursor = cursor.sort(
@@ -149,7 +153,7 @@ class MongoRepository(BaseRepository):
         rows = [self._normalize_document_required(d) for d in documents]
         total = None
         if primitives.count == "exact":
-            total = await target.count_documents({})
+            total = await target.count_documents(predicate.mongo())
         return Page(rows=rows, total=total)
 
     async def get(
@@ -234,13 +238,9 @@ class MongoRepository(BaseRepository):
         document_id: str,
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
-        with _as_conflict():
-            document = await self.collection(collection_name).find_one_and_update(
-                self._match_filter(document_id, collection_name),
-                {"$set": payload},
-                return_document=ReturnDocument.AFTER,
-            )
-        return self._normalize_document(document)
+        return await self.update_by(
+            collection_name, self._match_filter(document_id, collection_name), payload
+        )
 
     async def replace(
         self,

@@ -341,7 +341,7 @@ controllers:
           - given: { principal: "identity:user", document: documents }
             when: principal.sub not equals document.ownerId
             then: deny
-          - then: allow
+          - given: { principal: "identity:user" }
 """
 
 _GUARDED_SCRIPT = """

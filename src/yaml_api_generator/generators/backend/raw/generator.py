@@ -3,8 +3,12 @@ from pathlib import Path
 
 from jinja2 import Environment
 
-from yaml_api_generator.generators.backend.compile_context import CompileContext, IdentityCollectionDescriptor
+from yaml_api_generator.generators.backend.compile_context import (
+    CompileContext,
+    IdentityCollectionDescriptor,
+)
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
+from yaml_api_generator.ir import SECRET_FIELD
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
 from ..utils import (
@@ -56,7 +60,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["pagination_config"] = pagination_config
-        env.filters["rule_to_python"] = access_filters.rule_to_python
+        env.filters["rule_to_predicate"] = access_filters.rule_to_predicate
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.tests["unconditional"] = access_filters.is_unconditional
@@ -72,25 +76,16 @@ class RawASGIGenerator(TemplateBasedGenerator):
             env.get_template("conflicts.py.jinja").render()
         )
 
-        self._render_single_file(
-            env,
-            context,
-            output_dir,
-            SingleFileRenderConfig(
-                template_name="service_inputs.py.jinja",
-                output_path="service_inputs.py",
-            ),
-        )
-        (output_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
+        self._render_service_inputs(env, output_dir, "")
+        for module in ("access", "pagination"):
+            (output_dir / f"{module}.py").write_text(runtime_module_source(module))
 
         collections_by_name = group_by_collection(context)
 
         self._render_settings(env, context, output_dir)
         write_environment_files(env, context, output_dir)
         self._render_routes(env, context, collections_by_name, output_dir)
-        if context.auth.has_password_auth:
+        if context.auth.login_identities:
             self._render_login_routes(env, context, output_dir)
         if context.session.uses_asymmetric:
             self._render_single_file(
@@ -143,9 +138,10 @@ class RawASGIGenerator(TemplateBasedGenerator):
         collections_by_name: dict[str, dict],
         output_dir: Path,
     ) -> None:
-        all_models = []
-        for col_data in collections_by_name.values():
-            all_models.extend(col_data["models"])
+        models = [
+            *(model for col_data in collections_by_name.values() for model in col_data["models"]),
+            *context.dto_models,
+        ]
 
         self._render_single_file(
             env, context, output_dir,
@@ -153,7 +149,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 template_name="validation.py.jinja",
                 output_path="validation.py",
                 context_builder=lambda ctx: {
-                    "models": all_models,
+                    "models": models,
                     "auth": ctx.auth,
                 },
             )
@@ -190,6 +186,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
             "import_prefix": "repositories",
             "auth_import_prefix": "dependencies.auth",
             "service_import_prefix": "services",
+            "access_import": "access",
         }
 
     def _render_repositories(
@@ -212,6 +209,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     "custom_operations": ctx.repository_operations.get(col_name, []),
                     "conflict_import": "conflicts",
                     "pagination_import": "pagination",
+                    "access_import": "access",
                 },
             )
         )
@@ -243,6 +241,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
                     for op in context.repository_operations.get(col_name, [])
                 },
                 auth=context.auth,
+                identity=find_identity(context, col_name),
             )
             (routes_dir / f"{col_name}.py").write_text(content)
 
@@ -266,7 +265,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         routes_dir.mkdir(parents=True, exist_ok=True)
 
         template = env.get_template("login_routes.py.jinja")
-        content = template.render(ctx=context)
+        content = template.render(ctx=context, secret=SECRET_FIELD)
         (routes_dir / "login.py").write_text(content)
 
     def _render_dependencies(

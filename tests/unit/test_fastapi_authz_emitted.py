@@ -13,6 +13,7 @@ import pytest
 from jinja2 import Environment, FileSystemLoader
 
 from yaml_api_generator.generators.backend.compile_context import AuthConfig
+from yaml_api_generator.runtime import access
 from yaml_api_generator.generators.backend.fastapi import access_filters
 
 
@@ -51,11 +52,12 @@ def authz():
     deps_pkg = types.ModuleType("dependencies")
     deps_pkg.__path__ = []
     sys.modules.setdefault("dependencies", deps_pkg)
+    sys.modules["dependencies.access"] = access
 
     mod = _exec_module("dependencies.authorization", authz_src, {})
     yield mod
 
-    for key in ("dependencies.authorization", "dependencies"):
+    for key in ("dependencies.authorization", "dependencies.access", "dependencies"):
         sys.modules.pop(key, None)
 
 
@@ -75,33 +77,6 @@ def test_principal_has_role_no_upward_promotion(authz):
 
 def test_principal_has_role_wrong_collection(authz):
     assert authz._principal_has_role({"identity_collection": "users", "roles": ["super_admin"]}, "admin") is False
-
-
-def test_rule_to_python_role_only():
-    from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
-    rule = AccessRuleDescriptor(principal="identity:admins", required_role="admin")
-    assert access_filters.rule_to_python(rule) == (
-        'principal.get("identity_collection") == "admins" and '
-        '_principal_has_role(principal, "admin")'
-    )
-
-
-def test_rule_to_python_unconditional():
-    from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
-    rule = AccessRuleDescriptor(principal="identity:admins")
-    assert access_filters.rule_to_python(rule) == (
-        'principal.get("identity_collection") == "admins"'
-    )
-
-
-def test_rule_to_python_when_equals():
-    from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor
-    from yaml_api_generator.ir.when import Equals, FieldRef
-    rule = AccessRuleDescriptor(
-        principal="identity:users",
-        when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("created_by",))),
-    )
-    assert '_values_equal(principal.get("sub"), document.get("created_by"))' in access_filters.rule_to_python(rule)
 
 
 def test_is_unconditional_true():

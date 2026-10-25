@@ -18,6 +18,7 @@ from yaml_api_generator.generators.backend.compile_context import (
 from yaml_api_generator.generators.backend.fastapi import access_filters
 from yaml_api_generator.server.common.steps.authorization import _principal_has_role
 from yaml_api_generator.ir import IRProviderBinding
+from yaml_api_generator.runtime.access import role_names
 from yaml_api_generator.ir.api import IROIDCProvider
 from yaml_api_generator.server.common.auth import idp
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
@@ -169,7 +170,7 @@ def _exec_roles_from_claims(source):
     fragment = source[source.index("def _roles_from_claims"):]
     fragment = fragment[:fragment.index("\n\n")]
     module = types.ModuleType("auth_fragment")
-    module.__dict__.update({"resolve_claim_path": resolve_claim_path, "Any": object})
+    module.__dict__.update({"resolve_claim_path": resolve_claim_path, "role_names": role_names, "Any": object})
     exec(compile(fragment, "<auth>", "exec"), module.__dict__)
     return module._roles_from_claims
 

@@ -16,8 +16,11 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from {{ conflict_import }} import ConflictError
+from {{ access_import }} import EVERY_ROW, Predicate
 from {{ pagination_import }} import Page, Primitives, expand_bound
 
+
+_HIDDEN_FIELDS = frozenset({"_id", "_auth"})
 
 _PAGINATION_COMPARATORS = {
     "gt": "$gt",
@@ -88,18 +91,18 @@ class {{ class_name }}Repository:
         return {self.ID_FIELD: document_id}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Hide the datastore's own identifier; the service layer hides domain-internal fields."""
+        """Hide the datastore's own identifier and the stored credentials."""
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if k != "_id"}
+        return {k: v for k, v in doc.items() if k not in _HIDDEN_FIELDS}
 
-    async def list(self) -> list[dict[str, Any]]:
-        cursor = self._col.find({})
+    async def list(self, predicate: Predicate = EVERY_ROW) -> list[dict[str, Any]]:
+        cursor = self._col.find(predicate.mongo())
         docs = await cursor.to_list(length=None)
         return [self._normalize(d) for d in docs]
 
-    async def paginate(self, primitives: Primitives) -> Page:
-        query = _pagination_filter(primitives)
+    async def paginate(self, primitives: Primitives, predicate: Predicate = EVERY_ROW) -> Page:
+        query = {"$and": [predicate.mongo(), _pagination_filter(primitives)]}
         cursor = self._col.find(query)
         if primitives.sort:
             cursor = cursor.sort(
@@ -111,7 +114,7 @@ class {{ class_name }}Repository:
             cursor = cursor.limit(primitives.limit)
         documents = await cursor.to_list(length=None)
         total = (
-            await self._col.count_documents({})
+            await self._col.count_documents(predicate.mongo())
             if primitives.count == "exact"
             else None
         )
@@ -161,31 +164,18 @@ class {{ class_name }}Repository:
         await self._col.insert_one(data)
         return self._normalize(data)
 
-    @_translate_conflict
     async def update(
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_update(
-            self._match_filter(document_id),
-            {"$set": data},
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._normalize(doc)
+        return await self.update_by(self._match_filter(document_id), data)
 
-    @_translate_conflict
     async def replace(
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_replace(
-            self._match_filter(document_id),
-            data,
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._normalize(doc)
+        return await self.replace_by(self._match_filter(document_id), data)
 
     async def delete(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_delete(self._match_filter(document_id))
-        return self._normalize(doc)
+        return await self.delete_by(self._match_filter(document_id))
 {% for op in custom_operations | default([]) %}
 {% set q = op.query %}
 {% set col_expr = "self._db[\"" + q["collection"] + "\"]" if q and q.get("collection") else "self._col" %}

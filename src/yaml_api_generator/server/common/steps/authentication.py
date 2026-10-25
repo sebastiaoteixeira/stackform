@@ -2,6 +2,7 @@ import base64
 from typing import Any
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
+from yaml_api_generator.runtime.access import Roles, role_names
 from ..auth import idp, oidc, verify_password
 from ..auth.jwt import SessionTokens
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
@@ -114,17 +115,11 @@ def _build_service_principal(
     binding: IRProviderBinding | None = None,
 ) -> dict[str, Any]:
     sub = str(claims["sub"])
-    roles = _roles_from_claims(claims, identity, binding)
-    roles_list: list[str] = []
-    if isinstance(roles, list):
-        roles_list = [str(r) for r in roles]
-    elif isinstance(roles, str):
-        roles_list = [roles]
     return {
         "sub": sub,
         "client_id": claims.get("azp") or claims.get("client_id") or sub,
         "is_service": True,
-        "roles": roles_list,
+        "roles": role_names(_roles_from_claims(claims, identity, binding)),
         "record": None,
         "identity_collection": None,
     }
@@ -342,19 +337,6 @@ def _build_principal(
         "record": record,
     }
 
-    if roles is None:
-        roles_config = identity.roles if identity is not None else None
-        roles_field = identity.roles_field if identity is not None else None
-        auth_data = document.get("_auth")
-        if roles_config is not None and isinstance(auth_data, dict):
-            roles = auth_data.get("roles")
-        elif roles_field is not None:
-            roles = document.get(roles_field)
-        else:
-            roles = document.get("roles") or document.get("role")
-
-    if isinstance(roles, list):
-        principal["roles"] = [str(role) for role in roles]
-    elif isinstance(roles, str):
-        principal["roles"] = [roles]
+    store = identity.role_store if identity is not None else Roles()
+    principal["roles"] = store.of(document) if roles is None else role_names(roles)
     return principal

@@ -21,6 +21,7 @@ from yaml_api_generator.ir.ui import (
 from yaml_api_generator.ir.pack_manifest import PackManifest
 
 CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
+LOGIN_PATH = "/login"
 
 
 def build_generator_context(
@@ -32,10 +33,17 @@ def build_generator_context(
     identity_entities = [
         ir.collections[k].entity_name for k in ir.identityCollections.keys()
     ]
+    login_entities = [
+        ir.collections[k].entity_name
+        for k, identity in ir.identityCollections.items()
+        if identity.serves_login
+    ]
     collections = _parse_collections(ui_block.get("collections", {}), entities, ir)
     pack_components = _parse_pack_components(manifest)
     components = _parse_components(ui_block.get("components", {}), pack_components)
     views = _parse_views(ui_block.get("views", {}), components, pack_components)
+    if not login_entities and any(view.path == LOGIN_PATH for view in views.values()):
+        raise ValueError(f"View at '{LOGIN_PATH}' signs in with a password, but no identity serves a login route")
 
     base_path = ir.api.basePath or ""
     version = ir.api.version or ""
@@ -55,6 +63,7 @@ def build_generator_context(
         pack_config=ui_block.get("config", {}),
         entities=entities,
         identity_entities=identity_entities,
+        login_entities=login_entities,
         session_delivery=ir.session.delivery,
     )
 

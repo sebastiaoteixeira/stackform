@@ -28,7 +28,7 @@ def desugar_v02(config: dict[str, Any]) -> dict[str, Any]:
 
     api_ops = config.get("api", {}).get("operations", {})
     defaults = api_ops.get("defaults", {})
-    auth_defaults = api_ops.pop("auth", {})
+    auth_defaults = api_ops.get("auth", {})
     repositories = config.get("repositories", {})
     entities = config.get("entities", {})
     services = config.get("services", {})

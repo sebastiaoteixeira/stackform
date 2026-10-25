@@ -106,4 +106,6 @@ class GeneratorContext:
     pack_config: dict[str, Any]
     entities: dict[str, EntityInfo]
     identity_entities: list[str]
+    login_entities: list[str] = field(default_factory=list)
+    """Identity entities that sign in with a password through a login route."""
     session_delivery: str = "token-url"

@@ -2,6 +2,7 @@ import operator
 from abc import ABC, abstractmethod
 from typing import Any
 
+from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from ..pagination import Page, Primitives, expand_bound
 
 
@@ -64,15 +65,19 @@ class BaseRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
+    async def list(
+        self, collection_name: str, predicate: Predicate = EVERY_ROW
+    ) -> list[dict[str, Any]]:
+        """The records of ``collection_name`` that ``predicate`` admits."""
         raise NotImplementedError
 
     async def paginate(
         self,
         collection_name: str,
         primitives: Primitives,
+        predicate: Predicate = EVERY_ROW,
     ) -> Page:
-        documents = await self.list(collection_name)
+        documents = await self.list(collection_name, predicate)
         total = len(documents) if primitives.count == "exact" else None
         rows = [
             document

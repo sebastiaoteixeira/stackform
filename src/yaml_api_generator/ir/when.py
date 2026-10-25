@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 
@@ -106,3 +107,13 @@ def collect_roots(expr: WhenExpr) -> set[str]:
     if isinstance(expr, (Not, IsNull, IsNotNull)):
         return collect_roots(expr.operand)
     return set()
+
+
+def map_operands(expr: WhenExpr, transform: Callable[[WhenExpr], WhenExpr]) -> WhenExpr:
+    """Rebuild ``expr`` with ``transform`` applied to each direct sub-expression."""
+    children = {
+        field.name: transform(getattr(expr, field.name))
+        for field in fields(expr)
+        if isinstance(getattr(expr, field.name), WhenExpr)
+    }
+    return replace(expr, **children) if children else expr

@@ -1,5 +1,6 @@
 from typing import Any
 
+from dependencies.access import EVERY_ROW, Predicate
 from services.exceptions import NotFoundError, ValidationError
 {% if auth.has_password_auth %}
 from dependencies.auth import hash_password
@@ -56,12 +57,12 @@ class ServiceBase:
 
 
 class ListSvc:
-    async def list(self, primitives: Any = None) -> Any:
+    async def list(self, primitives: Any = None, predicate: Predicate = EVERY_ROW) -> Any:
         if primitives is None:
-            documents = await self._repo.list()
+            documents = await self._repo.list(predicate)
             await self._after_list(documents)
             return documents
-        page = await self._repo.paginate(primitives)
+        page = await self._repo.paginate(primitives, predicate)
         await self._after_list(page.rows)
         return page
 
@@ -161,8 +162,6 @@ class IdentityFieldsMixin:
 
 
 class PasswordMixin:
-    DEFAULT_ROLE: str | None = None
-
     async def _before_write(self, data: dict) -> None:
         raw_password = data.pop("password", None)
         if raw_password is None:
@@ -173,7 +172,5 @@ class PasswordMixin:
         if not isinstance(auth_data, dict):
             auth_data = {}
         auth_data["passwordHash"] = hash_password(raw_password)
-        if self.DEFAULT_ROLE is not None:
-            auth_data.setdefault("roles", self.DEFAULT_ROLE)
         data["_auth"] = auth_data
 {% endif %}

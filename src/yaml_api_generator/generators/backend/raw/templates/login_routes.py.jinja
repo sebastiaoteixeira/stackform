@@ -2,16 +2,17 @@ from typing import Any
 
 from dependencies.auth import verify_password
 from dependencies.jwt_utils import create_jwt_token
-import validation
+from fields import Model
 
 
-{% for identity in ctx.auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
+{% for identity in ctx.auth.login_identities %}
+{% set login_payload = identity.name | capitalize_collection ~ "LoginPayload" %}
+{{ login_payload }} = Model({{ {identity.identifier: secret, "password": secret} | py_literal }})
+
+
 async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
-    if body is None:
-        return 422, {"detail": "Request body is required"}
     try:
-        data = validation.validate_{{ identity.name }}_login(body)
+        data = {{ login_payload }}.conform(body)
     except ValueError as exc:
         return 422, {"detail": str(exc)}
 
@@ -41,5 +42,4 @@ async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, 
 
     return 401, {"detail": "Invalid credentials"}
 
-{% endif %}
 {% endfor %}

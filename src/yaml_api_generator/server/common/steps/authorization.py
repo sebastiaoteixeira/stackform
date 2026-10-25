@@ -1,6 +1,6 @@
 """Authorization pipeline steps for role-based and condition-based access control."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from itertools import repeat
 
 from . import Step
@@ -12,10 +12,24 @@ from ..server_context import (
     RuntimeAuthConfig,
     RuntimeIdentityDescriptor,
 )
-from ..when_eval import evaluate_when_with_symbols
+from ..when_eval import when_predicate
 from ..utils.field_access import get_nested_field
 from yaml_api_generator.ir.api import IRLiteralRef, IRSymbolRef, IRWhereConjunct
-from yaml_api_generator.ir.when import needs_document as _when_needs_document
+from yaml_api_generator.runtime.access import (
+    EVERY_ROW,
+    NO_ROW,
+    AccessDenied,
+    Decision,
+    Field,
+    Predicate,
+    Unadmitted,
+    decide,
+    held_roles,
+    row_filter,
+)
+
+RECORD = Field(())
+"""The record under authorization, before it is loaded or while rows are filtered."""
 
 WhereDocuments = dict[str, dict | None]
 
@@ -24,8 +38,7 @@ class UnauthorizedError(ValueError):
     pass
 
 
-class ForbiddenError(ValueError):
-    pass
+ForbiddenError = AccessDenied
 
 
 def _required_identity_fields(
@@ -68,37 +81,12 @@ def ValidateIdentityCreateStep(
     return step
 
 
-def _deny(rule: RuntimeAccessRule) -> ForbiddenError:
-    return ForbiddenError(rule.reason or "Forbidden")
-
-
-def _rule_needs_postfetch(rule: RuntimeAccessRule) -> bool:
-    return any(not binding.where for binding in rule.document_symbols.values()) or (
-        rule.when is not None and _when_needs_document(rule.when)
-    )
-
-
 def _principal_has_role(
     principal: dict,
     required_role: str,
     auth_config: RuntimeAuthConfig | None,
 ) -> bool:
-    principal_roles = principal.get("roles", [])
-    if required_role in principal_roles:
-        return True
-
-    if auth_config is None:
-        return False
-
-    identity_collection = principal.get("identity_collection", "")
-    entity_hierarchy = auth_config.role_hierarchies.get(identity_collection, {})
-
-    for role in principal_roles:
-        included = entity_hierarchy.get(role, set())
-        if required_role in included:
-            return True
-
-    return False
+    return required_role in held_roles(principal, auth_config.role_hierarchies if auth_config else {})
 
 
 def _rule_matches_principal(
@@ -107,7 +95,7 @@ def _rule_matches_principal(
     auth_config: RuntimeAuthConfig | None,
 ) -> bool:
     if principal is None:
-        return False
+        return rule.admits_anonymous
 
     if rule.principal and rule.principal.startswith("identity:"):
         expected_collection = rule.principal[len("identity:"):]
@@ -125,16 +113,17 @@ def _resolve_identity_symbols(
     rule: RuntimeAccessRule,
     principal: dict | None,
 ) -> dict[str, dict | None]:
-    return {symbol_name: principal for symbol_name in rule.identity_symbols}
+    """The caller under every identity symbol of ``rule``, and always as ``principal``."""
+    return {symbol_name: principal for symbol_name in {"principal", *rule.identity_symbols}}
 
 
 def _resolve_document_symbols(
     rule: RuntimeAccessRule,
-    document: dict | None,
+    record: dict | Field,
     where_documents: WhereDocuments,
-) -> dict[str, dict | None]:
+) -> dict[str, dict | Field | None]:
     return {
-        symbol_name: where_documents.get(symbol_name) if binding.where else document
+        symbol_name: where_documents.get(symbol_name) if binding.where else record
         for symbol_name, binding in rule.document_symbols.items()
     }
 
@@ -178,23 +167,37 @@ def _where_documents_found(
     )
 
 
-def _evaluate_rule(
+def _rule_predicate(
     rule: RuntimeAccessRule,
-    document: dict | None,
+    record: dict | Field,
     where_documents: WhereDocuments,
     ctx: RequestContext,
-) -> bool:
+    auth_config: RuntimeAuthConfig | None,
+) -> Predicate:
+    if not _rule_matches_principal(rule, ctx.principal, auth_config):
+        return NO_ROW
     if not _where_documents_found(rule, where_documents):
-        return False
+        return NO_ROW
     if rule.when is None:
-        return True
-
-    symbols: dict[str, object | None] = {
+        return EVERY_ROW
+    symbols: dict[str, object] = {
         **_resolve_identity_symbols(rule, ctx.principal),
-        **_resolve_document_symbols(rule, document, where_documents),
+        **_resolve_document_symbols(rule, record, where_documents),
         **_resolve_request_symbols(rule, ctx),
     }
-    return evaluate_when_with_symbols(rule.when, symbols)
+    return when_predicate(rule.when, symbols, rule.request_symbols.keys())
+
+
+def _decisions(
+    access_rules: list[RuntimeAccessRule],
+    record: dict | Field,
+    ctx: RequestContext,
+    auth_config: RuntimeAuthConfig | None,
+) -> list[Decision]:
+    return [
+        Decision(rule.effect, _rule_predicate(rule, record, where_documents, ctx, auth_config), rule.reason)
+        for rule, where_documents in _rules_with_where_documents(access_rules, ctx)
+    ]
 
 
 def _rules_with_where_documents(
@@ -249,10 +252,10 @@ async def _where_documents(rule: RuntimeAccessRule, ctx: RequestContext) -> Wher
 
 def ResolveWhereBindingsStep(access_rules: list[RuntimeAccessRule]) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        if ctx.principal is None:
-            return ctx
-
-        ctx.where_documents = [await _where_documents(rule, ctx) for rule in access_rules]
+        ctx.where_documents = [
+            await _where_documents(rule, ctx) if ctx.principal is not None or rule.admits_anonymous else {}
+            for rule in access_rules
+        ]
         return ctx
 
     return step
@@ -276,33 +279,47 @@ def ResolveAccessBindStep(
     return step
 
 
+Admission = Callable[[RequestContext, list[Decision]], None]
+
+
+def _admitting(admission: Admission, ctx: RequestContext, decisions: list[Decision]) -> None:
+    """Apply ``admission``, refusing an anonymous caller as one who may yet authenticate."""
+    try:
+        admission(ctx, decisions)
+    except Unadmitted as exc:
+        if ctx.principal is None:
+            raise UnauthorizedError("Unauthorized") from exc
+        raise
+
+
+def admit_record(ctx: RequestContext, decisions: list[Decision]) -> None:
+    """Routes without a current record: the first rule that holds decides."""
+    ctx.authorized_rule_index = decide(decisions)
+
+
+def admit_rows(ctx: RequestContext, decisions: list[Decision]) -> None:
+    """List routes: the rules become the filter of the rows the caller may see."""
+    ctx.row_filter = row_filter(decisions)
+
+
+def screen_record(ctx: RequestContext, decisions: list[Decision]) -> None:
+    """Routes that load a record: refuse early when no record could be admitted."""
+    row_filter(decisions)
+
+
 def AuthorizeRouteStep(
     access_rules: list[RuntimeAccessRule] | None = None,
     auth_config: RuntimeAuthConfig | None = None,
+    admission: Admission = admit_record,
 ) -> Step:
+    admits_anonymous = any(rule.admits_anonymous for rule in access_rules or ())
+
     def step(ctx: RequestContext) -> RequestContext:
-        if ctx.principal is None:
+        if ctx.principal is None and not admits_anonymous:
             raise UnauthorizedError("Unauthorized")
-
-        if not access_rules:
-            return ctx
-
-        for index, (rule, where_documents) in enumerate(
-            _rules_with_where_documents(access_rules, ctx)
-        ):
-            if _rule_needs_postfetch(rule):
-                return ctx
-
-            if not _rule_matches_principal(rule, ctx.principal, auth_config):
-                continue
-
-            if _evaluate_rule(rule, None, where_documents, ctx):
-                if rule.effect == "deny":
-                    raise _deny(rule)
-                ctx.authorized_rule_index = index
-                return ctx
-
-        raise ForbiddenError("Forbidden")
+        if access_rules:
+            _admitting(admission, ctx, _decisions(access_rules, RECORD, ctx, auth_config))
+        return ctx
 
     return step
 
@@ -312,25 +329,9 @@ def PostFetchAuthorizeStep(
     auth_config: RuntimeAuthConfig | None = None,
 ) -> Step:
     def step(ctx: RequestContext) -> RequestContext:
-        document = ctx.response if isinstance(ctx.response, dict) else None
-        for index, (rule, where_documents) in enumerate(
-            _rules_with_where_documents(access_rules, ctx)
-        ):
-            if not _rule_matches_principal(rule, ctx.principal, auth_config):
-                continue
-
-            if _rule_needs_postfetch(rule):
-                if document is None:
-                    continue
-
-            rule_document = document if _rule_needs_postfetch(rule) else None
-            if _evaluate_rule(rule, rule_document, where_documents, ctx):
-                if rule.effect == "deny":
-                    raise _deny(rule)
-                ctx.authorized_rule_index = index
-                return ctx
-
-        raise ForbiddenError("Forbidden")
+        record = ctx.response if isinstance(ctx.response, dict) else RECORD
+        _admitting(admit_record, ctx, _decisions(access_rules, record, ctx, auth_config))
+        return ctx
 
     return step
 

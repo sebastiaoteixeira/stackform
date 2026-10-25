@@ -14,6 +14,7 @@ from typing import Any
 
 from ..v02 import V02Transformer
 from ..v02.access_transformer import AccessTransformer
+from ..v02.record_location import last_param
 from ..v02.route_transformer import RouteTransformer
 from .pagination import parse_pagination
 from .vendored_imports import process_vendored_imports
@@ -21,6 +22,8 @@ from .vendored_imports import process_vendored_imports
 
 class V03Transformer(V02Transformer):
     """Orchestrates v0.3 YAML to IR transformation."""
+
+    _record_param = staticmethod(last_param)
 
     def __init__(self, spec_dir: Path) -> None:
         super().__init__()
