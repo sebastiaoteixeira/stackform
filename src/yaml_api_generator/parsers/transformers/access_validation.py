@@ -19,8 +19,12 @@ mirroring ``validate_spec_constraints``, and reject the spec with coded errors:
 
 from typing import Any
 
-from yaml_api_generator.ir.when import collect_roots, needs_document
-from yaml_api_generator.parsers.when_parser import parse_request_binding, parse_when_list
+from yaml_api_generator.ir.when import collect_roots
+from yaml_api_generator.parsers.when_parser import (
+    parse_document_binding,
+    parse_request_binding,
+    parse_when_list,
+)
 from yaml_api_generator.parsers.where_parser import is_where_binding
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
@@ -44,20 +48,21 @@ def _is_request_value(value: Any) -> bool:
 
 
 def _is_current_document_value(value: Any, version: str) -> bool:
-    """Whether a ``given`` value binds the route's own record.
+    """Whether a ``given`` value binds the route's own record: a bare collection name.
 
-    A v0.3 ``where`` binding fetches a different record by predicate before the
-    rule runs, so it resolves on a create just as it does anywhere else. Only
-    the implicit ``{id}`` document binding depends on a record the create
-    operation has not produced yet.
+    ``<collection> by <param>`` and a v0.3 ``where`` binding fetch a different
+    record before the rule runs, so they resolve on a create just as they do
+    anywhere else.
     """
     if (
         not isinstance(value, str)
         or value.startswith("identity:")
         or _is_request_value(value)
+        or (version == "0.3" and is_where_binding(value))
     ):
         return False
-    return not (version == "0.3" and is_where_binding(value))
+    binding, _ = parse_document_binding(value, "")
+    return binding is not None and binding[1] is None
 
 
 def _invalid(message: str, path: str, hint: str) -> ConfigError:
@@ -175,7 +180,7 @@ def _check_when(
                     hint=f"Bind '{root}' in this rule's 'given'",
                 ))
 
-    if is_create and (needs_document(expr) or rule.get("document_symbols")):
+    if is_create and rule.get("document_symbols"):
         errors.append(_invalid(
             "document-dependent when on a create rule is short-circuited to allow",
             f"{path}.when",

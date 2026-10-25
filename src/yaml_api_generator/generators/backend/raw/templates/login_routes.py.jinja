@@ -5,8 +5,7 @@ from dependencies.jwt_utils import create_jwt_token
 from fields import Model
 
 
-{% for identity in ctx.auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
+{% for identity in ctx.auth.login_identities %}
 {% set login_payload = identity.name | capitalize_collection ~ "LoginPayload" %}
 {{ login_payload }} = Model({{ {identity.identifier: secret, "password": secret} | py_literal }})
 
@@ -43,5 +42,4 @@ async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, 
 
     return 401, {"detail": "Invalid credentials"}
 
-{% endif %}
 {% endfor %}

@@ -36,6 +36,7 @@ from yaml_api_generator.ir import (
     StringLiteral,
     WhenExpr,
 )
+from yaml_api_generator.ir.when import map_operands
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 from yaml_api_generator.parsers.transformers.v02.binding_classifier import classify_binding
 
@@ -66,17 +67,7 @@ class _SymbolSink:
 def _rename_roots(expr: WhenExpr, mapping: dict[str, str]) -> WhenExpr:
     if isinstance(expr, FieldRef):
         return replace(expr, root=mapping.get(expr.root, expr.root))
-    if isinstance(expr, (Equals, NotEquals, And, Or)):
-        return replace(
-            expr,
-            left=_rename_roots(expr.left, mapping),
-            right=_rename_roots(expr.right, mapping),
-        )
-    if isinstance(expr, (In, NotIn)):
-        return replace(expr, left=_rename_roots(expr.left, mapping))
-    if isinstance(expr, Not):
-        return replace(expr, operand=_rename_roots(expr.operand, mapping))
-    return expr
+    return map_operands(expr, lambda child: _rename_roots(child, mapping))
 
 
 def _normalize_param_binding(binding: IRBinding) -> IRBinding:

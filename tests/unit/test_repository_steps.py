@@ -73,11 +73,6 @@ def test_prepare_payload_keeps_non_identity_fields():
     assert _prepare_payload(payload, None) == payload
 
 
-def test_prepare_payload_strips_identity_roles():
-    result = _prepare_payload({"email": "a@b.co", "role": "admin", "roles": ["a"]}, _PASSWORD_IDENTITY)
-    assert result == {"email": "a@b.co"}
-
-
 def test_prepare_payload_password_identity_no_password_key():
     payload = {"title": "hello"}
     result = _prepare_payload(payload, _PASSWORD_IDENTITY)

@@ -1,5 +1,6 @@
 from {{ import_prefix }}.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 from {{ service_import_prefix }}.exceptions import NotFoundError, ValidationError
+from {{ access_import }} import EVERY_ROW
 {% if is_identity_collection %}
 from {{ auth_import_prefix }} import hash_password
 {% endif %}
@@ -10,10 +11,10 @@ class {{ collection_name | capitalize_collection }}Service:
         self._repo = repo
 
 {% if is_async %}
-    async def list(self, primitives=None):
+    async def list(self, primitives=None, predicate=EVERY_ROW):
         if primitives is None:
-            return await self._repo.list()
-        return await self._repo.paginate(primitives)
+            return await self._repo.list(predicate)
+        return await self._repo.paginate(primitives, predicate)
 
     async def get(self, resource_id: str) -> dict:
         document = await self._repo.get(resource_id)
@@ -84,10 +85,10 @@ class {{ collection_name | capitalize_collection }}Service:
             raise NotFoundError("{{ collection_name }}", criteria)
         return document
 {% else %}
-    def list(self, primitives=None):
+    def list(self, primitives=None, predicate=EVERY_ROW):
         if primitives is None:
-            return self._repo.list()
-        return self._repo.paginate(primitives)
+            return self._repo.list(predicate)
+        return self._repo.paginate(primitives, predicate)
 
     def get(self, resource_id: str) -> dict:
         document = self._repo.get(resource_id)

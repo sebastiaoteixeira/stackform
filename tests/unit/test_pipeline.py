@@ -321,6 +321,7 @@ async def test_builder_update_with_document_rule_allows_matching_principal():
     route = RuntimeRouteDescriptor(
         method="PATCH",
         path="/items/{id}",
+        record_param="id",
         operation="update",
         collection="items",
         is_public=False,
@@ -362,6 +363,7 @@ async def test_builder_update_with_document_rule_denies_non_matching_principal()
     route = RuntimeRouteDescriptor(
         method="PATCH",
         path="/items/{id}",
+        record_param="id",
         operation="update",
         collection="items",
         is_public=False,

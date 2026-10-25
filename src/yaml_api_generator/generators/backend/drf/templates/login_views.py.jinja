@@ -7,8 +7,7 @@ from api.authentication.auth import verify_password
 from api.authentication.jwt_utils import create_jwt_token
 from api.authentication.mongodb import get_database
 
-{% for identity in auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
+{% for identity in auth.login_identities %}
 {% set class_name = identity.name | capitalize_collection %}
 
 class {{ class_name }}LoginView(APIView):
@@ -53,5 +52,4 @@ class {{ class_name }}LoginView(APIView):
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
-{% endif %}
 {% endfor %}

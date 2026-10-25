@@ -29,6 +29,7 @@ from yaml_api_generator.parsers.yaml_parser import validate_schema
 CRUD_OPS = frozenset({"list", "get", "create", "update", "replace", "delete"})
 ENTITY_OPS = CRUD_OPS | {"login"}
 ANONYMOUS = "anonymous"
+LOGIN_PATH = "/login"
 
 
 def build_generator_context(
@@ -47,6 +48,10 @@ def build_generator_context(
     pack_components = _parse_pack_components(manifest)
     components = _parse_components(ui_block.get("components", {}), pack_components)
     views = _parse_views(ui_block.get("views", {}), pack_components)
+    if not any(entity.serves_login for entity in entities.values()) and any(
+        view.path == LOGIN_PATH for view in views.values()
+    ):
+        raise ValueError(f"View at '{LOGIN_PATH}' signs in with a password, but no identity serves a login route")
 
     return GeneratorContext(
         api_name=(ir.api.basePath or "").strip("/") or "api",

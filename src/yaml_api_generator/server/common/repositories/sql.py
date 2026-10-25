@@ -20,6 +20,7 @@ from yaml_api_generator.ir import IRCollection
 from .base import BaseRepository, ConflictError
 from .bindings import resolve
 from .sql_schema import table_from_collection
+from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from ..pagination import Page, Primitives, expand_bound
 
 
@@ -104,18 +105,21 @@ class SQLRepository(BaseRepository):
             self._engine = None
             self._schema_ready = False
 
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
+    async def list(
+        self, collection_name: str, predicate: Predicate = EVERY_ROW
+    ) -> list[dict[str, Any]]:
         table = self._table(collection_name)
         async with await self._connection() as conn:
-            result = await conn.execute(sa.select(table))
+            result = await conn.execute(sa.select(table).where(predicate.sql(table)))
             return [dict(row._mapping) for row in result]
 
-    async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
+    async def paginate(
+        self, collection_name: str, primitives: Primitives, predicate: Predicate = EVERY_ROW
+    ) -> Page:
         table = self._table(collection_name)
-        bound_clauses = self._bounds_clauses(table, primitives.bounds)
-        stmt = sa.select(table)
-        if bound_clauses:
-            stmt = stmt.where(sa.and_(*bound_clauses))
+        stmt = sa.select(table).where(
+            predicate.sql(table), *self._bounds_clauses(table, primitives.bounds)
+        )
         for key in primitives.sort:
             column = table.c[key.field]
             stmt = stmt.order_by(column.desc() if key.descending else column.asc())
@@ -127,7 +131,9 @@ class SQLRepository(BaseRepository):
             rows = [dict(row._mapping) for row in await conn.execute(stmt)]
             total = None
             if primitives.count == "exact":
-                count_stmt = sa.select(sa.func.count()).select_from(table)
+                count_stmt = (
+                    sa.select(sa.func.count()).select_from(table).where(predicate.sql(table))
+                )
                 total = (await conn.execute(count_stmt)).scalar()
         return Page(rows=rows, total=total)
 

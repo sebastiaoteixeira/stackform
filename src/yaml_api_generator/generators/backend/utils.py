@@ -12,7 +12,7 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 
 _RUNTIME_MODULES = frozenset(
-    {"dpop", "pagination", "fields", "payloads", "files", "multipart", "file_requests", "filesystem_store", "s3_store", "sql_types"}
+    {"access", "dpop", "pagination", "fields", "payloads", "files", "multipart", "file_requests", "filesystem_store", "s3_store", "sql_types"}
 )
 
 

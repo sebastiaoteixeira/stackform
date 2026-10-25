@@ -1,7 +1,7 @@
 from importlib import import_module
 from typing import Any
-from uuid import UUID
 
+from access import AccessDenied, Decision, all_of, conjoin, constant, decide, disjoin, equals, has_path, held_roles, is_null, negate, one_of, value_at
 from service_inputs import RawRequest, prepare_service_inputs, resolve_access_bind
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}{% for where_collection in route.where_collections %}
@@ -15,32 +15,11 @@ from dependencies.auth import resolve_principal
 {% endif %}
 
 
-try:
-    from bson import ObjectId
-    _IDISH = (UUID, ObjectId)
-except ImportError:
-    _IDISH = (UUID,)
-
-
-def _values_equal(left: Any, right: Any) -> bool:
-    if left is None or right is None:
-        return left is None and right is None
-    if isinstance(left, bool) or isinstance(right, bool):
-        return isinstance(left, bool) and isinstance(right, bool) and left is right
-    if left == right:
-        return True
-    return str(left) == str(right) if isinstance(left, _IDISH) or isinstance(right, _IDISH) else False
-
-
 ROLE_HIERARCHIES = {{ auth.role_hierarchies | role_hierarchies_py }}
 
 
 def _principal_has_role(principal: dict, required_role: str) -> bool:
-    roles = principal.get("roles", [])
-    if required_role in roles:
-        return True
-    hierarchy = ROLE_HIERARCHIES.get(principal.get("identity_collection", ""), {})
-    return any(required_role in hierarchy.get(role, set()) for role in roles)
+    return required_role in held_roles(principal, ROLE_HIERARCHIES)
 
 
 {% for route in routes %}
@@ -54,8 +33,10 @@ async def handle_custom_{{ loop.index }}(
 ) -> tuple[int, Any]:
 {% if route.needs_auth %}
     principal = await resolve_principal(headers, db)
+{% if not route.admits_anonymous %}
     if principal is None:
         return 401, {"detail": "Unauthorized"}
+{% endif %}
 {% else %}
     principal = None
 {% endif %}
@@ -80,25 +61,20 @@ async def handle_custom_{{ loop.index }}(
 {% for symbol in symbols.request %}
     {{ symbol | request_symbol_binding }}
 {% endfor %}
-    access_granted = False
-    access_bindings = {}
+    decisions = []
 {% for rule in route.access_rules %}
-    if not access_granted:
 {% for binding in rule.document_bindings %}
-        {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
-            resolve_access_bind({{ binding.where | py_literal }}, {**url_params, **locals()})
-        )
+    {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
+        resolve_access_bind({{ binding.where | py_literal }}, {**url_params, **locals()})
+    )
 {% endfor %}
-        if {% for binding in rule.document_bindings %}{{ binding.name }} is not None and {% endfor %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
-{% else %}
-            access_granted = True
-            access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+    decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-    if not access_granted:
-        return 403, {"detail": "Forbidden"}
+    try:
+        access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(decisions)]
+    except AccessDenied as exc:
+        status, detail = exc.refusal(principal)
+        return status, {"detail": detail}
     bound_inputs = resolve_access_bind(access_bindings, locals())
 {% else %}
     bound_inputs = {}

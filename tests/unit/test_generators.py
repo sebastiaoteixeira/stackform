@@ -172,51 +172,7 @@ def test_drf_views_per_collection(tmp_path):
     gen.generate(ctx, tmp_path)
     assert (tmp_path / "api" / "views" / "posts.py").exists()
     content = (tmp_path / "api" / "views" / "posts.py").read_text()
-    assert "ListView" in content or "DetailView" in content
-
-
-def test_drf_when_expression_to_python():
-    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
-    from yaml_api_generator.ir.when import Equals, FieldRef
-
-    expr = Equals(
-        left=FieldRef(root="principal", path=("sub",)),
-        right=FieldRef(root="document", path=("authorId",)),
-    )
-    result = _when_to_python(expr)
-    assert 'principal.get("sub")' in result
-    assert 'document.get("authorId")' in result
-    assert "==" in result
-
-
-def test_drf_in_expression_to_python():
-    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
-    from yaml_api_generator.ir.when import In, FieldRef
-
-    expr = In(
-        left=FieldRef(root="principal", path=("record", "role")),
-        values=("admin", "editor"),
-    )
-    result = _when_to_python(expr)
-    assert 'principal.get("record", {}).get("role")' in result
-    assert "in ('admin', 'editor')" in result
-    assert eval(result, {"principal": {"record": {"role": "admin"}}}) is True
-    assert eval(result, {"principal": {"record": {"role": "viewer"}}}) is False
-
-
-def test_drf_not_in_expression_to_python():
-    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
-    from yaml_api_generator.ir.when import NotIn, FieldRef
-
-    expr = NotIn(
-        left=FieldRef(root="document", path=("status",)),
-        values=("draft", "archived"),
-    )
-    result = _when_to_python(expr)
-    assert 'document.get("status")' in result
-    assert "not in ('draft', 'archived')" in result
-    assert eval(result, {"document": {"status": "published"}}) is True
-    assert eval(result, {"document": {"status": "draft"}}) is False
+    assert "class View_posts(APIView)" in content
 
 
 def test_drf_access_rule_enforcement_in_views(tmp_path):

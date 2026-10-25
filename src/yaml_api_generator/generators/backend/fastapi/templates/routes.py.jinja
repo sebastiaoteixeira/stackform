@@ -51,16 +51,22 @@ from dependencies.repositories import get_{{ collection_name }}_repository
 {% for where_collection in ns_where.collections %}
 from dependencies.repositories import get_{{ where_collection }}_repository
 {% endfor %}
-{% set ns_auth = namespace(needs_require=false, needs_role=false) %}
-{% for route in routes %}
-{% if route.needs_auth %}{% set ns_auth.needs_require = true %}{% endif %}
-{% if route.access_rules %}{% set ns_auth.needs_role = true %}{% endif %}
-{% endfor %}
-{% if auth.enabled and ns_auth.needs_require %}
-from dependencies.auth import require_principal
+{% set principal_dependencies = routes | selectattr("needs_auth") | map("principal_dependency") | unique | sort | list %}
+{% if auth.enabled and principal_dependencies %}
+from dependencies.auth import {{ principal_dependencies | join(", ") }}
 {% endif %}
-{% if auth.enabled and ns_auth.needs_role %}
-from dependencies.authorization import _principal_has_role, _values_equal
+{% if identity %}
+from dependencies.access import Roles, held_roles
+{% if auth.enabled %}
+from dependencies.authorization import ROLE_HIERARCHIES
+{% endif %}
+{% endif %}
+{% set scoped_lists = crud_routes | selectattr("operation", "equalto", "list") | selectattr("record_parent_params") | list %}
+{% if auth.enabled and routes | selectattr("access_rules") | list %}
+from dependencies.access import AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, matching, negate, one_of, row_filter, value_at
+from dependencies.authorization import _principal_has_role
+{% elif scoped_lists %}
+from dependencies.access import matching
 {% endif %}
 {% set ns = namespace(model_imports=[]) %}
 {% for route in crud_routes %}
@@ -97,7 +103,7 @@ _files = record_files[{{ collection_name | tojson }}]
 {% endif %}
 
 {% macro openapi_extra(route, request_body=none) %}{% set security = route.needs_auth and security_schemes %}{% if security or request_body %}, openapi_extra={{ "{" }}{% if security %}"security": {{ security_schemes }}{% endif %}{% if security and request_body %}, {% endif %}{% if request_body %}"requestBody": {{ request_body }}{% endif %}{{ "}" }}{% endif %}{% endmacro %}
-{% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% endmacro %}
+{% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any]{{ " | None" if route.admits_anonymous }} = Depends({{ route | principal_dependency }}){% endif %}{% endmacro %}
 {% macro svc_dep() %}svc=Depends(get_{{ service_groups | first }}_service){% endmacro %}
 {% macro extra_path_params(route) %}{% for name in route.path_params if name != route.record_id_param %}, {{ name }}: str{% endfor %}{% endmacro %}
 {% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": {{ param }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
@@ -145,7 +151,7 @@ _files = record_files[{{ collection_name | tojson }}]
 {% endmacro %}
 
 {% macro bind_inputs(route) %}
-{% if route.access_rules and route.access_rules | selectattr("bind") | list %}
+{% if route.binds_inputs %}
     _bound_inputs = resolve_access_bind(_access_bindings, locals())
 {% else %}
     _bound_inputs = {}
@@ -196,35 +202,34 @@ _files = record_files[{{ collection_name | tojson }}]
 {% endfor %}
 {% endmacro %}
 
-{% macro authorize_rules(route, current_document) %}
+{# Collects one decision per rule, then admits a record or filters rows #}
+{% macro authorize_rules(route, current_document, rows=false) %}
 {% if auth.enabled and route.needs_auth and route.access_rules %}
 {{ identity_locals(route) }}
-    _access_granted = False
-    _access_bindings = {}
+    _decisions = []
 {% for rule in route.access_rules %}
-    if not _access_granted:
 {% for binding in rule.document_bindings %}
 {% if binding.uses_where %}
-        {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
-            resolve_access_bind({{ binding.where | py_literal }}, locals())
-        )
+    {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
+        resolve_access_bind({{ binding.where | py_literal }}, locals())
+    )
 {% else %}
-        {{ binding.name }} = {{ current_document }}
+    {{ binding.name }} = {{ current_document }}
 {% endif %}
 {% endfor %}
-{% if rule is needs_current_document_rule %}
-        document = {{ current_document }}
-{% endif %}
-        if {% for binding in rule.document_bindings if binding.uses_where %}{{ binding.name }} is not None and {% endfor %}{% if rule is needs_current_document_rule %}{{ current_document }} is not None and {% endif %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
-{% else %}
-            _access_granted = True
-            _access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+    _decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-    if not _access_granted:
-        raise HTTPException(status_code=403, detail="Forbidden")
+{% if rows %}
+    _access_bindings = {}
+{% endif %}
+    try:
+{% if rows %}
+        _row_filter = row_filter(_decisions)
+{% else %}
+        _access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(_decisions)]
+{% endif %}
+    except AccessDenied as exc:
+        raise HTTPException(*exc.refusal(principal)) from exc
 {% endif %}
 {% endmacro %}
 
@@ -243,26 +248,38 @@ _files = record_files[{{ collection_name | tojson }}]
 {% for route in crud_routes %}
 {% set body_model = route.typed_body_model or route.body_model %}
 {% set partial = route.operation == "update" %}
-{% set body_expr = "upload.payload" if files else 'payload.model_dump(mode="json"' ~ (", exclude_unset=True" if partial else "") ~ ")" %}
-{% set record_expr = "upload.record" if files else body_expr %}
+{% set sent_expr = "upload.payload" if files else 'payload.model_dump(mode="json", exclude_unset=True)' %}
+{% set record_expr = "upload.record" if files else 'payload.model_dump(mode="json"' ~ (", exclude_unset=True" if partial else "") ~ ")" %}
+{% set record_expr = "{**" ~ record_expr ~ ", **_bound_inputs}" if route.operation in ("create", "update", "replace") and route.binds_inputs else record_expr %}
+{% set record_expr = "{**" ~ record_expr ~ ", **" ~ record_criteria(route) ~ "}" if route.operation == "create" and route.record_parent_params else record_expr %}
+{% set record_expr = "{**upload.payload, **carried_files(_files, existing)}" if files and route.operation == "replace" else record_expr %}
+{% if identity and route.operation in ("create", "update", "replace") %}
+{% set held = "held_roles(principal, ROLE_HIERARCHIES)" if auth.enabled and route.needs_auth else "()" %}
+{% set record_expr = (identity.role_store | py_literal) ~ (".granted(" if route.operation == "create" else ".revised(") ~ record_expr ~ ", " ~ held ~ ")" %}
+{% endif %}
 {% if route.operation == "list" %}
+{% set rules_filter = auth.enabled and route.needs_auth and route.access_rules %}
+{% set row_filter_arg = ", _row_filter" if rules_filter or route.record_parent_params else "" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 {% set list_prefix = (extra_path_params(route) ~ request_param(route) ~ auth_param(route)) | trim(chars=", ") %}
 async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{{ where_repo_params(route) }}{% if route.pagination %}, limit: int | None = None{% if route.pagination.strategy == "offset" %}, offset: int | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
 {{ request_locals(route, "None") }}
-{{ pre_fetch_guard(route) }}
+{{ authorize_rules(route, "Field(())", rows=true) }}
 {{ bind_inputs(route) }}
 {{ prepare_inputs(route, path_values(route), "None") }}
+{% if route.record_parent_params %}
+    _row_filter = {{ "conjoin(_row_filter, " if rules_filter }}matching({{ record_criteria(route) }}){{ ")" if rules_filter }}
+{% endif %}
 {% if route.pagination %}
     _pagination_config = {{ route.pagination | pagination_config | py_literal }}
     _pagination_query = {"limit": limit{% if route.pagination.strategy == "offset" %}, "offset": offset{% else %}, "after": after{% endif %}}
     try:
-        _page = await svc.list(map_request(_pagination_config, _pagination_query))
+        _page = await svc.list(map_request(_pagination_config, _pagination_query){{ row_filter_arg }})
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return build_response(_pagination_config, _page, _pagination_query)
 {% else %}
-    return await svc.list()
+    return await svc.list({{ "None" ~ row_filter_arg if row_filter_arg }})
 {% endif %}
 
 
@@ -287,25 +304,24 @@ async def get_{{ collection_name }}({{ route.record_id_param }}: str{{ extra_pat
 {% elif route.operation == "create" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route, upload_body(body_model, partial)) }})
 async def create_{{ collection_name }}({{ (payload_param(body_model) ~ extra_path_params(route) ~ request_param(route) ~ auth_param(route) ~ upload_param(route, body_model, partial)) | trim(chars=", ") }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
-{{ request_locals(route, body_expr) }}
+{{ request_locals(route, sent_expr) }}
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
-{{ prepare_inputs(route, path_values(route), body_expr) }}
+{{ prepare_inputs(route, path_values(route), sent_expr) }}
     return await svc.create({{ record_expr }})
 
 
 {% elif route.operation in ("update", "replace") %}
-{% set record_expr = "{**upload.payload, **carried_files(_files, existing)}" if files and route.operation == "replace" else record_expr %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route, upload_body(body_model, partial) if partial else json_body(body_model)) }})
 async def {{ route.operation }}_{{ collection_name }}({{ route.record_id_param }}: str{{ payload_param(body_model) }}{{ extra_path_params(route) }}{{ request_param(route) }}{{ auth_param(route) }}{{ upload_param(route, body_model, partial) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
-{{ request_locals(route, body_expr) }}
+{{ request_locals(route, sent_expr) }}
 {{ pre_fetch_guard(route) }}
 {% if route is needs_post_fetch or files %}
     existing = await {{ record_call(route, "get") }}
 {{ post_fetch_guard(route, "existing") }}
 {% endif %}
 {{ bind_inputs(route) }}
-{{ prepare_inputs(route, path_values(route), body_expr) }}
+{{ prepare_inputs(route, path_values(route), sent_expr) }}
 {{ persist(record_call(route, route.operation, record_expr)) }}
 
 

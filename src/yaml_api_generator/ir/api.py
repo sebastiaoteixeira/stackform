@@ -19,6 +19,7 @@ The IR serves as the single source of truth for code generation,
 eliminating repeated YAML parsing and validation.
 """
 
+import re
 from collections.abc import Collection, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -27,6 +28,8 @@ from urllib.parse import urlparse
 
 from .when import WhenExpr
 from ..constants import CRUD_OPERATIONS
+
+_PATH_PARAM = re.compile(r"\{(\w+)\}")
 
 
 @dataclass(frozen=True)
@@ -247,6 +250,10 @@ class IRCollection:
     files: dict[str, IRFileField] = field(default_factory=dict)
     file_store: str | None = None
 
+    def scope(self, params: Iterable[str], record_param: str | None) -> tuple[str, ...]:
+        """The path parameters, besides the record's own, that name fields of this collection."""
+        return tuple(param for param in params if param != record_param and param in self.fields)
+
 
 SECRET_FIELD: dict[str, Any] = {"type": "string", "required": True, "minLength": 1}
 """The config of a credential a request sends, such as a password."""
@@ -334,8 +341,25 @@ class IRVendoredImport:
     requires: tuple[str, ...] = ()
 
 
+AUTHENTICATED = "*"
+"""The principal of a rule that any authenticated caller satisfies."""
+
+
+class CallerDemand:
+    """What an access rule asks of the caller: ``principal`` names the identity collection
+    (``identity:<collection>``), ``AUTHENTICATED`` or nothing; ``required_role`` a role it holds."""
+
+    principal: str
+    required_role: str | None
+
+    @property
+    def admits_anonymous(self) -> bool:
+        """Whether the rule can hold for a caller who presents no credentials."""
+        return not self.principal and self.required_role is None
+
+
 @dataclass(frozen=True)
-class IRAccessRule:
+class IRAccessRule(CallerDemand):
     principal: str
     required_role: str | None = None
     identity_symbols: dict[str, IRIdentityBinding] = field(default_factory=dict)
@@ -379,6 +403,24 @@ class IRRoute:
     access_rules: list[IRAccessRule] | None = None
     handler: str | None = None
     pagination: IRPagination | None = None
+    # The path parameter carrying the id of the record the route acts on.
+    record_param: str | None = None
+    # Path parameters naming fields of the collection: the route reaches only rows holding their values.
+    scope: tuple[str, ...] = ()
+
+    @property
+    def path_params(self) -> list[str]:
+        return _PATH_PARAM.findall(self.path)
+
+    @property
+    def admits_anonymous(self) -> bool:
+        """Whether an access rule of the route can admit a caller who presents no credentials."""
+        return any(rule.admits_anonymous for rule in self.access_rules or ())
+
+    @property
+    def serves_crud(self) -> bool:
+        """Whether a repository CRUD operation serves the route, fetching its own record."""
+        return self.handler is None and self.collection is not None and self.operation in CRUD_OPERATIONS
 
     def body_dto(self, dtos: dict[str, IRDto]) -> IRDto | None:
         """The DTO that the first DTO-typed request-body binding gives this route's body."""
@@ -474,10 +516,21 @@ class IRIdentityCollection:
     bindings: tuple[IRProviderBinding, ...]
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
+    login: bool = True
 
     @property
     def has_password(self) -> bool:
         return any(b.provider == "password" for b in self.bindings)
+
+    @property
+    def serves_login(self) -> bool:
+        return self.login and self.has_password
+
+    def default_role(self, collection: IRCollection) -> str | None:
+        """The role of a record whose creator may not choose one."""
+        if self.roles is not None:
+            return self.roles.default
+        return collection.fields[self.roles_field].get("default") if self.roles_field else None
 
     @property
     def has_api_key(self) -> bool:

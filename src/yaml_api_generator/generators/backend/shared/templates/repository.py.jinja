@@ -16,6 +16,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from {{ conflict_import }} import ConflictError
+from {{ access_import }} import EVERY_ROW, Predicate
 from {{ pagination_import }} import Page, Primitives, expand_bound
 
 
@@ -95,13 +96,13 @@ class {{ class_name }}Repository:
             return None
         return {k: v for k, v in doc.items() if k not in _HIDDEN_FIELDS}
 
-    async def list(self) -> list[dict[str, Any]]:
-        cursor = self._col.find({})
+    async def list(self, predicate: Predicate = EVERY_ROW) -> list[dict[str, Any]]:
+        cursor = self._col.find(predicate.mongo())
         docs = await cursor.to_list(length=None)
         return [self._normalize(d) for d in docs]
 
-    async def paginate(self, primitives: Primitives) -> Page:
-        query = _pagination_filter(primitives)
+    async def paginate(self, primitives: Primitives, predicate: Predicate = EVERY_ROW) -> Page:
+        query = {"$and": [predicate.mongo(), _pagination_filter(primitives)]}
         cursor = self._col.find(query)
         if primitives.sort:
             cursor = cursor.sort(
@@ -113,7 +114,7 @@ class {{ class_name }}Repository:
             cursor = cursor.limit(primitives.limit)
         documents = await cursor.to_list(length=None)
         total = (
-            await self._col.count_documents({})
+            await self._col.count_documents(predicate.mongo())
             if primitives.count == "exact"
             else None
         )

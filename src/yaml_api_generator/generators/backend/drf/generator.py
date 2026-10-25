@@ -25,19 +25,6 @@ from ..validation import (
 )
 from ..fastapi import access_filters
 from .settings_builder import build_drf_settings_fields
-from yaml_api_generator.ir.when import (
-    And,
-    Equals,
-    FieldRef,
-    In,
-    Not,
-    NotEquals,
-    NotIn,
-    Or,
-    StringLiteral,
-    WhenExpr,
-    needs_document,
-)
 
 
 _BACKEND_GENERATORS = Path(__file__).parent.parent
@@ -61,19 +48,18 @@ class DRFGenerator(TemplateBasedGenerator):
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.globals["settings_module"] = f"{self.dir_prefix}.settings"
         env.filters["capitalize_collection"] = to_pascal_case
-        env.filters["rule_to_python"] = _rule_to_python
+        env.filters["rule_to_predicate"] = access_filters.rule_to_predicate
         env.filters["py_literal"] = access_filters.py_literal
         env.filters["pagination_config"] = pagination_config
         env.filters["request_symbol_binding"] = access_filters.request_symbol_binding
         env.filters["role_hierarchies_py"] = access_filters.role_hierarchies_py
         env.filters["int"] = int
-        env.tests["needs_document"] = _needs_document_test
         env.tests["needs_document_rule"] = access_filters.needs_document_rule
         env.tests["needs_current_document_rule"] = (
             access_filters.needs_current_document_rule
         )
         env.tests["needs_post_fetch"] = access_filters.needs_post_fetch
-        env.tests["unconditional"] = _is_unconditional
+        env.tests["unconditional"] = access_filters.is_unconditional
 
         output_dir.mkdir(parents=True, exist_ok=True)
         api_dir = output_dir / self.dir_prefix
@@ -89,9 +75,8 @@ class DRFGenerator(TemplateBasedGenerator):
         self._render_serializers(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_service_inputs(env, output_dir, self.dir_prefix)
-        (api_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
+        for module in ("access", "pagination"):
+            (api_dir / f"{module}.py").write_text(runtime_module_source(module))
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
@@ -198,6 +183,7 @@ class DRFGenerator(TemplateBasedGenerator):
             "import_prefix": "api.repositories",
             "auth_import_prefix": "api.authentication.auth",
             "service_import_prefix": "api.services",
+            "access_import": "api.access",
         }
 
     def _render_views(
@@ -223,12 +209,13 @@ class DRFGenerator(TemplateBasedGenerator):
                         for op in ctx.repository_operations.get(col_name, [])
                     },
                     "auth": ctx.auth,
+                    "identity": find_identity(ctx, col_name),
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["routes"]),
             )
         )
 
-        if context.auth.has_password_auth:
+        if context.auth.login_identities:
             views_dir = output_dir / self.dir_prefix / "views"
             login_template = env.get_template("login_views.py.jinja")
             login_content = login_template.render(auth=context.auth)
@@ -269,6 +256,7 @@ class DRFGenerator(TemplateBasedGenerator):
                     "custom_operations": ctx.repository_operations.get(col_name, []),
                     "conflict_import": "api.conflicts",
                     "pagination_import": "api.pagination",
+                    "access_import": "api.access",
                 },
             )
         )
@@ -316,78 +304,3 @@ class DRFGenerator(TemplateBasedGenerator):
 
         apps_template = env.get_template("apps.py.jinja")
         (api_dir / "apps.py").write_text(apps_template.render(ctx=context))
-
-
-def _build_symbol_map(rule) -> dict[str, str]:
-    symbol_map: dict[str, str] = {}
-    if hasattr(rule, 'identity_symbols'):
-        for symbol_name in rule.identity_symbols:
-            symbol_map[symbol_name] = symbol_name
-    if hasattr(rule, 'document_symbols'):
-        for symbol_name in rule.document_symbols:
-            symbol_map[symbol_name] = symbol_name
-    return symbol_map
-
-
-def _operand_to_python(expr: WhenExpr, symbol_map: dict[str, str]) -> str:
-    if isinstance(expr, StringLiteral):
-        return f'"{expr.value}"'
-    if isinstance(expr, FieldRef):
-        var_name = symbol_map.get(expr.root, expr.root)
-        if not expr.path:
-            return f'{var_name}.get("sub")'
-        if len(expr.path) == 1:
-            return f'{var_name}.get("{expr.path[0]}")'
-        if len(expr.path) >= 2 and expr.path[0] == "record":
-            return f'{var_name}.get("record", {{}}).get("{expr.path[1]}")'
-        nested = ".".join(f'get("{p}")' for p in expr.path)
-        return f'{var_name}.{nested}'
-    return "None"
-
-
-def _when_to_python(expr: WhenExpr, symbol_map: dict[str, str] | None = None) -> str:
-    if symbol_map is None:
-        symbol_map = {}
-    if isinstance(expr, Equals):
-        return f"{_operand_to_python(expr.left, symbol_map)} == {_operand_to_python(expr.right, symbol_map)}"
-    if isinstance(expr, NotEquals):
-        return f"{_operand_to_python(expr.left, symbol_map)} != {_operand_to_python(expr.right, symbol_map)}"
-    if isinstance(expr, And):
-        return f"({_when_to_python(expr.left, symbol_map)} and {_when_to_python(expr.right, symbol_map)})"
-    if isinstance(expr, Or):
-        return f"({_when_to_python(expr.left, symbol_map)} or {_when_to_python(expr.right, symbol_map)})"
-    if isinstance(expr, Not):
-        return f"(not {_when_to_python(expr.operand, symbol_map)})"
-    if isinstance(expr, In):
-        return f"{_operand_to_python(expr.left, symbol_map)} in {tuple(expr.values)!r}"
-    if isinstance(expr, NotIn):
-        return f"{_operand_to_python(expr.left, symbol_map)} not in {tuple(expr.values)!r}"
-    return "False"
-
-
-def _rule_to_python(rule) -> str:
-    conditions: list[str] = []
-    if getattr(rule, "principal", "").startswith("identity:"):
-        collection = rule.principal.removeprefix("identity:")
-        conditions.append(
-            f'_resolved_principal.get("identity_collection") == "{collection}"'
-        )
-    if getattr(rule, "required_role", None) is not None:
-        conditions.append(f'_principal_has_role(_resolved_principal, "{rule.required_role}")')
-    if getattr(rule, "when", None) is not None:
-        conditions.append(_when_to_python(rule.when, _build_symbol_map(rule)))
-    if not conditions:
-        return "True"
-    return " and ".join(conditions)
-
-
-def _needs_document_test(expr: WhenExpr) -> bool:
-    return needs_document(expr)
-
-
-def _is_unconditional(rule) -> bool:
-    return (
-        not getattr(rule, "principal", "")
-        and getattr(rule, "when", None) is None
-        and getattr(rule, "required_role", None) is None
-    )

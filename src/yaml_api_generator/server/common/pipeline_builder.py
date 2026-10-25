@@ -37,7 +37,8 @@ from .steps.files import (
     remove_file,
     replace_file,
 )
-from .steps.repositories import RecordLocator, record_locator
+from .steps.authorization import Admission, admit_record, admit_rows, screen_record
+from .steps.repositories import RecordLocator
 
 
 def _document_bindings(route: RuntimeRouteDescriptor) -> Iterator[IRDocumentBinding]:
@@ -240,7 +241,9 @@ class PipelineBuilder:
             steps.append(ResolveWhereBindingsStep(route.access_rules))
 
         if not route.is_public:
-            steps.append(AuthorizeRouteStep(route.access_rules, self._ctx.auth))
+            steps.append(
+                AuthorizeRouteStep(route.access_rules, self._ctx.auth, self._admission(route))
+            )
 
         if not route.is_public and _has_access_bind(route):
             steps.append(ResolveAccessBindStep(route.access_rules))
@@ -263,6 +266,13 @@ class PipelineBuilder:
             return None
         return ValidateIdentityCreateStep(identity_collection)
 
+    def _admission(self, route: RuntimeRouteDescriptor) -> Admission:
+        if route.operation == "list":
+            return admit_rows
+        if self._post_fetch_authorize_step(route) is not None:
+            return screen_record
+        return admit_record
+
     def _post_fetch_authorize_step(self, route: RuntimeRouteDescriptor) -> Step | None:
         if route.is_public or not route.access_rules:
             return None
@@ -272,11 +282,9 @@ class PipelineBuilder:
             return None
         return PostFetchAuthorizeStep(route.access_rules, self._ctx.auth)
 
-    def _locator(self, route: RuntimeRouteDescriptor):
-        if getattr(self._ctx, "spec_version", "0.2") != "0.3":
-            return RecordLocator(self._ctx.collections[route.collection].id_field)
-        return record_locator(
-            route.path, self._ctx.collections[route.collection].id_field
+    def _locator(self, route: RuntimeRouteDescriptor) -> RecordLocator:
+        return RecordLocator(
+            self._ctx.collections[route.collection].id_field, route.record_param, route.scope
         )
 
     def _repository_step(self, route: RuntimeRouteDescriptor) -> Step:
@@ -287,18 +295,33 @@ class PipelineBuilder:
         identity = self._ctx.auth.identity_collections.get(collection_name)
 
         if operation == "list":
-            return RepositoryListStep(collection_name, id_field, route.pagination)
+            return RepositoryListStep(collection_name, id_field, route.pagination, self._locator(route))
         if operation == "get":
             return RepositoryGetStep(collection_name, id_field, self._locator(route))
         if operation == "create":
-            return RepositoryCreateStep(collection_name, id_field, collection.id_format, identity)
+            return RepositoryCreateStep(
+                collection_name,
+                id_field,
+                collection.id_format,
+                identity,
+                hierarchies=self._ctx.auth.role_hierarchies,
+                locator=self._locator(route),
+            )
         if operation == "update":
             return RepositoryUpdateStep(
-                collection_name, id_field, self._locator(route), identity=identity
+                collection_name,
+                id_field,
+                self._locator(route),
+                identity=identity,
+                hierarchies=self._ctx.auth.role_hierarchies,
             )
         if operation == "replace":
             return RepositoryReplaceStep(
-                collection_name, id_field, self._locator(route), identity=identity
+                collection_name,
+                id_field,
+                self._locator(route),
+                identity=identity,
+                hierarchies=self._ctx.auth.role_hierarchies,
             )
         if operation == "delete":
             return RepositoryDeleteStep(collection_name, id_field, self._locator(route))

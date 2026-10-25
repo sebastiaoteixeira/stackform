@@ -29,6 +29,7 @@ from yaml_api_generator.server.common.steps.authorization import (
     PostFetchAuthorizeStep,
     UnauthorizedError,
     ValidateIdentityCreateStep,
+    screen_record,
 )
 from yaml_api_generator.ir.when import (
     Equals,
@@ -740,8 +741,10 @@ class TestAuthorizeRouteStep:
             FieldRef("document", ("authorId",)),
             FieldRef("principal", ("sub",)),
         )
-        rules = [RuntimeAccessRule(principal="identity:users", when=when)]
-        step = AuthorizeRouteStep(access_rules=rules)
+        rules = [RuntimeAccessRule(
+            principal="identity:users", when=when, document_symbols={"document": IRDocumentBinding(collection="posts")}
+        )]
+        step = AuthorizeRouteStep(access_rules=rules, admission=screen_record)
         ctx = _make_ctx(
             principal={
                 "sub": "u1",
@@ -759,7 +762,9 @@ class TestPostFetchAuthorizeStep:
             FieldRef("document", ("authorId",)),
             FieldRef("principal", ("sub",)),
         )
-        rules = [RuntimeAccessRule(principal="identity:users", when=when)]
+        rules = [RuntimeAccessRule(
+            principal="identity:users", when=when, document_symbols={"document": IRDocumentBinding(collection="posts")}
+        )]
         step = PostFetchAuthorizeStep(access_rules=rules)
         ctx = _make_ctx(
             principal={

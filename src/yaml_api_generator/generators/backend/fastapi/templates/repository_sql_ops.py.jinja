@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from conflicts import ConflictError
+from dependencies.access import EVERY_ROW, Predicate
 from dependencies.pagination import Page, Primitives, expand_bound
 
 
@@ -204,16 +205,15 @@ class SQLRepositoryBase:
 
 
 class ListOp:
-    async def list(self) -> list[dict[str, Any]]:
+    async def list(self, predicate: Predicate = EVERY_ROW) -> list[dict[str, Any]]:
         async with self._engine.connect() as conn:
-            result = await conn.execute(sa.select(self.TABLE))
+            result = await conn.execute(sa.select(self.TABLE).where(predicate.sql(self.TABLE)))
             return [dict(row._mapping) for row in result]
 
-    async def paginate(self, primitives: Primitives) -> Page:
-        statement = sa.select(self.TABLE)
-        clauses = _pagination_bounds(self.TABLE, primitives)
-        if clauses:
-            statement = statement.where(sa.and_(*clauses))
+    async def paginate(self, primitives: Primitives, predicate: Predicate = EVERY_ROW) -> Page:
+        statement = sa.select(self.TABLE).where(
+            predicate.sql(self.TABLE), *_pagination_bounds(self.TABLE, primitives)
+        )
         for key in primitives.sort:
             column = self.TABLE.c[key.field]
             statement = statement.order_by(
@@ -227,7 +227,11 @@ class ListOp:
             rows = [dict(row._mapping) for row in await conn.execute(statement)]
             total = None
             if primitives.count == "exact":
-                count_statement = sa.select(sa.func.count()).select_from(self.TABLE)
+                count_statement = (
+                    sa.select(sa.func.count())
+                    .select_from(self.TABLE)
+                    .where(predicate.sql(self.TABLE))
+                )
                 total = (await conn.execute(count_statement)).scalar()
         return Page(rows, total)
 

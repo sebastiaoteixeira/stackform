@@ -13,6 +13,8 @@ Each pipeline step receives and returns an updated RequestContext.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
+
 if TYPE_CHECKING:
     from .request_body import RequestBody
 
@@ -35,6 +37,7 @@ class RequestContext:
     cookies: dict[str, str] | None = None
     where_documents: list[dict[str, Any]] | None = None
     authorized_rule_index: int | None = None
+    row_filter: Predicate = EVERY_ROW
     bound_inputs: dict[str, Any] | None = None
     service_inputs: dict[str, Any] | None = None
     upload: "RequestBody | None" = None
