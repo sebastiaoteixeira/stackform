@@ -3,6 +3,10 @@ version: "0.2"
 api:
   basePath: /api
   version: v1
+  operations:
+    auth:
+      register: true
+      login: true
 
 mongo:
   uri: mongodb://localhost:27017

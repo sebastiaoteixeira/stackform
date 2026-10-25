@@ -3,6 +3,10 @@ version: "0.2"
 api:
   basePath: /api
   version: v1
+  operations:
+    auth:
+      register: true
+      login: true
 
 entities:
   user:
@@ -84,13 +88,13 @@ controllers:
         access:
           - given:
               principal: identity:user
-              document: post
+              document: posts
             when: principal.sub equals document.authorId
       delete:
         access:
           - given:
               principal: identity:user
-              document: post
+              document: posts
             when: principal.sub equals document.authorId
 
   comments:
@@ -104,7 +108,7 @@ controllers:
         access:
           - given:
               principal: identity:user
-              document: comment
+              document: comments
             when: principal.sub equals document.authorId
 
 ui:
