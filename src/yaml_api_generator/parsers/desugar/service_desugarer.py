@@ -9,6 +9,8 @@ AUTH_SERVICE_TEMPLATES: dict[str, dict[str, str]] = {
     "login": {"operation": "login"},
 }
 
+_SHARED_KEYS = ("input", "with", "_inherits")
+
 
 class ServiceDesugarer:
     """
@@ -86,7 +88,7 @@ class ServiceDesugarer:
         self, key: str, entry: dict[str, Any], repositories: dict[str, Any]
     ) -> bool:
         """Check if service entry is minified (needs expansion)."""
-        if "operation" in entry or "handler" in entry:
+        if "operation" in entry or "handler" in entry or entry.get("abstract"):
             return False
         return "repository" in entry or key in repositories
 
@@ -128,9 +130,10 @@ class ServiceDesugarer:
 
         entity = entities[entity_name]
         service_ops = entry.get("operations", {})
+        shared = {key: entry[key] for key in _SHARED_KEYS if key in entry}
 
         self._expand_crud_operations(
-            svc_name, repo_name, repo, service_ops, defaults, expanded
+            svc_name, repo_name, repo, service_ops, shared, defaults, expanded
         )
 
         is_auth = isinstance(entity, dict) and entity.get("type") == "auth"
@@ -145,10 +148,11 @@ class ServiceDesugarer:
         repo_name: str,
         repo: dict[str, Any],
         service_ops: dict[str, Any],
+        shared: dict[str, Any],
         defaults: dict[str, Any],
         expanded: dict[str, Any],
     ) -> None:
-        """Expand CRUD operations for a service."""
+        """Expand CRUD and custom operations, each sharing the service's input, forwarding and base."""
         repo_crud = repo.get("crud") if isinstance(repo, dict) else None
         repo_ops: dict[str, Any] = {}
         if repo_crud is not None:
@@ -160,11 +164,10 @@ class ServiceDesugarer:
         for op_name, op_value in resolved.items():
             if op_value is False:
                 continue
-            flat_key = f"{op_name}-{svc_name}"
-            if op_value is True:
-                expanded[flat_key] = {"repository": repo_name, "operation": op_name}
-            elif isinstance(op_value, dict) and "handler" in op_value:
-                expanded[flat_key] = {"handler": op_value["handler"]}
+            implementation = op_value if isinstance(op_value, dict) else {}
+            expanded[f"{op_name}-{svc_name}"] = {
+                **shared, "repository": repo_name, "operation": op_name, **implementation,
+            }
 
     def _expand_auth_operations(
         self,

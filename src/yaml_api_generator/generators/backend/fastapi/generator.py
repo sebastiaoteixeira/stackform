@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from pathlib import Path
 
 from jinja2 import Environment
@@ -6,17 +7,25 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
+from ..inheritance import (
+    own_repository_operations,
+    own_service_operations,
+    repository_base_class,
+    route_operations,
+    service_base_class,
+)
 from ..utils import (
+    MONGO_RUNTIME_MODULES,
+    SQL_RUNTIME_MODULES,
     extract_identity_fields,
     find_identity,
     group_by_collection,
-    lifecycle_runtime_modules,
     pagination_config,
     runtime_module_source,
     write_environment_files,
+    write_runtime_modules,
 )
 from ..validation import (
-    reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -44,10 +53,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "fastapi")
         reject_unsigned_session_algorithm(context)
-        reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
-        env.filters["python_type"] = type_mapper.python_type
-        env.filters["python_annotation"] = type_mapper.python_annotation
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_identifier"] = to_py_identifier
         env.filters["py_bool"] = access_filters.py_bool
@@ -65,9 +71,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         )
         env.tests["needs_request_rule"] = access_filters.needs_request_rule
         env.tests["unconditional"] = access_filters.is_unconditional
-        env.globals["needs_datetime_import"] = type_mapper.needs_datetime_import
-        env.globals["needs_literal_import"] = type_mapper.needs_literal_import
-        env.globals["needs_any_import"] = type_mapper.needs_any_import
 
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "conflicts.py").write_text(
@@ -82,7 +85,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         self._render_models(env, context, collections_by_name, output_dir)
         self._render_dtos(env, context, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
-        self._render_service_inputs(env, context, output_dir)
+        self._render_service_inputs(env, output_dir, "dependencies")
         self._render_routes(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_dependencies(env, context, output_dir)
@@ -94,18 +97,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
             )
         )
 
-    def _render_service_inputs(
-        self, env: Environment, context: CompileContext, output_dir: Path
-    ) -> None:
-        self._render_single_file(
-            env,
-            context,
-            output_dir,
-            SingleFileRenderConfig(
-                template_name="service_inputs.py.jinja",
-                output_path="dependencies/service_inputs.py",
-            ),
-        )
 
     def _render_settings(
         self, env: Environment, context: CompileContext, output_dir: Path
@@ -139,8 +130,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 template_name="models.py.jinja",
                 output_subdir="models",
                 context_builder=lambda col_name, col_data, ctx: {
-                    "models": col_data["models"],
-                    "all_fields": [f for m in col_data["models"] for f in m.fields],
+                    "module": type_mapper.PayloadModule(col_data["models"]),
                 },
                 should_render=lambda col_name, col_data, ctx: bool(col_data["models"]),
             )
@@ -154,8 +144,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
         models_dir = output_dir / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
         content = env.get_template("models.py.jinja").render(
-            models=context.dto_models,
-            all_fields=[f for m in context.dto_models for f in m.fields],
+            module=type_mapper.PayloadModule(context.dto_models)
         )
         (models_dir / "_dto.py").write_text(content)
 
@@ -181,13 +170,28 @@ class FastAPIGenerator(TemplateBasedGenerator):
         ops_content = ops_template.render(auth=context.auth)
         (output_dir / "services" / "_ops.py").write_text(ops_content)
 
+        template = env.get_template("service.py.jinja")
+        for base in context.service_bases.values():
+            parent = context.service_bases.get(base.inherits)
+            (output_dir / "services" / f"{base.name}.py").write_text(template.render(
+                collection_name=base.name,
+                operations=[],
+                is_identity_collection=False,
+                password_via=False,
+                custom_operations=own_service_operations(base.operations, parent),
+                generated_base=service_base_class(parent),
+            ))
+
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
         identity = find_identity(context, col_name)
         is_identity = identity is not None
+        base = context.service_base(col_name)
 
         return {
             "collection_name": col_name,
             "operations": _crud_operations(col_data),
+            "custom_operations": own_service_operations(route_operations(col_data), base),
+            "generated_base": service_base_class(base),
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
             "default_role": identity.roles.default if is_identity and identity.roles else None,
@@ -226,11 +230,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "service_groups": service_groups,
             "routes": col_data["routes"],
             "model_index": {m.name: m for m in col_data["models"]},
-            "repo_queries": {
-                op["name"]: op["query"]
-                for op in ctx.repository_operations.get(col_name, [])
-            },
-            "datastore_type": ctx.collection_datastore_type(col_name),
             "auth": ctx.auth,
             "files": ctx.file_fields.get(col_name, {}),
             "file_routes": [route for route in ctx.file_routes if route.collection == col_name],
@@ -347,12 +346,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         init_imports: list[str] = []
         uses_mongo = uses_sql = False
 
-        def generated_base(name: str) -> dict[str, str] | None:
-            base = context.repository_inherits.get(name)
-            if base is None:
-                return None
-            return {"module": f".{base}", "class_name": f"{to_pascal_case(base)}Repository"}
-
         # Abstract base repositories render as inheritable classes (no collection).
         for base_name, ds_type in context.repository_abstract.items():
             is_sql = ds_type in ("postgres", "postgresql")
@@ -361,8 +354,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 abstract=True,
                 collection_name=base_name,
                 operations=[],
-                custom_operations=context.repository_operations.get(base_name, []),
-                generated_base=generated_base(base_name),
+                custom_operations=own_repository_operations(context, base_name),
+                generated_base=repository_base_class(context, base_name),
             ))
             init_imports.append(f"from .{base_name} import {to_pascal_case(base_name)}Repository")
             uses_sql = uses_sql or is_sql
@@ -378,9 +371,9 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "id_field_format": meta["id_format"],
                 "collection_type": meta["type"],
                 "fields": meta["fields"],
-                "lifecycle": meta["lifecycle"],
-                "custom_operations": ctx_ops if (ctx_ops := context.repository_operations.get(col_name, [])) else [],
-                "generated_base": generated_base(col_name),
+                "lifecycle": meta["lifecycle"] if is_sql else asdict(meta["lifecycle"]),
+                "custom_operations": own_repository_operations(context, col_name),
+                "generated_base": repository_base_class(context, col_name),
             }
             template = sql_template if is_sql else mongo_template
             (repos_dir / f"{col_name}.py").write_text(template.render(**template_context))
@@ -440,17 +433,16 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
-        (deps_dir / "pagination.py").write_text(
-            runtime_module_source("pagination")
-        )
-        for module in lifecycle_runtime_modules(uses_mongo=uses_mongo, uses_sql=uses_sql):
-            (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
-        if any(context.repository_operations.values()):
-            (deps_dir / "bindings.py").write_text(
-                (_STATIC_DIR / "bindings.py").read_text()
-            )
+        write_runtime_modules(deps_dir, dict.fromkeys((
+            "pagination",
+            "payloads",
+            "operations",
+            "handler_requests",
+            *(MONGO_RUNTIME_MODULES if uses_mongo else ()),
+            *(SQL_RUNTIME_MODULES if uses_sql else ()),
+        )))
         self._render_file_dependencies(env, context, deps_dir)
 
         init_imports: list[str] = []

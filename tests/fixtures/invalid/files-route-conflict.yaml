@@ -17,4 +17,4 @@ controllers:
     routes:
       get: { service: documents, method: GET, path: "/{id}" }
       update: { service: documents, method: PATCH, path: "/{id}" }
-      replaceAvatar: { service: documents, method: PUT, path: "/{id}/files/avatar" }
+      replace: { service: documents, method: PUT, path: "/{id}/files/avatar" }

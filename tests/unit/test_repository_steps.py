@@ -3,7 +3,9 @@ import uuid
 import pytest
 
 from tests.unit.support.repositories import InMemoryRepository
+from yaml_api_generator.ir.api import IRProviderBinding
 from yaml_api_generator.server.common.request_context import RequestContext
+from yaml_api_generator.server.common.server_context import RuntimeIdentityDescriptor
 from yaml_api_generator.server.common.steps import NotFoundError
 from yaml_api_generator.server.common.steps.repositories import (
     RepositoryCreateStep,
@@ -59,40 +61,51 @@ def test_generate_id_unknown_format_raises():
 # --- Payload Preparation (244-249) ---
 
 
-def test_prepare_payload_password_via_false():
-    payload = {"title": "hello", "password": "secret"}
-    result = _prepare_payload(payload, password_via=False)
-    assert result == {"title": "hello", "password": "secret"}
+_PASSWORD_IDENTITY = RuntimeIdentityDescriptor(
+    name="users",
+    bindings=(IRProviderBinding(provider="password", identifier="email"),),
+    id_field="id",
+)
 
 
-def test_prepare_payload_password_via_true_no_password_key():
+def test_prepare_payload_keeps_non_identity_fields():
+    payload = {"title": "hello", "password": "secret", "role": "admin", "roles": ["a"]}
+    assert _prepare_payload(payload, None) == payload
+
+
+def test_prepare_payload_strips_identity_roles():
+    result = _prepare_payload({"email": "a@b.co", "role": "admin", "roles": ["a"]}, _PASSWORD_IDENTITY)
+    assert result == {"email": "a@b.co"}
+
+
+def test_prepare_payload_password_identity_no_password_key():
     payload = {"title": "hello"}
-    result = _prepare_payload(payload, password_via=True)
+    result = _prepare_payload(payload, _PASSWORD_IDENTITY)
     assert result == {"title": "hello"}
 
 
-def test_prepare_payload_password_via_true_valid_password():
+def test_prepare_payload_password_identity_valid_password():
     payload = {"title": "hello", "password": "secret123"}
-    result = _prepare_payload(payload, password_via=True)
+    result = _prepare_payload(payload, _PASSWORD_IDENTITY)
     assert "password" not in result
     assert "_auth" in result
     assert "passwordHash" in result["_auth"]
     assert result["_auth"]["passwordHash"].startswith("pbkdf2$sha256$")
 
 
-def test_prepare_payload_password_via_true_empty_password():
+def test_prepare_payload_password_identity_empty_password():
     with pytest.raises(ValueError, match="non-empty string"):
-        _prepare_payload({"password": ""}, password_via=True)
+        _prepare_payload({"password": ""}, _PASSWORD_IDENTITY)
 
 
-def test_prepare_payload_password_via_true_non_string_password():
+def test_prepare_payload_password_identity_non_string_password():
     with pytest.raises(ValueError, match="non-empty string"):
-        _prepare_payload({"password": 123}, password_via=True)
+        _prepare_payload({"password": 123}, _PASSWORD_IDENTITY)
 
 
 def test_prepare_payload_existing_auth_dict_merged():
     payload = {"_auth": {"apiKey": "abc123"}, "password": "secret"}
-    result = _prepare_payload(payload, password_via=True)
+    result = _prepare_payload(payload, _PASSWORD_IDENTITY)
     assert "apiKey" in result["_auth"]
     assert "passwordHash" in result["_auth"]
 
@@ -176,7 +189,7 @@ async def test_repository_create_step_generates_id():
     repo = InMemoryRepository()
     repo.register_id_field("items", "id")
     ctx = _make_ctx(repository=repo, body={"title": "new"})
-    step = RepositoryCreateStep("items", "id", "uuidv4", False)
+    step = RepositoryCreateStep("items", "id", "uuidv4")
     result = await step(ctx)
     assert result.response["id"] is not None
     assert uuid.UUID(result.response["id"]).version == 4
@@ -191,7 +204,7 @@ async def test_repository_create_step_natural_pk_no_id_generated():
         collection="countries",
         body={"code": "US", "name": "United States"},
     )
-    step = RepositoryCreateStep("countries", "code", "natural", False)
+    step = RepositoryCreateStep("countries", "code", "natural")
     result = await step(ctx)
     assert result.response["code"] == "US"
     assert "id" not in result.response or result.response.get("id") is None
@@ -208,7 +221,7 @@ async def test_repository_update_step():
         url_params={"id": "abc"},
         body={"title": "new"},
     )
-    step = RepositoryUpdateStep("items", "id", False)
+    step = RepositoryUpdateStep("items", "id")
     result = await step(ctx)
     assert result.response["title"] == "new"
 
@@ -224,7 +237,7 @@ async def test_repository_update_step_not_found():
         url_params={"id": "missing"},
         body={"title": "x"},
     )
-    step = RepositoryUpdateStep("items", "id", False)
+    step = RepositoryUpdateStep("items", "id")
     with pytest.raises(NotFoundError):
         await step(ctx)
 
@@ -242,7 +255,7 @@ async def test_repository_replace_step():
         url_params={"id": "abc"},
         body={"id": "abc", "title": "replaced"},
     )
-    step = RepositoryReplaceStep("items", "id", False)
+    step = RepositoryReplaceStep("items", "id")
     result = await step(ctx)
     assert result.response["title"] == "replaced"
 
@@ -289,6 +302,6 @@ async def test_repository_step_non_dict_body():
     repo = InMemoryRepository()
     repo.register_id_field("items", "id")
     ctx = _make_ctx(repository=repo, body="not a dict")
-    step = RepositoryCreateStep("items", "id", "uuidv4", False)
+    step = RepositoryCreateStep("items", "id", "uuidv4")
     with pytest.raises(ValueError, match="Request body must be a JSON object"):
         await step(ctx)

@@ -1,0 +1,17 @@
+{# Runs the route's service operation, or the handler of a route without a service, over one HandlerRequest #}
+{% macro run_operation(route) %}
+    _request = HandlerRequest(
+        params=url_params,
+        query=query or {},
+        headers=headers,
+        cookies=cookies or {},
+        body=body,
+        principal=principal,
+        inputs=service_inputs,
+    )
+{% if route.collection %}
+    return 200, await service.{{ route.operation }}(_request)
+{% else %}
+    return 200, await invoke({{ route.handler | py_literal }}, _request)
+{% endif %}
+{% endmacro %}

@@ -74,10 +74,7 @@ def _build_operations(
     return {
         repo_name: {
             op_name: RuntimeOperationDescriptor(
-                name=op.name,
-                query=op.query,
-                handler=op.handler,
-                include_deleted=op.include_deleted,
+                name=op.name, query=op.query, handler=op.handler
             )
             for op_name, op in repo.operations.items()
         }
@@ -168,6 +165,7 @@ def _runtime_route(route: IRRoute, document: IRDocument) -> RuntimeRouteDescript
         service_input=service_input,
         service_forwarding=service_forwarding,
         pagination=route.pagination,
+        body_dto=route.body_dto(document.dtos),
     )
 
 

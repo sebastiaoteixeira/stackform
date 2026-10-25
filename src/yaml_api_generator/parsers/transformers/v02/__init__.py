@@ -4,6 +4,7 @@ Coordinates specialized transformers to convert v0.2 YAML specifications into IR
 """
 
 from dataclasses import fields as dataclass_fields
+from operator import attrgetter
 from typing import Any
 
 from yaml_api_generator.ir import IRDocument
@@ -88,6 +89,7 @@ class V02Transformer:
             repos_data, defaults, datastore_names, default_datastore, datastore_types,
             handler_resolver=self._operation_handler_resolver(import_map),
             file_datastore_names=set(file_stores),
+            collections=collections,
         )
         if repo_errors:
             raise ConfigErrors(repo_errors)
@@ -113,6 +115,7 @@ class V02Transformer:
         routes = self._route.transform_routes(
             controllers_data,
             services,
+            repositories,
             api_data,
             repo_entity_map,
             auth_entities,
@@ -142,10 +145,11 @@ class V02Transformer:
             version=str(resolved["version"]),
             api=self._route.build_api(api_data),
             collections=collections,
-            routes=routes,
+            routes=sorted(routes, key=attrgetter("precedence")),
             identityCollections=identity_collections,
             dtos=dtos,
             services=services,
+            service_bases=self._route.transform_service_bases(services_data, import_map),
             mongo=self._route.build_mongo(mongo_config),
             datastores=datastores,
             default_datastore=default_datastore,

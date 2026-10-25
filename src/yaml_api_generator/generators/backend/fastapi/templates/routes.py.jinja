@@ -1,7 +1,6 @@
-{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
-{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("handler") | selectattr("operation", "in", crud_op_names) | list %}
-{% set custom_routes = routes | rejectattr("operation", "equalto", "login") | selectattr("handler") | list %}
-{% set repo_op_routes = routes | rejectattr("handler") | rejectattr("operation", "in", crud_op_names) | list %}
+{% from "handler_call.jinja" import call_with_request %}
+{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | rejectattr("runs_operation") | list %}
+{% set operation_routes = routes | selectattr("runs_operation") | list %}
 {% set ns_service_input = namespace(enabled=false, access_bind=false) %}
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}
@@ -16,9 +15,8 @@
 {% set pagination_routes = routes | selectattr("pagination") | list %}
 from typing import Any
 
-{% set is_mongo = datastore_type not in ["postgres", "postgresql"] %}
-{% set needs_request = custom_routes or repo_op_routes or (crud_routes | selectattr("needs_request") | list) or (file_routes | selectattr("action", "equalto", "replace") | list) %}
-from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
+{% set needs_request = operation_routes or (crud_routes | selectattr("needs_request") | list) or (file_routes | selectattr("action", "equalto", "replace") | list) %}
+from fastapi import APIRouter, Depends{% if auth.enabled or ns_service_input.enabled or pagination_routes or operation_routes %}, HTTPException{% endif %}{% if needs_request %}, Request{% endif %}
 
 {% if ns_service_input.enabled or ns_where.collections %}
 from dependencies.service_inputs import {% if ns_service_input.enabled %}prepare_service_inputs{% endif %}{% if ns_service_input.enabled and (ns_service_input.access_bind or ns_where.collections) %}, {% endif %}{% if ns_service_input.access_bind or ns_where.collections %}resolve_access_bind{% endif +%}
@@ -38,16 +36,12 @@ from dependencies.file_requests import RecordUpload, carried_files, discard_on_e
 from dependencies.file_stores import record_files
 {% endif %}
 
-{% if repo_op_routes and is_mongo %}
-from fastapi.encoders import jsonable_encoder
-from dependencies.bindings import resolve_filter
+{% if operation_routes %}
+from dependencies.handler_requests import HandlerRequest
 {% endif %}
 {% for group in service_groups %}
 from dependencies.services import get_{{ group }}_service
 {% endfor %}
-{% if repo_op_routes %}
-from dependencies.repositories import get_{{ collection_name }}_repository
-{% endif %}
 {% for where_collection in ns_where.collections %}
 from dependencies.repositories import get_{{ where_collection }}_repository
 {% endfor %}
@@ -240,15 +234,30 @@ _files = record_files[{{ collection_name | tojson }}]
 {% endif %}
 {% endmacro %}
 
-{% for route in crud_routes %}
+{% for route in routes if route.operation != "login" %}
 {% set body_model = route.typed_body_model or route.body_model %}
 {% set partial = route.operation == "update" %}
 {% set body_expr = "upload.payload" if files else 'payload.model_dump(mode="json"' ~ (", exclude_unset=True" if partial else "") ~ ")" %}
 {% set record_expr = "upload.record" if files else body_expr %}
-{% if route.operation == "list" %}
+{% if route.runs_operation %}
+@router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"]{{ openapi_extra(route) }})
+async def {{ route.operation }}_{{ collection_name }}(request: Request{% for name in route.path_params %}, {{ name }}: str{% endfor %}{{ auth_param(route) }}, {{ svc_dep() }}{{ where_repo_params(route) }}) -> Any:
+    _body: dict[str, Any] = {}
+    try:
+        _body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        pass
+{{ request_locals(route, "_body") }}
+{{ pre_fetch_guard(route) }}
+{{ bind_inputs(route) }}
+{{ prepare_inputs(route, "dict(request.path_params)", "_body") }}
+{{ call_with_request("svc." ~ route.operation ~ "(_request)", "principal" if auth.enabled and route.needs_auth else "None", "_body", "_service_inputs") }}
+
+
+{% elif route.operation == "list" %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}"{{ openapi_extra(route) }})
 {% set list_prefix = (extra_path_params(route) ~ request_param(route) ~ auth_param(route)) | trim(chars=", ") %}
-async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{{ where_repo_params(route) }}{% if route.pagination %}, limit: int | None = None{% if route.pagination.strategy == "offset" %}, offset: int | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
+async def list_{{ collection_name }}({{ list_prefix }}{% if list_prefix %}, {% endif %}{{ svc_dep() }}{{ where_repo_params(route) }}{% if route.pagination %}, limit: str | None = None{% if route.pagination.strategy == "offset" %}, offset: str | None = None{% else %}, after: str | None = None{% endif %}{% endif %}) -> Any:
 {{ request_locals(route, "None") }}
 {{ pre_fetch_guard(route) }}
 {{ bind_inputs(route) }}
@@ -339,53 +348,3 @@ async def {{ file_route.handler_name }}({{ source.record_id_param }}: str{{ extr
 
 
 {% endfor %}
-{% for route in custom_routes %}
-{% set handler_name = route.operation ~ "_" ~ collection_name %}
-
-
-@router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"]{{ openapi_extra(route) }})
-async def {{ handler_name }}(request: Request{% for name in route.path_params %}, {{ name }}: str{% endfor %}{{ auth_param(route) }}{{ where_repo_params(route) }}) -> Any:
-    _body: dict[str, Any] = {}
-    try:
-        _body = await request.json()
-    except (ValueError, UnicodeDecodeError):
-        pass
-{{ request_locals(route, "_body") }}
-{{ pre_fetch_guard(route) }}
-{{ bind_inputs(route) }}
-{{ prepare_inputs(route, "dict(request.path_params)", "_body") }}
-    request.state.service_inputs = _service_inputs
-    from importlib import import_module
-    module_path, func_name = "{{ route.handler }}".rsplit(".", 1)
-    module = import_module(module_path)
-    return await getattr(module, func_name)(request)
-{% endfor %}
-{% if is_mongo %}
-{% for route in repo_op_routes %}
-{% set handler_name = route.operation ~ "_" ~ collection_name %}
-{% set query = repo_queries[route.operation] %}
-
-
-@router.{{ route.method | lower }}("{{ route.relative_path }}", tags=["{{ collection_name | capitalize_collection }}"]{{ openapi_extra(route) }})
-async def {{ handler_name }}(request: Request{{ auth_param(route) }}, repo=Depends(get_{{ collection_name }}_repository){{ where_repo_params(route) }}) -> Any:
-{% if route.needs_auth %}
-    _principal: dict[str, Any] = principal
-{% else %}
-    _principal: dict[str, Any] = {}
-{% endif %}
-    _body: dict[str, Any] = {}
-    try:
-        _body = await request.json()
-    except (ValueError, UnicodeDecodeError):
-        pass
-    _path = dict(request.path_params)
-{{ request_locals(route, "_body") }}
-{{ pre_fetch_guard(route) }}
-{{ bind_inputs(route) }}
-{{ prepare_inputs(route, "_path", "_body") }}
-    _params = {**_path, **_service_inputs}
-    _bindings = {**_params, "principal": _principal, "params": _params, "body": _body}
-    _resolved = resolve_filter({{ query | py_literal }}, _bindings)
-    return jsonable_encoder(await repo.{{ route.operation }}(**{k: v for k, v in _resolved.items() if k != "command"}))
-{% endfor %}
-{% endif %}

@@ -408,7 +408,7 @@ def test_generated_raw_asgi_enforces_where_per_rule(tmp_path):
         sys.modules["app.handlers"] = handlers_module
 
         async def verify():
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body
@@ -417,39 +417,39 @@ def test_generated_raw_asgi_enforces_where_per_rule(tmp_path):
             assert db["teams"].criteria == [{{"id": "org-1"}}]
 
             db["organizations"].documents = []
-            status, body = await handlers.handle_custom_1(
+            status, body = await handlers.handle_post_audit__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            status, body = await handlers.handle_custom_1(
+            status, body = await handlers.handle_post_audit__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body
             assert body == {{"authorized": True}}
 
-            status, body = await routes.handle_get_reports(
+            status, body = await routes.handle_get_reports__organizationId___id_(
                 {{"organizationId": "org-1", "id": "r1"}}, None, {{}}, db
             )
             assert status == 200, body
             assert body["organizationId"] == "org-1"
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "other"}}]
-            status, body = await routes.handle_get_reports(
+            status, body = await routes.handle_get_reports__organizationId___id_(
                 {{"organizationId": "org-1", "id": "r1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = []
             db["teams"].documents = []
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 403, body
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            status, body = await routes.handle_list_reports(
+            status, body = await routes.handle_get_reports__organizationId_(
                 {{"organizationId": "org-1"}}, None, {{}}, db
             )
             assert status == 200, body
@@ -486,7 +486,8 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
             HTTP_422_UNPROCESSABLE_ENTITY=422,
         )
         response_module = types.ModuleType("rest_framework.response")
-        views_module = types.ModuleType("rest_framework.views")
+        adrf_module = types.ModuleType("adrf")
+        views_module = types.ModuleType("adrf.views")
         spectacular_module = types.ModuleType("drf_spectacular")
         spectacular_utils = types.ModuleType("drf_spectacular.utils")
         auth_module = types.ModuleType("api.authentication.auth")
@@ -514,7 +515,8 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         sys.modules.update({{
             "rest_framework": rest_framework,
             "rest_framework.response": response_module,
-            "rest_framework.views": views_module,
+            "adrf": adrf_module,
+            "adrf.views": views_module,
             "drf_spectacular": spectacular_module,
             "drf_spectacular.utils": spectacular_utils,
             "api.authentication.auth": auth_module,
@@ -562,12 +564,13 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
             "reports": Collection([{{"id": "r1", "organizationId": "org-1", "title": "visible"}}]),
         }}
         views.get_database = lambda: db
-        views.resolve_principal = lambda request, database: {{
-            "sub": "u1", "identity_collection": "users", "roles": []
-        }}
+        async def principal(request, database):
+            return {{"sub": "u1", "identity_collection": "users", "roles": []}}
+
+        views.resolve_principal = principal
         handler_views.get_database = lambda: db
-        handler_views.resolve_principal = views.resolve_principal
-        request = SimpleNamespace(data={{}}, query_params={{}}, headers={{}}, COOKIES={{}})
+        handler_views.resolve_principal = principal
+        request = SimpleNamespace(data={{}}, body=b"", query_params={{}}, headers={{}}, COOKIES={{}})
 
         application_module = types.ModuleType("app")
         handlers_module = types.ModuleType("app.handlers")
@@ -581,46 +584,46 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         sys.modules["app.handlers"] = handlers_module
 
         async def verify():
-            response = await views.ReportsListView().get(
+            response = await views.ReportsByOrganizationIdView().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data
             assert response.data[0]["id"] == "r1"
 
             db["organizations"].documents = []
-            response = await handler_views.HandlerRun1View().post(
+            response = await handler_views.AuditByOrganizationIdView().post(
                 request, organizationId="org-1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            response = await handler_views.HandlerRun1View().post(
+            response = await handler_views.AuditByOrganizationIdView().post(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data
             assert response.data == {{"authorized": True}}
 
-            response = await views.ReportsDetailView().get(
+            response = await views.ReportsByOrganizationIdByIdView().get(
                 request, organizationId="org-1", id="r1"
             )
             assert response.status_code == 200, response.data
             assert response.data["organizationId"] == "org-1"
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "other"}}]
-            response = await views.ReportsDetailView().get(
+            response = await views.ReportsByOrganizationIdByIdView().get(
                 request, organizationId="org-1", id="r1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = []
             db["teams"].documents = []
-            response = await views.ReportsListView().get(
+            response = await views.ReportsByOrganizationIdView().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 403, response.data
 
             db["organizations"].documents = [{{"id": "org-1", "ownerId": "u1"}}]
-            response = await views.ReportsListView().get(
+            response = await views.ReportsByOrganizationIdView().get(
                 request, organizationId="org-1"
             )
             assert response.status_code == 200, response.data

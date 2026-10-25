@@ -1,9 +1,14 @@
 from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
 from yaml_api_generator.generators.backend.drf.generator import DRFGenerator
 from yaml_api_generator.generators.backend.raw.generator import RawASGIGenerator
-from yaml_api_generator.generators.backend.fastapi.type_mapper import python_type
-from yaml_api_generator.generators.backend.drf.type_mapper import drf_field
-from yaml_api_generator.generators.backend.compile_context import AppConfig, AuthConfig, CompileContext, FieldDescriptor
+from yaml_api_generator.generators.backend.fastapi.type_mapper import PayloadModule
+from yaml_api_generator.generators.backend.compile_context import (
+    AppConfig,
+    AuthConfig,
+    CompileContext,
+    FieldDescriptor,
+    ModelDescriptor,
+)
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.generators.backend.context_builder import build_context
 from yaml_api_generator.ir.api import IROIDCProvider, IRSAMLProvider
@@ -108,43 +113,31 @@ def test_fastapi_cors_middleware_when_configured(tmp_path):
     assert "CORSMiddleware" in app_content
 
 
-def test_fastapi_type_mapper_all_field_types():
-    fields = [
-        FieldDescriptor(name="s", type="string", required=True, is_optional=False),
-        FieldDescriptor(name="n", type="number", required=True, is_optional=False),
-        FieldDescriptor(name="b", type="boolean", required=True, is_optional=False),
-        FieldDescriptor(name="d", type="datetime", required=True, is_optional=False),
-        FieldDescriptor(
-            name="e",
-            type="enum",
-            required=True,
-            is_optional=False,
-            enum_values=["a", "b"],
-        ),
-        FieldDescriptor(
-            name="a",
-            type="array",
-            required=True,
-            is_optional=False,
-            array_item_type="string",
-        ),
-        FieldDescriptor(name="o", type="object", required=True, is_optional=False),
-        FieldDescriptor(
-            name="r",
-            type="ref",
-            required=True,
-            is_optional=False,
-            ref_collection="users",
-        ),
-    ]
-    assert python_type(fields[0]) == "str"
-    assert python_type(fields[1]) == "float"
-    assert python_type(fields[2]) == "bool"
-    assert python_type(fields[3]) == "datetime"
-    assert "Literal['a', 'b']" in python_type(fields[4])
-    assert python_type(fields[5]) == "list[str]"
-    assert python_type(fields[6]) == "dict[str, Any]"
-    assert python_type(fields[7]) == "str"
+def test_fastapi_payload_module_maps_every_field_type():
+    fields = {
+        "s": {"type": "string", "required": True},
+        "n": {"type": "number", "required": True},
+        "b": {"type": "boolean", "required": True},
+        "d": {"type": "datetime", "required": True},
+        "e": {"type": "enum", "values": ["a", "b"], "required": True},
+        "a": {"type": "array", "items": {"type": "string"}, "required": True},
+        "o": {"type": "object", "required": True},
+        "r": {"type": "ref", "ref": "users", "required": True},
+    }
+    model = ModelDescriptor(
+        "ItemsFields", "items", "fields", [FieldDescriptor(n, c) for n, c in fields.items()]
+    )
+    (declaration,) = PayloadModule([model]).declarations
+    assert {a.name: a.annotation for a in declaration.attributes} == {
+        "s": "str",
+        "n": "Annotated[float, Field(strict=True)]",
+        "b": "Annotated[bool, Field(strict=True)]",
+        "d": "Timestamp",
+        "e": "Literal['a', 'b']",
+        "a": "list[str]",
+        "o": "dict[str, Any]",
+        "r": "str",
+    }
 
 
 def test_drf_project_scaffold(tmp_path):
@@ -179,7 +172,8 @@ def test_drf_views_per_collection(tmp_path):
     gen.generate(ctx, tmp_path)
     assert (tmp_path / "api" / "views" / "posts.py").exists()
     content = (tmp_path / "api" / "views" / "posts.py").read_text()
-    assert "ListView" in content or "DetailView" in content
+    assert "class PostsView(APIView)" in content
+    assert "class PostsByIdView(APIView)" in content
 
 
 def test_drf_when_expression_to_python():
@@ -236,18 +230,11 @@ def test_drf_access_rule_enforcement_in_views(tmp_path):
     assert len(posts_view) > 0
 
 
-def test_drf_type_mapper_with_constraints():
-    field = FieldDescriptor(
-        name="score",
-        type="number",
-        required=True,
-        is_optional=False,
-        constraints={"min": 0, "max": 100},
-    )
-    result = drf_field(field)
-    assert "serializers.FloatField" in result
-    assert "min_value=0" in result
-    assert "max_value=100" in result
+def test_drf_serializers_declare_payload_properties(tmp_path):
+    DRFGenerator().generate(_ctx_from_fixture("basic-crud.yaml"), tmp_path)
+    serializers = next((tmp_path / "api" / "serializers").glob("[!_]*.py")).read_text()
+    assert "(PayloadSerializer):" in serializers
+    assert "properties = {" in serializers
 
 
 def test_raw_asgi_app_file(tmp_path):

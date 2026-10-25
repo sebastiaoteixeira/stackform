@@ -1,38 +1,15 @@
+{% from "repository_class.jinja" import repository_class with context %}
 {% set class_name = collection_name | capitalize_collection %}
 {% set is_abstract = abstract | default(false) %}
-{% set has_custom = custom_operations | default([]) | length > 0 %}
-{% set lifecycle_scoped = not is_abstract and (lifecycle.removal or lifecycle.expiry) %}
-{% if has_custom %}
+{% if custom_operations %}
 from typing import Any
 
-from pymongo import ReturnDocument
-
 {% endif %}
-{% if lifecycle_scoped or has_custom %}
-from dependencies.lifecycle import Expiry, Lifecycle
-{% endif %}
-{% if has_custom %}
-from dependencies.mongo_lifecycle import MongoLifecycle
+{% if not is_abstract %}
+from ._ops import RepositoryBase{% for op in operations %}, {{ op | capitalize }}Op{% endfor +%}
 {% endif %}
 {% if generated_base %}
 from {{ generated_base.module }} import {{ generated_base.class_name }}
 {% endif %}
-{% if not is_abstract %}
-from ._ops import RepositoryBase, _translate_conflict{% for op in operations %}, {{ op | capitalize }}Op{% endfor %}
-{% endif %}
-{% set ns = namespace(bases=[]) %}
-{% if not is_abstract %}{% for op in operations %}{% set _ = ns.bases.append((op | capitalize) ~ "Op") %}{% endfor %}{% endif %}
-{% if generated_base %}{% set _ = ns.bases.append(generated_base.class_name) %}{% endif %}
-{% if not is_abstract %}{% set _ = ns.bases.append("RepositoryBase") %}{% endif %}
 
-
-class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){% endif %}:
-{% if not is_abstract %}
-    COLLECTION = "{{ collection_name }}"
-    ID_FIELD = "{{ id_field }}"
-    ID_FORMAT = "{{ id_field_format }}"
-{% if lifecycle_scoped %}
-    LIFECYCLE = {{ lifecycle | py_constructor }}
-{% endif %}
-{% endif %}
-{% include "mongo_custom_operations.py.jinja" %}
+{{ repository_class(class_name, "RepositoryBase", operations, generated_base, is_abstract, custom_operations) }}

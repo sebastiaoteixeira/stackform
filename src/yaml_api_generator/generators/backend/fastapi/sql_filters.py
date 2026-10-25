@@ -2,12 +2,16 @@
 
 from typing import Any
 
+import sqlalchemy as sa
+
+from yaml_api_generator.server.common.repositories.sql_schema import column_type
+
 
 def sql_column(name: str, cfg: dict[str, Any], id_field: str) -> str:
     field_type = cfg.get("type", "string")
     is_pk = name == id_field or field_type == "id"
 
-    parts = [f'"{name}"', _column_type(cfg, field_type)]
+    parts = [f'"{name}"', _constructor(column_type(cfg))]
     if is_pk:
         parts.append("primary_key=True")
     elif cfg.get("required"):
@@ -17,16 +21,7 @@ def sql_column(name: str, cfg: dict[str, Any], id_field: str) -> str:
     return f"sa.Column({', '.join(parts)})"
 
 
-def _column_type(cfg: dict[str, Any], field_type: str) -> str:
-    if field_type in ("array", "object", "file"):
-        return "sa.JSON()"
-    if field_type == "number":
-        return "sa.Numeric()"
-    if field_type == "boolean":
-        return "sa.Boolean()"
-    if field_type == "datetime":
-        return "sa.DateTime(timezone=True)"
-    max_length = cfg.get("maxLength")
-    if field_type == "string" and isinstance(max_length, int):
-        return f"sa.String({max_length})"
-    return "sa.Text()"
+def _constructor(column: sa.types.TypeEngine) -> str:
+    """The source building ``column``; SQLAlchemy's own types are reached through ``sa``."""
+    namespace = "sa." if type(column).__module__.startswith("sqlalchemy.") else ""
+    return f"{namespace}{column!r}"

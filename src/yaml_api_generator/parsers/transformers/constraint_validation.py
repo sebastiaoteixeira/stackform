@@ -13,6 +13,7 @@ from typing import Any
 
 from yaml_api_generator.parsers.transformers.file_validation import file_config
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+from yaml_api_generator.runtime.fields import conform
 
 # Constraints only meaningful for a given field type. min/max belong to numbers;
 # minLength/maxLength belong to strings. format is shared by string and id
@@ -30,20 +31,6 @@ def _error(message: str, path: str, hint: str) -> ConfigError:
     return ConfigError(
         code="FIELD_CONSTRAINT_INVALID", message=message, path=path, hint=hint
     )
-
-
-def _matches_type(field_type: str, value: Any) -> bool:
-    if field_type == "string":
-        return isinstance(value, str)
-    if field_type == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if field_type == "boolean":
-        return isinstance(value, bool)
-    if field_type == "array":
-        return isinstance(value, list)
-    if field_type == "object":
-        return isinstance(value, dict)
-    return True
 
 
 def _check_field(field: dict[str, Any], path: str, errors: list[ConfigError]) -> None:
@@ -118,7 +105,7 @@ def _check_field(field: dict[str, Any], path: str, errors: list[ConfigError]) ->
             ))
 
     if "default" in field:
-        _check_default(field, field_type, path, errors)
+        _check_default(field, path, errors)
 
     if field_type == "array" and isinstance(field.get("items"), dict):
         _check_field(field["items"], f"{path}.items", errors)
@@ -128,32 +115,23 @@ def _check_field(field: dict[str, Any], path: str, errors: list[ConfigError]) ->
                 _check_field(prop, f"{path}.properties.{name}", errors)
 
 
-def _check_default(
-    field: dict[str, Any], field_type: str, path: str, errors: list[ConfigError]
-) -> None:
+def _check_default(field: dict[str, Any], path: str, errors: list[ConfigError]) -> None:
+    """A default must satisfy its own field config, nested properties and items included.
+
+    Interpolation has already run, so a numeric or boolean looking string is an
+    env-driven default (``${PORT:-8080}``) and is accepted for its type.
+    """
     default = field["default"]
-    if default is None:
+    if default is None or file_config(field) is not None:
         return
-
-    if field_type == "enum":
-        values = field.get("values")
-        if isinstance(values, list) and values and default not in values:
-            errors.append(_error(
-                f"default '{default}' is not one of the enum values {values}", path,
-                "Set default to one of the listed values",
-            ))
+    if isinstance(default, str) and _coerces_to(field.get("type"), default):
         return
-
-    # Interpolation has already run, so a remaining string is a genuine literal.
-    # Numbers and booleans coerce cleanly from numeric/boolean-looking strings
-    # (e.g. an env-driven "${PORT:-8080}" default), so only flag strings that
-    # cannot be coerced into the declared type.
-    if not _matches_type(field_type, default):
-        if isinstance(default, str) and _coerces_to(field_type, default):
-            return
+    try:
+        conform(field, default, path)
+    except ValueError as error:
         errors.append(_error(
-            f"default {default!r} does not match field type '{field_type}'", path,
-            f"Provide a {field_type} default or remove it",
+            f"default {default!r} is invalid: {error}", path,
+            "Make the default satisfy the field's own constraints or remove it",
         ))
 
 

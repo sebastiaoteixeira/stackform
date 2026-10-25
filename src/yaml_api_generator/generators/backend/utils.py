@@ -1,5 +1,6 @@
 """Shared utilities for backend generators."""
 
+from collections.abc import Iterable
 from importlib.resources import files
 from pathlib import Path
 
@@ -13,16 +14,9 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 _RUNTIME_MODULES = frozenset(
     {
-        "dpop",
-        "pagination",
-        "files",
-        "multipart",
-        "file_requests",
-        "filesystem_store",
-        "s3_store",
-        "lifecycle",
-        "mongo_lifecycle",
-        "sql_lifecycle",
+        "dpop", "pagination", "fields", "payloads", "files", "multipart", "file_requests", "filesystem_store",
+        "s3_store", "sql_types", "operations", "ids", "mongo_operations", "sql_operations", "handler_requests",
+        "lifecycle", "mongo_lifecycle", "sql_lifecycle",
     }
 )
 
@@ -33,13 +27,15 @@ def runtime_module_source(name: str) -> str:
     return files("yaml_api_generator.runtime").joinpath(f"{name}.py").read_text()
 
 
-def lifecycle_runtime_modules(*, uses_mongo: bool, uses_sql: bool) -> tuple[str, ...]:
-    """The runtime modules that keep removed and expired rows out of each datastore's queries."""
-    return (
-        "lifecycle",
-        *(("mongo_lifecycle",) if uses_mongo else ()),
-        *(("sql_lifecycle",) if uses_sql else ()),
-    )
+def write_runtime_modules(directory: Path, names: Iterable[str]) -> None:
+    for name in names:
+        (directory / f"{name}.py").write_text(runtime_module_source(name))
+
+
+MONGO_RUNTIME_MODULES = (
+    "pagination", "operations", "ids", "mongo_operations", "handler_requests", "lifecycle", "mongo_lifecycle",
+)
+SQL_RUNTIME_MODULES = ("sql_types", "sql_operations", "lifecycle", "sql_lifecycle")
 
 
 def write_environment_files(

@@ -225,6 +225,11 @@ def load_and_generate_ir(
         if name_errors:
             raise ConfigErrors(name_errors)
 
+        from .transformers.ref_validation import validate_spec_refs
+        ref_errors = validate_spec_refs(resolved)
+        if ref_errors:
+            raise ConfigErrors(ref_errors)
+
         from .transformers.constraint_validation import validate_spec_constraints
         constraint_errors = validate_spec_constraints(resolved)
         if constraint_errors:
@@ -251,12 +256,6 @@ def load_and_generate_ir(
             raise ConfigErrors(access_errors)
         access_warnings = tuple(warn_public_routes(resolved))
 
-        if version == "0.3":
-            from .transformers.symbol_validation import validate_spec_symbols
-            symbol_errors = validate_spec_symbols(resolved)
-            if symbol_errors:
-                raise ConfigErrors(symbol_errors)
-
         from .transformers.auth_validation import validate_spec_auth
         auth_errors = validate_spec_auth(resolved)
         if auth_errors:
@@ -272,6 +271,17 @@ def load_and_generate_ir(
 
         from .desugar import desugar_v02
         resolved = desugar_v02(resolved)
+
+        if version == "0.3":
+            from .transformers.symbol_validation import validate_spec_symbols
+            symbol_errors = validate_spec_symbols(resolved)
+            if symbol_errors:
+                raise ConfigErrors(symbol_errors)
+
+        from .transformers.query_validation import validate_spec_queries
+        query_errors = validate_spec_queries(resolved)
+        if query_errors:
+            raise ConfigErrors(query_errors)
 
         from .transformers.path_validation import validate_spec_paths
         path_errors = validate_spec_paths(resolved)

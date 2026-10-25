@@ -105,7 +105,6 @@ async def test_sql_custom_write_duplicate_raises_conflict(repo):
                 "sql": "UPDATE members SET email = :email WHERE id = :id",
                 "params": {"email": "a@x.io", "id": "m2"},
             },
-            {},
         )
     assert excinfo.value.field == "email"
 
@@ -194,7 +193,6 @@ async def test_mongo_duplicate_key_raises_conflict_naming_field():
         lambda repository: repository.run_operation(
             "members",
             {"command": "insertOne", "document": {"email": "a@x.io"}},
-            {},
         ),
     ],
 )
@@ -217,7 +215,6 @@ async def test_mongo_bulk_duplicate_raises_conflict_naming_field():
         await repository.run_operation(
             "members",
             {"command": "insertMany", "documents": [{"email": "a@x.io"}]},
-            {},
         )
 
     assert excinfo.value.field == "email"
@@ -232,7 +229,6 @@ async def test_mongo_non_duplicate_bulk_error_is_not_mapped_to_conflict():
         await repository.run_operation(
             "members",
             {"command": "insertMany", "documents": [{"email": "a@x.io"}]},
-            {},
         )
 
 

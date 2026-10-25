@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+{% from "repository_operations.jinja" import operation_methods %}
+
 {% if id_field_format == "uuidv4" %}
 import uuid
 {% elif id_field_format == "uuidv7" %}
@@ -15,11 +17,18 @@ from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
-from {{ conflict_import }} import ConflictError
-from {{ lifecycle_package }}.lifecycle import Expiry, Lifecycle
-from {{ lifecycle_package }}.mongo_lifecycle import MongoLifecycle
-from {{ pagination_import }} import Page, Primitives, expand_bound
+from {{ module_prefix }}conflicts import ConflictError
+from {{ module_prefix }}ids import generate_id
+from {{ module_prefix }}mongo_lifecycle import MongoLifecycle, scoped
+from {{ module_prefix }}mongo_operations import run_mongo, with_identity
+from {{ module_prefix }}operations import present, present_value, resolve
+from {{ module_prefix }}pagination import Page, Primitives, expand_bound
+{% if generated_base %}
+from {{ generated_base.module }} import {{ generated_base.class_name }}
+{% endif %}
 
+
+_HIDDEN_FIELDS = frozenset({"_id", "_auth"})
 
 _PAGINATION_COMPARATORS = {
     "gt": "$gt",
@@ -78,9 +87,10 @@ def _translate_conflict(operation):
 
 {% set class_name = collection_name | capitalize_collection %}
 
-class {{ class_name }}Repository:
+class {{ class_name }}Repository{% if generated_base %}({{ generated_base.class_name }}){% endif %}:
     COLLECTION = "{{ collection_name }}"
     ID_FIELD = "{{ id_field }}"
+    ID_FORMAT = "{{ id_field_format }}"
     LIFECYCLE = {{ lifecycle | py_constructor }}
 
     def __init__(self, db: AsyncDatabase) -> None:
@@ -92,13 +102,13 @@ class {{ class_name }}Repository:
         return {self.ID_FIELD: document_id}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Hide the datastore's own identifier; the service layer hides domain-internal fields."""
+        """Hide the datastore's own identifier and the stored credentials."""
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if k != "_id"}
+        return {k: present_value(v) for k, v in doc.items() if k not in _HIDDEN_FIELDS}
 
     async def purge_expired(self) -> None:
-        await self._lifecycle.purge(self._col)
+        await self._lifecycle.expire(self._col)
 
     async def list(self) -> list[dict[str, Any]]:
         cursor = self._col.find(self._lifecycle.visible())
@@ -137,7 +147,9 @@ class {{ class_name }}Repository:
         if not changes:
             return await self.find_one(criteria)
         doc = await self._col.find_one_and_update(
-            self._lifecycle.visible(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+            self._lifecycle.visible(criteria),
+            self._lifecycle.stored_update({"$set": changes}),
+            return_document=ReturnDocument.AFTER,
         )
         return self._normalize(doc)
 
@@ -145,7 +157,7 @@ class {{ class_name }}Repository:
     async def replace_by(
         self, criteria: dict[str, Any], data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        replacement = {**data, **criteria}
+        replacement = self._lifecycle.stored({**data, **criteria})
         doc = await self._col.find_one_and_replace(
             self._lifecycle.visible(criteria), replacement, return_document=ReturnDocument.AFTER
         )
@@ -163,31 +175,26 @@ class {{ class_name }}Repository:
 {% elif id_field_format == "uuidv7" %}
         data[self.ID_FIELD] = str(uuid7())
 {% endif %}
-        await self._col.insert_one(data)
-        return self._normalize(data)
+        document = self._lifecycle.stored(data)
+        await self._col.insert_one(document)
+        return self._normalize(document)
 
-    @_translate_conflict
     async def update(
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_update(
-            self._lifecycle.visible(self._match_filter(document_id)),
-            {"$set": data},
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._normalize(doc)
+        return await self.update_by(self._match_filter(document_id), data)
 
-    @_translate_conflict
     async def replace(
         self, document_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_replace(
-            self._lifecycle.visible(self._match_filter(document_id)),
-            data,
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._normalize(doc)
+        return await self.replace_by(self._match_filter(document_id), data)
 
     async def delete(self, document_id: str) -> dict[str, Any] | None:
         return await self.delete_by(self._match_filter(document_id))
-{% include "mongo_custom_operations.py.jinja" %}
+
+    @_translate_conflict
+    async def run_operation(self, query: dict[str, Any], bindings: dict[str, Any]) -> Any:
+        identified = with_identity(query, self.ID_FIELD, self.ID_FORMAT)
+        confined = scoped(resolve(identified, bindings), self.LIFECYCLE)
+        return present(await run_mongo(self._col, confined, generate_id), self.ID_FIELD)
+{{ operation_methods(custom_operations) }}

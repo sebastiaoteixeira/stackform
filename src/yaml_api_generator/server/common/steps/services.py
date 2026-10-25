@@ -13,10 +13,10 @@ operations read it through the request parameters; handlers read it from
 from typing import Any
 
 from yaml_api_generator.ir import IRSymbolRef, WhereRhs
+from yaml_api_generator.runtime.fields import conform_inputs
 
 from ..request_context import RequestContext
 from . import Step
-from .validation import validate_field_values
 
 
 def ServiceInputStep(
@@ -24,8 +24,7 @@ def ServiceInputStep(
     forwarding: dict[str, WhereRhs],
 ) -> Step:
     def step(ctx: RequestContext) -> RequestContext:
-        inputs = _request_namespace(ctx)
-        validate_field_values(inputs, input_fields)
+        inputs = conform_inputs(input_fields, ctx.body, ctx.url_params, ctx.bound_inputs)
         forwarded = {
             name: _resolve(rhs, inputs) for name, rhs in forwarding.items()
         }
@@ -33,11 +32,6 @@ def ServiceInputStep(
         return ctx
 
     return step
-
-
-def _request_namespace(ctx: RequestContext) -> dict[str, Any]:
-    body = ctx.body if isinstance(ctx.body, dict) else {}
-    return {**body, **ctx.url_params, **(ctx.bound_inputs or {})}
 
 
 def _resolve(rhs: WhereRhs, inputs: dict[str, Any]) -> Any:

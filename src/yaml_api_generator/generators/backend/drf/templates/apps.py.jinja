@@ -1,12 +1,17 @@
-{% set create_mongo_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
-{% if create_mongo_indexes or ctx.expiring_collections %}
+{% set creates_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
+{% if creates_indexes or ctx.expiring_collections %}
 import asyncio
 {% endif %}
 {% if ctx.expiring_collections %}
 import threading
 {% endif %}
+{% if creates_indexes or ctx.expiring_collections %}
 
+{% endif %}
 from django.apps import AppConfig
+
+from api.authentication.mongodb import {% if creates_indexes %}close_db, connect_db, initialize_indexes{% else %}connect_db{% endif %}
+
 
 
 class ApiConfig(AppConfig):
@@ -14,17 +19,26 @@ class ApiConfig(AppConfig):
     name = "api"
 
     def ready(self):
-        from api.authentication.mongodb import connect_db
+{% if creates_indexes %}
+        asyncio.run(self.create_indexes())
+{% endif %}
         connect_db()
-{% if create_mongo_indexes %}
-        from api.authentication.mongodb import initialize_indexes
-        asyncio.run(initialize_indexes({{ ctx.mongo_unique_indexes | tojson }}))
+{% if ctx.expiring_collections %}
+        threading.Thread(target=asyncio.run, args=(_expire_rows(),), daemon=True).start()
+{% endif %}
+{% if creates_indexes %}
+
+    @staticmethod
+    async def create_indexes():
+        """Runs on a client of its own: an async client stays bound to the event loop it first ran on."""
+        connect_db()
+        await initialize_indexes({{ ctx.mongo_unique_indexes | tojson }})
+        await close_db()
 {% endif %}
 {% if ctx.expiring_collections %}
-        threading.Thread(target=asyncio.run, args=(_purge_expired_rows(),), daemon=True).start()
 
 
-async def _purge_expired_rows() -> None:
+async def _expire_rows() -> None:
     """Runs on its own thread and event loop, so it holds its own MongoDB client."""
     from pymongo import AsyncMongoClient
 

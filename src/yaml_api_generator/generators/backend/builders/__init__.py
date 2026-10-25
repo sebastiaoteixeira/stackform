@@ -78,10 +78,7 @@ class ContextBuilder:
         auth = self._auth.build_auth_config(
             identity_map, document.collections, document.providers, datastore_types
         )
-        repository_operations = self._repository.build_repository_operations(
-            document.repositories,
-            {name: col.lifecycle for name, col in document.collections.items()},
-        )
+        repository_operations = self._repository.build_repository_operations(document.repositories)
 
         datastores: dict[str, dict] = {}
         for name, ds in document.datastores.items():
@@ -122,6 +119,7 @@ class ContextBuilder:
             repository_abstract=repository_abstract,
             repository_inherits=repository_inherits,
             services=dict(document.services),
+            service_bases=dict(document.service_bases),
             dto_models=dto_models,
             vendored_requirements=document.vendored_requirements,
             sql_schema_managed=managed.sql,

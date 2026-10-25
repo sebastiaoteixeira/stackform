@@ -19,7 +19,7 @@ The IR serves as the single source of truth for code generation,
 eliminating repeated YAML parsing and validation.
 """
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
@@ -111,7 +111,6 @@ class IROperation:
     name: str
     query: dict | None = None
     handler: str | None = None
-    include_deleted: bool = False
 
 
 @dataclass(frozen=True)
@@ -251,6 +250,27 @@ class IRCollection:
     lifecycle: Lifecycle = Lifecycle()
 
 
+SECRET_FIELD: dict[str, Any] = {"type": "string", "required": True, "minLength": 1}
+"""The config of a credential a request sends, such as a password."""
+
+
+def payload_fields(
+    fields: dict[str, Any], excluded: Collection[str] = ()
+) -> dict[str, dict[str, Any]]:
+    """The field configs a request payload is checked against: no ids, auth or ``excluded`` fields.
+
+    Readonly fields stay, since their keys are rejected and their defaults filled in.
+    """
+    return {
+        name: config
+        for name, config in fields.items()
+        if isinstance(config, dict)
+        and config.get("type") != "id"
+        and name != "_auth"
+        and name not in excluded
+    }
+
+
 @dataclass(frozen=True)
 class IRSymbolRef:
     root: str
@@ -344,10 +364,22 @@ class IRService:
     repository: str | None = None
     operation: str | None = None
     handler: str | None = None
-    abstract: bool = False
     inherits: str | None = None
     input: IRServiceInput | None = None
     forwarding: dict[str, WhereRhs] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class IRServiceBase:
+    """An abstract service, generated as the base class of the services extending it.
+
+    ``operations`` maps each operation the class implements to its handler, or
+    to None when the service runs the repository operation of the same name.
+    """
+
+    name: str
+    operations: dict[str, str | None] = field(default_factory=dict)
+    inherits: str | None = None
 
 
 @dataclass(frozen=True)
@@ -361,6 +393,23 @@ class IRRoute:
     access_rules: list[IRAccessRule] | None = None
     handler: str | None = None
     pagination: IRPagination | None = None
+
+    @property
+    def precedence(self) -> tuple[bool, ...]:
+        """Sort key under which a literal path segment outranks a parameter at the same position."""
+        return tuple(segment.startswith("{") for segment in self.path.split("/"))
+
+    def body_dto(self, dtos: dict[str, IRDto]) -> IRDto | None:
+        """The DTO that the first DTO-typed request-body binding gives this route's body."""
+        return next(
+            (
+                dtos[binding.type_name]
+                for rule in self.access_rules or ()
+                for binding in rule.request_symbols.values()
+                if binding.part in (None, "body") and binding.type_name in dtos
+            ),
+            None,
+        )
 
 
 @dataclass(frozen=True)
@@ -466,6 +515,7 @@ class IRDocument:
     identityCollections: dict[str, IRIdentityCollection]
     dtos: dict[str, IRDto] = field(default_factory=dict)
     services: dict[str, IRService] = field(default_factory=dict)
+    service_bases: dict[str, IRServiceBase] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
     datastores: dict[str, IRDatastore] = field(default_factory=dict)

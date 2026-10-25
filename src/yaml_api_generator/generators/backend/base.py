@@ -9,6 +9,8 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.generators.backend.runtime_literals import py_constructor
 from yaml_api_generator.utils.strings import to_pascal_case
 
+from .utils import runtime_module_source
+
 
 @dataclass
 class RenderConfig:
@@ -140,6 +142,18 @@ class TemplateBasedGenerator(CodeGenerator):
                 class_names = [m.name for m in models]
                 return f"from .{col_name} import {', '.join(class_names)}"
             return None
+
+    @staticmethod
+    def _render_service_inputs(env: Environment, output_dir: Path, package: str) -> None:
+        """Write the field validator and the service-input helper built on it into ``package``."""
+        package_dir = output_dir / package
+        package_dir.mkdir(parents=True, exist_ok=True)
+        (package_dir / "fields.py").write_text(runtime_module_source("fields"))
+        (package_dir / "service_inputs.py").write_text(
+            env.get_template("service_inputs.py.jinja").render(
+                fields_module=f"{package}.fields" if package else "fields"
+            )
+        )
 
     def _render_single_file(
         self,

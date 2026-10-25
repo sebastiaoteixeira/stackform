@@ -1,0 +1,22 @@
+{% macro operation_imports(operations, handler_requests_module, generated_base) %}
+{% if operations %}
+from typing import Any
+
+from {{ handler_requests_module }} import HandlerRequest{% if operations.values() | select | list %}, invoke{% endif %}
+
+{% endif %}
+{% if generated_base %}
+from {{ generated_base.module }} import {{ generated_base.class_name }}
+{% endif %}
+{% endmacro %}
+{% macro operation_methods(operations) %}
+{% for name, handler in operations.items() %}
+
+    async def {{ name }}(self, request: HandlerRequest) -> Any:
+{% if handler %}
+        return await invoke({{ handler | py_literal }}, request)
+{% else %}
+        return await self._repo.{{ name }}(request.bindings)
+{% endif %}
+{% endfor %}
+{% endmacro %}

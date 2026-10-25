@@ -108,7 +108,7 @@ def test_soft_delete_adds_a_readonly_timestamp_and_binds_the_lifecycle(tmp_path,
     assert collection.fields["deletedAt"] == {"type": "datetime", "readonly": True}
     assert collection.lifecycle == Lifecycle(removal="deletedAt", expiry=Expiry("createdAt", 3600))
     operations = ir.repositories["posts"].operations
-    assert operations["all"].include_deleted and not operations["visible"].include_deleted
+    assert operations["all"].query.get("includeDeleted") and "includeDeleted" not in operations["visible"].query
 
 
 @pytest.mark.parametrize("version", VERSIONS)

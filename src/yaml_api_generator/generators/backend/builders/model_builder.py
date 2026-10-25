@@ -1,21 +1,45 @@
-"""Model and field building for backend code generation.
+"""Payload model descriptors for backend code generation.
 
-Converts IR collections into Pydantic model descriptors with field validation.
+Each collection gets one ``<Collection>Fields`` model holding its writable
+fields; the create and replace payloads extend it and the update payload is
+its partial form, so no field is declared twice. A DTO is its own base and
+gets the same partial update form.
 """
 
-from collections.abc import Collection
-from typing import Any
-
-from yaml_api_generator.ir import CRUD_OPERATIONS, IRCollection, IRDto, IRIdentityCollection, IRRepository
+from yaml_api_generator.ir import (
+    CRUD_OPERATIONS,
+    IRCollection,
+    IRDto,
+    IRIdentityCollection,
+    IRRepository,
+    SECRET_FIELD,
+    payload_fields,
+)
 from yaml_api_generator.utils.strings import to_pascal_case
 from ..compile_context import FieldDescriptor, ModelDescriptor
 
 
 WRITE_OPERATIONS = ("create", "update", "replace")
+_PASSWORD = FieldDescriptor("password", SECRET_FIELD)
+
+
+def payload_name(owner: str, operation: str) -> str:
+    """``<Owner>Fields`` for the shared base, else ``<Owner><Operation>Payload``."""
+    suffix = "Fields" if operation == "fields" else f"{operation.capitalize()}Payload"
+    return f"{to_pascal_case(owner)}{suffix}"
+
+
+def dto_payload_name(dto: str, operation: str) -> str:
+    """The model a route typed by ``dto`` validates its ``operation`` body with."""
+    return payload_name(dto, "update") if operation == "update" else to_pascal_case(dto)
+
+
+def _descriptors(fields: dict[str, dict]) -> list[FieldDescriptor]:
+    return [FieldDescriptor(name, config) for name, config in fields.items()]
 
 
 class ModelBuilder:
-    """Builds Pydantic model descriptors from IR collections."""
+    """Builds payload model descriptors from IR collections and DTOs."""
 
     def build_models(
         self,
@@ -23,147 +47,62 @@ class ModelBuilder:
         identity_map: dict[str, IRIdentityCollection],
         repositories: dict[str, IRRepository],
     ) -> list[ModelDescriptor]:
-        """Build model descriptors for write operations.
-
-        Args:
-            collections: Collection IR objects
-            identity_map: Identity collection IR objects
-            repositories: Repository IR objects
-
-        Returns:
-            List of model descriptors
-        """
-        models: list[ModelDescriptor] = []
-        for name, col in collections.items():
-            identity = identity_map.get(name)
-            repo = repositories.get(name)
-            enabled_ops = repo.crud if repo is not None else CRUD_OPERATIONS
-            for op in WRITE_OPERATIONS:
-                if op not in enabled_ops:
-                    continue
-                fields = self.build_fields(col, op, identity, excluded=col.files.keys())
-                model_name = self._model_name(name, op)
-                models.append(
-                    ModelDescriptor(
-                        name=model_name,
-                        collection=name,
-                        operation=op,
-                        fields=fields,
-                    )
-                )
-
-        return models
+        return [
+            model
+            for name, col in collections.items()
+            for model in self._family(col, identity_map.get(name), repositories.get(name))
+        ]
 
     def build_dto_models(self, dtos: dict[str, IRDto]) -> list[ModelDescriptor]:
         return [
-            ModelDescriptor(
-                name=to_pascal_case(dto.name),
-                collection=dto.name,
-                operation="dto",
-                fields=self.build_fields(dto, "dto", None),
-            )
+            model
             for dto in dtos.values()
+            for model in (
+                ModelDescriptor(
+                    name=dto_payload_name(dto.name, "dto"),
+                    collection=dto.name,
+                    operation="dto",
+                    fields=_descriptors(payload_fields(dto.fields)),
+                ),
+                ModelDescriptor(
+                    name=dto_payload_name(dto.name, "update"),
+                    collection=dto.name,
+                    operation="update",
+                    fields=[],
+                    base=dto_payload_name(dto.name, "dto"),
+                ),
+            )
         ]
 
-    def build_fields(
+    def _family(
         self,
         col: IRCollection,
-        operation: str,
         identity: IRIdentityCollection | None,
-        excluded: Collection[str] = (),
-    ) -> list[FieldDescriptor]:
-        """Build field descriptors for a model.
-
-        Args:
-            col: Collection IR object
-            operation: Operation name (create, update, replace)
-            identity: Identity collection IR object if collection is auth
-            excluded: Field names kept out of the model (file fields travel outside the JSON payload)
-
-        Returns:
-            List of field descriptors
-        """
-        make_optional = operation == "update"
-        fields: list[FieldDescriptor] = []
-
-        for field_name, raw_config in col.fields.items():
-            if not isinstance(raw_config, dict):
-                continue
-            if raw_config.get("type") == "id":
-                continue
-            if field_name == "_auth" or field_name in excluded:
-                continue
-            if raw_config.get("readonly", False):
-                continue
-
-            field_type = raw_config.get("type", "string")
-            required = bool(raw_config.get("required", False))
-            has_default = "default" in raw_config
-            default_value: Any = None
-
-            if make_optional:
-                is_optional = True
-                default_value = raw_config.get("default")
-            elif has_default:
-                is_optional = False
-                default_value = raw_config["default"]
-            elif required:
-                is_optional = False
-                default_value = None
-            else:
-                is_optional = True
-                default_value = None
-
-            constraints: dict[str, Any] = {}
-            if raw_config.get("min") is not None:
-                constraints["min"] = raw_config["min"]
-            if raw_config.get("max") is not None:
-                constraints["max"] = raw_config["max"]
-            if raw_config.get("minLength") is not None:
-                constraints["min_length"] = raw_config["minLength"]
-            if raw_config.get("maxLength") is not None:
-                constraints["max_length"] = raw_config["maxLength"]
-            if raw_config.get("format") is not None:
-                constraints["format"] = raw_config["format"]
-
-            enum_values = raw_config.get("values") if field_type == "enum" else None
-            array_item_type = None
-            if field_type == "array":
-                items = raw_config.get("items")
-                if isinstance(items, dict):
-                    array_item_type = items.get("type", "string")
-
-            ref_collection = raw_config.get("ref") if field_type == "ref" else None
-
-            fields.append(
-                FieldDescriptor(
-                    name=field_name,
-                    type=field_type,
-                    required=required and not make_optional,
-                    is_optional=is_optional,
-                    default=default_value,
-                    constraints=constraints,
-                    enum_values=enum_values,
-                    array_item_type=array_item_type,
-                    ref_collection=ref_collection,
+        repo: IRRepository | None,
+    ) -> list[ModelDescriptor]:
+        enabled = repo.crud if repo is not None else CRUD_OPERATIONS
+        operations = [op for op in WRITE_OPERATIONS if op in enabled]
+        if not operations:
+            return []
+        base = payload_name(col.name, "fields")
+        own_fields = {
+            "create": [_PASSWORD] if identity is not None and identity.has_password else [],
+        }
+        return [
+            ModelDescriptor(
+                name=base,
+                collection=col.name,
+                operation="fields",
+                fields=_descriptors(payload_fields(col.fields, col.files.keys())),
+            ),
+            *(
+                ModelDescriptor(
+                    name=payload_name(col.name, op),
+                    collection=col.name,
+                    operation=op,
+                    fields=own_fields.get(op, []),
+                    base=base,
                 )
-            )
-
-        if identity is not None and operation == "create" and identity.has_password:
-            has_password_field = any(f.name == "password" for f in fields)
-            if not has_password_field:
-                fields.append(
-                    FieldDescriptor(
-                        name="password",
-                        type="string",
-                        required=True,
-                        is_optional=False,
-                        constraints={"min_length": 1},
-                    )
-                )
-
-        return fields
-
-    def _model_name(self, collection: str, operation: str) -> str:
-        col_part = "".join(part.capitalize() for part in collection.split("_"))
-        return f"{col_part}{operation.capitalize()}Payload"
+                for op in operations
+            ),
+        ]

@@ -1,3 +1,4 @@
+{% from "handler_call.jinja" import run_operation %}
 from typing import Any
 from uuid import UUID
 
@@ -11,7 +12,8 @@ from repositories.{{ where_collection }} import {{ where_collection | capitalize
 {% endfor %}
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from services.exceptions import NotFoundError, ValidationError
-from service_inputs import RawRequest, prepare_service_inputs, resolve_access_bind, resolve_bindings
+from handler_requests import HandlerRequest
+from service_inputs import prepare_service_inputs, resolve_access_bind
 {% if routes | selectattr("pagination") | list %}
 from pagination import build_response, map_request
 {% endif %}
@@ -49,7 +51,6 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
     return any(required_role in hierarchy.get(role, set()) for role in roles)
 
 
-{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
 {% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": url_params["{{ param }}"]{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% macro authorization_locals(route) %}
 {% if route.access_rules %}
@@ -131,8 +132,7 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% endmacro %}
 {% for route in routes %}
 {% if route.operation != "login" %}
-{% set handler_name = "handle_" ~ route.operation ~ "_" ~ collection_name %}
-async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
+async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
     repo = {{ collection_name | capitalize_collection }}Repository(db)
     service = {{ collection_name | capitalize_collection }}Service(repo)
     principal = None
@@ -144,27 +144,8 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {{ pre_fetch_authorize(route) }}
 {{ bind_inputs(route) }}
     service_inputs = prepare_service_inputs(url_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-    params = {**url_params, **service_inputs}
-{% if route.handler %}
-    from importlib import import_module
-    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
-    request = RawRequest(
-        url_params,
-        body,
-        headers,
-        principal,
-        service_inputs,
-        query,
-        cookies,
-    )
-    result = await getattr(import_module(module_path), function_name)(request)
-    return 200, result
-{% elif route.operation not in crud_op_names %}
-{% set query = repo_queries[route.operation] %}
-    bindings = {**params, "params": params, "body": body or {}}
-    resolved = resolve_bindings({{ query | py_literal }}, bindings)
-    result = await repo.{{ route.operation }}(**{key: value for key, value in resolved.items() if key not in ("command", "collection")})
-    return 200, result
+{% if route.runs_operation %}
+{{ run_operation(route) }}
 {% else %}
     try:
 {% if route.operation == "list" %}
@@ -188,13 +169,13 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% elif route.operation == "create" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ collection_name }}_create(body)
+        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
         document = await service.create(data)
         return 200, document
 {% elif route.operation == "update" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ collection_name }}_update(body)
+        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})
@@ -212,7 +193,7 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% elif route.operation == "replace" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ collection_name }}_replace(body)
+        data = validation.{{ route.typed_body_model or route.body_model }}.conform(body)
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})

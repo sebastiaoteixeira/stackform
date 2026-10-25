@@ -3,8 +3,7 @@
 Covers the three layers the feature decomposes into -- repository primitives
 applied backend-agnostically (offset and keyset over SQL and Mongo), the
 implicit query-param -> primitive mapping, and the explicit controller grammar
-with its build-time validation. offset and keyset are exercised end to end;
-cursor, range and count: estimated are only checked to be accepted as reserved.
+with its build-time validation. offset and keyset are exercised end to end.
 """
 
 import textwrap
@@ -468,11 +467,11 @@ def test_keyset_pagination_parsed_with_sort(tmp_path):
     assert pagination.sort == (IRSortKey("score", "desc"), IRSortKey("id", "asc"))
 
 
-def test_reserved_strategies_rejected(tmp_path):
-    for reserved in ("cursor", "range"):
-        extra = "sort:\n  - { field: id }" if reserved == "cursor" else '"on": score'
-        with pytest.raises(ConfigErrors):
-            _load(tmp_path, f"strategy: {reserved}\nsize: {{ default: 10, max: 50 }}\ncount: none\n{extra}")
+@pytest.mark.parametrize("unimplemented", ["strategy: cursor", "strategy: range", "strategy: offset\ncount: estimated"])
+def test_unimplemented_modes_are_rejected_by_the_schema(tmp_path, unimplemented):
+    with pytest.raises(ConfigErrors) as excinfo:
+        _load(tmp_path, f"{unimplemented}\nsize: {{ default: 10, max: 50 }}")
+    assert _error_codes(excinfo) == {"SCHEMA_VALIDATION_ERROR"}
 
 
 def _error_codes(excinfo) -> set[str]:

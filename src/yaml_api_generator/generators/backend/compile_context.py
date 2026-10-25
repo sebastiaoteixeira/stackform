@@ -18,9 +18,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
+from ...constants import CRUD_OPERATIONS
+from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService, IRServiceBase
 from ...ir.when import WhenExpr
-from ...utils.strings import to_py_identifier
+from ...utils.strings import to_pascal_case, to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
 
@@ -162,22 +163,19 @@ class S3StoreDescriptor(FileStoreDescriptor):
 @dataclass(frozen=True)
 class FieldDescriptor:
     name: str
-    type: str
-    required: bool
-    is_optional: bool
-    default: Any | None = None
-    constraints: dict[str, Any] = field(default_factory=dict)
-    enum_values: list[str] | None = None
-    array_item_type: str | None = None
-    ref_collection: str | None = None
+    config: dict[str, Any]
 
 
 @dataclass(frozen=True)
 class ModelDescriptor:
+    """A payload model; ``base`` names the model whose fields it extends."""
+
     name: str
     collection: str
     operation: str
     fields: list[FieldDescriptor]
+    base: str | None = None
+
 
 
 @dataclass(frozen=True)
@@ -282,6 +280,27 @@ class RouteDescriptor:
         if self.record_id_param is None or self.id_field is None:
             return parents
         return [*parents, (self.id_field, self.record_id_param)]
+
+    @property
+    def runs_operation(self) -> bool:
+        """Whether the route runs a handler or a declared repository operation instead of a generated step."""
+        return self.operation != "login" and (
+            self.handler is not None or self.operation not in CRUD_OPERATIONS
+        )
+
+    @property
+    def handler_name(self) -> str:
+        """Function name unique to this method and path across the whole API."""
+        return to_py_identifier(f"handle_{self.method.lower()}{self.relative_path}")
+
+    @property
+    def view_name(self) -> str:
+        """Class name of the view serving every method on this route's path; ``/reports/{id}`` is ``ReportsByIdView``."""
+        segments = (
+            f"By{to_pascal_case(segment[1:-1])}" if segment.startswith("{") else to_pascal_case(segment)
+            for segment in self.relative_path.split("/")
+        )
+        return f"{''.join(segments)}View"
 
     @property
     def django_path(self) -> str:
@@ -424,6 +443,7 @@ class CompileContext:
     repository_inherits: dict[str, str] = field(default_factory=dict)
     # IR services keyed by their expanded flat name (e.g. "list-posts").
     services: dict[str, IRService] = field(default_factory=dict)
+    service_bases: dict[str, IRServiceBase] = field(default_factory=dict)
     dto_models: list[ModelDescriptor] = field(default_factory=list)
     vendored_requirements: tuple[str, ...] = ()
     sql_schema_managed: bool = False
@@ -477,3 +497,14 @@ class CompileContext:
 
     def collection_datastore_type(self, collection: str) -> str:
         return self.collections.get(collection, {}).get("datastore_type", "mongodb")
+
+    def service_base(self, repository: str) -> IRServiceBase | None:
+        """The abstract service that the services of ``repository`` extend."""
+        return next(
+            (
+                self.service_bases[service.inherits]
+                for service in self.services.values()
+                if service.repository == repository and service.inherits
+            ),
+            None,
+        )

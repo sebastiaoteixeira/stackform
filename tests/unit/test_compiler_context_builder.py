@@ -128,18 +128,15 @@ def test_auth_internal_field_excluded_from_generated_model(tmp_path):
     assert "_auth" not in model_content
 
 
-def test_update_model_fields_are_optional(tmp_path):
-    """All fields in an update payload must be Optional (partial update support)."""
+def test_update_model_is_the_partial_entity_fields(tmp_path):
+    """The update payload is the entity's fields model with every field omittable."""
     ir = _make_ir(collections={"items": _items_col(
         name={"type": "string", "required": True},
         score={"type": "number"},
     )})
     _gen(ir, tmp_path)
     model_content = (tmp_path / "models" / "items.py").read_text()
-    # Find the UpdatePayload class block and verify Optional usage
-    if "UpdatePayload" in model_content:
-        update_section = model_content.split("UpdatePayload")[1].split("class ")[0]
-        assert "Optional" in update_section or "| None" in update_section
+    assert 'ItemsUpdatePayload = partial(ItemsFields, "ItemsUpdatePayload")' in model_content
 
 
 # --- Field type mapping ---

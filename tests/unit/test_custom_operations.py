@@ -11,7 +11,7 @@ import textwrap
 import pytest
 
 from yaml_api_generator.server import build_raw_app
-from yaml_api_generator.server.common.repositories.bindings import resolve
+from yaml_api_generator.runtime.operations import resolve
 from yaml_api_generator.server.common.repositories.mongodb import (
     MongoRepository,
     MongoRepositoryConfig,
@@ -91,10 +91,16 @@ async def test_sql_custom_operation_over_http(tmp_path, monkeypatch):
 
 class _FakeCursor:
     def __init__(self, docs):
-        self._docs = docs
+        self._docs = iter(docs)
 
-    async def to_list(self, length=None):
-        return list(self._docs)
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._docs)
+        except StopIteration:
+            raise StopAsyncIteration from None
 
 
 class _FakeCollection:
@@ -110,7 +116,7 @@ class _FakeCollection:
 
 
 @pytest.mark.asyncio
-async def test_mongo_find_operation_resolves_bindings():
+async def test_mongo_find_operation_runs_resolved_query():
     repo = MongoRepository(MongoRepositoryConfig(uri="mongodb://x", database="d"))
     collection = _FakeCollection([
         {"_id": "1", "authorId": "u1", "title": "mine"},
@@ -118,10 +124,10 @@ async def test_mongo_find_operation_resolves_bindings():
     ])
     repo._db = {"posts": collection}
 
-    query = {"command": "find", "filter": {"authorId": "$principal.id"}}
     bindings = {"principal": {"id": "u1"}, "params": {}, "body": {}}
+    query = resolve({"command": "find", "filter": {"authorId": "$principal.id"}}, bindings)
 
-    result = await repo.run_operation("posts", query, bindings)
+    result = await repo.run_operation("posts", query)
     assert collection.received_filter == {"authorId": "u1"}
     assert [d["title"] for d in result] == ["mine"]
     assert all("_id" in d for d in result)

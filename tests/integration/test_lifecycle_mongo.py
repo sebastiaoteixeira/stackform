@@ -2,111 +2,110 @@
 
 import compileall
 import json
-import os
 import subprocess
 import sys
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-import httpx
 import pytest
 from pymongo import MongoClient
 
-from tests.integration.support.file_apps import YAML_API
-from tests.integration.support.network import free_port, listening
-from tests.support.lifecycle import LONG_AGO, MONGO_SPEC, MongoNotes, Scenario, exercise, exercise_archive, verify
+from tests.integration.support.spec_apps import MONGO_BACKENDS, serve
+from tests.support.lifecycle import EXPIRED, MONGO_SPEC, MongoNotes, exercise_declared_deletes, verify
 from yaml_api_generator.cli.compiler import compile_project
+from yaml_api_generator.runtime.mongo_lifecycle import EXPIRY_INDEX
 
 pytestmark = pytest.mark.integration
 
-UVICORN = [sys.executable, "-m", "uvicorn", "app:app"]
+V01_SPEC = """
+version: "0.1"
+api:
+  operations:
+    defaults: { list: true, get: true, create: true, update: true, replace: true, delete: true }
+collections:
+  notes:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+    softDelete: true
+    access: { list: public, get: public, create: public, update: public, replace: public, delete: public }
+"""
 
 
-def _spec(tmp_path: Path) -> Path:
+@pytest.fixture(scope="module")
+def ttl_monitor(mongo_uri):
+    """The TTL monitor sweeping every second instead of every minute."""
+    with MongoClient(mongo_uri) as client:
+        previous = client.admin.command("setParameter", 1, ttlMonitorSleepSecs=1)["was"]
+        yield
+        client.admin.command("setParameter", 1, ttlMonitorSleepSecs=previous)
+
+
+def _spec(tmp_path: Path, text: str = MONGO_SPEC) -> Path:
     spec = tmp_path / "notes.yaml"
-    spec.write_text(MONGO_SPEC)
+    spec.write_text(text)
     return spec
 
 
-def _database() -> str:
-    return f"notes_{uuid4().hex[:12]}"
+def _database(mongo_uri: str) -> tuple[str, dict[str, str]]:
+    database = f"notes_{uuid4().hex[:12]}"
+    env = {"MONGO_URI": mongo_uri, "MONGO_DB": database, "YAML_API_MONGO_URI": mongo_uri, "YAML_API_MONGO_DB": database}
+    return database, env
 
 
-def _dev(spec: Path, port: int) -> tuple[list[str], Path]:
-    return [YAML_API, "run", str(spec), "--port", str(port)], spec.parent
+@pytest.mark.parametrize("backend", MONGO_BACKENDS, ids=lambda backend: backend.name)
+def test_removed_and_expired_notes(tmp_path, mongo_uri, ttl_monitor, backend):
+    spec, (database, env) = _spec(tmp_path), _database(mongo_uri)
+    verify(lambda: serve(backend, spec, env), MongoNotes(mongo_uri, database), exercise_declared_deletes)
+    with MongoClient(mongo_uri) as client:
+        index = client[database]["notes"].index_information()[EXPIRY_INDEX]
+    assert (index["key"], index["expireAfterSeconds"]) == ([("createdAt", 1)], 3600)
+
+
+@pytest.mark.parametrize("backend", MONGO_BACKENDS, ids=lambda backend: backend.name)
+def test_v01_soft_delete(tmp_path, mongo_uri, backend):
+    spec, (database, env) = _spec(tmp_path, V01_SPEC), _database(mongo_uri)
+    with serve(backend, spec, env) as client:
+        ids = [client.post("/api/notes", json={"title": title}).json()["id"] for title in ("kept", "removed")]
+        assert client.delete(f"/api/notes/{ids[1]}").status_code in (200, 204)
+        assert client.get(f"/api/notes/{ids[1]}").status_code == 404
+        assert [note["title"] for note in client.get("/api/notes").json()] == ["kept"]
+    assert MongoNotes(mongo_uri, database).rows() == {"kept": False, "removed": True}
 
 
 def _build(spec: Path, target: str) -> Path:
     output = spec.parent / target
-    if not output.exists():
-        compile_project(yaml_file=str(spec), output_dir=str(output), target=target)
+    compile_project(yaml_file=str(spec), output_dir=str(output), target=target)
     return output / "backend"
-
-
-def _generated(target: str):
-    def command(spec: Path, port: int) -> tuple[list[str], Path]:
-        return [*UVICORN, "--port", str(port)], _build(spec, target)
-
-    return command
-
-
-# Generated apps route only CRUD, so the includeDeleted operation is reached over HTTP on the dev server alone.
-BACKENDS = {
-    "run": (_dev, exercise_archive),
-    "fastapi": (_generated("fastapi"), exercise),
-    "raw": (_generated("raw"), exercise),
-}
-
-
-@pytest.mark.parametrize(("command", "scenario"), BACKENDS.values(), ids=list(BACKENDS))
-def test_removed_and_expired_notes(tmp_path, mongo_uri, command, scenario: Scenario):
-    spec, database = _spec(tmp_path), _database()
-    env = {**os.environ, "MONGO_URI": mongo_uri, "MONGO_DB": database}
-
-    @contextmanager
-    def serve() -> Iterator[httpx.Client]:
-        port = free_port()
-        argv, cwd = command(spec, port)
-        url = f"http://127.0.0.1:{port}"
-        with listening(argv, cwd=cwd, env=env, probe=f"{url}/api/notes", log=tmp_path / "server.log"):
-            with httpx.Client(base_url=url, timeout=30) as client:
-                yield client
-
-    verify(serve, MongoNotes(mongo_uri, database), scenario)
 
 
 _QUERY_OPERATIONS = """
 import asyncio, json, sys
 from pymongo import AsyncMongoClient
-from {module} import NotesRepository
+from api.repositories.notes import NotesRepository
 
 async def main():
     repository = NotesRepository(AsyncMongoClient(sys.argv[1])[sys.argv[2]])
-    print(json.dumps({{name: sorted(row["title"] for row in await getattr(repository, name)({{}})) for name in sys.argv[3:]}}))
+    print(json.dumps({name: sorted(row["title"] for row in await getattr(repository, name)({})) for name in sys.argv[3:]}))
 
 asyncio.run(main())
 """
 
-# DRF is not runnable without Django installed, so its repository is driven directly, as are the others for parity.
-REPOSITORIES = {"fastapi": "repositories.notes", "raw": "repositories.notes", "drf": "api.repositories.notes"}
 
-
-@pytest.mark.parametrize(("target", "module"), REPOSITORIES.items(), ids=list(REPOSITORIES))
-def test_generated_custom_operations_honour_include_deleted(tmp_path, mongo_uri, target, module):
-    database = _database()
+def test_drf_custom_operations_honour_include_deleted(tmp_path, mongo_uri):
+    """Drives the DRF repository directly, covering it where no interpreter holds the DRF requirements."""
+    database, _ = _database(mongo_uri)
     with MongoClient(mongo_uri) as client:
         client[database]["notes"].insert_many([
-            {"title": "kept", "createdAt": datetime.now(UTC).isoformat()},
+            {"title": "kept", "createdAt": datetime.now(UTC)},
             {"title": "removed", "deletedAt": datetime.now(UTC).isoformat()},
-            {"title": "expired", "createdAt": LONG_AGO.isoformat()},
+            {"title": "expired", "createdAt": datetime.fromisoformat(EXPIRED).replace(tzinfo=UTC)},
         ])
-    backend = _build(_spec(tmp_path), target)
+    backend = _build(_spec(tmp_path), "drf")
     assert compileall.compile_dir(str(backend), quiet=1)
     result = subprocess.run(
-        [sys.executable, "-c", _QUERY_OPERATIONS.format(module=module), mongo_uri, database, "everything", "current"],
+        [sys.executable, "-c", _QUERY_OPERATIONS, mongo_uri, database, "everything", "current"],
         cwd=backend, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr

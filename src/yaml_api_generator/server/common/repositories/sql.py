@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from yaml_api_generator.ir import IRCollection
 from yaml_api_generator.runtime.sql_lifecycle import SQLLifecycle
+from yaml_api_generator.runtime.sql_operations import run_sql
 from .base import BaseRepository, ConflictError
-from .bindings import resolve
 from .sql_schema import table_from_collection
 from ..pagination import Page, Primitives, expand_bound
 
@@ -249,17 +249,9 @@ class SQLRepository(BaseRepository):
     async def update(
         self, collection_name: str, document_id: str, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        table = self._table(collection_name)
-        values = self._known_columns(collection_name, payload, drop_id=True)
-        with _as_conflict():
-            async with await self._begin() as conn:
-                result = await conn.execute(
-                    sa.update(table)
-                    .where(*self._visible(collection_name, self._id_criteria(collection_name, document_id)))
-                    .values(**values)
-                    .returning(table)
-                )
-                return self._one(result)
+        return await self.update_by(
+            collection_name, {self._id_fields[collection_name]: document_id}, payload
+        )
 
     async def replace(
         self, collection_name: str, document_id: str, payload: dict[str, Any]
@@ -284,23 +276,10 @@ class SQLRepository(BaseRepository):
     async def delete(self, collection_name: str, document_id: str) -> dict[str, Any] | None:
         return await self.delete_by(collection_name, self._id_criteria(collection_name, document_id))
 
-    async def run_operation(
-        self,
-        collection_name: str,
-        query: dict[str, Any],
-        bindings: dict[str, Any],
-        include_deleted: bool = False,
-    ) -> Any:
-        sql = query.get("sql")
-        if not sql:
-            raise ValueError("SQL custom operations require a 'sql' string")
-        params = {key: resolve(value, bindings) for key, value in (query.get("params") or {}).items()}
+    async def run_operation(self, collection_name: str, query: dict[str, Any]) -> Any:
         with _as_conflict():
             async with await self._begin() as conn:
-                result = await conn.execute(sa.text(sql), params)
-                if result.returns_rows:
-                    return [dict(row._mapping) for row in result]
-                return {"rowcount": result.rowcount}
+                return await run_sql(conn, query)
 
     def _table(self, collection_name: str) -> sa.Table:
         return self._tables[collection_name]

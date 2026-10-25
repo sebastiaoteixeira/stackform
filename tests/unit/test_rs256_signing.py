@@ -210,7 +210,7 @@ import asyncio
 import app
 from dependencies.jwt_utils import create_jwt_token, decode_jwt_token
 
-handler, params = app.ASGIApp._match_route("GET", "/.well-known/jwks.json")
+handler, params, _ = app.ASGIApp._match_route("GET", "/.well-known/jwks.json")
 status, payload = asyncio.run(handler(params, None, {}, None))
 token = create_jwt_token("user-1", "user")
 print(json.dumps({

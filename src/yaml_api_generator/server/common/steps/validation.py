@@ -1,8 +1,9 @@
 """Request body validation pipeline step."""
 
-from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
+
+from yaml_api_generator.ir import SECRET_FIELD, IRDto, payload_fields
+from yaml_api_generator.runtime.fields import NOT_AN_OBJECT, Model
 
 from ..request_context import RequestContext
 from ..server_context import RuntimeCollectionDescriptor, RuntimeIdentityDescriptor
@@ -12,219 +13,57 @@ from . import Step
 _NO_BODY_OPS = frozenset({"list", "get", "delete"})
 
 
-@dataclass(frozen=True)
-class _FieldSchema:
-    name: str
-    field_type: str
-    required: bool
-    min: float | None = None
-    max: float | None = None
-    min_length: int | None = None
-    max_length: int | None = None
-    enum_values: list[str] | None = None
-
-
-def _build_field_schemas(
-    collection: RuntimeCollectionDescriptor,
-    operation: str,
-    identity_collection: RuntimeIdentityDescriptor | None = None,
-) -> list[_FieldSchema]:
-    schemas: list[_FieldSchema] = []
-    make_optional = operation == "update"
-
-    for field_name, raw_config in collection.fields.items():
-        if not isinstance(raw_config, dict):
-            continue
-        if raw_config.get("type") == "id":
-            continue
-        if field_name == "_auth" or field_name in collection.files:
-            continue
-
-        required = not make_optional and bool(raw_config.get("required", False))
-        schemas.append(
-            _FieldSchema(
-                name=field_name,
-                field_type=raw_config.get("type", "string"),
-                required=required,
-                min=raw_config.get("min"),
-                max=raw_config.get("max"),
-                min_length=raw_config.get("minLength"),
-                max_length=raw_config.get("maxLength"),
-                enum_values=raw_config.get("values"),
-            )
-        )
-
+def credential_properties(
+    operation: str, identity_collection: RuntimeIdentityDescriptor | None
+) -> dict[str, dict[str, Any]]:
+    """The properties a write operation takes besides the entity's writable fields."""
     if (
         identity_collection is not None
         and operation == "create"
         and identity_collection.has_password
-        and not any(s.name == "password" for s in schemas)
     ):
-        schemas.append(
-            _FieldSchema(
-                name="password",
-                field_type="string",
-                required=True,
-                min_length=1,
-            )
-        )
-
-    return schemas
+        return {"password": SECRET_FIELD}
+    return {}
 
 
-def _build_login_schemas(
+def login_properties(
     identity_collection: RuntimeIdentityDescriptor,
-) -> list[_FieldSchema]:
-    schemas: list[_FieldSchema] = []
-    pw_binding = identity_collection.get_binding("password")
-    if pw_binding and pw_binding.identifier:
-        schemas.append(
-            _FieldSchema(
-                name=pw_binding.identifier,
-                field_type="string",
-                required=True,
-                min_length=1,
-            )
-        )
-    schemas.append(
-        _FieldSchema(
-            name="password",
-            field_type="string",
-            required=True,
-            min_length=1,
-        )
-    )
-    return schemas
-
-
-def _validate_type(name: str, value: Any, schema: _FieldSchema) -> None:
-    ft = schema.field_type
-
-    if ft in ("string", "ref"):
-        if not isinstance(value, str):
-            raise ValueError(f"Field '{name}' must be a string")
-        if schema.min_length is not None and len(value) < schema.min_length:
-            raise ValueError(
-                f"Field '{name}' must have at least {schema.min_length} characters"
-            )
-        if schema.max_length is not None and len(value) > schema.max_length:
-            raise ValueError(
-                f"Field '{name}' must have at most {schema.max_length} characters"
-            )
-
-    elif ft == "number":
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"Field '{name}' must be a number")
-        if schema.min is not None and value < schema.min:
-            raise ValueError(f"Field '{name}' must be >= {schema.min}")
-        if schema.max is not None and value > schema.max:
-            raise ValueError(f"Field '{name}' must be <= {schema.max}")
-
-    elif ft == "boolean":
-        if not isinstance(value, bool):
-            raise ValueError(f"Field '{name}' must be a boolean")
-
-    elif ft == "datetime":
-        if not isinstance(value, str):
-            raise ValueError(f"Field '{name}' must be a datetime string")
-        try:
-            datetime.fromisoformat(value)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"Field '{name}' is not a valid ISO datetime") from exc
-
-    elif ft == "enum":
-        if schema.enum_values is not None and value not in schema.enum_values:
-            raise ValueError(
-                f"Field '{name}' must be one of: {', '.join(schema.enum_values)}"
-            )
-
-    elif ft == "array":
-        if not isinstance(value, list):
-            raise ValueError(f"Field '{name}' must be an array")
-
-    elif ft == "object":
-        if not isinstance(value, dict):
-            raise ValueError(f"Field '{name}' must be an object")
-
-
-def validate_field_values(
-    values: dict[str, Any], field_configs: dict[str, dict[str, Any]]
-) -> None:
-    """Validate a value map against declared field configs.
-
-    Declared fields are required by default; a missing or ill-typed value raises
-    ``ValueError`` (mapped to 422). Shares the type checks used for request bodies.
-    """
-    missing = [
-        name
-        for name, cfg in field_configs.items()
-        if cfg.get("required", True) and name not in values
-    ]
-    if missing:
-        raise ValueError(f"Missing required inputs: {', '.join(missing)}")
-
-    for name, cfg in field_configs.items():
-        if name not in values:
-            continue
-        if values[name] is None and not cfg.get("required", True):
-            continue
-        schema = _FieldSchema(
-            name=name,
-            field_type=cfg.get("type", "string"),
-            required=bool(cfg.get("required", True)),
-            min=cfg.get("min"),
-            max=cfg.get("max"),
-            min_length=cfg.get("minLength"),
-            max_length=cfg.get("maxLength"),
-            enum_values=cfg.get("values"),
-        )
-        _validate_type(name, values[name], schema)
+) -> dict[str, dict[str, Any]]:
+    binding = identity_collection.get_binding("password")
+    identifier = binding.identifier if binding and binding.identifier else "identifier"
+    return {identifier: SECRET_FIELD, "password": SECRET_FIELD}
 
 
 def ValidateBodyStep(
     collection: RuntimeCollectionDescriptor,
     operation: str,
     identity_collection: RuntimeIdentityDescriptor | None = None,
+    dto: IRDto | None = None,
 ) -> Step:
+    """Check the body against ``dto`` when the route types it, else against the entity; updates accept any subset."""
+    if operation in _NO_BODY_OPS:
+        return lambda ctx: ctx
     if operation == "login":
         if identity_collection is None:
             raise ValueError("login operation requires an identity collection")
-        field_schemas = _build_login_schemas(identity_collection)
+        properties = login_properties(identity_collection)
+    elif dto is not None:
+        properties = payload_fields(dto.fields)
     else:
-        field_schemas = _build_field_schemas(collection, operation, identity_collection)
-
-    known_fields = {s.name for s in field_schemas} | set(collection.files)
-    schema_by_name = {s.name: s for s in field_schemas}
+        properties = {
+            **credential_properties(operation, identity_collection),
+            **payload_fields(collection.fields, collection.files),
+        }
+    model = Model(properties, partial=operation == "update")
+    files = set(collection.files)
 
     def step(ctx: RequestContext) -> RequestContext:
-        if operation in _NO_BODY_OPS:
-            return ctx
-
         body = ctx.body
         if not isinstance(body, dict):
-            raise ValueError("Request body must be a JSON object")
-
-        unknown = set(body.keys()) - known_fields
-        if unknown:
-            raise ValueError(f"Unknown fields: {', '.join(sorted(unknown))}")
-
-        if operation != "update":
-            missing = [
-                s.name for s in field_schemas if s.required and s.name not in body
-            ]
-            if missing:
-                raise ValueError(f"Missing required fields: {', '.join(missing)}")
-
-        for key, value in body.items():
-            schema = schema_by_name.get(key)
-            if schema is None:
-                continue
-            if value is None and not schema.required:
-                continue
-            if value is None and schema.required:
-                raise ValueError(f"Field '{key}' is required and cannot be null")
-            _validate_type(key, value, schema)
-
+            raise ValueError(NOT_AN_OBJECT)
+        uploads = {name: value for name, value in body.items() if name in files}
+        fields = {name: value for name, value in body.items() if name not in files}
+        ctx.body = {**model.conform(fields), **uploads}
         return ctx
 
     return step

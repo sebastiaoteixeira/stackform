@@ -558,6 +558,10 @@ def test_103_unscoped_role_with_multiple_auth_entities_raises_ambiguous_error(tm
     api:
       basePath: /api
       version: v1
+      operations:
+        auth:
+          register: true
+          login: true
     mongo:
       uri: mongodb://localhost:27017
       database: testdb
