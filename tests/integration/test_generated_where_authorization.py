@@ -575,7 +575,7 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
 
         views.resolve_principal = member
         handler_views.get_database = lambda: db
-        handler_views.resolve_principal = principal
+        handler_views.resolve_principal = member
         request = SimpleNamespace(data={{}}, body=b"", query_params={{}}, headers={{}}, COOKIES={{}})
 
         application_module = types.ModuleType("app")
