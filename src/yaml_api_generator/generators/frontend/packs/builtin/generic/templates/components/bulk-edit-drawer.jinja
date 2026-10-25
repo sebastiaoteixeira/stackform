@@ -1,9 +1,12 @@
-{% from 'macros/field_input.jinja' import field_control %}
+{% from 'macros/access.jinja' import allowed %}
+{% from 'macros/field_input.jinja' import field_control, control_imports %}
+{% set editable_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | list %}
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { callOperation, displayValue, listRecords } from '../__generated__/records';
 import { ENTITY_FIELDS, FormValues, formValues, payload } from '../__generated__/fields';
+{{ control_imports(editable_fields) }}
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -12,7 +15,6 @@ interface {{ entity.name | pascal_case }} {
   {% endfor %}
 }
 
-{% set editable_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | list %}
 {% set entity_plural = entity.name | lower + 's' %}
 {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
 {% set role_names = roles.values() | list %}
@@ -41,12 +43,8 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        return res.json();
-      })
-      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+    listRecords('{{ entity.name }}', headers)
+      .then(data => { setItems(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [token]);
 
@@ -74,7 +72,7 @@ export default function {{ view.name | pascal_case }}() {
 
   const applyBulkEdit = async () => {
     const enabled = Object.fromEntries(Object.entries(FIELDS).filter(([name]) => enabledFields.has(name)));
-    const body = JSON.stringify(payload(enabled, patch));
+    const body = JSON.stringify(payload(enabled, patch, {}));
     if (body === '{}') return;
 
     setApplying(true);
@@ -82,7 +80,7 @@ export default function {{ view.name | pascal_case }}() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const updated: {{ entity.name | pascal_case }}[] = await Promise.all([...selectedIds].map(id =>
-      fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { method: 'PATCH', headers, body })
+      callOperation('{{ entity.name }}', 'update', { id, headers, body })
         .then(res => (res.ok ? res.json() : null))
     ));
     const updatedById = new Map(updated.filter(Boolean).map(item => [item.{{ entity.pk_field }}, item]));
@@ -129,12 +127,14 @@ export default function {{ view.name | pascal_case }}() {
             Bulk edit {selectedIds.size}
           </button>
         )}
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Grid: table + drawer */}
@@ -179,9 +179,9 @@ export default function {{ view.name | pascal_case }}() {
                   {% for field in display_fields %}
                   <td>
                     {% if field.type == 'enum' %}
-                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    <span className="wf-badge">{displayValue(item.{{ field.name }})}</span>
                     {% else %}
-                    {String(item.{{ field.name }} ?? '—')}
+                    {displayValue(item.{{ field.name }})}
                     {% endif %}
                   </td>
                   {% endfor %}

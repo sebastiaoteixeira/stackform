@@ -1,0 +1,10 @@
+{#
+  The content of a `call` shown only to callers the server may serve
+  `operation` on `entity`; `edit` is the entity's edit operation.
+#}
+{% macro allowed(entity, operation) %}
+{% set served = (entity.edit_operation or 'update') if operation == 'edit' else operation %}
+<Allowed entity={{ entity.name | tojson }} operation={{ served | tojson }}>
+{{ caller() }}
+</Allowed>
+{% endmacro %}

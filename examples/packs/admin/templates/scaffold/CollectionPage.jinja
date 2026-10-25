@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
-import { apiFetch } from "./lib/api"
+import { authHeaders } from "./lib/api"
+import { callOperation, listRecords, readJson, type Operation } from "./records"
 import { RecordModal } from "./RecordModal"
 import { useAuth } from "./AuthProvider"
 
@@ -9,24 +10,32 @@ type FieldDef = {
   required: boolean
   enum_values?: string[]
   ref?: string
+  readonly: boolean
 }
 
 export type CollectionSchema = {
   pk: string
   fields: FieldDef[]
+  operations: Operation[]
+  edit?: Operation
 }
 
 export const COLLECTION_SCHEMAS: Record<string, CollectionSchema> = {
   {% for entity_name, entity in entities.items() %}
-  "{{ entity.repository_name }}": {
+  "{{ entity_name }}": {
     pk: "{{ entity.pk_field }}",
+    operations: {{ entity.operations | sort | tojson }},
+    {% if entity.edit_operation %}
+    edit: "{{ entity.edit_operation }}",
+    {% endif %}
     fields: [
-      { name: "{{ entity.pk_field }}", type: "id", required: false },
+      { name: "{{ entity.pk_field }}", type: "id", required: false, readonly: true },
       {% for field_name, field in entity.fields.items() %}
       {
         name: "{{ field_name }}",
         type: "{{ field.type }}",
         required: {{ 'true' if field.required else 'false' }},
+        readonly: {{ 'true' if field.readonly else 'false' }},
         {% if field.enum_values %}
         enum_values: [{% for v in field.enum_values %}"{{ v }}"{% if not loop.last %}, {% endif %}{% endfor %}],
         {% endif %}
@@ -72,16 +81,14 @@ export function CollectionPage({ collection, onSignIn }: CollectionPageProps) {
   const schema = COLLECTION_SCHEMAS[collection]
   const pk = schema?.pk || "id"
   const fields = schema?.fields || []
+  const can = (operation: Operation) => schema?.operations.includes(operation) ?? false
   const visibleFields = fields.filter(f => f.type !== "id" || f.name === pk).slice(0, 8)
 
   const fetchRecords = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch(`/${collection}`)
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-      const data = await res.json()
-      setRecords(Array.isArray(data) ? data : [])
+      setRecords(await listRecords(collection, authHeaders()))
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -99,9 +106,9 @@ export function CollectionPage({ collection, onSignIn }: CollectionPageProps) {
     if (!isAuthenticated) { onSignIn?.(); return }
     if (!confirm("Delete this record?")) return
     try {
-      const res = await apiFetch(`/${collection}/${id}`, { method: "DELETE" })
+      const res = await callOperation(collection, "delete", { id, headers: authHeaders() })
       if (res.status === 401 || res.status === 403) { onSignIn?.(); return }
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      if (!res.ok) await readJson(res)
       setRecords(prev => prev.filter(r => r[pk] !== id))
     } catch (e: any) {
       alert(`Delete failed: ${e.message}`)
@@ -154,15 +161,17 @@ export function CollectionPage({ collection, onSignIn }: CollectionPageProps) {
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded px-8 py-1.5 w-48 placeholder:text-slate-600 focus:outline-none focus:border-blue-500"
             />
           </div>
-          <button
-            onClick={handleNewRecord}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded transition-colors"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-            </svg>
-            New record
-          </button>
+          {can("create") && (
+            <button
+              onClick={handleNewRecord}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+              </svg>
+              New record
+            </button>
+          )}
           <button
             onClick={fetchRecords}
             className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-800 rounded transition-colors"
@@ -191,7 +200,7 @@ export function CollectionPage({ collection, onSignIn }: CollectionPageProps) {
         ) : pageRecords.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2">
             <p className="text-slate-500 text-sm">{search ? "No matching records" : "No records yet"}</p>
-            {!search && (
+            {!search && can("create") && (
               <button
                 onClick={handleNewRecord}
                 className="text-blue-400 hover:text-blue-300 text-xs underline underline-offset-2"
@@ -220,7 +229,7 @@ export function CollectionPage({ collection, onSignIn }: CollectionPageProps) {
                 <tr
                   key={record[pk] ?? i}
                   className="border-b border-slate-800/50 hover:bg-slate-900/50 group cursor-pointer"
-                  onClick={() => handleEditRecord(record)}
+                  onClick={() => schema.edit && handleEditRecord(record)}
                 >
                   {visibleFields.map(f => (
                     <td key={f.name} className="px-3 py-2 first:pl-6 text-slate-300 max-w-[200px]">
@@ -236,15 +245,17 @@ export function CollectionPage({ collection, onSignIn }: CollectionPageProps) {
                     </td>
                   ))}
                   <td className="px-3 py-2 text-right" onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={() => handleDelete(record[pk])}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-red-400 transition-all rounded"
-                      title="Delete"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                        <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 000 1.5h.3l.815 8.15A1.5 1.5 0 005.357 15h5.285a1.5 1.5 0 001.493-1.35l.815-8.15h.3a.75.75 0 000-1.5H11v-.75A2.25 2.25 0 008.75 1h-1.5A2.25 2.25 0 005 3.25zm2.25-.75a.75.75 0 00-.75.75V4h3v-.75a.75.75 0 00-.75-.75h-1.5zM6.05 6a.75.75 0 01.787.713l.275 5.5a.75.75 0 01-1.498.075l-.275-5.5A.75.75 0 016.05 6zm3.9 0a.75.75 0 01.712.787l-.275 5.5a.75.75 0 01-1.498-.075l.275-5.5a.75.75 0 01.786-.711z" clipRule="evenodd" />
-                      </svg>
-                    </button>
+                    {can("delete") && (
+                      <button
+                        onClick={() => handleDelete(record[pk])}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-red-400 transition-all rounded"
+                        title="Delete"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                          <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 000 1.5h.3l.815 8.15A1.5 1.5 0 005.357 15h5.285a1.5 1.5 0 001.493-1.35l.815-8.15h.3a.75.75 0 000-1.5H11v-.75A2.25 2.25 0 008.75 1h-1.5A2.25 2.25 0 005 3.25zm2.25-.75a.75.75 0 00-.75.75V4h3v-.75a.75.75 0 00-.75-.75h-1.5zM6.05 6a.75.75 0 01.787.713l.275 5.5a.75.75 0 01-1.498.075l-.275-5.5A.75.75 0 016.05 6zm3.9 0a.75.75 0 01.712.787l-.275 5.5a.75.75 0 01-1.498-.075l.275-5.5a.75.75 0 01.786-.711z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

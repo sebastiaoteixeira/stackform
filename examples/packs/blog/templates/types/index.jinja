@@ -26,6 +26,7 @@ export interface {{ entity_name | pascal_case }} {
 
 {% for col_name, collection in collections.items() %}
 export interface {{ col_name | pascal_case }}Item {
+  {{ entities[collection.entity].pk_field }}: string
   {% for field_name, field in collection.fields.items() %}
   {{ field_name }}: {{ (field.resolved_type or "unknown") | replace("string", "string") | replace("number", "number") | replace("boolean", "boolean") | replace("enum", "string") | replace("ref", "string") | replace("datetime", "string") }}
   {% endfor %}

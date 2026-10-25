@@ -6,7 +6,7 @@ framework: react
 components:
   grid:
     props:
-      collection: { type: collection, required: true }
+      collection: { type: projection, required: true }
       item: { type: component }
       columns: { type: number, default: 3 }
   card:
@@ -19,9 +19,10 @@ components:
       colors: { type: object }
   article:
     props:
-      collection: { type: collection, required: true }
+      collection: { type: projection, required: true }
       title: { required: true }
       body: { required: true }
+      author: {}
   form:
     props:
       collection: { type: collection, required: true }
@@ -35,6 +36,8 @@ scaffold:
   - tsconfig.json
   - index.html
   - main
+  - config.ts
+  - records.ts
   - App
   - AuthProvider
   - index.css

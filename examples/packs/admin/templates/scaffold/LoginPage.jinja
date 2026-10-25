@@ -1,9 +1,8 @@
 import { useState } from "react"
 import { useAuth } from "./AuthProvider"
 
-{% set auth_entity_name = context.identity_entities[0] if context.identity_entities else "user" %}
-{% set auth_entity = context.entities.get(auth_entity_name) %}
-{% set identifier = auth_entity.auth_identifier if auth_entity and auth_entity.auth_identifier else "email" %}
+{% set identity = context.entities.values() | selectattr("serves_login") | first %}
+{% set identifier = identity.auth_identifier if identity else "email" %}
 
 export function LoginPage({ onClose }: { onClose?: () => void } = {}) {
   const [error, setError] = useState<string | null>(null)

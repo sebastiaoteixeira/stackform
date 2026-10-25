@@ -475,6 +475,18 @@ def test_unimplemented_modes_are_rejected_by_the_schema(tmp_path, unimplemented)
     assert _error_codes(excinfo) == {"SCHEMA_VALIDATION_ERROR"}
 
 
+@pytest.mark.parametrize(
+    ("sort", "expected"),
+    [
+        ("[{ field: score, dir: desc }]", (IRSortKey("score", "desc"), IRSortKey("id", "asc"))),
+        ("[{ field: score }, { field: slug }]", (IRSortKey("score", "asc"), IRSortKey("slug", "asc"))),
+    ],
+)
+def test_offset_sort_ends_on_a_unique_field(tmp_path, sort, expected):
+    ir = _load(tmp_path, f"strategy: offset\nsize: {{ default: 20, max: 100 }}\nsort: {sort}")
+    assert _list_route(ir).pagination.sort == expected
+
+
 def _error_codes(excinfo) -> set[str]:
     return {e.code for e in excinfo.value.errors}
 

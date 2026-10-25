@@ -1,5 +1,6 @@
-"""Role assignment, login exposure and readonly fields over real HTTP, in the dev server and the generated FastAPI app."""
+"""Role assignment, login exposure and readonly fields over real HTTP, in the dev server and the generated FastAPI app, for 0.2 and 0.3 specs."""
 
+import itertools
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
@@ -101,10 +102,15 @@ def _promote_in_sqlite(store: Path, email: str) -> None:
         db.execute("UPDATE users SET role = 'admin' WHERE email = ?", (email,))
 
 
-@pytest.fixture(scope="module", params=SERVERS, ids=lambda server: server.name)
+@pytest.fixture(
+    scope="module",
+    params=list(itertools.product(SERVERS, ("0.2", "0.3"))),
+    ids=lambda param: f"{param[0].name}-{param[1]}",
+)
 def client(request, tmp_path_factory):
-    directory = tmp_path_factory.mktemp(request.param.name)
-    with serve(request.param, write_spec(directory, _SPEC)) as client:
+    server, version = request.param
+    directory = tmp_path_factory.mktemp(f"{server.name}-{version}")
+    with serve(server, write_spec(directory, _SPEC.replace('"0.3"', f'"{version}"', 1))) as client:
         seed_admin(client, lambda email: _promote_in_sqlite(directory / "store.sqlite", email))
         yield client
 

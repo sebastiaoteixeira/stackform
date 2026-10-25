@@ -1,7 +1,8 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -27,15 +28,9 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        }
-        return res.json();
-      })
+    listRecords('{{ entity.name }}', headers)
       .then(data => {
-        setItems(Array.isArray(data) ? data : []);
+        setItems(data);
         setLoading(false);
       })
       .catch(err => {
@@ -72,9 +67,11 @@ export default function {{ view.name | pascal_case }}() {
           </div>
           <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
           <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+          {% call allowed(entity, 'create') %}
           <button onClick={() => navigate('{{ view.path }}/new')} className="wf-btn wf-btn-primary">
             + New {{ entity.name | title }}
           </button>
+          {% endcall %}
         </div>
       </div>
     );
@@ -100,12 +97,14 @@ export default function {{ view.name | pascal_case }}() {
         <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
         <span className="wf-mono text-wf-ink-dim">{items.length} records</span>
         <div className="flex-1" />
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Groups */}
@@ -154,7 +153,7 @@ export default function {{ view.name | pascal_case }}() {
                         {% for field in entity.fields.values() %}
                         {% if ns.count < 2 and field.name != group_field and field.name != entity.pk_field and (not title_field or field.name != title_field.name) %}
                         <td className="text-wf-ink-dim text-sm">
-                          {String(item.{{ field.name }} || '—')}
+                          {displayValue(item.{{ field.name }})}
                         </td>
                         {% set ns.count = ns.count + 1 %}
                         {% endif %}

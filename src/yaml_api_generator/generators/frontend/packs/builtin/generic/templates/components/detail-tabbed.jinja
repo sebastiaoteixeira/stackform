@@ -1,7 +1,8 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { callOperation, displayValue } from '../__generated__/records';
 import { Button } from '../__generated__/components/Button';
 import { Badge } from '../__generated__/components/Badge';
 import { LoadingSpinner } from '../__generated__/components/LoadingSpinner';
@@ -29,7 +30,7 @@ export function {{ entity.name | pascal_case }}Tabbed({
       try {
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { headers });
+        const res = await callOperation('{{ entity.name }}', 'get', { id, headers });
         if (!res.ok) throw new Error(res.status === 404 ? 'Record not found' : `Error: ${res.status}`);
         setRecord(await res.json());
       } catch (err: any) {
@@ -88,9 +89,11 @@ export function {{ entity.name | pascal_case }}Tabbed({
           {% if status_field %}
           <Badge value={String(record.{{ status_field.name }})} />
           {% endif %}
+          {% call allowed(entity, 'edit') %}
           <Button size="sm" variant="secondary" onClick={() => navigate(`${basePath}/${id}/edit`)}>
             Edit
           </Button>
+          {% endcall %}
         </div>
       </div>
 
@@ -133,7 +136,7 @@ export function {{ entity.name | pascal_case }}Tabbed({
               </span>
               {% else %}
               <span className="text-sm text-wf-ink whitespace-pre-wrap">
-                {String(record.{{ field.name }} ?? '—')}
+                {displayValue(record.{{ field.name }})}
               </span>
               {% endif %}
             </div>
@@ -151,7 +154,7 @@ export function {{ entity.name | pascal_case }}Tabbed({
             <div className="flex items-center gap-4 py-2 border-b border-wf-line last:border-0">
               <span className="text-sm font-medium text-wf-ink w-40">{{ field.name | title }}</span>
               <span className="wf-mono">{{ field.type }}</span>
-              <span className="text-sm text-wf-ink flex-1">{String(record.{{ field.name }} ?? '—')}</span>
+              <span className="text-sm text-wf-ink flex-1">{displayValue(record.{{ field.name }})}</span>
             </div>
             {% endfor %}
           </div>

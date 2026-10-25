@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+NO_CONFIG: dict[str, Any] = {"type": "object", "additionalProperties": False}
+
 
 @dataclass
 class OutputConfig:
@@ -26,7 +28,7 @@ class PackManifest:
     components: dict[str, dict[str, Any]] = field(default_factory=dict)
     scaffold: list[str] = field(default_factory=list)
     output: OutputConfig = field(default_factory=OutputConfig)
-    config_schema: dict[str, Any] = field(default_factory=dict)
+    config_schema: dict[str, Any] = field(default_factory=lambda: NO_CONFIG)
 
 
 @dataclass

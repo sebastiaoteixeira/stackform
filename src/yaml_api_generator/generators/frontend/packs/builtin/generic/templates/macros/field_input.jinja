@@ -1,6 +1,12 @@
 {% set MULTILINE_NAMES = ['content', 'body', 'description', 'excerpt', 'bio', 'summary'] %}
-{% set FORMAT_INPUT_TYPES = {'email': 'email', 'uri': 'url', 'e164': 'tel'} %}
+{% set FORMAT_INPUT_TYPES = {'email': 'email', 'uri': 'url', 'e164': 'tel', 'password': 'password'} %}
 {% set CONTROL_CLASS = 'w-full bg-transparent outline-none text-wf-ink text-sm' %}
+{# The import the controls of `fields` need from the generated App, when one is an identity's roles field. #}
+{% macro control_imports(fields) %}
+{% if fields | selectattr('roles_of') | first %}
+import { RoleOptions } from '../__generated__/App';
+{% endif %}
+{% endmacro %}
 {# The element a field's control is: checkbox, select, textarea or input. #}
 {% macro control_kind(field) -%}
 {{ 'checkbox' if field.type == 'boolean' else 'select' if field.type == 'enum' else 'textarea' if field.type in ('object', 'array') or field.name in MULTILINE_NAMES else 'input' }}
@@ -40,9 +46,13 @@
   {{ attributes }}
 >
   <option value="">Select...</option>
+  {% if field.roles_of %}
+  <RoleOptions identity={{ field.roles_of | tojson }} />
+  {% else %}
   {% for option in config['values'] %}
   <option value={{ option | tojson }}>{{ option | title }}</option>
   {% endfor %}
+  {% endif %}
 </select>
 {% elif kind == 'textarea' %}
 <textarea

@@ -1,7 +1,8 @@
-{% from 'macros/field_input.jinja' import field_input %}
+{% from 'macros/field_input.jinja' import field_input, control_imports %}
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecordForm } from '../__generated__/useRecordForm';
+{{ control_imports(entity.writable_fields) }}
 
 interface {{ entity.name | pascal_case }}PreviewFormProps {
   entityId?: string;
@@ -18,7 +19,7 @@ export function {{ entity.name | pascal_case }}PreviewForm({
   entityId,
   basePath = '{{ view.path if view else "/" }}'
 }: {{ entity.name | pascal_case }}PreviewFormProps) {
-  const { values, setValue, mode, submit } = useRecordForm({{ entity.name | tojson }}, '{{ entity.repository_name | kebab_case }}', entityId);
+  const { values, setValue, mode, submit } = useRecordForm({{ entity.name | tojson }}, entityId);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -65,10 +66,13 @@ export function {{ entity.name | pascal_case }}PreviewForm({
       <div className="p-6" style={{ "{{" }} display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' {{ "}}" }}>
         {/* Form column */}
         <form id="preview-form" onSubmit={handleSubmit} className="space-y-4">
-          {% for field in entity.fields.values() %}
-          {% if field.name != entity.pk_field and not field.readonly %}
+          {% for field in entity.writable_fields %}
           {{ field_input(field) }}
-          {% endif %}
+          {% endfor %}
+          {% for field in entity.credential_fields %}
+          {mode === 'create' && (
+          {{ field_input(field) }}
+          )}
           {% endfor %}
         </form>
 

@@ -1,7 +1,9 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { allows } from '../__generated__/access';
+import { Allowed, useAuth } from '../__generated__/App';
+import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -30,26 +32,24 @@ export default function {{ view.name | pascal_case }}() {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { token } = useAuth();
+  const { token, caller } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        return res.json();
-      })
-      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+    listRecords('{{ entity.name }}', headers)
+      .then(data => { setItems(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [token]);
 
   const actions: Action[] = useMemo(() => [
-    { id: 'new', label: 'Create {{ entity.name | title }}', shortcut: 'C', handler: () => navigate('{{ view.path }}/new') },
+    ...(allows({{ entity.name | tojson }}, 'create', caller)
+      ? [{ id: 'new', label: 'Create {{ entity.name | title }}', shortcut: 'C', handler: () => navigate('{{ view.path }}/new') }]
+      : []),
     { id: 'settings', label: 'Settings', shortcut: ',', handler: () => {} },
-  ], [navigate]);
+  ], [navigate, caller]);
 
   const matchedItems = useMemo(() =>
     query.trim()
@@ -136,12 +136,14 @@ export default function {{ view.name | pascal_case }}() {
           <span className="text-wf-ink-dim">Search or jump to...</span>
           <span className="wf-mono">⌘K</span>
         </button>
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table */}
@@ -173,9 +175,9 @@ export default function {{ view.name | pascal_case }}() {
                   {% if field.name != entity.pk_field and ns.count < 5 %}
                   <td>
                     {% if field.type == 'enum' %}
-                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    <span className="wf-badge">{displayValue(item.{{ field.name }})}</span>
                     {% else %}
-                    {String(item.{{ field.name }} ?? '—')}
+                    {displayValue(item.{{ field.name }})}
                     {% endif %}
                   </td>
                   {% set ns.count = ns.count + 1 %}

@@ -1,14 +1,15 @@
-{% from 'macros/field_input.jinja' import field_input %}
+{% from 'macros/field_input.jinja' import field_input, control_imports %}
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecordForm } from '../__generated__/useRecordForm';
+{{ control_imports(entity.writable_fields) }}
 
 interface {{ entity.name | pascal_case }}SectionedFormProps {
   entityId?: string;
   basePath?: string;
 }
 
-{% set all_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | list %}
+{% set all_fields = entity.writable_fields %}
 
 {% set basic_fields = [] %}
 {% set content_fields = [] %}
@@ -44,7 +45,7 @@ export function {{ entity.name | pascal_case }}SectionedForm({
   entityId,
   basePath = '{{ view.path if view else "/" }}'
 }: {{ entity.name | pascal_case }}SectionedFormProps) {
-  const { values, setValue, mode, submit } = useRecordForm({{ entity.name | tojson }}, '{{ entity.repository_name | kebab_case }}', entityId);
+  const { values, setValue, mode, submit } = useRecordForm({{ entity.name | tojson }}, entityId);
   const [activeSection, setActiveSection] = useState<SectionId>('basics');
   const [submitting, setSubmitting] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -131,10 +132,15 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                   {{ field_input(field, setter='change') }}
                   {% endfor %}
                   {% if not basic_fields %}
-                  {% for field in all_fields | first | default([]) %}
+                  {% for field in all_fields[:1] %}
                   {{ field_input(field, setter='change') }}
                   {% endfor %}
                   {% endif %}
+                  {% for field in entity.credential_fields %}
+                  {mode === 'create' && (
+                  {{ field_input(field, setter='change') }}
+                  )}
+                  {% endfor %}
                 </div>
               </div>
             )}

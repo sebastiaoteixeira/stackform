@@ -27,13 +27,14 @@ export function AuthTabbed({
     }
   };
 
-  const handleFieldChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFieldChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">
+        <h1 className="text-2xl font-semibold text-center text-gray-900 mb-6">{appName}</h1>
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           {/* Tabs */}
           <div className="grid grid-cols-2 border-b border-gray-200">
@@ -127,3 +128,5 @@ export function AuthTabbed({
     </div>
   );
 }
+
+export default AuthTabbed;

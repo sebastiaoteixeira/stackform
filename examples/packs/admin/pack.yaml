@@ -11,6 +11,8 @@ scaffold:
   - tsconfig.json
   - index.html
   - main
+  - config.ts
+  - records.ts
   - App
   - AuthProvider
   - CollectionPage

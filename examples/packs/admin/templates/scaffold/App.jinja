@@ -3,13 +3,16 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import { AuthProvider, useAuth } from "./AuthProvider"
 import { CollectionPage } from "./CollectionPage"
 import { LoginPage } from "./LoginPage"
-import { apiFetch } from "./lib/api"
+import { authHeaders } from "./lib/api"
+import { callOperation } from "./records"
 
 const ALL_COLLECTIONS = [
-  {% for entity_name, entity in entities.items() %}
-  { key: "{{ entity.repository_name }}", label: "{{ entity_name | pascal_case }}", is_auth: {{ 'true' if entity.is_auth else 'false' }} },
+  {% for entity_name, entity in entities.items() if "list" in entity.operations %}
+  { key: "{{ entity_name }}", path: "/{{ entity.repository_name }}", label: "{{ entity_name | pascal_case }}", is_auth: {{ 'true' if entity.is_auth else 'false' }} },
   {% endfor %}
 ]
+
+const SIGNS_IN = {{ (context.entities.values() | selectattr("serves_login") | list | length > 0) | tojson }}
 
 const COLLECTION_ICONS: Record<string, string> = {
   default: "M3.375 3C2.339 3 1.5 3.84 1.5 4.875v.75c0 1.036.84 1.875 1.875 1.875h15.75c1.035 0 1.875-.84 1.875-1.875v-.75C21 3.839 20.16 3 19.125 3H3.375zM1.5 9.75A.75.75 0 012.25 9h15a.75.75 0 010 1.5h-15A.75.75 0 011.5 9.75zm0 3A.75.75 0 012.25 12h9a.75.75 0 010 1.5h-9A.75.75 0 011.5 12.75zM3 15.75A.75.75 0 013.75 15h4.5a.75.75 0 010 1.5h-4.5A.75.75 0 013 15.75z",
@@ -78,7 +81,7 @@ function Sidebar({ accessible, onSignIn }: { accessible: Set<string>; onSignIn: 
               Sign out
             </button>
           </>
-        ) : (
+        ) : SIGNS_IN && (
           <button
             onClick={onSignIn}
             className="w-full flex items-center justify-center gap-2 px-2 py-2 text-xs text-white bg-blue-600 hover:bg-blue-500 rounded transition-colors"
@@ -106,7 +109,7 @@ function AdminShell() {
     return Promise.all(
       ALL_COLLECTIONS.map(async (col) => {
         try {
-          const res = await apiFetch(`/${col.key}`)
+          const res = await callOperation(col.key, "list", { headers: authHeaders() })
           return res.ok ? col.key : null
         } catch {
           return null
@@ -144,11 +147,11 @@ function AdminShell() {
           </div>
         ) : (
           <Routes>
-            {% for entity_name, entity in entities.items() %}
-            <Route path="/{{ entity.repository_name }}" element={<CollectionPage collection="{{ entity.repository_name }}" onSignIn={() => setShowLogin(true)} />} />
+            {% for entity_name, entity in entities.items() if "list" in entity.operations %}
+            <Route path="/{{ entity.repository_name }}" element={<CollectionPage collection="{{ entity_name }}" onSignIn={() => setShowLogin(true)} />} />
             {% endfor %}
             {firstKey
-              ? <Route path="*" element={<Navigate to={`/${firstKey}`} replace />} />
+              ? <Route path="*" element={<Navigate to={ALL_COLLECTIONS.find(c => c.key === firstKey)!.path} replace />} />
               : <Route path="*" element={<EmptyState onSignIn={() => setShowLogin(true)} />} />
             }
           </Routes>
@@ -174,7 +177,7 @@ function EmptyState({ onSignIn }: { onSignIn: () => void }) {
         <p className="text-slate-400 text-sm">No accessible collections</p>
         {isAuthenticated ? (
           <p className="text-slate-600 text-xs mt-1">You don't have permission to view any data.</p>
-        ) : (
+        ) : SIGNS_IN && (
           <button
             onClick={onSignIn}
             className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded transition-colors"

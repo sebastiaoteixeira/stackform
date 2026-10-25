@@ -1,8 +1,8 @@
 interface DeleteSimpleProps {
   entityLabel?: string;
   recordName?: string;
-  onConfirm: () => void;
-  onCancel: () => void;
+  onConfirm?: () => void;
+  onCancel?: () => void;
   loading?: boolean;
 }
 
@@ -43,3 +43,5 @@ export function DeleteSimple({
     </div>
   );
 }
+
+export default DeleteSimple;

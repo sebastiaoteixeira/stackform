@@ -1,4 +1,4 @@
-"""The generated UI signs in with a password only through an identity that serves a login route."""
+"""The generated UI signs in with a password only through an identity that serves a login route, and registers through one that serves register."""
 
 import re
 
@@ -12,6 +12,7 @@ from yaml_api_generator.parsers.ui_parser import build_generator_context
 from yaml_api_generator.parsers.yaml_parser import load_and_generate_ir
 
 PASSWORD_FORM = re.compile(r"<Auth\b")
+SIGN_IN_CALL = re.compile(r"callOperation\('\w+', '(login|register)'")
 LOGIN_VIEW = {"views": {"signIn": {"path": "/login", "component": "auth-tabbed"}}}
 
 
@@ -26,16 +27,17 @@ def _app(context):
     return files["src/__generated__/App.tsx"]
 
 
-def test_disabled_login_renders_no_password_sign_in(tmp_path):
+def test_disabled_login_renders_registration_only(tmp_path):
     app = _app(_context(tmp_path, login=False))
 
-    assert ("/login`" in app, bool(PASSWORD_FORM.search(app)), "/register`" in app) == (False, False, False)
+    assert {match.group(1) for match in SIGN_IN_CALL.finditer(app)} == {"register"}
+    assert PASSWORD_FORM.search(app)
 
 
 def test_enabled_login_signs_in_through_the_identity_login_route(tmp_path):
     app = _app(_context(tmp_path, login=True))
 
-    assert "${API_BASE_URL}/users/login`" in app
+    assert {match.group(1) for match in SIGN_IN_CALL.finditer(app)} == {"login", "register"}
     assert PASSWORD_FORM.search(app)
 
 

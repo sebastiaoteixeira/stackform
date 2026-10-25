@@ -1,7 +1,9 @@
 """Every key a spec schema accepts is read by some consumer: parser, generator or UI pack.
 
-A key counts as consumed when it occurs as an identifier or a non-docstring string
-literal in the package's Python code, or anywhere in its Jinja templates.
+A key counts as consumed when it occurs as an identifier or a string literal in the
+package's Python code, or anywhere in its Jinja templates. Docstrings and dict
+display keys do not count: the latter write a key, as schema builders do, rather
+than read one.
 """
 
 import ast
@@ -51,12 +53,16 @@ def _docstring_ids(tree: ast.Module) -> set[int]:
     }
 
 
+def _written_key_ids(tree: ast.Module) -> set[int]:
+    return {id(key) for node in ast.walk(tree) if isinstance(node, ast.Dict) for key in node.keys if key is not None}
+
+
 def _python_words(source: str) -> Iterator[str]:
     tree = ast.parse(source)
-    docstrings = _docstring_ids(tree)
+    unread = _docstring_ids(tree) | _written_key_ids(tree)
     for node in ast.walk(tree):
         match node:
-            case ast.Constant(value=str(text)) if id(node) not in docstrings:
+            case ast.Constant(value=str(text)) if id(node) not in unread:
                 yield text
             case ast.Name(id=word) | ast.Attribute(attr=word) | ast.arg(arg=word) | ast.alias(name=word):
                 yield word

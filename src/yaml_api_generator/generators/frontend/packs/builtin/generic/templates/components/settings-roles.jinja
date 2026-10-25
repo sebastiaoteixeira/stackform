@@ -1,100 +1,54 @@
-import { useState } from 'react';
+import { ACCESS, ROLES, type Verdict } from '../__generated__/access';
 
-type CrudLetter = 'C' | 'R' | 'U' | 'D';
-type Permission = Record<CrudLetter, boolean>;
-type RoleMatrix = Record<string, Record<string, Permission>>;
+const OPERATIONS = ['list', 'get', 'create', 'update', 'replace', 'delete'];
 
-const CRUD: CrudLetter[] = ['C', 'R', 'U', 'D'];
-
-const DEFAULT_ROLES = ['admin', 'editor', 'reader', 'public'];
-
-const DEFAULT_ENTITIES = [
-  {% for entity in entities %}
-  '{{ entity.name }}',
-  {% endfor %}
-];
-
-function makeDefaultMatrix(entities: string[], roles: string[]): RoleMatrix {
-  return Object.fromEntries(
-    entities.map((entity) => [
-      entity,
-      Object.fromEntries(
-        roles.map((role) => [
-          role,
-          {
-            C: role === 'admin' || role === 'editor',
-            R: role !== 'public' || true,
-            U: role === 'admin' || role === 'editor',
-            D: role === 'admin',
-          } satisfies Permission,
-        ])
-      ),
-    ])
-  );
-}
+const VERDICT_STYLE: Record<Verdict, string> = {
+  allow: 'bg-wf-accent text-white',
+  conditional: 'bg-wf-accent-soft text-wf-accent-ink',
+  deny: 'bg-wf-fill text-wf-ink-faint',
+};
 
 interface SettingsRolesProps {
   entities?: string[];
-  initialRoles?: string[];
-  onSave?: (matrix: RoleMatrix) => void;
 }
 
-export function SettingsRoles({
-  entities = DEFAULT_ENTITIES,
-  initialRoles = DEFAULT_ROLES,
-  onSave,
-}: SettingsRolesProps) {
-  const [roles, setRoles] = useState(initialRoles);
-  const [matrix, setMatrix] = useState<RoleMatrix>(() => makeDefaultMatrix(entities, initialRoles));
-
-  const toggle = (entity: string, role: string, letter: CrudLetter) => {
-    setMatrix((prev) => ({
-      ...prev,
-      [entity]: {
-        ...prev[entity],
-        [role]: {
-          ...prev[entity][role],
-          [letter]: !prev[entity][role][letter],
-        },
-      },
-    }));
-  };
-
-  const addRole = () => {
-    const name = prompt('New role name:');
-    if (!name || roles.includes(name)) return;
-    setRoles((r) => [...r, name]);
-    setMatrix((prev) =>
-      Object.fromEntries(
-        Object.entries(prev).map(([entity, roleMap]) => [
-          entity,
-          { ...roleMap, [name]: { C: false, R: false, U: false, D: false } },
-        ])
-      )
-    );
-  };
+export function SettingsRoles({ entities = Object.keys(ACCESS) }: SettingsRolesProps) {
+  const columns = Array.from(
+    new Set(entities.flatMap((entity) => Object.values(ACCESS[entity] ?? {}).flatMap(Object.keys))),
+  );
 
   return (
     <div className="p-6 bg-wf-bg min-h-full">
       <div className="wf-toolbar mb-5">
         <h1 className="font-title text-2xl text-wf-ink">Roles & permissions</h1>
-        <div className="flex-1" />
-        <button onClick={addRole} className="wf-btn wf-btn-sm">
-          + Role
-        </button>
-        <button onClick={() => onSave?.(matrix)} className="wf-btn wf-btn-sm wf-btn-primary">
-          Save
-        </button>
       </div>
+
+      {Object.entries(ROLES).map(([identity, roles]) => (
+        <div key={identity} className="wf-card mb-5">
+          <h2 className="font-title text-lg text-wf-ink mb-2">{identity}</h2>
+          <ul className="flex flex-col gap-1 text-sm">
+            {Object.entries(roles.includes).map(([role, included]) => (
+              <li key={role} className="flex items-center gap-2">
+                <span className="wf-badge">{role}</span>
+                {role === roles.defaultRole && <span className="text-wf-ink-faint">default</span>}
+                {included.length > 0 && (
+                  <span className="text-wf-ink-dim">includes {included.join(', ')}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {roles.field && <p className="mt-2 text-xs text-wf-ink-faint">Stored in {roles.field}</p>}
+        </div>
+      ))}
 
       <div className="wf-card overflow-auto p-0">
         <table className="wf-table">
           <thead>
             <tr>
               <th className="text-left w-40">Entity</th>
-              {roles.map((role) => (
-                <th key={role} className="text-center capitalize">
-                  {role}
+              {columns.map((column) => (
+                <th key={column} className="text-center">
+                  {column}
                 </th>
               ))}
             </tr>
@@ -103,24 +57,19 @@ export function SettingsRoles({
             {entities.map((entity) => (
               <tr key={entity}>
                 <td className="font-title text-[15px] text-wf-ink">{entity}</td>
-                {roles.map((role) => (
-                  <td key={role} className="text-center">
+                {columns.map((column) => (
+                  <td key={column} className="text-center">
                     <div className="flex items-center justify-center gap-0.5">
-                      {CRUD.map((letter) => {
-                        const on = matrix[entity]?.[role]?.[letter] ?? false;
+                      {OPERATIONS.filter((operation) => ACCESS[entity]?.[operation]).map((operation) => {
+                        const verdict = ACCESS[entity][operation][column];
                         return (
-                          <button
-                            key={letter}
-                            title={`${role}: ${letter}`}
-                            onClick={() => toggle(entity, role, letter)}
-                            className={`w-5 h-5 rounded text-[10px] font-mono font-medium transition-colors ${
-                              on
-                                ? 'bg-wf-accent text-white'
-                                : 'bg-wf-fill text-wf-ink-faint'
-                            }`}
+                          <span
+                            key={operation}
+                            title={`${column} ${operation}: ${verdict}`}
+                            className={`px-1 h-5 rounded text-[10px] font-mono font-medium ${VERDICT_STYLE[verdict]}`}
                           >
-                            {letter}
-                          </button>
+                            {operation}
+                          </span>
                         );
                       })}
                     </div>
@@ -133,8 +82,10 @@ export function SettingsRoles({
       </div>
 
       <p className="mt-3 text-xs text-wf-ink-faint">
-        C = Create, R = Read, U = Update, D = Delete
+        Filled: allowed. Tinted: allowed when the rule's condition holds. Faint: denied.
       </p>
     </div>
   );
 }
+
+export default SettingsRoles;

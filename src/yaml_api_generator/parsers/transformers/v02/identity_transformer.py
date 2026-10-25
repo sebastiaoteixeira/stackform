@@ -64,7 +64,7 @@ class IdentityTransformer:
                 if role_errors:
                     raise ConfigErrors(role_errors)
 
-            roles_config, roles_errors = parse_roles_config(
+            roles, roles_errors = parse_roles_config(
                 "entities", entity_name, entity_data.get("roles")
             )
             if roles_errors:
@@ -82,7 +82,7 @@ class IdentityTransformer:
             identity_collections[repo_name] = IRIdentityCollection(
                 name=repo_name,
                 bindings=bindings,
-                roles=roles_config,
+                roles=roles,
                 roles_field=roles_field,
                 login=repo_name in login_collections,
             )
