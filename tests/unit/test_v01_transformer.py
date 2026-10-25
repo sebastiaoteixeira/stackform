@@ -167,7 +167,7 @@ collections:
   posts:
     fields:
       id: {{ type: id }}
-      {field}: {{ type: string, minLength: {min_length} }}
+      {field}: {{ type: string, minLength: {min_length}, maxLength: 5 }}
 """
 
 
@@ -233,7 +233,7 @@ def test_v01_roles_default_must_be_declared(tmp_path) -> None:
 
 def test_v01_shared_validators_check_collections(tmp_path) -> None:
     assert _platform_errors(tmp_path, field="class") == [("INVALID_FIELD_NAME", "collections.posts.fields.class")]
-    assert [code for code, _ in _platform_errors(tmp_path, min_length=-1)] == ["FIELD_CONSTRAINT_INVALID"]
+    assert [code for code, _ in _platform_errors(tmp_path, min_length=9)] == ["FIELD_CONSTRAINT_INVALID"]
 
 
 def test_v01_example_serves_on_dev_server() -> None:
