@@ -1,4 +1,4 @@
-"""IdP bearer tokens over real HTTP against `stackform run` and the generated FastAPI app, on a SQL datastore."""
+"""IdP bearer tokens over real HTTP against `stackform run` and the generated FastAPI app, on each kind of datastore."""
 
 import os
 from collections.abc import Iterator
@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from tests.integration.support.apps import BACKENDS, launched
+from tests.integration.support.datastores import DATASTORES
 from tests.integration.support.oidc import Issuer, live_issuer
 
 pytestmark = pytest.mark.integration
@@ -27,10 +28,6 @@ providers:
     discovery_url: "${CORP_DISCOVERY_URL}"
     issuer: "${CORP_ISSUER}"
     audiences: [my-app]
-datastores:
-  default:
-    type: postgres
-    dsn: ${DATABASE_URL}
 entities:
   user:
     type: auth
@@ -66,19 +63,24 @@ def issuer() -> Iterator[Issuer]:
         yield issuer
 
 
-@pytest.fixture(scope="module", params=BACKENDS, ids=lambda backend: backend.name)
+@pytest.fixture(
+    scope="module",
+    params=[(backend, datastore) for backend in BACKENDS for datastore in DATASTORES],
+    ids=lambda param: f"{param[0].name}-{param[1].name}",
+)
 def api(request, tmp_path_factory, issuer) -> Iterator[str]:
-    workdir = tmp_path_factory.mktemp(f"idp-{request.param.name}")
+    backend, datastore = request.param
+    workdir = tmp_path_factory.mktemp(f"idp-{backend.name}-{datastore.name}")
     spec = workdir / "spec.yaml"
-    spec.write_text(SPEC)
+    spec.write_text(SPEC + datastore.spec)
     env = {
         **os.environ,
-        "DATABASE_URL": f"sqlite+aiosqlite:///{workdir / 'idp.sqlite'}",
+        **datastore.env(request, workdir),
         "CORP_DISCOVERY_URL": issuer.discovery_url,
         "CORP_ISSUER": CONFIGURED_ISSUER,
         "JWT_SECRET": "idp-trust-secret-of-sufficient-length",
     }
-    with launched(request.param, spec, workdir, env) as url:
+    with launched(backend, spec, workdir, env) as url:
         yield f"{url}/api/v1"
 
 

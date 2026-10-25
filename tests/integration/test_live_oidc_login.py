@@ -4,12 +4,12 @@ import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
-from uuid import uuid4
 
 import httpx
 import pytest
 
 from tests.integration.support.apps import BACKENDS, launched
+from tests.integration.support.datastores import DATASTORES
 from tests.integration.support.oidc import AuthorizationServer, live_authorization_server
 
 pytestmark = pytest.mark.integration
@@ -74,7 +74,6 @@ providers:
     client_id: my-app
     client_secret: {client_secret}
     discovery_url: "${{DISCOVERY_URL}}"
-{datastore}
 entities:
   user:
     type: auth
@@ -101,16 +100,23 @@ controllers:
 session:
   refresh: true
 """
-DATASTORES = {
-    "sql": "datastores:\n  default:\n    type: postgres\n    dsn: ${DATABASE_URL}",
-    "mongo": "mongo:\n  uri: ${MONGO_URI}\n  database: ${MONGO_DB}",
-}
 
 
 @pytest.fixture(scope="module")
 def authorization_server() -> Iterator[AuthorizationServer]:
     with live_authorization_server(CLIENT_SECRET, USERINFO) as server:
         yield server
+
+
+def _environment(authorization_server: AuthorizationServer, records: dict[str, str]) -> dict[str, str]:
+    """The app's environment, its client secret only the spec's own."""
+    return {
+        **{name: value for name, value in os.environ.items() if not name.endswith("_CLIENT_SECRET")},
+        "DISCOVERY_URL": authorization_server.discovery_url,
+        "JWT_SECRET": "oidc-login-secret-of-sufficient-length",
+        "FRONTEND_URL": FRONTEND,
+        **records,
+    }
 
 
 @dataclass(frozen=True)
@@ -129,13 +135,7 @@ def app(request, tmp_path_factory, authorization_server) -> Iterator[App]:
     workdir = tmp_path_factory.mktemp(f"oidc-{backend.name}-{provider}")
     spec = workdir / "spec.yaml"
     spec.write_text(SPEC.format(provider=provider, client_secret=CLIENT_SECRET))
-    env = {
-        **{name: value for name, value in os.environ.items() if not name.endswith("_CLIENT_SECRET")},
-        "DATABASE_URL": f"sqlite+aiosqlite:///{workdir / 'oidc.sqlite'}",
-        "DISCOVERY_URL": authorization_server.discovery_url,
-        "JWT_SECRET": "oidc-login-secret-of-sufficient-length",
-        "FRONTEND_URL": FRONTEND,
-    }
+    env = _environment(authorization_server, {"DATABASE_URL": f"sqlite+aiosqlite:///{workdir / 'oidc.sqlite'}"})
     with launched(backend, spec, workdir, env) as url:
         yield App(f"{url}/api/v1", provider)
 
@@ -143,22 +143,14 @@ def app(request, tmp_path_factory, authorization_server) -> Iterator[App]:
 @pytest.fixture(
     scope="module",
     params=[(backend, datastore) for backend in BACKENDS for datastore in DATASTORES],
-    ids=lambda param: f"{param[0].name}-{param[1]}",
+    ids=lambda param: f"{param[0].name}-{param[1].name}",
 )
 def minimal_app(request, tmp_path_factory, authorization_server) -> Iterator[App]:
     backend, datastore = request.param
-    workdir = tmp_path_factory.mktemp(f"oidc-minimal-{backend.name}-{datastore}")
+    workdir = tmp_path_factory.mktemp(f"oidc-minimal-{backend.name}-{datastore.name}")
     spec = workdir / "spec.yaml"
-    spec.write_text(MINIMAL_SPEC.format(client_secret=CLIENT_SECRET, datastore=DATASTORES[datastore]))
-    env = {
-        **{name: value for name, value in os.environ.items() if not name.endswith("_CLIENT_SECRET")},
-        "DATABASE_URL": f"sqlite+aiosqlite:///{workdir / 'oidc.sqlite'}",
-        "DISCOVERY_URL": authorization_server.discovery_url,
-        "JWT_SECRET": "oidc-login-secret-of-sufficient-length",
-        "FRONTEND_URL": FRONTEND,
-    }
-    if datastore == "mongo":
-        env |= {"MONGO_URI": request.getfixturevalue("mongo_uri"), "MONGO_DB": f"oidc_minimal_{uuid4().hex[:12]}"}
+    spec.write_text(MINIMAL_SPEC.format(client_secret=CLIENT_SECRET) + datastore.spec)
+    env = _environment(authorization_server, datastore.env(request, workdir))
     with launched(backend, spec, workdir, env) as url:
         yield App(f"{url}/api/v1", "corp-sso")
 

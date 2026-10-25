@@ -23,19 +23,19 @@ EMAIL = "ada@example.com"
 ORGANIZATION = "ACME"
 # An identity of nothing but its identifier, which the NameID fills, and sessions that refresh
 MINIMAL_SPEC = """
-version: "0.2"
+version: "{version}"
 api:
   basePath: /api
   version: v1
 providers:
   corporate:
     type: saml
-    idp_metadata_url: "${SAML_IDP_METADATA_URL}"
+    idp_metadata_url: "${{SAML_IDP_METADATA_URL}}"
     sp_entity_id: https://sp.example.com/metadata
 datastores:
   default:
     type: postgres
-    dsn: ${DATABASE_URL}
+    dsn: ${{DATABASE_URL}}
 entities:
   user:
     type: auth
@@ -43,8 +43,8 @@ entities:
       identifier: email
       via: corporate
     fields:
-      id: { type: id }
-      email: { type: string, required: true, unique: true }
+      id: {{ type: id }}
+      email: {{ type: string, required: true, unique: true }}
 repositories:
   users:
     entity: user
@@ -58,6 +58,7 @@ controllers:
     access: "*"
 session:
   refresh: true
+  delivery: {delivery}
 """
 
 
@@ -100,12 +101,32 @@ def invitation_only_api(request, tmp_path_factory, identity_provider) -> Iterato
         yield url
 
 
-@pytest.fixture(scope="module", params=BACKENDS, ids=lambda backend: backend.name)
-def minimal_api(request, tmp_path_factory, identity_provider) -> Iterator[str]:
-    workdir = tmp_path_factory.mktemp(f"saml-minimal-{request.param.name}")
+@contextmanager
+def _serve_minimal(
+    backend: Backend, workdir: Path, identity_provider: IdentityProvider, version: str, delivery: str
+) -> Iterator[str]:
     spec = workdir / "spec.yaml"
-    spec.write_text(MINIMAL_SPEC)
-    with _serve(request.param, spec, workdir, identity_provider) as url:
+    spec.write_text(MINIMAL_SPEC.format(version=version, delivery=delivery))
+    with _serve(backend, spec, workdir, identity_provider) as url:
+        yield url
+
+
+@pytest.fixture(
+    scope="module",
+    params=[(backend, version) for backend in BACKENDS for version in ("0.2", "0.3")],
+    ids=lambda param: f"{param[0].name}-{param[1]}",
+)
+def minimal_api(request, tmp_path_factory, identity_provider) -> Iterator[str]:
+    backend, version = request.param
+    workdir = tmp_path_factory.mktemp(f"saml-minimal-{backend.name}-{version}")
+    with _serve_minimal(backend, workdir, identity_provider, version, "token-url") as url:
+        yield url
+
+
+@pytest.fixture(scope="module", params=BACKENDS, ids=lambda backend: backend.name)
+def cookie_api(request, tmp_path_factory, identity_provider) -> Iterator[str]:
+    workdir = tmp_path_factory.mktemp(f"saml-cookie-{request.param.name}")
+    with _serve_minimal(request.param, workdir, identity_provider, "0.3", "cookie") as url:
         yield url
 
 
@@ -312,3 +333,12 @@ async def test_session_of_a_saml_login_refreshes(minimal_api, identity_provider)
     assert replayed.status_code == 401
     assert users.status_code == 200
 
+
+async def test_cookie_session_of_a_saml_login_refreshes(cookie_api, identity_provider):
+    async with httpx.AsyncClient(base_url=cookie_api, timeout=30) as client:
+        await _session(client, identity_provider)
+        refreshed = await client.post("/users/refresh", headers={"x-csrf-token": client.cookies["csrf_token"]})
+        users = await client.get("/users")
+
+    assert refreshed.status_code == 200
+    assert users.status_code == 200
