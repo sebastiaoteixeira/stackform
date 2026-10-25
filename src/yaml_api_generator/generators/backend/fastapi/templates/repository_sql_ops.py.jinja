@@ -9,8 +9,10 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from conflicts import ConflictError
+from dependencies.operations import present, resolve
 from dependencies.access import EVERY_ROW, Predicate
 from dependencies.pagination import Page, Primitives, expand_bound
+from dependencies.sql_operations import run_sql
 
 
 _PAGINATION_COMPARATORS = {
@@ -117,6 +119,11 @@ class SQLRepositoryBase:
     def _one(result: sa.Result) -> dict[str, Any] | None:
         row = result.first()
         return dict(row._mapping) if row is not None else None
+
+    @_translate_conflict
+    async def run_operation(self, query: dict[str, Any], bindings: dict[str, Any]) -> Any:
+        async with self._engine.begin() as conn:
+            return present(await run_sql(conn, resolve(query, bindings)), self.ID_FIELD)
 
     async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
         async with self._engine.connect() as conn:

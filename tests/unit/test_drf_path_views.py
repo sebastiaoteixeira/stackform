@@ -45,7 +45,7 @@ def test_literal_paths_precede_parameterised_siblings(backend):
 
 
 def test_register_grants_no_role_and_authenticated_create_the_roles_its_caller_holds(backend):
-    assert (_grants(backend, "View_users_register"), _grants(backend, "View_users")) == (
+    assert (_grants(backend, "UsersRegisterView"), _grants(backend, "UsersView")) == (
         ["()"], ["held_roles(_resolved_principal, ROLE_HIERARCHIES)"]
     )
 

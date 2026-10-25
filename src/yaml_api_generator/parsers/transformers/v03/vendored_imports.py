@@ -29,6 +29,7 @@ the declared specifiers and left to the target installer to resolve; the
 generator does not decide PEP 440 satisfiability in general.
 """
 
+import ast
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -79,7 +80,11 @@ def process_vendored_imports(
 
     requirements: tuple[str, ...] = ()
     if not errors:
-        errors = _undeclared_handler_errors(resolved, import_map)
+        sources = {vi.alias: vi.source for vi in vendored}
+        errors = [
+            error for handler, path in _handler_sites(resolved)
+            if (error := _handler_error(handler, path, sources)) is not None
+        ]
     if not errors:
         requirements, errors = _merge_requirements(vendored)
 
@@ -144,26 +149,57 @@ def _escaping_symlinks(source: Path) -> Iterator[Path]:
             yield entry
 
 
-def _undeclared_handler_errors(
-    resolved: dict[str, Any], import_map: dict[str, str]
-) -> list[ConfigError]:
-    errors: list[ConfigError] = []
-    for handler, path in _handler_sites(resolved):
-        alias = handler.split(".", 1)[0]
-        if alias not in import_map:
-            errors.append(ConfigError(
-                code="IMPORT_UNDECLARED_PACKAGE",
-                message=f"Handler '{handler}' references package '{alias}', which no imports entry vendors",
-                path=path,
-                hint=f"Add an imports entry aliased '{alias}' that vendors the package",
-            ))
-    return errors
+def _handler_error(handler: str, path: str, sources: dict[str, Path]) -> ConfigError | None:
+    alias, _, target = handler.partition(".")
+    if alias not in sources:
+        return ConfigError(
+            code="IMPORT_UNDECLARED_PACKAGE",
+            message=f"Handler '{handler}' references package '{alias}', which no imports entry vendors",
+            path=path,
+            hint=f"Add an imports entry aliased '{alias}' that vendors the package",
+        )
+    if not _defines(sources[alias], target):
+        return ConfigError(
+            code="IMPORT_HANDLER_NOT_FOUND",
+            message=f"Handler '{handler}' names '{target}', which package '{alias}' does not define",
+            path=path,
+            hint="Point the handler at a module-level function of the vendored package",
+        )
+    return None
+
+
+def _defines(package: Path, target: str) -> bool:
+    """Whether ``target`` (``[module.]*name``) is bound at the top level of a module in ``package``."""
+    *modules, name = target.split(".")
+    module = package.joinpath(*modules)
+    source = module / "__init__.py" if module.is_dir() else module.with_suffix(".py")
+    return source.is_file() and any(
+        name in _bound_names(node) for node in ast.parse(source.read_text()).body
+    )
+
+
+def _bound_names(node: ast.stmt) -> set[str]:
+    match node:
+        case ast.FunctionDef(name=name) | ast.AsyncFunctionDef(name=name) | ast.ClassDef(name=name):
+            return {name}
+        case ast.Import(names=aliases) | ast.ImportFrom(names=aliases):
+            return {alias.asname or alias.name.split(".")[0] for alias in aliases}
+        case ast.Assign(targets=targets):
+            return {target.id for target in targets if isinstance(target, ast.Name)}
+        case ast.AnnAssign(target=ast.Name(id=name)):
+            return {name}
+    return set()
 
 
 def _handler_sites(resolved: dict[str, Any]):
     for name, cfg in resolved.get("services", {}).items():
-        if isinstance(cfg, dict) and isinstance(cfg.get("handler"), str):
+        if not isinstance(cfg, dict):
+            continue
+        if isinstance(cfg.get("handler"), str):
             yield cfg["handler"], f"services.{name}.handler"
+        for op_name, op_cfg in (cfg.get("operations") or {}).items():
+            if isinstance(op_cfg, dict) and isinstance(op_cfg.get("handler"), str):
+                yield op_cfg["handler"], f"services.{name}.operations.{op_name}.handler"
     for repo_name, repo_cfg in resolved.get("repositories", {}).items():
         if not isinstance(repo_cfg, dict):
             continue

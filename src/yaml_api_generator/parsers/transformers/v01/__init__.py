@@ -4,6 +4,7 @@ Coordinates specialized transformers to convert v0.1 YAML specifications into IR
 """
 
 from dataclasses import replace
+from operator import attrgetter
 from typing import Any
 
 from yaml_api_generator.ir import (
@@ -104,7 +105,7 @@ class V01Transformer:
             collections=collections,
             repositories=repositories,
             services=services,
-            routes=locate_records(routes, collections, id_param),
+            routes=sorted(locate_records(routes, collections, id_param), key=attrgetter("precedence")),
             identityCollections=identity_collections,
             mongo=datastores[default_datastore],
             datastores=datastores,

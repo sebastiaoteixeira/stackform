@@ -10,6 +10,9 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from conflicts import ConflictError
+from dependencies.ids import generate_id
+from dependencies.mongo_operations import run_mongo, with_identity
+from dependencies.operations import present, resolve
 from dependencies.access import EVERY_ROW, Predicate
 from dependencies.pagination import Page, Primitives, expand_bound
 
@@ -158,6 +161,11 @@ class RepositoryBase:
             return_document=ReturnDocument.AFTER,
         )
         return self._normalize(doc)
+
+    @_translate_conflict
+    async def run_operation(self, query: dict[str, Any], bindings: dict[str, Any]) -> Any:
+        identified = with_identity(query, self.ID_FIELD, self.ID_FORMAT)
+        return present(await run_mongo(self._col, resolve(identified, bindings), generate_id), self.ID_FIELD)
 
 
 class ListOp:

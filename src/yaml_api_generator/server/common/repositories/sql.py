@@ -17,8 +17,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.runtime.sql_operations import run_sql
 from .base import BaseRepository, ConflictError
-from .bindings import resolve
 from .sql_schema import table_from_collection
 from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from ..pagination import Page, Primitives, expand_bound
@@ -292,22 +292,10 @@ class SQLRepository(BaseRepository):
             )
             return self._one(result)
 
-    async def run_operation(
-        self,
-        collection_name: str,
-        query: dict[str, Any],
-        bindings: dict[str, Any],
-    ) -> Any:
-        sql = query.get("sql")
-        if not sql:
-            raise ValueError("SQL custom operations require a 'sql' string")
-        params = {key: resolve(value, bindings) for key, value in (query.get("params") or {}).items()}
+    async def run_operation(self, collection_name: str, query: dict[str, Any]) -> Any:
         with _as_conflict():
             async with await self._begin() as conn:
-                result = await conn.execute(sa.text(sql), params)
-                if result.returns_rows:
-                    return [dict(row._mapping) for row in result]
-                return {"rowcount": result.rowcount}
+                return await run_sql(conn, query)
 
     def _table(self, collection_name: str) -> sa.Table:
         return self._tables[collection_name]

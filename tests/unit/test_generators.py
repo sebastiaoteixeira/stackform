@@ -172,7 +172,8 @@ def test_drf_views_per_collection(tmp_path):
     gen.generate(ctx, tmp_path)
     assert (tmp_path / "api" / "views" / "posts.py").exists()
     content = (tmp_path / "api" / "views" / "posts.py").read_text()
-    assert "class View_posts(APIView)" in content
+    assert "class PostsView(APIView)" in content
+    assert "class PostsByIdView(APIView)" in content
 
 
 def test_drf_access_rule_enforcement_in_views(tmp_path):

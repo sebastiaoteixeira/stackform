@@ -85,7 +85,7 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
         if not route.service or route.operation not in CRUD_OPS:
             continue
         service = ir.services.get(route.service)
-        if not service or not service.repository:
+        if not service or not service.repository or service.handler:
             continue
         repo = service.repository
         repo_operations.setdefault(repo, set()).add(route.operation)

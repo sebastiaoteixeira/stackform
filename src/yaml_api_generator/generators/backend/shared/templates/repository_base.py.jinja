@@ -1,0 +1,11 @@
+{% from "repository_operations.jinja" import operation_methods %}
+from typing import Any
+{% if generated_base %}
+
+from {{ generated_base.module }} import {{ generated_base.class_name }}
+{% endif %}
+
+
+class {{ collection_name | capitalize_collection }}Repository{% if generated_base %}({{ generated_base.class_name }}){% endif %}:
+    """Operations shared by the repositories extending it, run through their ``run_operation``."""
+{{ operation_methods(custom_operations) }}

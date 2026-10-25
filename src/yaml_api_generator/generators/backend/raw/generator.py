@@ -10,14 +10,15 @@ from yaml_api_generator.generators.backend.compile_context import (
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.ir import SECRET_FIELD
 from yaml_api_generator.utils.strings import to_pascal_case
-from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
+from ..base import SingleFileRenderConfig, template_environment
+from ..shared_layers import SharedLayersGenerator
 from ..utils import (
-    extract_identity_fields,
     find_identity,
     group_by_collection,
     pagination_config,
-    runtime_module_source,
+    MONGO_RUNTIME_MODULES,
     write_environment_files,
+    write_runtime_modules,
 )
 from ..validation import (
     reject_cookie_delivery,
@@ -26,7 +27,6 @@ from ..validation import (
     reject_idp_trust,
     reject_pkce,
     reject_session_refresh,
-    reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -43,7 +43,9 @@ def _path_to_regex(path: str) -> str:
     return re.sub(r"\{(\w+)\}", _replace, path)
 
 
-class RawASGIGenerator(TemplateBasedGenerator):
+class RawASGIGenerator(SharedLayersGenerator):
+    auth_module = "dependencies.auth"
+
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "raw")
         reject_cookie_delivery(context, "raw")
@@ -53,7 +55,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
         reject_session_refresh(context, "raw")
         reject_pkce(context, "raw")
         reject_unsigned_session_algorithm(context)
-        reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.globals["settings_module"] = "settings"
         env.filters["path_to_regex"] = _path_to_regex
@@ -77,8 +78,7 @@ class RawASGIGenerator(TemplateBasedGenerator):
         )
 
         self._render_service_inputs(env, output_dir, "")
-        for module in ("access", "pagination"):
-            (output_dir / f"{module}.py").write_text(runtime_module_source(module))
+        write_runtime_modules(output_dir, MONGO_RUNTIME_MODULES)
 
         collections_by_name = group_by_collection(context)
 
@@ -155,65 +155,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
             )
         )
 
-    def _render_services(
-        self,
-        env: Environment,
-        context: CompileContext,
-        collections_by_name: dict[str, dict],
-        output_dir: Path,
-    ) -> None:
-        self._render_collection_based(
-            env, context, collections_by_name, output_dir,
-            RenderConfig(
-                template_name="service.py.jinja",
-                output_subdir="services",
-                import_class_suffix="Service",
-                context_builder=self._build_service_context,
-                additional_files=[("exceptions.py.jinja", "exceptions.py")],
-            )
-        )
-
-    def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
-        is_identity = identity is not None
-
-        return {
-            "collection_name": col_name,
-            "is_async": True,
-            "is_identity_collection": is_identity,
-            "password_via": is_identity and identity.has_password,
-            "identity_fields": extract_identity_fields(context, col_name),
-            "import_prefix": "repositories",
-            "auth_import_prefix": "dependencies.auth",
-            "service_import_prefix": "services",
-            "access_import": "access",
-        }
-
-    def _render_repositories(
-        self,
-        env: Environment,
-        context: CompileContext,
-        collections_by_name: dict[str, dict],
-        output_dir: Path,
-    ) -> None:
-        self._render_collection_based(
-            env, context, collections_by_name, output_dir,
-            RenderConfig(
-                template_name="repository.py.jinja",
-                output_subdir="repositories",
-                import_class_suffix="Repository",
-                context_builder=lambda col_name, col_data, ctx: {
-                    "collection_name": col_name,
-                    "id_field": ctx.collections[col_name]["id_field"],
-                    "id_field_format": ctx.collections[col_name]["id_format"],
-                    "custom_operations": ctx.repository_operations.get(col_name, []),
-                    "conflict_import": "conflicts",
-                    "pagination_import": "pagination",
-                    "access_import": "access",
-                },
-            )
-        )
-
     def _render_routes(
         self,
         env: Environment,
@@ -236,10 +177,6 @@ class RawASGIGenerator(TemplateBasedGenerator):
                 collection_name=col_name,
                 routes=col_data["routes"],
                 needs_auth=needs_auth,
-                repo_queries={
-                    op["name"]: op["query"]
-                    for op in context.repository_operations.get(col_name, [])
-                },
                 auth=context.auth,
                 identity=find_identity(context, col_name),
             )

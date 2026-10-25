@@ -889,6 +889,9 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationConfig"
+          },
+          "propertyNames": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
           }
         }
       }
@@ -896,6 +899,12 @@
     "ServiceConfig": {
       "type": "object",
       "additionalProperties": false,
+      "not": {
+        "required": [
+          "handler",
+          "operation"
+        ]
+      },
       "properties": {
         "abstract": {
           "type": "boolean"
@@ -938,6 +947,9 @@
                 }
               }
             ]
+          },
+          "propertyNames": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
           }
         }
       }
@@ -983,13 +995,16 @@
             "additionalProperties": {
               "$ref": "#/$defs/RouteOverride"
             }
+          },
+          "operations": {
+            "propertyNames": {
+              "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
+            }
           }
         }
       },
       "else": {
         "properties": {
-          "access": false,
-          "operations": false,
           "routes": {
             "additionalProperties": {
               "$ref": "#/$defs/RouteConfig"
@@ -1055,7 +1070,7 @@
       }
     },
     "PaginationConfig": {
-      "description": "Controller pagination. The parser accepts the offset and keyset strategies and count none/exact; cursor, range and count: estimated are named so it can reject them by name (PAGINATION_UNSUPPORTED).",
+      "description": "Controller pagination.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1067,9 +1082,7 @@
           "type": "string",
           "enum": [
             "offset",
-            "keyset",
-            "cursor",
-            "range"
+            "keyset"
           ]
         },
         "size": {
@@ -1094,8 +1107,7 @@
           "type": "string",
           "enum": [
             "none",
-            "exact",
-            "estimated"
+            "exact"
           ],
           "default": "none"
         },

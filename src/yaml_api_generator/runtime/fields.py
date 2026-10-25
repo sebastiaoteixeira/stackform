@@ -7,6 +7,7 @@ inputs; each returns the value with the declared defaults filled in. A
 ``Model`` names the properties of one request payload.
 """
 
+import json
 import re
 from collections.abc import Callable
 from copy import deepcopy
@@ -227,11 +228,39 @@ def partial(model: Model) -> Model:
     return replace(model, partial=True)
 
 
+_JSON_NUMBER = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
+
+_PATH_SCALARS: dict[str, Callable[[str], Any]] = {
+    "number": lambda text: json.loads(text) if _JSON_NUMBER.fullmatch(text) else text,
+    "boolean": lambda text: {"true": True, "false": False}.get(text, text),
+}
+
+
+def _read_path(inputs: dict[str, dict[str, Any]], path_values: dict[str, str]) -> dict[str, Any]:
+    """A path segment is text; a number or boolean input reads the scalar its segment spells."""
+    return {
+        name: _PATH_SCALARS.get(inputs.get(name, {}).get("type"), str)(text)
+        for name, text in path_values.items()
+    }
+
+
 def conform_inputs(
-    inputs: dict[str, dict[str, Any]], values: dict[str, Any]
+    inputs: dict[str, dict[str, Any]],
+    body: Any,
+    path_values: dict[str, str],
+    bound_inputs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Check service inputs, each required unless it says otherwise."""
+    """Check service inputs, each required unless it says otherwise.
+
+    Path parameters override body fields and access bindings override both, so
+    a body cannot spoof a route identity.
+    """
     required_by_default = {
         name: {"required": True, **config} for name, config in inputs.items()
+    }
+    values = {
+        **(body if isinstance(body, dict) else {}),
+        **_read_path(inputs, path_values),
+        **(bound_inputs or {}),
     }
     return conform_object(required_by_default, values, open=True)

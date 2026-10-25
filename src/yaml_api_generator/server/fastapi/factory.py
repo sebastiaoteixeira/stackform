@@ -586,6 +586,13 @@ def _field_annotation(config: dict[str, Any]) -> Any:
     return Annotated[scalar, Field(strict=True)] if scalar in STRICT_TYPES else scalar
 
 
+async def _json_body(request: Request) -> Any:
+    try:
+        return await request.json()
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 def _build_endpoint(
     pipeline: Pipeline,
     body_model: type[BaseModel] | None,
@@ -599,7 +606,7 @@ def _build_endpoint(
         return await _run_pipeline(
             pipeline=pipeline,
             request=request,
-            body=None if body_model is None else await json_body(request),
+            body=await (_json_body if body_model is None else json_body)(request),
             uses_cookie=uses_cookie,
             operation=route.operation,
         )

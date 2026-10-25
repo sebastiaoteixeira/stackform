@@ -1,0 +1,123 @@
+version: "0.3"
+
+api:
+  basePath: /api
+
+imports:
+  hooks: { path: ./hooks, package: hooks }
+
+mongo:
+  uri: ${MONGO_URI}
+  database: ${MONGO_DB}
+
+entities:
+  user:
+    type: auth
+    auth: { identifier: email, via: password }
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+  task:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      rank: { type: number }
+  note:
+    fields:
+      id: { type: id }
+      body: { type: string, required: true }
+
+repositories:
+  users: { entity: user, crud: [create] }
+  countable:
+    abstract: true
+    operations:
+      countAll:
+        query: { command: countDocuments, filter: {} }
+  tasks:
+    entity: task
+    extends: countable
+    operations:
+      byTitle:
+        query: { command: find, filter: { title: $title } }
+      notesByBody:
+        query: { command: find, collection: notes, filter: { body: $text } }
+      retitle:
+        query:
+          command: bulkWrite
+          requests:
+            - updateMany: { filter: { title: $old }, update: { $set: { title: $new } } }
+      seed:
+        query:
+          command: bulkWrite
+          requests:
+            - insertOne: { document: { title: $title } }
+      plant:
+        query: { command: insertOne, document: { title: $title } }
+  notes:
+    entity: note
+    crud: [create, list]
+
+services:
+  users: { repository: users }
+  tasks:
+    repository: tasks
+    operations:
+      byTitle: true
+      notesByBody: true
+      retitle: true
+      seed: true
+      plant: true
+      countAll: true
+      echo: { handler: hooks.echo }
+  notes: { repository: notes }
+  sized:
+    handler: hooks.echo
+    input: { size: number }
+    with: { size: $size }
+
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: public
+  archive:
+    service: tasks
+    base_path: /archive
+    access: "*"
+    operations:
+      byTitle: { method: GET, path: "/by-title/{title}" }
+      notesByBody: false
+      retitle: false
+      seed: false
+      plant: false
+      countAll: false
+      echo: { method: POST, path: "/echo/{id}" }
+  sizes:
+    routes:
+      sized: { service: sized, method: GET, path: "/sized/{size}" }
+  totals:
+    routes:
+      tasks: { service: countAll-tasks, method: GET, path: /tasks-total }
+      titled: { service: byTitle-tasks, method: GET, path: "/titled/{title}" }
+    operations:
+      tasks: { path: /totals/tasks }
+  tasks:
+    service: tasks
+    base_path: /tasks
+    access: public
+    operations:
+      byTitle: { method: GET, path: "/by-title/{title}" }
+      notesByBody: { method: GET, path: "/notes/{text}" }
+      retitle: { method: POST, path: "/retitle/{old}/{new}" }
+      seed: { method: POST, path: "/seed/{title}" }
+      plant: { method: POST, path: "/plant/{title}" }
+      echo: { method: POST, path: "/echo/{id}" }
+      countAll: { method: GET, path: /stats }
+  notes:
+    service: notes
+    base_path: /notes
+    access: public
+    operations:
+      list:
+        pagination: { strategy: offset, size: { default: 20, max: 100 } }

@@ -1,12 +1,14 @@
-from {{ import_prefix }}.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
-from {{ service_import_prefix }}.exceptions import NotFoundError, ValidationError
-from {{ access_import }} import EVERY_ROW
+{% from "service_operations.jinja" import operation_imports, operation_methods %}
+{{ operation_imports(custom_operations, module_prefix ~ "handler_requests", generated_base) }}
+from {{ module_prefix }}access import EVERY_ROW
+from {{ module_prefix }}repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
+from {{ module_prefix }}services.exceptions import NotFoundError, ValidationError
 {% if is_identity_collection %}
-from {{ auth_import_prefix }} import hash_password
+from {{ auth_module }} import hash_password
 {% endif %}
 
 
-class {{ collection_name | capitalize_collection }}Service:
+class {{ collection_name | capitalize_collection }}Service{% if generated_base %}({{ generated_base.class_name }}){% endif %}:
     def __init__(self, repo: {{ collection_name | capitalize_collection }}Repository):
         self._repo = repo
 
@@ -129,6 +131,7 @@ class {{ collection_name | capitalize_collection }}Service:
             raise NotFoundError("{{ collection_name }}", resource_id)
         return document
 {% endif %}
+{{ operation_methods(custom_operations) }}
 {% if password_via %}
 
     @staticmethod

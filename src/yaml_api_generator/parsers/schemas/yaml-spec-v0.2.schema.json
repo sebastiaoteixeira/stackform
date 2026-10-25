@@ -891,6 +891,9 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/OperationConfig"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/OperationName"
           }
         }
       }
@@ -898,6 +901,12 @@
     "ServiceConfig": {
       "type": "object",
       "additionalProperties": false,
+      "not": {
+        "required": [
+          "handler",
+          "operation"
+        ]
+      },
       "properties": {
         "abstract": {
           "type": "boolean"
@@ -934,6 +943,9 @@
                 }
               }
             ]
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/OperationName"
           }
         }
       }
@@ -979,13 +991,16 @@
             "additionalProperties": {
               "$ref": "#/$defs/RouteOverride"
             }
+          },
+          "operations": {
+            "propertyNames": {
+              "$ref": "#/$defs/OperationName"
+            }
           }
         }
       },
       "else": {
         "properties": {
-          "access": false,
-          "operations": false,
           "routes": {
             "additionalProperties": {
               "$ref": "#/$defs/RouteConfig"
@@ -1296,6 +1311,66 @@
             }
           ]
         }
+      }
+    },
+    "OperationName": {
+      "description": "An operation name, which becomes a method of the generated repository and service classes",
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+      "not": {
+        "enum": [
+          "False",
+          "None",
+          "True",
+          "and",
+          "as",
+          "assert",
+          "async",
+          "await",
+          "break",
+          "class",
+          "continue",
+          "def",
+          "del",
+          "elif",
+          "else",
+          "except",
+          "finally",
+          "for",
+          "from",
+          "global",
+          "if",
+          "import",
+          "in",
+          "is",
+          "lambda",
+          "nonlocal",
+          "not",
+          "or",
+          "pass",
+          "raise",
+          "return",
+          "try",
+          "while",
+          "with",
+          "yield",
+          "COLLECTION",
+          "DEFAULT_ROLE",
+          "IDENTITY_FIELDS",
+          "ID_FIELD",
+          "ID_FORMAT",
+          "TABLE",
+          "delete_by",
+          "find_by",
+          "find_one",
+          "get_by",
+          "insert",
+          "paginate",
+          "replace_by",
+          "run_operation",
+          "update_by",
+          "upsert_by"
+        ]
       }
     }
   }

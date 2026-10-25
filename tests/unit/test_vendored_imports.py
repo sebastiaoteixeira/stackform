@@ -21,17 +21,12 @@ _PACKAGE_BODY = """
     from .helper import build
 
 
-    async def publish(**kwargs):
-        return build(kwargs)
+    async def publish(request):
+        return build(request.body)
 
 
     async def route(request):
         return build({"via": "route"})
-
-
-    async def serve(ctx):
-        ctx.response = build({"via": "serve"})
-        return ctx
 """
 
 _HELPER_BODY = """
@@ -62,13 +57,12 @@ repositories:
 services:
   posts: {{ repository: posts }}
   direct: {{ handler: vend.route }}
-  served: {{ handler: vend.serve }}
 controllers:
   posts:
     base_path: /posts
     routes:
       direct: {{ service: direct, method: POST, path: /direct, access: public }}
-      served: {{ service: served, method: POST, path: /served, access: public }}
+      publish: {{ service: posts, method: POST, path: /publish, access: public }}
 """
 
 _MINIMAL_SPEC = """
@@ -150,27 +144,17 @@ def test_vendored_package_is_a_working_package_inside_every_target(tmp_path, tar
         sys.path.insert(0, {str(backend)!r})
         import vend_pkg
         assert vend_pkg.__file__.startswith({str(backend)!r})
-        assert asyncio.run(vend_pkg.publish(x=1)) == {{"built": {{"x": 1}}}}
+        assert asyncio.run(vend_pkg.route(None)) == {{"built": {{"via": "route"}}}}
     """)
 
 
-@pytest.mark.parametrize(
-    "target,module",
-    [("fastapi", "repositories.posts"), ("drf", "api.repositories.posts"), ("raw", "repositories.posts")],
-)
-def test_generated_repository_operation_calls_the_vendored_handler(tmp_path, target, module):
-    backend = _compile(tmp_path, target)
-
-    _run(f"""
-        import asyncio, sys
-        sys.path.insert(0, {str(backend)!r})
-        from {module} import PostsRepository
-        result = asyncio.run(PostsRepository.publish(None, title="t"))
-        assert result == {{"built": {{"title": "t"}}}}, result
-    """)
+_EXPECTED = {
+    "/posts/direct": {"built": {"via": "route"}},
+    "/posts/publish": {"built": {"title": "t"}},
+}
 
 
-def test_generated_fastapi_route_dispatches_to_the_vendored_handler(tmp_path):
+def test_generated_fastapi_routes_dispatch_to_the_vendored_handlers(tmp_path):
     backend = _compile(tmp_path, "fastapi")
 
     _run(f"""
@@ -178,53 +162,59 @@ def test_generated_fastapi_route_dispatches_to_the_vendored_handler(tmp_path):
         sys.path.insert(0, {str(backend)!r})
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        from routes._handlers import router
+        from dependencies.repositories import get_posts_repository
+        from routes._handlers import router as handler_router
+        from routes.posts import router as posts_router
 
         app = FastAPI()
-        app.include_router(router)
-        response = TestClient(app).post("/posts/direct", json={{}})
-        assert response.status_code == 200, response.text
-        assert response.json() == {{"built": {{"via": "route"}}}}
+        app.include_router(handler_router)
+        app.include_router(posts_router)
+        app.dependency_overrides[get_posts_repository] = lambda: None
+        client = TestClient(app)
+        for path, expected in {_EXPECTED!r}.items():
+            response = client.post(path, json={{"title": "t"}})
+            assert response.status_code == 200, response.text
+            assert response.json() == expected, response.json()
     """)
 
 
-def test_dev_server_route_executes_the_vendored_handler(tmp_path, monkeypatch):
+def test_dev_server_routes_execute_the_vendored_handlers(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     from yaml_api_generator.server import build_app
 
     monkeypatch.setenv("YAML_API_DB_STORE_DSN", f"sqlite+aiosqlite:///{tmp_path / 'db.sqlite'}")
     _write_package(tmp_path / "src", "vend_pkg")
-    spec = _write_spec(tmp_path, _SPEC.format(store=_SQL_STORE))
+    client = TestClient(build_app(str(_write_spec(tmp_path, _SPEC.format(store=_SQL_STORE)))))
 
-    response = TestClient(build_app(str(spec))).post("/posts/served", json={})
-    assert response.status_code == 200, response.text
-    assert response.json() == {"built": {"via": "serve"}}
+    for path, expected in _EXPECTED.items():
+        response = client.post(path, json={"title": "t"})
+        assert response.status_code == 200, response.text
+        assert response.json() == expected
 
 
 @pytest.mark.asyncio
-async def test_raw_dev_server_route_executes_the_vendored_handler(tmp_path, monkeypatch):
+async def test_raw_dev_server_routes_execute_the_vendored_handlers(tmp_path, monkeypatch):
     from yaml_api_generator.server import build_raw_app
 
     monkeypatch.setenv("YAML_API_DB_STORE_DSN", f"sqlite+aiosqlite:///{tmp_path / 'db.sqlite'}")
     _write_package(tmp_path / "src", "vend_pkg")
-    spec = _write_spec(tmp_path, _SPEC.format(store=_SQL_STORE))
-    app = build_raw_app(str(spec))
+    app = build_raw_app(str(_write_spec(tmp_path, _SPEC.format(store=_SQL_STORE))))
 
-    scope = {"type": "http", "method": "POST", "path": "/posts/served", "headers": []}
-    messages = []
+    for path, expected in _EXPECTED.items():
+        messages = []
 
-    async def receive():
-        return {"type": "http.request", "body": b"{}", "more_body": False}
+        async def receive():
+            return {"type": "http.request", "body": b'{"title": "t"}', "more_body": False}
 
-    async def send(message):
-        messages.append(message)
+        async def send(message):
+            messages.append(message)
 
-    await app(scope, receive, send)
-    start = next(m for m in messages if m["type"] == "http.response.start")
-    body = next(m for m in messages if m["type"] == "http.response.body")
-    assert start["status"] == 200
-    assert json.loads(body["body"]) == {"built": {"via": "serve"}}
+        await app({"type": "http", "method": "POST", "path": path, "headers": []}, receive, send)
+        start = next(m for m in messages if m["type"] == "http.response.start")
+        body = next(m for m in messages if m["type"] == "http.response.body")
+        assert start["status"] == 200
+        assert json.loads(body["body"]) == expected
 
 
 @pytest.mark.parametrize("target", ["fastapi", "drf", "raw"])
@@ -282,6 +272,27 @@ def test_handler_referencing_undeclared_package_raises(tmp_path):
         handler="missing.route",
     )
     assert _codes(spec) == ["IMPORT_UNDECLARED_PACKAGE"]
+
+
+@pytest.mark.parametrize("handler", ["vend.nosuch", "vend.helper.nosuch", "vend.nomodule.build", "vend"])
+def test_handler_naming_an_undefined_function_raises(tmp_path, handler):
+    _write_package(tmp_path / "src", "vend_pkg")
+    spec = _minimal(tmp_path, "vend: { path: ./src/vend_pkg, package: vend_pkg }", handler=handler)
+    assert _codes(spec) == ["IMPORT_HANDLER_NOT_FOUND"]
+
+
+@pytest.mark.parametrize("handler", ["vend.route", "vend.build", "vend.helper.build"])
+def test_handler_naming_a_bound_function_is_accepted(tmp_path, handler):
+    _write_package(tmp_path / "src", "vend_pkg")
+    spec = _minimal(tmp_path, "vend: { path: ./src/vend_pkg, package: vend_pkg }", handler=handler)
+    load_and_generate_ir(str(spec))
+
+
+def test_service_with_both_handler_and_operation_raises(tmp_path):
+    _write_package(tmp_path / "src", "vend_pkg")
+    spec = _minimal(tmp_path, "vend: { path: ./src/vend_pkg, package: vend_pkg }", handler="vend.route")
+    spec.write_text(spec.read_text().replace("handler: vend.route", "handler: vend.route, repository: posts, operation: list"))
+    assert _codes(spec) == ["SCHEMA_VALIDATION_ERROR"]
 
 
 def test_v03_bare_string_import_rejected(tmp_path):
@@ -433,10 +444,6 @@ def test_v02_output_is_not_vendored_and_stays_stable(tmp_path):
     out_b = tmp_path / "b"
     compile_project(str(spec), output_dir=str(out_a))
     compile_project(str(spec), output_dir=str(out_b))
-
-    repository = (out_a / "backend" / "repositories" / "posts.py").read_text()
-    assert "import raw_module" in repository
-    assert "await raw_module.publish(**kwargs)" in repository
 
     assert not (out_a / "backend" / "my_app").exists()
     requirements_a = (out_a / "backend" / "requirements.txt").read_text()

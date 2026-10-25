@@ -49,8 +49,8 @@ CONSTRAINTS = {"minLength": "min_length", "maxLength": "max_length", "min": "ge"
 class Payload(BaseModel):
     """A closed object: undeclared and ``_readonly`` keys are rejected.
 
-    ``_server_defaults`` are the defaults of readonly fields, added whenever the
-    payload is dumped.
+    A dump leaves out the fields that were neither sent nor given a default;
+    ``_server_defaults`` are the defaults of readonly fields, added to every dump.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -65,8 +65,13 @@ class Payload(BaseModel):
         return data
 
     @model_serializer(mode="wrap")
-    def _add_server_defaults(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        return {**handler(self), **deepcopy(self._server_defaults)}
+    def _dump(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        sent = {
+            name: value
+            for name, value in handler(self).items()
+            if value is not None or name in self.model_fields_set
+        }
+        return {**sent, **deepcopy(self._server_defaults)}
 
 
 class OpenPayload(Payload):

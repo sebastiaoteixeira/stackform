@@ -18,10 +18,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ...ir.api import CallerDemand, IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
+from ...constants import CRUD_OPERATIONS
+from ...ir.api import CallerDemand, IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService, IRServiceBase
 from ...ir.when import WhenExpr
 from ...runtime.access import Roles
-from ...utils.strings import to_py_identifier
+from ...utils.strings import to_pascal_case, to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
 
@@ -286,14 +287,25 @@ class RouteDescriptor:
         return [*parents, (self.id_field, self.record_id_param)]
 
     @property
+    def runs_operation(self) -> bool:
+        """Whether the route runs a handler or a declared repository operation instead of a generated step."""
+        return self.operation != "login" and (
+            self.handler is not None or self.operation not in CRUD_OPERATIONS
+        )
+
+    @property
     def handler_name(self) -> str:
-        """A module-unique symbol: routes may share an operation and a collection, never a method and a path."""
-        return f"handle_{self.method.lower()}{to_py_identifier(self.relative_path)}"
+        """Function name unique to this method and path across the whole API."""
+        return to_py_identifier(f"handle_{self.method.lower()}{self.relative_path}")
 
     @property
     def view_name(self) -> str:
-        """The class serving every method of this route's path."""
-        return f"View{to_py_identifier(self.relative_path)}"
+        """Class name of the view serving every method on this route's path; ``/reports/{id}`` is ``ReportsByIdView``."""
+        segments = (
+            f"By{to_pascal_case(segment[1:-1])}" if segment.startswith("{") else to_pascal_case(segment)
+            for segment in self.relative_path.split("/")
+        )
+        return f"{''.join(segments)}View"
 
     @property
     def django_path(self) -> str:
@@ -450,6 +462,7 @@ class CompileContext:
     repository_inherits: dict[str, str] = field(default_factory=dict)
     # IR services keyed by their expanded flat name (e.g. "list-posts").
     services: dict[str, IRService] = field(default_factory=dict)
+    service_bases: dict[str, IRServiceBase] = field(default_factory=dict)
     dto_models: list[ModelDescriptor] = field(default_factory=list)
     vendored_requirements: tuple[str, ...] = ()
     sql_schema_managed: bool = False
@@ -496,3 +509,14 @@ class CompileContext:
 
     def collection_datastore_type(self, collection: str) -> str:
         return self.collections.get(collection, {}).get("datastore_type", "mongodb")
+
+    def service_base(self, repository: str) -> IRServiceBase | None:
+        """The abstract service that the services of ``repository`` extend."""
+        return next(
+            (
+                self.service_bases[service.inherits]
+                for service in self.services.values()
+                if service.repository == repository and service.inherits
+            ),
+            None,
+        )

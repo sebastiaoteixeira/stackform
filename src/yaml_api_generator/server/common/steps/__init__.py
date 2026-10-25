@@ -32,6 +32,7 @@ from .authorization import (
     UnauthorizedError,
     ValidateIdentityCreateStep,
 )
+from .handlers import HandlerStep
 from .jwks import JWKSStep
 from .login import LoginStep
 from .refresh import RefreshStep
@@ -48,6 +49,7 @@ from .services import ServiceInputStep
 from .validation import ValidateBodyStep
 
 __all__ = [
+    "HandlerStep",
     "ServiceInputStep",
     "Step",
     "NotFoundError",

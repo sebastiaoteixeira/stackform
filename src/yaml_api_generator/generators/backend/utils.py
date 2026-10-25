@@ -1,5 +1,6 @@
 """Shared utilities for backend generators."""
 
+from collections.abc import Iterable
 from importlib.resources import files
 from pathlib import Path
 
@@ -12,7 +13,10 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 
 _RUNTIME_MODULES = frozenset(
-    {"access", "dpop", "pagination", "fields", "payloads", "files", "multipart", "file_requests", "filesystem_store", "s3_store", "sql_types"}
+    {
+        "access", "dpop", "pagination", "fields", "payloads", "files", "multipart", "file_requests", "filesystem_store",
+        "s3_store", "sql_types", "operations", "ids", "mongo_operations", "sql_operations", "handler_requests",
+    }
 )
 
 
@@ -20,6 +24,14 @@ def runtime_module_source(name: str) -> str:
     if name not in _RUNTIME_MODULES:
         raise ValueError(f"Unknown runtime module: {name}")
     return files("yaml_api_generator.runtime").joinpath(f"{name}.py").read_text()
+
+
+def write_runtime_modules(directory: Path, names: Iterable[str]) -> None:
+    for name in names:
+        (directory / f"{name}.py").write_text(runtime_module_source(name))
+
+
+MONGO_RUNTIME_MODULES = ("access", "pagination", "operations", "ids", "mongo_operations", "handler_requests")
 
 
 def write_environment_files(

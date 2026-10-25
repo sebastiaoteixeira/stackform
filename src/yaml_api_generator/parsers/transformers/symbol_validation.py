@@ -82,17 +82,12 @@ def _validate_service_with(spec: dict[str, Any]) -> list[ConfigError]:
             symbols = {rhs.root} if isinstance(rhs, IRSymbolRef) else set()
             errors.extend(scope.undefined(symbols, path))
         repository = repositories.get(service.get("repository"))
-        operation = service.get("operation")
-        operation_config = (
-            (repository.get("operations") or {}).get(operation)
-            if isinstance(repository, dict) and operation is not None
-            else None
-        )
-        if not isinstance(operation_config, dict) or not isinstance(
-            operation_config.get("query"), dict
-        ):
+        if service.get("handler") or not isinstance(repository, dict):
             continue
-        referenced = _free_symbols(operation_config["query"])
+        operation = service.get("operation")
+        operation_config = (repository.get("operations") or {}).get(operation)
+        query = operation_config.get("query") if isinstance(operation_config, dict) else None
+        referenced = _free_symbols(query) if isinstance(query, dict) else set()
         errors.extend(
             ConfigError(
                 code="SERVICE_WITH_TARGET_UNKNOWN",

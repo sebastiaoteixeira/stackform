@@ -203,6 +203,41 @@ def test_repository_forwarding_rejects_unused_target():
     }
 
 
+def test_forwarding_to_an_operation_without_a_query_is_rejected():
+    spec = {
+        "version": "0.3",
+        "repositories": {"posts": {"entity": "post"}},
+        "services": {
+            "create-posts": {
+                "repository": "posts",
+                "operation": "create",
+                "input": {"postId": "string"},
+                "with": {"id": "$postId"},
+            }
+        },
+    }
+
+    assert _codes(validate_spec_symbols(spec)) == {"SERVICE_WITH_TARGET_UNKNOWN"}
+
+
+def test_handler_receives_forwarding_without_a_query():
+    spec = {
+        "version": "0.3",
+        "repositories": {"posts": {"entity": "post"}},
+        "services": {
+            "notify": {
+                "repository": "posts",
+                "operation": "notify",
+                "handler": "hooks.notify",
+                "input": {"postId": "string"},
+                "with": {"id": "$postId"},
+            }
+        },
+    }
+
+    assert _codes(validate_spec_symbols(spec)) == set()
+
+
 # --- transformer / IR end to end ------------------------------------------
 
 
@@ -339,16 +374,11 @@ def test_runtime_ill_typed_input_is_422():
 @pytest.mark.asyncio
 async def test_runtime_repository_operation_receives_forwarded_values():
     class RecordingRepository:
-        def __init__(self):
-            self.bindings = None
+        async def run_operation(self, collection, query):
+            return query["filter"]
 
-        async def run_operation(self, collection, query, bindings):
-            self.bindings = bindings
-            return {"id": bindings["lookup"], "state": bindings["state"]}
-
-    repository = RecordingRepository()
     ctx = _ctx({"postId": "p1"})
-    ctx.repository = repository
+    ctx.repository = RecordingRepository()
     ctx = ServiceInputStep(
         {"postId": {"type": "string"}},
         {
@@ -359,14 +389,53 @@ async def test_runtime_repository_operation_receives_forwarded_values():
 
     result = await RepositoryOperationStep(
         "posts",
-        {"command": "findOne", "filter": {"id": "$lookup"}},
+        {"command": "findOne", "filter": {"id": "$lookup", "state": "$params.state"}},
         "id",
     )(ctx)
 
-    assert repository.bindings["lookup"] == "p1"
-    assert repository.bindings["params"] == {
-        "postId": "p1",
-        "lookup": "p1",
-        "state": "archived",
-    }
     assert result.response == {"id": "p1", "state": "archived"}
+
+
+_MINIFIED_SPEC = """
+version: "0.3"
+api:
+  basePath: /api
+entities:
+  post:
+    fields:
+      id: { type: id }
+      title: { type: string }
+repositories:
+  posts:
+    entity: post
+    crud: []
+    operations:
+      byTitle:
+        query: { command: find, filter: { title: $title } }
+services:
+  posts:
+    repository: posts
+    input: { label: string }
+    with: { title: $label }
+    operations:
+      byTitle: true
+controllers:
+  posts:
+    service: posts
+    base_path: /posts
+    operations:
+      byTitle: { method: GET, path: "/{label}" }
+"""
+
+
+def test_minified_service_input_and_forwarding_reach_each_operation(tmp_path):
+    service = _load(tmp_path, _MINIFIED_SPEC).ir.services["byTitle-posts"]
+    assert service.input == IRServiceInput(fields={"label": {"type": "string"}})
+    assert service.forwarding == {"title": IRSymbolRef(root="label")}
+
+
+def test_minified_service_forwarding_to_a_crud_operation_is_rejected(tmp_path):
+    spec = _MINIFIED_SPEC.replace("crud: []", "crud: [list]")
+    with pytest.raises(ConfigErrors) as raised:
+        _load(tmp_path, spec)
+    assert {error.code for error in raised.value.errors} == {"SERVICE_WITH_TARGET_UNKNOWN"}

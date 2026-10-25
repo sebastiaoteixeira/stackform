@@ -1,14 +1,15 @@
-import importlib
 from collections.abc import Iterator, Mapping
 
 from yaml_api_generator.ir import IRDocumentBinding
 from .auth.session_tokens import SessionTokens
 from yaml_api_generator.runtime.files import RecordFiles
+from yaml_api_generator.runtime.mongo_operations import with_identity
 from .server_context import RuntimeContext, RuntimeFileRouteDescriptor, RuntimeRouteDescriptor
 from .pipeline import Pipeline
 from .repositories import RepositoryRegistry
 from .steps import (
     AuthorizeRouteStep,
+    HandlerStep,
     JWKSStep,
     LoginStep,
     PostFetchAuthorizeStep,
@@ -62,15 +63,6 @@ _FILE_STEPS = {
     "replace": lambda files, field, write: FileWriteStep(files, replace_file(field), write),
     "remove": lambda files, field, write: FileWriteStep(files, remove_file(field), write),
 }
-
-
-def _import_handler(dotted_path: str) -> Step:
-    module_path, _, attr_name = dotted_path.rpartition(".")
-    if not module_path:
-        raise ValueError(f"Invalid handler path: {dotted_path}")
-    module = importlib.import_module(module_path)
-    handler = getattr(module, attr_name)
-    return handler
 
 
 class PipelineBuilder:
@@ -219,7 +211,7 @@ class PipelineBuilder:
         service_input_step = self._service_input_step(route)
         if service_input_step is not None:
             steps.append(service_input_step)
-        steps.append(_import_handler(route.handler))
+        steps.append(HandlerStep(route.handler))
         return self._pipeline(route, steps)
 
     def _base_steps(self, route: RuntimeRouteDescriptor) -> list[Step]:
@@ -326,10 +318,7 @@ class PipelineBuilder:
         if operation == "delete":
             return RepositoryDeleteStep(collection_name, id_field, self._locator(route))
 
-        descriptor = self._ctx.operations.get(collection_name, {}).get(operation)
-        if descriptor is not None:
-            if descriptor.query is not None:
-                return RepositoryOperationStep(collection_name, descriptor.query, id_field)
-            if descriptor.handler is not None:
-                return _import_handler(descriptor.handler)
-        raise ValueError(f"Unsupported operation: {operation}")
+        query = self._ctx.operations[collection_name][operation].query
+        return RepositoryOperationStep(
+            collection_name, with_identity(query, id_field, collection.id_format), id_field
+        )

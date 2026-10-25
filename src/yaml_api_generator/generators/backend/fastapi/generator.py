@@ -6,6 +6,13 @@ from yaml_api_generator.generators.backend.compile_context import CompileContext
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
 from ..base import TemplateBasedGenerator, RenderConfig, SingleFileRenderConfig, template_environment
+from ..inheritance import (
+    own_repository_operations,
+    own_service_operations,
+    repository_base_class,
+    route_operations,
+    service_base_class,
+)
 from ..utils import (
     extract_identity_fields,
     find_identity,
@@ -13,9 +20,9 @@ from ..utils import (
     pagination_config,
     runtime_module_source,
     write_environment_files,
+    write_runtime_modules,
 )
 from ..validation import (
-    reject_undeclared_repository_operations,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -44,7 +51,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "fastapi")
         reject_unsigned_session_algorithm(context)
-        reject_undeclared_repository_operations(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.filters["capitalize_collection"] = to_pascal_case
         env.filters["py_identifier"] = to_py_identifier
@@ -164,13 +170,28 @@ class FastAPIGenerator(TemplateBasedGenerator):
         ops_content = ops_template.render(auth=context.auth)
         (output_dir / "services" / "_ops.py").write_text(ops_content)
 
+        template = env.get_template("service.py.jinja")
+        for base in context.service_bases.values():
+            parent = context.service_bases.get(base.inherits)
+            (output_dir / "services" / f"{base.name}.py").write_text(template.render(
+                collection_name=base.name,
+                operations=[],
+                is_identity_collection=False,
+                password_via=False,
+                custom_operations=own_service_operations(base.operations, parent),
+                generated_base=service_base_class(parent),
+            ))
+
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
         identity = find_identity(context, col_name)
         is_identity = identity is not None
+        base = context.service_base(col_name)
 
         return {
             "collection_name": col_name,
             "operations": _crud_operations(col_data),
+            "custom_operations": own_service_operations(route_operations(col_data), base),
+            "generated_base": service_base_class(base),
             "is_identity_collection": is_identity,
             "password_via": is_identity and identity.has_password,
             "identity_fields": extract_identity_fields(context, col_name),
@@ -208,11 +229,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "service_groups": service_groups,
             "routes": col_data["routes"],
             "model_index": {m.name: m for m in col_data["models"]},
-            "repo_queries": {
-                op["name"]: op["query"]
-                for op in ctx.repository_operations.get(col_name, [])
-            },
-            "datastore_type": ctx.collection_datastore_type(col_name),
             "auth": ctx.auth,
             "identity": find_identity(ctx, col_name),
             "files": ctx.file_fields.get(col_name, {}),
@@ -330,12 +346,6 @@ class FastAPIGenerator(TemplateBasedGenerator):
         init_imports: list[str] = []
         uses_mongo = uses_sql = False
 
-        def generated_base(name: str) -> dict[str, str] | None:
-            base = context.repository_inherits.get(name)
-            if base is None:
-                return None
-            return {"module": f".{base}", "class_name": f"{to_pascal_case(base)}Repository"}
-
         # Abstract base repositories render as inheritable classes (no collection).
         for base_name, ds_type in context.repository_abstract.items():
             is_sql = ds_type in ("postgres", "postgresql")
@@ -344,8 +354,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 abstract=True,
                 collection_name=base_name,
                 operations=[],
-                custom_operations=context.repository_operations.get(base_name, []),
-                generated_base=generated_base(base_name),
+                custom_operations=own_repository_operations(context, base_name),
+                generated_base=repository_base_class(context, base_name),
             ))
             init_imports.append(f"from .{base_name} import {to_pascal_case(base_name)}Repository")
             uses_sql = uses_sql or is_sql
@@ -361,8 +371,8 @@ class FastAPIGenerator(TemplateBasedGenerator):
                 "id_field_format": meta["id_format"],
                 "collection_type": meta["type"],
                 "fields": meta["fields"],
-                "custom_operations": ctx_ops if (ctx_ops := context.repository_operations.get(col_name, [])) else [],
-                "generated_base": generated_base(col_name),
+                "custom_operations": own_repository_operations(context, col_name),
+                "generated_base": repository_base_class(context, col_name),
             }
             template = sql_template if is_sql else mongo_template
             (repos_dir / f"{col_name}.py").write_text(template.render(**template_context))
@@ -423,14 +433,17 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (deps_dir / "claims.py").write_text(
                 (_STATIC_DIR / "claims.py").read_text()
             )
-        for module in ("access", "pagination", "payloads"):
-            (deps_dir / f"{module}.py").write_text(runtime_module_source(module))
         if any(getattr(provider, "dpop", False) for provider in context.auth.providers.values()):
             (deps_dir / "dpop.py").write_text(runtime_module_source("dpop"))
-        if any(context.repository_operations.values()):
-            (deps_dir / "bindings.py").write_text(
-                (_STATIC_DIR / "bindings.py").read_text()
-            )
+        write_runtime_modules(deps_dir, (
+            "access",
+            "pagination",
+            "payloads",
+            "operations",
+            "handler_requests",
+            *(("ids", "mongo_operations") if uses_mongo else ()),
+            *(("sql_operations",) if uses_sql else ()),
+        ))
         self._render_file_dependencies(env, context, deps_dir)
 
         init_imports: list[str] = []

@@ -7,8 +7,9 @@ from bson.errors import InvalidId
 from pymongo import AsyncMongoClient, ReturnDocument
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
+from yaml_api_generator.runtime.ids import generate_id
+from yaml_api_generator.runtime.mongo_operations import run_mongo
 from .base import BaseRepository, ConflictError
-from .bindings import resolve
 from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from ..pagination import Page, Primitives, expand_bound
 
@@ -265,69 +266,9 @@ class MongoRepository(BaseRepository):
         )
         return self._normalize_document(document)
 
-    async def run_operation(
-        self,
-        collection_name: str,
-        query: dict[str, Any],
-        bindings: dict[str, Any],
-    ) -> Any:
+    async def run_operation(self, collection_name: str, query: dict[str, Any]) -> Any:
         with _as_conflict():
-            return await self._run_operation(collection_name, query, bindings)
-
-    async def _run_operation(
-        self,
-        collection_name: str,
-        query: dict[str, Any],
-        bindings: dict[str, Any],
-    ) -> Any:
-        command = query.get("command")
-        target = self.collection(query.get("collection") or collection_name)
-        get = lambda field: resolve(query.get(field), bindings)
-
-        if command == "find":
-            cursor = target.find(get("filter") or {})
-            docs = await cursor.to_list(length=None)
-            return [self._normalize_document_required(d) for d in docs]
-        if command == "findOne":
-            return self._normalize_document(await target.find_one(get("filter") or {}))
-        if command == "aggregate":
-            cursor = await target.aggregate(get("pipeline") or [])
-            docs = await cursor.to_list(length=None)
-            return [self._normalize_document_required(d) for d in docs]
-        if command == "countDocuments":
-            return await target.count_documents(get("filter") or {})
-        if command == "estimatedDocumentCount":
-            return await target.estimated_document_count()
-        if command == "distinct":
-            return await target.distinct(query.get("key"), get("filter") or {})
-        if command == "insertOne":
-            document = get("document") or {}
-            await target.insert_one(document)
-            return self._normalize_document_required(document)
-        if command == "insertMany":
-            documents = get("documents") or []
-            await target.insert_many(documents)
-            return [self._normalize_document_required(d) for d in documents]
-        if command in ("updateOne", "findOneAndUpdate"):
-            doc = await target.find_one_and_update(
-                get("filter") or {}, get("update") or {}, return_document=ReturnDocument.AFTER
-            )
-            return self._normalize_document(doc)
-        if command in ("replaceOne", "findOneAndReplace"):
-            doc = await target.find_one_and_replace(
-                get("filter") or {}, get("replacement") or {}, return_document=ReturnDocument.AFTER
-            )
-            return self._normalize_document(doc)
-        if command in ("deleteOne", "findOneAndDelete"):
-            return self._normalize_document(await target.find_one_and_delete(get("filter") or {}))
-        if command == "updateMany":
-            result = await target.update_many(get("filter") or {}, get("update") or {})
-            return {"matched": result.matched_count, "modified": result.modified_count}
-        if command == "deleteMany":
-            result = await target.delete_many(get("filter") or {})
-            return {"deleted": result.deleted_count}
-
-        raise ValueError(f"Unsupported query command: {command}")
+            return await run_mongo(self.collection(collection_name), query, generate_id)
 
     @staticmethod
     def _normalize_document(document: dict[str, Any] | None) -> dict[str, Any] | None:
