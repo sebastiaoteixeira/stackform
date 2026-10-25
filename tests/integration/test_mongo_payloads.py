@@ -1,4 +1,5 @@
-"""Development servers and generated FastAPI, raw-ASGI and DRF apps validate the shared payload scenario against a real MongoDB."""
+"""Development servers and generated FastAPI, raw-ASGI and DRF apps validate the shared payload scenario, and accept
+the bodies the generated UI sends, against a real MongoDB."""
 
 import os
 import subprocess
@@ -11,7 +12,7 @@ from starlette.testclient import TestClient
 
 from tests.integration.support.network import free_port
 from tests.unit.support.scenarios import run_generated
-from tests.unit.support import payload_requests
+from tests.unit.support import form_payloads, payload_requests
 from tests.unit.support.payload_requests import EXPECTED, JWT_SECRET, mongo_store, scenario, spec
 from yaml_api_generator.cli.compiler import compile_project
 from yaml_api_generator.server import build_app, build_raw_app
@@ -51,6 +52,21 @@ def test_dev_server_validates_payloads(spec_file, build, monkeypatch):
 def test_generated_backend_validates_payloads(spec_file, tmp_path, mongo_uri, target):
     compile_project(yaml_file=str(spec_file), output_dir=str(tmp_path / target), target=target)
     assert run_generated(tmp_path / target / "backend", payload_requests.__name__, _scenario_env(mongo_uri)) == EXPECTED
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(form_payloads.NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("target", ["fastapi", "raw"])
+def test_generated_backend_accepts_form_payloads(tmp_path, mongo_uri, target):
+    spec_file = tmp_path / "spec.yaml"
+    spec_file.write_text(form_payloads.spec(mongo_store(mongo_uri, f"payloads_{uuid4().hex}")))
+    output = tmp_path / target
+    compile_project(yaml_file=str(spec_file), output_dir=str(output), target=target)
+    env = {
+        **_scenario_env(mongo_uri),
+        form_payloads.FIELDS_MODULE: str(output / "frontend" / "src" / "__generated__" / "fields.ts"),
+    }
+    assert run_generated(output / "backend", form_payloads.__name__, env) == form_payloads.EXPECTED
 
 
 @pytest.mark.integration

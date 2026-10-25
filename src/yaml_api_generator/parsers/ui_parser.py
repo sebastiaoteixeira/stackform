@@ -94,19 +94,9 @@ def _build_entities(ir: IRDocument) -> dict[str, EntityInfo]:
         for field_name, field_config in ir_col.fields.items():
             if not isinstance(field_config, dict):
                 continue
-            ftype = field_config.get("type", "string")
-            if ftype == "id":
+            if field_config.get("type") == "id":
                 continue
-            fields[field_name] = EntityFieldInfo(
-                name=field_name,
-                type=ftype,
-                required=field_config.get("required", False),
-                unique=field_config.get("unique", False),
-                enum_values=field_config.get("values"),
-                ref_entity=field_config.get("ref"),
-                default=field_config.get("default"),
-                readonly=field_config.get("readonly", False),
-            )
+            fields[field_name] = EntityFieldInfo(name=field_name, config=field_config)
 
         auth_identifier = None
         auth_providers: list[AuthProviderInfo] = []

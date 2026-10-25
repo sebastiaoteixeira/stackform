@@ -1,75 +1,9 @@
-{% macro field_input(field, formData='formData', handler='handleFieldChange') %}
-{% set is_textarea = field.name in ['content', 'body', 'description', 'excerpt', 'bio'] %}
-{% set is_enum = field.type == 'enum' %}
-{% set is_boolean = field.type == 'boolean' %}
-{% set input_type = 'number' if field.type == 'number' else ('datetime-local' if field.type == 'datetime' else 'text') %}
-<div className="wf-field">
-  <label htmlFor="{{ field.name }}" className="block text-[11px] uppercase tracking-wide text-wf-ink-dim mb-1.5">
-    {{ field.name | title }}{% if field.required %}<span className="text-wf-danger ml-0.5">*</span>{% endif %}
-  </label>
-  {% if is_boolean %}
-  <label className="inline-flex items-center gap-2 cursor-pointer">
-    <input
-      id="{{ field.name }}"
-      type="checkbox"
-      name="{{ field.name }}"
-      checked={ !!{{ formData }}.{{ field.name }} }
-      onChange={ (e: React.ChangeEvent<HTMLInputElement>) => {{ handler }}({ target: { name: '{{ field.name }}', value: e.target.checked } } as any) }
-      className="w-4 h-4 accent-wf-accent"
-    />
-    <span className="text-sm text-wf-ink-dim">{{ field.name | title }}</span>
-  </label>
-  {% elif is_enum and field.enum_values %}
-  <div className="wf-input">
-    <select
-      id="{{ field.name }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    >
-      <option value="">Select...</option>
-      {% for val in field.enum_values %}
-      <option value="{{ val }}">{{ val | title }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  {% elif is_textarea %}
-  <div className="wf-input !items-start !py-2">
-    <textarea
-      id="{{ field.name }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      rows={ {{ 8 if field.name == 'content' else 3 }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none resize-none text-wf-ink text-sm"
-    />
-  </div>
-  {% else %}
-  <div className="wf-input">
-    <input
-      id="{{ field.name }}"
-      type="{{ input_type }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    />
-  </div>
-  {% endif %}
-</div>
-{% endmacro %}
+{% from 'macros/field_input.jinja' import field_input %}
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { useRecordForm } from '../__generated__/useRecordForm';
 
 interface {{ entity.name | pascal_case }}SectionedFormProps {
-  mode?: 'create' | 'edit';
-  initialData?: Record<string, unknown>;
   entityId?: string;
   basePath?: string;
 }
@@ -107,23 +41,18 @@ const SECTIONS: Array<{ id: SectionId; label: string }> = [
 ];
 
 export function {{ entity.name | pascal_case }}SectionedForm({
-  mode = 'create',
-  initialData = {},
   entityId,
   basePath = '{{ view.path if view else "/" }}'
 }: {{ entity.name | pascal_case }}SectionedFormProps) {
-  const [formData, setFormData] = useState<Record<string, unknown>>(initialData);
+  const { values, setValue, mode, submit } = useRecordForm({{ entity.name | tojson }}, '{{ entity.repository_name | kebab_case }}', entityId);
   const [activeSection, setActiveSection] = useState<SectionId>('basics');
   const [submitting, setSubmitting] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { token } = useAuth();
 
-  const handleFieldChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const change = (name: string, value: unknown) => {
+    setValue(name, value);
     setHasChanges(true);
   };
 
@@ -133,25 +62,7 @@ export function {{ entity.name | pascal_case }}SectionedForm({
     setError(null);
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const url = mode === 'edit' && entityId
-        ? `${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${entityId}`
-        : `${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`;
-
-      const res = await fetch(url, {
-        method: mode === 'edit' ? 'PUT' : 'POST',
-        headers,
-        body: JSON.stringify(formData),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || `Failed to ${mode} {{ entity.name }}`);
-      }
-
-      const result = await res.json();
+      const result = await submit();
       navigate(`${basePath}/${result.{{ entity.pk_field }}}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
@@ -217,11 +128,11 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                 <hr className="border-wf-line mb-6" />
                 <div className="space-y-4">
                   {% for field in basic_fields %}
-                  {{ field_input(field) }}
+                  {{ field_input(field, setter='change') }}
                   {% endfor %}
                   {% if not basic_fields %}
                   {% for field in all_fields | first | default([]) %}
-                  {{ field_input(field) }}
+                  {{ field_input(field, setter='change') }}
                   {% endfor %}
                   {% endif %}
                 </div>
@@ -237,7 +148,7 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                 <hr className="border-wf-line mb-6" />
                 <div className="space-y-4">
                   {% for field in content_fields %}
-                  {{ field_input(field) }}
+                  {{ field_input(field, setter='change') }}
                   {% endfor %}
                 </div>
               </div>
@@ -253,7 +164,7 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                 <hr className="border-wf-line mb-6" />
                 <div className="space-y-4">
                   {% for field in publishing_fields %}
-                  {{ field_input(field) }}
+                  {{ field_input(field, setter='change') }}
                   {% endfor %}
                 </div>
               </div>
@@ -269,7 +180,7 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                 <hr className="border-wf-line mb-6" />
                 <div className="space-y-4">
                   {% for field in seo_fields %}
-                  {{ field_input(field) }}
+                  {{ field_input(field, setter='change') }}
                   {% endfor %}
                 </div>
               </div>
@@ -285,7 +196,7 @@ export function {{ entity.name | pascal_case }}SectionedForm({
                 <hr className="border-wf-line mb-6" />
                 <div className="space-y-4">
                   {% for field in advanced_fields %}
-                  {{ field_input(field) }}
+                  {{ field_input(field, setter='change') }}
                   {% endfor %}
                 </div>
               </div>

@@ -1,88 +1,22 @@
-{% macro field_input(field, formData='formData', handler='handleFieldChange') %}
-{% set is_textarea = field.name in ['content', 'body', 'description', 'excerpt', 'bio'] %}
-{% set is_enum = field.type == 'enum' %}
-{% set is_boolean = field.type == 'boolean' %}
-{% set input_type = 'number' if field.type == 'number' else ('datetime-local' if field.type == 'datetime' else 'text') %}
-<div className="wf-field">
-  <label htmlFor="{{ field.name }}" className="block text-[11px] uppercase tracking-wide text-wf-ink-dim mb-1.5">
-    {{ field.name | title }}{% if field.required %}<span className="text-wf-danger ml-0.5">*</span>{% endif %}
-  </label>
-  {% if is_boolean %}
-  <label className="inline-flex items-center gap-2 cursor-pointer">
-    <input
-      id="{{ field.name }}"
-      type="checkbox"
-      name="{{ field.name }}"
-      checked={ !!{{ formData }}.{{ field.name }} }
-      onChange={ (e: React.ChangeEvent<HTMLInputElement>) => {{ handler }}({ target: { name: '{{ field.name }}', value: e.target.checked } } as any) }
-      className="w-4 h-4 accent-wf-accent"
-    />
-    <span className="text-sm text-wf-ink-dim">{{ field.name | title }}</span>
-  </label>
-  {% elif is_enum and field.enum_values %}
-  <div className="wf-input">
-    <select
-      id="{{ field.name }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    >
-      <option value="">Select...</option>
-      {% for val in field.enum_values %}
-      <option value="{{ val }}">{{ val | title }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  {% elif is_textarea %}
-  <div className="wf-input !items-start !py-2">
-    <textarea
-      id="{{ field.name }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      rows={3}
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none resize-none text-wf-ink text-sm"
-    />
-  </div>
-  {% else %}
-  <div className="wf-input">
-    <input
-      id="{{ field.name }}"
-      type="{{ input_type }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    />
-  </div>
-  {% endif %}
-</div>
-{% endmacro %}
+{% from 'macros/field_input.jinja' import field_input %}
 import { useState } from 'react';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { useRecordForm } from '../__generated__/useRecordForm';
 
 interface {{ entity.name | pascal_case }}ModalFormProps {
+  entityId?: string;
   onSuccess?: (data: Record<string, unknown>) => void;
   onCancel?: () => void;
 }
 
 export function {{ entity.name | pascal_case }}ModalForm({
+  entityId,
   onSuccess,
   onCancel,
 }: {{ entity.name | pascal_case }}ModalFormProps) {
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
+  const { values, setValue, mode, submit } = useRecordForm({{ entity.name | tojson }}, '{{ entity.repository_name | kebab_case }}', entityId);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { token } = useAuth();
 
-  const handleFieldChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,21 +24,7 @@ export function {{ entity.name | pascal_case }}ModalForm({
     setError(null);
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(formData),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || 'Failed to create {{ entity.name }}');
-      }
-
-      const result = await res.json();
+      const result = await submit();
       onSuccess?.(result);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
@@ -117,7 +37,7 @@ export function {{ entity.name | pascal_case }}ModalForm({
       <div className="wf-modal" style={{ "{{" }} minWidth: '440px' {{ "}}" }}>
         {/* Modal header */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="font-title text-lg text-wf-ink">New {{ entity.name | title }}</h2>
+          <h2 className="font-title text-lg text-wf-ink">{mode === 'create' ? 'New' : 'Edit'} {{ entity.name | title }}</h2>
           <button
             type="button"
             onClick={onCancel}
@@ -148,7 +68,7 @@ export function {{ entity.name | pascal_case }}ModalForm({
             Cancel
           </button>
           <button type="submit" form="modal-form" disabled={submitting} className="wf-btn wf-btn-primary">
-            {submitting ? 'Creating...' : 'Create'}
+            {submitting ? 'Saving...' : (mode === 'create' ? 'Create' : 'Save')}
           </button>
         </div>
       </div>
