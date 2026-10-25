@@ -26,7 +26,6 @@ from ..utils import (
     write_runtime_modules,
 )
 from ..validation import (
-    reject_session_refresh_without_mongo,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -53,7 +52,6 @@ def _crud_operations(col_data: dict) -> list[str]:
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "fastapi")
-        reject_session_refresh_without_mongo(context)
         reject_unsigned_session_algorithm(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.filters["capitalize_collection"] = to_pascal_case

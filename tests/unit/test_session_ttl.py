@@ -6,7 +6,6 @@ from starlette.testclient import TestClient
 from tests.unit.support.generated_apps import generate, run_generated
 from tests.unit.support.http_probes import TOKEN_LIFETIME_PROBE, token_lifetime
 from tests.unit.support.session_spec import LASTING, ROTATING, mongo, session_spec
-from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from yaml_api_generator.server import build_app
 
 
@@ -28,7 +27,7 @@ def test_dev_server_login_token_lifetime(tmp_path, monkeypatch, version, session
 
 
 @_VERSIONS
-@_cases(LASTING)
+@_cases(LASTING | ROTATING)
 def test_generated_fastapi_login_token_lifetime(tmp_path, version, session, lifetime):
     database = {"DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'generated.db'}"}
     spec = session_spec(tmp_path, session, version)
@@ -39,13 +38,6 @@ def test_generated_fastapi_login_token_lifetime(tmp_path, version, session, life
 def test_generated_fastapi_settings_rotating_lifetime(tmp_path, session, lifetime):
     backend = generate(session_spec(tmp_path, session, store=mongo()), "fastapi")
     assert f"JWT_ACCESS_TTL_SECONDS: int = {lifetime}" in (backend / "settings.py").read_text()
-
-
-@_cases(ROTATING)
-def test_generated_fastapi_rejects_rotation_without_mongo(tmp_path, session, lifetime):
-    with pytest.raises(ConfigErrors) as rejected:
-        generate(session_spec(tmp_path, session), "fastapi")
-    assert [(e.code, e.path) for e in rejected.value.errors] == [("BACKEND_FEATURE_UNSUPPORTED", "session.refresh")]
 
 
 @_cases(LASTING)
