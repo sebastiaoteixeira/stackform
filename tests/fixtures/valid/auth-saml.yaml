@@ -49,8 +49,8 @@ entities:
       id: { type: id }
       email: { type: string, required: true, unique: true }
       name: { type: string, required: true }
-      organizationId: { type: ref, ref: organizations }
-      registeredOrganizationId: { type: ref, ref: organizations }
+      organizationId: { type: ref, ref: organization }
+      registeredOrganizationId: { type: ref, ref: organization }
 repositories:
   organizations:
     entity: organization
