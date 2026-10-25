@@ -151,7 +151,7 @@ ui:
 
 DRIVER = """
 import { CREDENTIAL_FIELDS, ENTITY_FIELDS, SIGNUP_FIELDS, formValues, payload } from './fields.ts';
-import { callOperation, listCollection, listRecords, readCollection, readJson } from './records.ts';
+import { callOperation, listCollection, listRecords, readCollection, readJson, saveOperation } from './records.ts';
 
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = (path, init) => nativeFetch(process.env.ORIGIN + path, init);
@@ -167,7 +167,8 @@ for (const entity of ['ledger', 'page', 'feed', 'stream']) {
   report[entity] = (await listRecords(entity)).map((row) => row.code);
 }
 const [top] = await listRecords('ledger');
-report.updated = Number((await send('ledger', 'update', { id: top.id, body: { rank: 99 } })).rank);
+report.updated = Number((await send('ledger', saveOperation('ledger', top.id), { id: top.id, body: { rank: 99 } })).rank);
+report.ledgerAfterEdit = (await listRecords('ledger')).length;
 report.fetched = Number((await send('ledger', 'get', { id: top.id })).rank);
 report.anonymousDelete = await send('ledger', 'delete', { id: top.id }).catch((error) => error.message);
 const ana = await send('member', 'register', { body: entered(SIGNUP_FIELDS.member, { handle: 'ana', age: '', password: 'correct-horse' }) });
@@ -372,6 +373,7 @@ def test_generated_data_layer_drives_every_server(project, tmp_path, server):
         "feed": every_row,
         "stream": every_row,
         "updated": 99,
+        "ledgerAfterEdit": 7,
         "fetched": 99,
         "anonymousDelete": "Authentication required",
         "token": "string",

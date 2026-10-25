@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from './App';
 import { CREDENTIAL_FIELDS, ENTITY_FIELDS, formValues, payload } from './fields';
-import { ROUTES, callOperation, readJson } from './records';
+import { callOperation, readJson, saveOperation } from './records';
 
 /**
  * The form state of one `entity` record: a new one, or the one `entityId`
@@ -30,7 +30,7 @@ export function useRecordForm<T = Record<string, unknown>>(entity: string, entit
   const setValue = (name: string, value: unknown) => setValues(prev => ({ ...prev, [name]: value }));
 
   const submit = async (): Promise<T> => {
-    const operation = !id ? 'create' : ROUTES[entity].update ? 'update' : 'replace';
+    const operation = saveOperation(entity, id);
     const res = await callOperation(entity, operation, { id, headers, body: JSON.stringify(payload(fields, values)) });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

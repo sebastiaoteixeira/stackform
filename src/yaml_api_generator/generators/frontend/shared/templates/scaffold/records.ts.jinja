@@ -87,6 +87,11 @@ export async function callOperation(
   return fetch(`${API_BASE_URL}${path}${search && `?${search}`}`, { ...init, method: route.method });
 }
 
+/** The operation that saves a record of `entity`: create without an `id`, else its edit operation. */
+export function saveOperation(entity: string, id?: Id): Operation {
+  return !id ? 'create' : ROUTES[entity].update ? 'update' : 'replace';
+}
+
 export async function readJson(res: Response): Promise<any> {
   if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
   return res.json();
