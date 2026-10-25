@@ -182,47 +182,75 @@
         "sp_entity_id": { "type": "string" }
       }
     },
-    "FieldConfig": {
+    "FieldShape": {
+      "$comment": "The keys each field type accepts; FieldConfig and NestedFieldConfig close it.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["type"],
       "properties": {
         "type": {
           "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref", "id"]
         },
         "required": { "type": "boolean" },
-        "default": {},
-        "unique": { "type": "boolean" },
-        "min": { "type": "number" },
-        "max": { "type": "number" },
-        "minLength": { "type": "integer" },
-        "maxLength": { "type": "integer" },
-        "format": {
-          "enum": ["email", "e164", "uri", "uuidv7", "uuidv4"]
-        },
-        "values": { "$ref": "#/$defs/StringList" },
-        "items": { "$ref": "#/$defs/FieldConfig" },
-        "properties": {
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
-        },
-        "additionalProperties": { "type": "boolean" },
-        "ref": { "type": "string" }
+        "default": {}
       },
       "allOf": [
         {
+          "if": { "properties": { "type": { "const": "string" } }, "required": ["type"] },
+          "then": {
+            "properties": {
+              "minLength": { "type": "integer", "minimum": 0 },
+              "maxLength": { "type": "integer", "minimum": 0 },
+              "format": { "enum": ["email", "e164", "uri", "uuidv7", "uuidv4"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "number" } }, "required": ["type"] },
+          "then": { "properties": { "min": { "type": "number" }, "max": { "type": "number" } } }
+        },
+        {
           "if": { "properties": { "type": { "const": "enum" } }, "required": ["type"] },
-          "then": { "required": ["values"] }
+          "then": {
+            "required": ["values"],
+            "properties": { "values": { "$ref": "#/$defs/StringList", "minItems": 1 } }
+          }
         },
         {
           "if": { "properties": { "type": { "const": "array" } }, "required": ["type"] },
-          "then": { "required": ["items"] }
+          "then": { "required": ["items"], "properties": { "items": { "$ref": "#/$defs/NestedFieldConfig" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "object" } }, "required": ["type"] },
+          "then": {
+            "properties": {
+              "properties": {
+                "type": "object",
+                "additionalProperties": { "$ref": "#/$defs/NestedFieldConfig" }
+              },
+              "additionalProperties": { "type": "boolean" }
+            }
+          }
         },
         {
           "if": { "properties": { "type": { "const": "ref" } }, "required": ["type"] },
-          "then": { "required": ["ref"] }
+          "then": { "required": ["ref"], "properties": { "ref": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "id" } }, "required": ["type"] },
+          "then": { "properties": { "format": { "enum": ["uuidv7", "uuidv4"] } } }
         }
       ]
+    },
+    "FieldConfig": {
+      "$comment": "A top-level collection field.",
+      "$ref": "#/$defs/FieldShape",
+      "properties": { "unique": { "type": "boolean" } },
+      "unevaluatedProperties": false
+    },
+    "NestedFieldConfig": {
+      "$comment": "A field inside object properties or array items.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false
     },
     "RolesConfig": {
       "type": "object",

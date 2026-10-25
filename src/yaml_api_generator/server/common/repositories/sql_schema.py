@@ -10,6 +10,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.runtime.sql_types import IsoDateTime
 
 _JSON_TYPES = frozenset({"array", "object", "file"})
 
@@ -35,23 +36,23 @@ def _column(name: str, cfg: dict[str, Any], is_pk: bool) -> sa.Column:
     nullable = not (is_pk or bool(cfg.get("required")))
     return sa.Column(
         name,
-        _column_type(cfg),
+        column_type(cfg),
         primary_key=is_pk,
         nullable=nullable,
         unique=True if cfg.get("unique") else None,
     )
 
 
-def _column_type(cfg: dict[str, Any]) -> sa.types.TypeEngine:
+def column_type(cfg: dict[str, Any]) -> sa.types.TypeEngine:
     field_type = cfg.get("type", "string")
     if field_type in _JSON_TYPES:
         return sa.JSON()
     if field_type == "number":
-        return sa.Numeric()
+        return sa.Numeric(asdecimal=False)
     if field_type == "boolean":
         return sa.Boolean()
     if field_type == "datetime":
-        return sa.DateTime(timezone=True)
+        return IsoDateTime()
     max_length = cfg.get("maxLength")
     if field_type == "string" and isinstance(max_length, int):
         return sa.String(max_length)

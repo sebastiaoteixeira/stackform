@@ -1,9 +1,24 @@
-from rest_framework import serializers
+from api.payloads import PayloadSerializer{% if models | selectattr("operation", "equalto", "update") | list %}, partial{% endif %}
 
 {% for model in models %}
 
-class {{ model.name }}(serializers.Serializer):
+{% if model.operation == "update" %}
+
+{{ model.name }} = partial({{ model.base }}, "{{ model.name }}")
+{% else %}
+
+class {{ model.name }}({{ model.base or "PayloadSerializer" }}):
+{% if model.fields %}
+    properties = {
+{% if model.base %}
+        **{{ model.base }}.properties,
+{% endif %}
 {% for field in model.fields %}
-    {{ field.name }} = {{ field | drf_field }}
+        {{ field.name | tojson }}: {{ field.config | py_literal }},
 {% endfor %}
+    }
+{% else %}
+    pass
+{% endif %}
+{% endif %}
 {% endfor %}

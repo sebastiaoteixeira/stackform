@@ -101,7 +101,7 @@ def _principal_has_role(principal: dict | None, required_role: str) -> bool:
     return any(required_role in entity_hierarchy.get(role, set()) for role in principal_roles)
 
 
-def resolve_principal(request: Request, db) -> dict[str, Any] | None:
+async def resolve_principal(request: Request, db) -> dict[str, Any] | None:
     headers = {k.lower(): v for k, v in request.META.items() if k.startswith("HTTP_")}
     raw_headers: dict[str, str] = {}
     for meta_key, value in headers.items():
@@ -117,7 +117,7 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
             collection_name = claims.get("identity_collection")
             if sub and collection_name:
                 col = db[collection_name]
-                for doc in col.find({}):
+                async for doc in col.find({}):
 {% for identity in auth.identity_collections %}
 {% if identity.issues_jwt %}
                     if collection_name == "{{ identity.name }}" and str(doc.get("{{ identity.id_field }}", "")) == sub:
@@ -133,7 +133,7 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
     token = _extract_api_key(raw_headers)
     if token is not None:
         col = db["{{ identity.name }}"]
-        for doc in col.find({}):
+        async for doc in col.find({}):
             if str(doc.get("apiKey", "")) == token:
                 subject = doc.get("{{ identity.id_field }}")
                 if subject is not None:
@@ -144,7 +144,7 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
     if credentials is not None:
         identifier_value, password = credentials
         col = db["{{ identity.name }}"]
-        for doc in col.find({}):
+        async for doc in col.find({}):
             if str(doc.get("{{ identity.identifier }}", "")) != identifier_value:
                 continue
             stored_hash = doc["_auth"]["passwordHash"]
@@ -162,9 +162,9 @@ def resolve_principal(request: Request, db) -> dict[str, Any] | None:
 
 
 class MongoDBAuthentication(BaseAuthentication):
-    def authenticate(self, request):
+    async def authenticate(self, request):
         db = get_database()
-        principal = resolve_principal(request, db)
+        principal = await resolve_principal(request, db)
         if principal is None:
             return None
         return (principal, None)

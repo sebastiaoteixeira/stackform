@@ -217,7 +217,7 @@
                 ]
               },
               {
-                "$ref": "#/$defs/FieldConfig"
+                "$ref": "#/$defs/PayloadFieldConfig"
               }
             ]
           }
@@ -412,14 +412,14 @@
         "fields": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/$defs/FieldConfig"
+            "$ref": "#/$defs/PayloadFieldConfig"
           }
         }
       }
     },
-    "FieldConfig": {
+    "FieldShape": {
+      "$comment": "The keys each field type accepts; FieldConfig, NestedFieldConfig and PayloadFieldConfig close it.",
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "type"
       ],
@@ -441,70 +441,82 @@
         "required": {
           "type": "boolean"
         },
-        "default": {},
-        "unique": {
-          "type": "boolean"
-        },
-        "min": {
-          "type": "number"
-        },
-        "max": {
-          "type": "number"
-        },
-        "minLength": {
-          "type": "integer"
-        },
-        "maxLength": {
-          "type": "integer"
-        },
-        "format": {
-          "enum": [
-            "email",
-            "e164",
-            "uri",
-            "uuidv7",
-            "uuidv4"
-          ]
-        },
-        "values": {
-          "$ref": "yaml-spec-v0.2.schema.json#/$defs/StringList"
-        },
-        "items": {
-          "$ref": "#/$defs/FieldConfig"
-        },
-        "properties": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/FieldConfig"
-          }
-        },
-        "additionalProperties": {
-          "type": "boolean"
-        },
-        "ref": {
-          "type": "string"
-        },
         "readonly": {
           "type": "boolean"
-        },
-        "maxSize": {
-          "$ref": "#/$defs/FileSize"
-        },
-        "types": {
-          "$ref": "#/$defs/MimeTypes"
-        },
-        "disposition": {
-          "enum": [
-            "attachment",
-            "inline"
-          ]
-        },
-        "maxItems": {
-          "type": "integer",
-          "minimum": 1
         }
       },
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "file"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "default": {}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "minLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "maxLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "format": {
+                "enum": [
+                  "email",
+                  "e164",
+                  "uri",
+                  "uuidv7",
+                  "uuidv4"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "number"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -519,7 +531,13 @@
           "then": {
             "required": [
               "values"
-            ]
+            ],
+            "properties": {
+              "values": {
+                "$ref": "yaml-spec-v0.2.schema.json#/$defs/StringList",
+                "minItems": 1
+              }
+            }
           }
         },
         {
@@ -536,7 +554,37 @@
           "then": {
             "required": [
               "items"
+            ],
+            "properties": {
+              "items": {
+                "$ref": "#/$defs/NestedFieldConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "required": [
+              "type"
             ]
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/NestedFieldConfig"
+                }
+              },
+              "additionalProperties": {
+                "type": "boolean"
+              }
+            }
           }
         },
         {
@@ -553,10 +601,146 @@
           "then": {
             "required": [
               "ref"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "id"
+              }
+            },
+            "required": [
+              "type"
             ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "uuidv7",
+                  "uuidv4"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "file"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "maxSize": {
+                "$ref": "#/$defs/FileSize"
+              },
+              "types": {
+                "$ref": "#/$defs/MimeTypes"
+              },
+              "disposition": {
+                "enum": [
+                  "attachment",
+                  "inline"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              },
+              "items": {
+                "properties": {
+                  "type": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          "then": {
+            "properties": {
+              "maxItems": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
           }
         }
       ]
+    },
+    "FieldConfig": {
+      "$comment": "A top-level entity field.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "file"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "unique": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "NestedFieldConfig": {
+      "$comment": "A field inside object properties or array items.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false
+    },
+    "PayloadFieldConfig": {
+      "$comment": "A DTO or service input field, which carries no persistence keys.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "datetime",
+            "enum",
+            "array",
+            "object",
+            "ref",
+            "file"
+          ]
+        }
+      }
     },
     "DatastoreConfig": {
       "type": "object",

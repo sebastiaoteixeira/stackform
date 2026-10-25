@@ -105,7 +105,7 @@ def _build_entity(
     return EntityInfo(
         name=ir_col.entity_name,
         fields={
-            name: _field_info(name, config)
+            name: EntityFieldInfo(name=name, config=config)
             for name, config in ir_col.fields.items()
             if isinstance(config, dict) and config.get("type", "string") != "id"
         },
@@ -129,19 +129,6 @@ def _build_entity(
             for op, route in routes.items()
             if op in CRUD_OPS
         },
-    )
-
-
-def _field_info(name: str, config: dict[str, Any]) -> EntityFieldInfo:
-    return EntityFieldInfo(
-        name=name,
-        type=config.get("type", "string"),
-        required=config.get("required", False),
-        unique=config.get("unique", False),
-        enum_values=config.get("values"),
-        ref_entity=config.get("ref"),
-        default=config.get("default"),
-        readonly=config.get("readonly", False),
     )
 
 

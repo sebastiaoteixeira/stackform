@@ -1,58 +1,9 @@
-{% macro inline_field(field, formData='editData', handler='handleFieldChange') %}
-{% set is_enum = field.type == 'enum' %}
-{% set is_boolean = field.type == 'boolean' %}
-{% set input_type = 'number' if field.type == 'number' else ('datetime-local' if field.type == 'datetime' else 'text') %}
-<div className="wf-field">
-  <label htmlFor="inline-{{ field.name }}" className="block text-[11px] uppercase tracking-wide text-wf-ink-dim mb-1">
-    {{ field.name | title }}{% if field.required %}<span className="text-wf-danger ml-0.5">*</span>{% endif %}
-  </label>
-  {% if is_boolean %}
-  <label className="inline-flex items-center gap-2 cursor-pointer">
-    <input
-      id="inline-{{ field.name }}"
-      type="checkbox"
-      name="{{ field.name }}"
-      checked={ !!{{ formData }}.{{ field.name }} }
-      onChange={ (e: React.ChangeEvent<HTMLInputElement>) => {{ handler }}({ target: { name: '{{ field.name }}', value: e.target.checked } } as any) }
-      className="w-4 h-4 accent-wf-accent"
-    />
-    <span className="text-sm text-wf-ink-dim">{{ field.name | title }}</span>
-  </label>
-  {% elif is_enum and field.enum_values %}
-  <div className="wf-input">
-    <select
-      id="inline-{{ field.name }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    >
-      <option value="">Select...</option>
-      {% for val in field.enum_values %}
-      <option value="{{ val }}">{{ val | title }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  {% else %}
-  <div className="wf-input">
-    <input
-      id="inline-{{ field.name }}"
-      type="{{ input_type }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    />
-  </div>
-  {% endif %}
-</div>
-{% endmacro %}
+{% from 'macros/field_input.jinja' import field_input %}
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
-import { callOperation, displayValue, listRecords } from '../__generated__/records';
+import { displayValue, listRecords } from '../__generated__/records';
+import { useRecordForm } from '../__generated__/useRecordForm';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -66,10 +17,10 @@ export default function {{ view.name | pascal_case }}() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const { token } = useAuth();
   const navigate = useNavigate();
+  const { values, setValue, submit } = useRecordForm<{{ entity.name | pascal_case }}>({{ entity.name | tojson }}, editingId ?? undefined);
 
   useEffect(() => {
     const headers: Record<string, string> = {};
@@ -86,19 +37,9 @@ export default function {{ view.name | pascal_case }}() {
       });
   }, [token]);
 
-  const startEdit = (item: {{ entity.name | pascal_case }}) => {
-    setEditingId(item.{{ entity.pk_field }});
-    setEditData({ ...item });
-  };
+  const startEdit = (item: {{ entity.name | pascal_case }}) => setEditingId(item.{{ entity.pk_field }});
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditData({});
-  };
-
-  const handleFieldChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => setEditData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const cancelEdit = () => setEditingId(null);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,21 +47,7 @@ export default function {{ view.name | pascal_case }}() {
     setSaving(true);
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await callOperation('{{ entity.name }}', '{{ entity.edit_operation }}', {
-        id: editingId,
-        headers,
-        body: JSON.stringify(editData),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || 'Failed to save');
-      }
-
-      const updated = await res.json();
+      const updated = await submit();
       setItems(prev => prev.map(i => i.{{ entity.pk_field }} === editingId ? updated : i));
       cancelEdit();
     } catch (err: unknown) {
@@ -208,7 +135,7 @@ export default function {{ view.name | pascal_case }}() {
                         >
                           {% for field in edit_fields %}
                           {% if loop.index0 < 4 %}
-                          {{ inline_field(field) }}
+                          {{ field_input(field, id_prefix='inline-') }}
                           {% endif %}
                           {% endfor %}
                         </div>

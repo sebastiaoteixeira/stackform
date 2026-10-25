@@ -134,18 +134,7 @@ class CollectionTransformer:
                     path=f"entities.{entity_name}.fields.{id_field}",
                 )
             ]
-        raw = cfg.get("format")
-        if raw is None:
-            return "uuidv7", []
-        if raw in {"uuidv7", "uuidv4"}:
-            return str(raw), []
-        return None, [
-            ConfigError(
-                code="ID_FORMAT_INVALID",
-                message="id field format must be uuidv7 or uuidv4",
-                path=f"entities.{entity_name}.fields.{id_field}.format",
-            )
-        ]
+        return str(cfg.get("format", "uuidv7")), []
 
     def _validate_field_names(
         self, entity_name: str, fields: dict[str, Any]

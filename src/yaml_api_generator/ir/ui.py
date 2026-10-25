@@ -64,16 +64,40 @@ class PackComponentDef:
     props: dict[str, PackComponentProp]
 
 
-@dataclass
+@dataclass(frozen=True)
 class EntityFieldInfo:
+    """One entity field with its spec config, which the UI reads as the API validates it."""
+
     name: str
-    type: str
-    required: bool = False
-    unique: bool = False
-    enum_values: list[str] | None = None
-    ref_entity: str | None = None
-    default: Any = None
-    readonly: bool = False
+    config: dict[str, Any]
+
+    @property
+    def type(self) -> str:
+        return self.config.get("type", "string")
+
+    @property
+    def required(self) -> bool:
+        return self.config.get("required", False)
+
+    @property
+    def unique(self) -> bool:
+        return self.config.get("unique", False)
+
+    @property
+    def enum_values(self) -> list[str] | None:
+        return self.config.get("values")
+
+    @property
+    def ref_entity(self) -> str | None:
+        return self.config.get("ref")
+
+    @property
+    def default(self) -> Any:
+        return self.config.get("default")
+
+    @property
+    def readonly(self) -> bool:
+        return self.config.get("readonly", False)
 
 
 @dataclass

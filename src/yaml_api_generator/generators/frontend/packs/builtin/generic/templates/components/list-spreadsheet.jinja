@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+{% from 'macros/field_input.jinja' import field_control %}
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
 import { callOperation, displayValue, listRecords } from '../__generated__/records';
+import { ENTITY_FIELDS, FormValues, inputValue, payload } from '../__generated__/fields';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -14,15 +16,15 @@ type ActiveCell = { id: string; field: string };
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 {% set editable_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | list %}
+const FIELDS = ENTITY_FIELDS[{{ entity.name | tojson }}];
 
 export default function {{ view.name | pascal_case }}() {
   const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCell, setActiveCell] = useState<ActiveCell | null>(null);
-  const [editValue, setEditValue] = useState('');
+  const [draft, setDraft] = useState<FormValues>({});
   const [saveState, setSaveState] = useState<SaveState>('idle');
-  const inputRef = useRef<HTMLInputElement>(null);
   const { token } = useAuth();
   const navigate = useNavigate();
 
@@ -41,15 +43,13 @@ export default function {{ view.name | pascal_case }}() {
       });
   }, [token]);
 
-  useEffect(() => {
-    if (activeCell) inputRef.current?.focus();
-  }, [activeCell]);
-
   const activateCell = (id: string, field: string, currentValue: unknown) => {
     setActiveCell({ id, field });
-    setEditValue(String(currentValue ?? ''));
+    setDraft({ [field]: inputValue(FIELDS[field], currentValue) });
     setSaveState('idle');
   };
+
+  const setCell = (name: string, value: unknown) => setDraft({ [name]: value });
 
   const commitCell = async () => {
     if (!activeCell) return;
@@ -62,7 +62,7 @@ export default function {{ view.name | pascal_case }}() {
       const res = await callOperation('{{ entity.name }}', 'update', {
         id: activeCell.id,
         headers,
-        body: JSON.stringify({ [activeCell.field]: editValue }),
+        body: JSON.stringify(payload({ [activeCell.field]: FIELDS[activeCell.field] }, draft)),
       });
       if (!res.ok) throw new Error('Save failed');
       const updated = await res.json();
@@ -74,7 +74,7 @@ export default function {{ view.name | pascal_case }}() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); commitCell(); }
     if (e.key === 'Escape') { setActiveCell(null); setSaveState('idle'); }
   };
@@ -192,20 +192,16 @@ export default function {{ view.name | pascal_case }}() {
                         ? 'outline outline-2 outline-wf-accent outline-offset-[-2px] bg-wf-surface'
                         : 'cursor-cell'
                     }`}
+                    {% if not field.readonly %}
                     onClick={() => {
                       if (!activeCell) activateCell(item.{{ entity.pk_field }}, '{{ field.name }}', item.{{ field.name }});
                     }}
+                    {% endif %}
                   >
                     {activeCell?.id === item.{{ entity.pk_field }} && activeCell?.field === '{{ field.name }}' ? (
-                      <input
-                        ref={inputRef}
-                        type="{% if field.type == 'number' %}number{% else %}text{% endif %}"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        onBlur={commitCell}
-                        className="w-full px-3 py-1.5 bg-transparent border-none outline-none text-wf-ink text-sm"
-                      />
+                      <div className="px-3 py-1.5">
+                        {{ field_control(field, 'draft', 'setCell', 'cell-' ~ field.name, 'autoFocus onKeyDown={handleKeyDown} onBlur={commitCell}') }}
+                      </div>
                     ) : (
                       <div className="px-3 py-1.5 text-wf-ink">
                         {% if field.type == 'enum' %}

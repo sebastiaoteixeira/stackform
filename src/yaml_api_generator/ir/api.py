@@ -19,7 +19,7 @@ The IR serves as the single source of truth for code generation,
 eliminating repeated YAML parsing and validation.
 """
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
@@ -248,6 +248,27 @@ class IRCollection:
     file_store: str | None = None
 
 
+SECRET_FIELD: dict[str, Any] = {"type": "string", "required": True, "minLength": 1}
+"""The config of a credential a request sends, such as a password."""
+
+
+def payload_fields(
+    fields: dict[str, Any], excluded: Collection[str] = ()
+) -> dict[str, dict[str, Any]]:
+    """The field configs a request payload is checked against: no ids, auth or ``excluded`` fields.
+
+    Readonly fields stay, since their keys are rejected and their defaults filled in.
+    """
+    return {
+        name: config
+        for name, config in fields.items()
+        if isinstance(config, dict)
+        and config.get("type") != "id"
+        and name != "_auth"
+        and name not in excluded
+    }
+
+
 @dataclass(frozen=True)
 class IRSymbolRef:
     root: str
@@ -358,6 +379,18 @@ class IRRoute:
     access_rules: list[IRAccessRule] | None = None
     handler: str | None = None
     pagination: IRPagination | None = None
+
+    def body_dto(self, dtos: dict[str, IRDto]) -> IRDto | None:
+        """The DTO that the first DTO-typed request-body binding gives this route's body."""
+        return next(
+            (
+                dtos[binding.type_name]
+                for rule in self.access_rules or ()
+                for binding in rule.request_symbols.values()
+                if binding.part in (None, "body") and binding.type_name in dtos
+            ),
+            None,
+        )
 
 
 @dataclass(frozen=True)

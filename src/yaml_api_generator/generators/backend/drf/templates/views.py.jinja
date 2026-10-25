@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from drf_spectacular.utils import extend_schema
 from api.conflicts import ConflictError
 {% set crud_op_names = ["list", "get", "create", "update", "replace", "delete"] %}
@@ -16,6 +16,10 @@ from api.conflicts import ConflictError
 {% endfor %}
 {% if ns.needs_models %}
 from api.serializers.{{ collection_name }} import {{ ns.model_imports | join(", ") }}
+{% endif %}
+{% set dto_imports = crud_routes | selectattr("typed_body_model") | map(attribute="typed_body_model") | unique | list %}
+{% if dto_imports %}
+from api.serializers._dto import {{ dto_imports | join(", ") }}
 {% endif %}
 from api.repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 {% set ns_where = namespace(collections=[]) %}
@@ -76,7 +80,7 @@ from api.authentication.auth import resolve_principal, _principal_has_role
 {% macro pre_fetch_check(route) %}
 {% if route.needs_auth %}
         db = get_database()
-        _resolved_principal = resolve_principal(request, db)
+        _resolved_principal = await resolve_principal(request, db)
         if _resolved_principal is None:
             return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
 {% if route.access_rules %}
@@ -162,11 +166,11 @@ class {{ class_name }}ListView(APIView):
             return Response(documents)
 {% endif %}
 {% elif route.operation == "create" %}
-            serializer = {{ route.body_model }}(data=request.data)
+            serializer = {{ route.typed_body_model or route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
             document = await service.create(data)
-            return Response(document, status=status.HTTP_201_CREATED)
+            return Response(document)
 {% endif %}
         except NotFoundError:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -248,7 +252,7 @@ class {{ class_name }}DetailView(APIView):
 {{ post_fetch_check(route, "result") | indent(4, true) }}
             return Response(result)
 {% elif route.operation == "update" %}
-            serializer = {{ route.body_model }}(data=request.data)
+            serializer = {{ route.typed_body_model or route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route is needs_post_fetch %}
@@ -266,7 +270,7 @@ class {{ class_name }}DetailView(APIView):
 {% endif %}
             return Response(result)
 {% elif route.operation == "replace" %}
-            serializer = {{ route.body_model }}(data=request.data)
+            serializer = {{ route.typed_body_model or route.body_model }}(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
 {% if route is needs_post_fetch %}

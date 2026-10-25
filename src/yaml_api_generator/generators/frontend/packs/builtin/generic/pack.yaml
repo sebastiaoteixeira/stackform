@@ -370,6 +370,8 @@ scaffold:
   - config.ts
   - records.ts
   - auth.tsx
+  - fields.ts
+  - useRecordForm.ts
   - index.css
   - tailwind.config.js
   - postcss.config.js

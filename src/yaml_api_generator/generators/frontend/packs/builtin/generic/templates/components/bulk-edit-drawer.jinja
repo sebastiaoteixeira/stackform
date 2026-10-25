@@ -1,7 +1,9 @@
+{% from 'macros/field_input.jinja' import field_control %}
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../__generated__/App';
 import { callOperation, displayValue, listRecords } from '../__generated__/records';
+import { ENTITY_FIELDS, FormValues, formValues, payload } from '../__generated__/fields';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -21,9 +23,7 @@ interface {{ entity.name | pascal_case }} {
 {% set other_fields = editable_fields | rejectattr('name', 'in', role_names) | list %}
 {% set display_fields = (role_fields + other_fields)[:4] %}
 
-interface BulkPatch {
-  [field: string]: string;
-}
+const FIELDS = ENTITY_FIELDS[{{ entity.name | tojson }}];
 
 export default function {{ view.name | pascal_case }}() {
   const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
@@ -32,7 +32,7 @@ export default function {{ view.name | pascal_case }}() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [enabledFields, setEnabledFields] = useState<Set<string>>(new Set());
-  const [patch, setPatch] = useState<BulkPatch>({});
+  const [patch, setPatch] = useState<FormValues>(() => formValues(FIELDS));
   const [applying, setApplying] = useState(false);
   const { token } = useAuth();
   const navigate = useNavigate();
@@ -66,34 +66,28 @@ export default function {{ view.name | pascal_case }}() {
       return next;
     });
 
+  const setPatchValue = (name: string, value: unknown) => setPatch(prev => ({ ...prev, [name]: value }));
+
   const applyBulkEdit = async () => {
-    const activePatch = Object.fromEntries(
-      Object.entries(patch).filter(([k]) => enabledFields.has(k))
-    );
-    if (Object.keys(activePatch).length === 0) return;
+    const enabled = Object.fromEntries(Object.entries(FIELDS).filter(([name]) => enabledFields.has(name)));
+    const body = JSON.stringify(payload(enabled, patch));
+    if (body === '{}') return;
 
     setApplying(true);
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    await Promise.all([...selectedIds].map(id =>
-      callOperation('{{ entity.name }}', 'update', {
-        id,
-        headers,
-        body: JSON.stringify(activePatch),
-      })
+    const updated: {{ entity.name | pascal_case }}[] = await Promise.all([...selectedIds].map(id =>
+      callOperation('{{ entity.name }}', 'update', { id, headers, body })
+        .then(res => (res.ok ? res.json() : null))
     ));
+    const updatedById = new Map(updated.filter(Boolean).map(item => [item.{{ entity.pk_field }}, item]));
 
-    // Optimistically update local state
-    setItems(prev => prev.map(item =>
-      selectedIds.has(item.{{ entity.pk_field }})
-        ? { ...item, ...activePatch }
-        : item
-    ));
+    setItems(prev => prev.map(item => updatedById.get(item.{{ entity.pk_field }}) ?? item));
     setApplying(false);
     setDrawerOpen(false);
     setEnabledFields(new Set());
-    setPatch({});
+    setPatch(formValues(FIELDS));
     setSelectedIds(new Set());
   };
 
@@ -224,26 +218,9 @@ export default function {{ view.name | pascal_case }}() {
                   {{ field.name | title }}
                 </label>
                 {enabledFields.has('{{ field.name }}') && (
-                  {% if field.type == 'enum' and field.options %}
-                  <select
-                    value={patch['{{ field.name }}'] ?? ''}
-                    onChange={e => setPatch(p => ({ ...p, '{{ field.name }}': e.target.value }))}
-                    className="w-full wf-input text-sm"
-                  >
-                    <option value="">— keep —</option>
-                    {% for opt in field.options %}
-                    <option value="{{ opt }}">{{ opt }}</option>
-                    {% endfor %}
-                  </select>
-                  {% else %}
-                  <input
-                    value={patch['{{ field.name }}'] ?? ''}
-                    onChange={e => setPatch(p => ({ ...p, '{{ field.name }}': e.target.value }))}
-                    placeholder="New value..."
-                    type="{% if field.type == 'number' %}number{% elif field.type == 'boolean' %}text{% else %}text{% endif %}"
-                    className="w-full wf-input text-sm"
-                  />
-                  {% endif %}
+                  <div className="wf-input">
+                    {{ field_control(field, 'patch', 'setPatchValue', 'bulk-' ~ field.name) }}
+                  </div>
                 )}
               </div>
               {% endfor %}

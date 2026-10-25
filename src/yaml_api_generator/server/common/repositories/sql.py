@@ -252,17 +252,9 @@ class SQLRepository(BaseRepository):
     async def update(
         self, collection_name: str, document_id: str, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        table = self._table(collection_name)
-        values = self._known_columns(collection_name, payload, drop_id=True)
-        with _as_conflict():
-            async with await self._begin() as conn:
-                result = await conn.execute(
-                    sa.update(table)
-                    .where(self._id_column(collection_name) == document_id)
-                    .values(**values)
-                    .returning(table)
-                )
-                return self._one(result)
+        return await self.update_by(
+            collection_name, {self._id_fields[collection_name]: document_id}, payload
+        )
 
     async def replace(
         self, collection_name: str, document_id: str, payload: dict[str, Any]

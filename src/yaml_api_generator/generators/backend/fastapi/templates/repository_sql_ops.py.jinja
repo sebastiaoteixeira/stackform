@@ -247,17 +247,8 @@ class CreateOp:
 
 
 class UpdateOp:
-    @_translate_conflict
     async def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        values = self._known(data, drop_id=True)
-        async with self._engine.begin() as conn:
-            result = await conn.execute(
-                sa.update(self.TABLE)
-                .where(self._id_col() == document_id)
-                .values(**values)
-                .returning(self.TABLE)
-            )
-            return self._one(result)
+        return await self.update_by({self.ID_FIELD: document_id}, data)
 
 
 class ReplaceOp:

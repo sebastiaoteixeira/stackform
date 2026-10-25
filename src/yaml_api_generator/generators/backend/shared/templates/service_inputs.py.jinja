@@ -1,6 +1,7 @@
-from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
+
+from {{ fields_module }} import conform_inputs
 
 
 class RawRequest:
@@ -35,12 +36,14 @@ def prepare_service_inputs(
     forwarding: dict[str, dict[str, Any]],
     bound_inputs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    values = {
-        **(body if isinstance(body, dict) else {}),
-        **path_values,
-        **(bound_inputs or {}),
-    }
-    _validate(values, field_configs)
+    values = conform_inputs(
+        field_configs,
+        {
+            **(body if isinstance(body, dict) else {}),
+            **path_values,
+            **(bound_inputs or {}),
+        },
+    )
     return {
         name: _resolve(binding, values)
         for name, binding in forwarding.items()
@@ -77,68 +80,3 @@ def _resolve_path(path: list[str], values: dict[str, Any]) -> Any:
             return None
         current = current[segment]
     return current
-
-
-def _validate(
-    values: dict[str, Any], field_configs: dict[str, dict[str, Any]]
-) -> None:
-    missing = [
-        name
-        for name, config in field_configs.items()
-        if config.get("required", True) and name not in values
-    ]
-    if missing:
-        raise ValueError(f"Missing required inputs: {', '.join(missing)}")
-    for name, config in field_configs.items():
-        if name not in values or (
-            values[name] is None and not config.get("required", True)
-        ):
-            continue
-        _validate_value(name, values[name], config)
-
-
-def _validate_value(name: str, value: Any, config: dict[str, Any]) -> None:
-    field_type = config.get("type", "string")
-    if field_type in ("string", "ref"):
-        if not isinstance(value, str):
-            raise ValueError(f"Field '{name}' must be a string")
-        _validate_length(name, value, config)
-    elif field_type == "number":
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"Field '{name}' must be a number")
-        _validate_range(name, value, config)
-    elif field_type == "boolean" and not isinstance(value, bool):
-        raise ValueError(f"Field '{name}' must be a boolean")
-    elif field_type == "datetime":
-        if not isinstance(value, str):
-            raise ValueError(f"Field '{name}' must be a datetime string")
-        try:
-            datetime.fromisoformat(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"Field '{name}' is not a valid ISO datetime") from exc
-    elif field_type == "enum" and config.get("values") is not None:
-        if value not in config["values"]:
-            choices = ", ".join(str(item) for item in config["values"])
-            raise ValueError(f"Field '{name}' must be one of: {choices}")
-    elif field_type == "array" and not isinstance(value, list):
-        raise ValueError(f"Field '{name}' must be an array")
-    elif field_type == "object" and not isinstance(value, dict):
-        raise ValueError(f"Field '{name}' must be an object")
-
-
-def _validate_length(name: str, value: str, config: dict[str, Any]) -> None:
-    minimum = config.get("minLength")
-    maximum = config.get("maxLength")
-    if minimum is not None and len(value) < minimum:
-        raise ValueError(f"Field '{name}' must have at least {minimum} characters")
-    if maximum is not None and len(value) > maximum:
-        raise ValueError(f"Field '{name}' must have at most {maximum} characters")
-
-
-def _validate_range(name: str, value: float, config: dict[str, Any]) -> None:
-    minimum = config.get("min")
-    maximum = config.get("max")
-    if minimum is not None and value < minimum:
-        raise ValueError(f"Field '{name}' must be >= {minimum}")
-    if maximum is not None and value > maximum:
-        raise ValueError(f"Field '{name}' must be <= {maximum}")

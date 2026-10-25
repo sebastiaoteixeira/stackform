@@ -3,6 +3,8 @@ import pathlib
 import pytest
 
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
+from yaml_api_generator.server.common.loader import build_registry
+from yaml_api_generator.server.common.repositories.mongodb import MongoRepository
 from tests.conftest import INVALID_DIR, VALID_DIR
 
 EXAMPLES_DIR = pathlib.Path(__file__).parent.parent.parent / "examples" / "valid"
@@ -28,6 +30,12 @@ def test_v01_blog_collections_parsed() -> None:
     assert "replace" not in posts_ops
     users_ops = {r.operation for r in ir.routes if r.collection == "users"}
     assert "delete" in users_ops
+
+
+def test_v01_mongo_block_is_the_default_datastore() -> None:
+    ir = load_and_generate_ir(str(EXAMPLES_DIR / "blog.yaml")).ir
+    assert ir.datastores == {ir.default_datastore: ir.mongo}
+    assert isinstance(build_registry(ir).for_collection("posts"), MongoRepository)
 
 
 # --- Test 126: ID field extraction edge cases ---

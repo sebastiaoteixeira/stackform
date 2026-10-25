@@ -27,7 +27,6 @@ UNENFORCED = {
     "maxPageSize": "0.1 api.pagination",
     "enableStandard": "0.1 security.headers (D16)",
     "softDelete": "0.1 collections (D19)",
-    "additionalProperties": "object field option",
 }
 
 # Read by an external tool from a block the generator copies verbatim.
