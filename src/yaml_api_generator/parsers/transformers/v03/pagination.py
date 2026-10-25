@@ -101,6 +101,8 @@ def parse_pagination(
     sort, sort_errors = _parse_sort(raw.get("sort"), collection, f"{path}.sort")
     errors.extend(sort_errors)
 
+    if strategy == "offset" and sort and collection is not None:
+        sort = _broken_ties(sort, collection)
     if strategy == "keyset":
         errors.extend(_validate_keyset(sort, collection, path))
         if not size_errors and size.default == 0:
@@ -200,6 +202,13 @@ def _parse_sort(
             continue
         keys.append(IRSortKey(field=field, dir=direction))
     return tuple(keys), errors
+
+
+def _broken_ties(sort: tuple[IRSortKey, ...], collection: IRCollection) -> tuple[IRSortKey, ...]:
+    """`sort` ending on a unique field, so offset pages never share or skip rows with tied values."""
+    if _is_unique(collection, sort[-1].field):
+        return sort
+    return (*sort, IRSortKey(field=collection.idField))
 
 
 def _validate_keyset(

@@ -468,6 +468,17 @@ def test_keyset_pagination_parsed_with_sort(tmp_path):
     assert pagination.sort == (IRSortKey("score", "desc"), IRSortKey("id", "asc"))
 
 
+@pytest.mark.parametrize(
+    ("sort", "expected"),
+    [
+        ("[{ field: score, dir: desc }]", (IRSortKey("score", "desc"), IRSortKey("id", "asc"))),
+        ("[{ field: score }, { field: slug }]", (IRSortKey("score", "asc"), IRSortKey("slug", "asc"))),
+    ],
+)
+def test_offset_sort_ends_on_a_unique_field(tmp_path, sort, expected):
+    ir = _load(tmp_path, f"strategy: offset\nsize: {{ default: 20, max: 100 }}\nsort: {sort}")
+    assert _list_route(ir).pagination.sort == expected
+
 def test_reserved_strategies_rejected(tmp_path):
     for reserved in ("cursor", "range"):
         extra = "sort:\n  - { field: id }" if reserved == "cursor" else '"on": score'
