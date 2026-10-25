@@ -18,6 +18,11 @@ ENTRY_POINTS = {
     "raw": ["app.py"],
     "drf": ["manage.py", "runserver", "--noreload"],
 }
+INTERPRETERS = {
+    "fastapi": sys.executable,
+    "raw": sys.executable,
+    "drf": os.environ.get("YAML_API_TEST_DRF_PYTHON"),
+}
 
 
 def _free_port() -> int:
@@ -37,6 +42,8 @@ def _first_response(port: int, server: subprocess.Popen, timeout: float = 30) ->
 
 @pytest.mark.parametrize("target", ENTRY_POINTS)
 def test_entry_point_serves_api_port(tmp_path, target):
+    if INTERPRETERS[target] is None:
+        pytest.skip(f"no interpreter with the {target} requirements is set")
     port = _free_port()
     spec = write_spec(tmp_path, f"""
         version: "0.3"
@@ -53,7 +60,7 @@ def test_entry_point_serves_api_port(tmp_path, target):
     """)
     backend = generate(spec, target)
     server = subprocess.Popen(
-        [sys.executable, *ENTRY_POINTS[target]],
+        [INTERPRETERS[target], *ENTRY_POINTS[target]],
         cwd=backend,
         env={**os.environ, "DJANGO_SECRET_KEY": "test-secret", "JWT_SECRET": "test-jwt-secret-0123456789abcdef0123456789"},
         stdout=subprocess.DEVNULL,
