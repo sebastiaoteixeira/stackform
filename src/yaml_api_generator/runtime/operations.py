@@ -9,7 +9,7 @@ are hidden.
 
 from typing import Any
 
-_HIDDEN_FIELDS = ("_auth", "password")
+_HIDDEN_FIELDS = ("_auth", "password", "apiKey")
 
 
 def resolve(value: Any, bindings: dict[str, Any]) -> Any:

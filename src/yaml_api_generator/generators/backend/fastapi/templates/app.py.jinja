@@ -90,18 +90,6 @@ async def _file_handler(_: Request, exc: FileError) -> JSONResponse:
 
 {% endif %}
 
-{% if ctx.app.cors %}
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins={{ ctx.app.cors.origins }},
-    allow_methods={{ ctx.app.cors.methods }},
-    allow_headers={{ ctx.app.cors.headers }},
-    allow_credentials={{ ctx.app.cors.credentials }},
-)
-{% endif %}
-
 {% if ctx.auth.has_idp_auth %}
 import logging as _logging
 
@@ -144,6 +132,24 @@ class _CsrfMiddleware(_CsrfBase):
         return await call_next(request)
 
 app.add_middleware(_CsrfMiddleware)
+{% endif %}
+
+{% if ctx.app.cors %}
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins={{ ctx.app.cors.origins }},
+    allow_methods={{ ctx.app.cors.methods }},
+    allow_headers={{ ctx.app.cors.headers }},
+    allow_credentials={{ ctx.app.cors.credentials }},
+)
+{% endif %}
+
+{% if ctx.app.security_headers %}
+from dependencies.security_headers import SecurityHeadersMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
 {% endif %}
 
 app.include_router(api_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")

@@ -152,23 +152,23 @@ class V02Transformer:
         if dto_errors:
             raise ConfigErrors(dto_errors)
 
-        mongo_config = resolved.get("mongo", {})
+        api = self._route.build_api(api_data)
         return IRDocument(
             version=str(resolved["version"]),
-            api=self._route.build_api(api_data),
+            api=api,
             collections=collections,
             routes=sorted(routes, key=attrgetter("precedence")),
             identityCollections=identity_collections,
             dtos=dtos,
             services=services,
             service_bases=self._route.transform_service_bases(services_data, import_map),
-            mongo=self._route.build_mongo(mongo_config),
+            mongo=self._route.build_mongo(resolved.get("mongo", {})),
             datastores=datastores,
             default_datastore=default_datastore,
             file_stores=file_stores,
             default_file_store=default_file_store,
             file_routes=file_routes,
-            deploy=self._route.build_deploy(resolved.get("deploy"), mongo_config, providers, datastores),
+            deploy=self._route.build_deploy(resolved.get("deploy"), api, providers, datastores),
             repositories=repositories,
             providers=providers,
             policies=policies,

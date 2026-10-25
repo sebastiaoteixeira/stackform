@@ -102,6 +102,8 @@ def _limit(config: dict[str, Any], query: dict[str, Any]) -> int:
     requested = _integer(query, "limit")
     if requested is None:
         return config["size"]["default"]
+    if requested == 0:
+        raise InvalidPageRequestError("limit")
     maximum = config["size"]["max"]
     if requested > maximum:
         if config["on_overflow"] == "reject":
@@ -152,8 +154,6 @@ def map_request(config: dict[str, Any], query: dict[str, Any]) -> Primitives:
             sort=sort,
             count=config["count"],
         )
-    if limit == 0:
-        raise InvalidPageRequestError("limit")
     bounds: tuple[Bound, ...] = ()
     after = _scalar(query.get("after"))
     if after:

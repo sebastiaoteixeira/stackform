@@ -343,6 +343,15 @@ class IdentityCollectionDescriptor:
     id_format: str = "uuidv7"
     login: bool = True
     default_role: str | None = None
+    declared_login_path: str | None = None
+
+    @property
+    def login_path(self) -> str:
+        return self.declared_login_path or f"/{self.name}/login"
+
+    @property
+    def refresh_path(self) -> str:
+        return f"{self.login_path.removesuffix('/login')}/refresh"
 
     @property
     def is_sql(self) -> bool:
@@ -442,6 +451,7 @@ class AppConfig:
     api_version: str | None
     cors: CorsConfig | None = None
     port: int = 8000
+    security_headers: bool = True
 
 
 @dataclass(frozen=True)

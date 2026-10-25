@@ -23,7 +23,7 @@ def cli():
 def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | None, target: str, output_json: bool):
     """Build backend, frontend, deploy, or all."""
     from pathlib import Path
-    from .compiler import compile_project
+    from .compiler import backend_generator, compile_project
     from ..parsers.yaml_parser import ConfigErrors, load_and_generate_ir
     from ..generators.frontend.generator import generate_frontend
     from ..generators.frontend.packs.loader import load_pack
@@ -86,6 +86,7 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | 
             else:
                 generate_deploy(
                     ir=result.ir,
+                    application=backend_generator(target).asgi_application,
                     host="localhost",
                     ssh_user="ubuntu",
                     ssh_key="~/.ssh/id_rsa",
@@ -104,49 +105,44 @@ def build(yaml_file: str, what: str, schema_file: str | None, output_dir: str | 
 @click.argument("yaml_file", type=click.Path(exists=True))
 @click.option("-s", "--schema", "schema_file", type=click.Path(exists=True), help="JSON schema file")
 @click.option("--host", default="127.0.0.1", help="Host to bind")
-@click.option("-p", "--port", default=8000, type=int, help="Port to bind")
+@click.option("-p", "--port", type=click.IntRange(1, 65535), help="Port to bind (default: api.port)")
 @click.option("--raw", is_flag=True, help="Use raw ASGI runner")
 @click.option("-r", "--reload", is_flag=True, help="Reload the app when the spec changes")
 @click.option("--json", "output_json", is_flag=True, help="Output errors in JSON")
-def run(yaml_file: str, schema_file: str | None, host: str, port: int, raw: bool, reload: bool, output_json: bool):
+def run(yaml_file: str, schema_file: str | None, host: str, port: int | None, raw: bool, reload: bool, output_json: bool):
     """Run development server."""
     import uvicorn
 
-    from ..parsers.yaml_parser import ConfigErrors
+    from ..parsers.yaml_parser import ConfigErrors, load_and_generate_ir
     from ..server import build_app, build_raw_app
     from ..server.factory import RAW_ENV, SCHEMA_ENV, SPEC_ENV
 
-    if reload:
-        import os
-        from pathlib import Path
-
-        os.environ[SPEC_ENV] = yaml_file
-        os.environ[RAW_ENV] = "1" if raw else "0"
-        if schema_file:
-            os.environ[SCHEMA_ENV] = schema_file
-        uvicorn.run(
-            "yaml_api_generator.server.factory:create_app",
-            factory=True,
-            reload=True,
-            reload_dirs=[str(Path(yaml_file).parent)],
-            reload_includes=["*.yaml", "*.yml"],
-            host=host,
-            port=port,
-        )
-        return
-
     try:
-        app = (
-            build_raw_app(yaml_file, schema_file)
-            if raw
-            else build_app(yaml_file, schema_file)
-        )
+        port = port or load_and_generate_ir(yaml_file, schema_file).ir.api.port
+        if reload:
+            import os
+            from pathlib import Path
+
+            os.environ[SPEC_ENV] = yaml_file
+            os.environ[RAW_ENV] = "1" if raw else "0"
+            if schema_file:
+                os.environ[SCHEMA_ENV] = schema_file
+            uvicorn.run(
+                "yaml_api_generator.server.factory:create_app",
+                factory=True,
+                reload=True,
+                reload_dirs=[str(Path(yaml_file).parent)],
+                reload_includes=["*.yaml", "*.yml"],
+                host=host,
+                port=port,
+            )
+        else:
+            build = build_raw_app if raw else build_app
+            uvicorn.run(build(yaml_file, schema_file), host=host, port=port)
     except ConfigErrors as error:
         handle_config_errors(error, yaml_file, "json" if output_json else "human")
     except OSError as error:
         handle_generic_error(error)
-
-    uvicorn.run(app, host=host, port=port)
 
 
 @cli.command()

@@ -13,7 +13,7 @@ from .inheritance import (
     route_operations,
     service_base_class,
 )
-from .utils import extract_identity_fields, find_identity
+from .utils import identity_service_context
 
 
 class SharedLayersGenerator(TemplateBasedGenerator):
@@ -54,14 +54,11 @@ class SharedLayersGenerator(TemplateBasedGenerator):
             ))
 
     def _service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
         base = context.service_base(col_name)
         return {
             "collection_name": col_name,
             "is_async": True,
-            "is_identity_collection": identity is not None,
-            "password_via": identity is not None and identity.has_password,
-            "identity_fields": extract_identity_fields(context, col_name),
+            **identity_service_context(context, col_name),
             "module_prefix": self.module_prefix,
             "auth_module": self.auth_module,
             "custom_operations": own_service_operations(route_operations(col_data), base),

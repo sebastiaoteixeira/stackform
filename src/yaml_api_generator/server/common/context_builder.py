@@ -31,7 +31,7 @@ def build_runtime_context(document: IRDocument) -> RuntimeContext:
 
     session = RuntimeSessionConfig(
         algorithm=document.session.algorithm,
-        ttl=document.session.ttl,
+        ttl=document.session.access_ttl,
         refresh=document.session.refresh,
         delivery=document.session.delivery,
     )

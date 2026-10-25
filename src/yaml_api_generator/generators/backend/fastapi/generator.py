@@ -14,15 +14,16 @@ from ..inheritance import (
     service_base_class,
 )
 from ..utils import (
-    extract_identity_fields,
     find_identity,
     group_by_collection,
+    identity_service_context,
     pagination_config,
     runtime_module_source,
     write_environment_files,
     write_runtime_modules,
 )
 from ..validation import (
+    reject_session_refresh_without_mongo,
     reject_unsigned_session_algorithm,
     validate_datastore_layout,
 )
@@ -50,6 +51,7 @@ def _crud_operations(col_data: dict) -> list[str]:
 class FastAPIGenerator(TemplateBasedGenerator):
     def generate(self, context: CompileContext, output_dir: Path) -> None:
         validate_datastore_layout(context, "fastapi")
+        reject_session_refresh_without_mongo(context)
         reject_unsigned_session_algorithm(context)
         env = template_environment(_TEMPLATES_DIR, _SHARED_TEMPLATES_DIR)
         env.filters["capitalize_collection"] = to_pascal_case
@@ -176,57 +178,27 @@ class FastAPIGenerator(TemplateBasedGenerator):
             (output_dir / "services" / f"{base.name}.py").write_text(template.render(
                 collection_name=base.name,
                 operations=[],
-                is_identity_collection=False,
-                password_via=False,
+                **identity_service_context(context, base.name),
                 custom_operations=own_service_operations(base.operations, parent),
                 generated_base=service_base_class(parent),
             ))
 
     def _build_service_context(self, col_name: str, col_data: dict, context: CompileContext) -> dict:
-        identity = find_identity(context, col_name)
-        is_identity = identity is not None
         base = context.service_base(col_name)
-
         return {
             "collection_name": col_name,
             "operations": _crud_operations(col_data),
             "custom_operations": own_service_operations(route_operations(col_data), base),
             "generated_base": service_base_class(base),
-            "is_identity_collection": is_identity,
-            "password_via": is_identity and identity.has_password,
-            "identity_fields": extract_identity_fields(context, col_name),
+            **identity_service_context(context, col_name),
         }
-
-    @staticmethod
-    def _service_group(route_service: str | None, services: dict) -> str | None:
-        """Resolve the repository/service-group name backing a route's service.
-
-        For expanded flat keys like 'list-posts', the IRService carries the
-        repository name directly. Falling back to the part after the first dash
-        handles edge cases where the service isn't in the index.
-        """
-        if route_service is None:
-            return None
-        ir_svc = services.get(route_service)
-        if ir_svc is not None and ir_svc.repository:
-            return ir_svc.repository
-        # Fallback: strip the operation prefix (e.g. "list-posts" → "posts")
-        if "-" in route_service:
-            return route_service.split("-", 1)[1]
-        return route_service
 
     def _build_routes_context(
         self, col_name: str, col_data: dict, ctx: CompileContext
     ) -> dict:
-        service_groups = list(dict.fromkeys(
-            g
-            for route in col_data["routes"]
-            if (g := self._service_group(route.service, ctx.services)) is not None
-        ))
         return {
             "ctx": ctx,
             "collection_name": col_name,
-            "service_groups": service_groups,
             "routes": col_data["routes"],
             "model_index": {m.name: m for m in col_data["models"]},
             "auth": ctx.auth,
@@ -443,6 +415,7 @@ class FastAPIGenerator(TemplateBasedGenerator):
             "handler_requests",
             *(("ids", "mongo_operations") if uses_mongo else ()),
             *(("sql_operations",) if uses_sql else ()),
+            *(("security_headers",) if context.app.security_headers else ()),
         ))
         self._render_file_dependencies(env, context, deps_dir)
 

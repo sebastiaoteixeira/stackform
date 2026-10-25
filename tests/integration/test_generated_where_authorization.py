@@ -511,7 +511,11 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
         spectacular_utils.extend_schema = extend_schema
         auth_module._principal_has_role = lambda principal, role: role in principal.get("roles", [])
         auth_module.ROLE_HIERARCHIES = {{}}
-        auth_module.resolve_principal = lambda request, database: None
+
+        async def anonymous(headers, database):
+            return None
+
+        auth_module.resolve_principal = anonymous
         auth_module.hash_password = lambda password: password
         mongodb_module.get_database = lambda: None
         sys.modules.update({{
@@ -566,10 +570,10 @@ def test_generated_drf_enforces_where_per_rule(tmp_path):
             "reports": Collection([{{"id": "r1", "organizationId": "org-1", "title": "visible"}}]),
         }}
         views.get_database = lambda: db
-        async def principal(request, database):
+        async def member(headers, database):
             return {{"sub": "u1", "identity_collection": "users", "roles": []}}
 
-        views.resolve_principal = principal
+        views.resolve_principal = member
         handler_views.get_database = lambda: db
         handler_views.resolve_principal = principal
         request = SimpleNamespace(data={{}}, body=b"", query_params={{}}, headers={{}}, COOKIES={{}})

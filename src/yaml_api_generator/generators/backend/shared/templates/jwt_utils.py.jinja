@@ -91,7 +91,7 @@ def _decode(token: str) -> dict | None:
 def create_jwt_token(sub: str, identity_collection: str) -> str:
     return _encode(
         {"sub": sub, "identity_collection": identity_collection},
-        {% if ctx.session.refresh %}settings.JWT_ACCESS_TTL_SECONDS{% else %}settings.JWT_EXPIRATION_HOURS * 3600{% endif %},
+        {% if ctx.session.ttl is none %}settings.JWT_EXPIRATION_HOURS * 3600{% else %}settings.JWT_ACCESS_TTL_SECONDS{% endif %},
     )
 
 

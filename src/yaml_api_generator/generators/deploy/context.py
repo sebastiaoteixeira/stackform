@@ -25,8 +25,7 @@ class DeployContext:
     name: str
     port: int
     runtime: str
-    mongo_local: bool
-    mongo_db: str
+    application: str
     env_vars: dict[str, str]
     has_auth: bool
     has_frontend: bool
@@ -34,6 +33,14 @@ class DeployContext:
     ssh_user: str
     ssh_key: str
     datastores: tuple[DeployDatastore, ...] = ()
+
+    @property
+    def local_datastores(self) -> tuple[DeployDatastore, ...]:
+        return tuple(ds for ds in self.datastores if ds.local)
+
+    @property
+    def local_mongo(self) -> bool:
+        return any(ds.type == "mongodb" for ds in self.local_datastores)
 
 
 @dataclass(frozen=True)

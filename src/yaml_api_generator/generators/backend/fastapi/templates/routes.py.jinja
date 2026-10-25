@@ -39,9 +39,7 @@ from dependencies.file_stores import record_files
 {% if operation_routes %}
 from dependencies.handler_requests import HandlerRequest
 {% endif %}
-{% for group in service_groups %}
-from dependencies.services import get_{{ group }}_service
-{% endfor %}
+from dependencies.services import get_{{ collection_name }}_service
 {% for where_collection in ns_where.collections %}
 from dependencies.repositories import get_{{ where_collection }}_repository
 {% endfor %}
@@ -98,7 +96,7 @@ _files = record_files[{{ collection_name | tojson }}]
 
 {% macro openapi_extra(route, request_body=none) %}{% set security = route.needs_auth and security_schemes %}{% if security or request_body %}, openapi_extra={{ "{" }}{% if security %}"security": {{ security_schemes }}{% endif %}{% if security and request_body %}, {% endif %}{% if request_body %}"requestBody": {{ request_body }}{% endif %}{{ "}" }}{% endif %}{% endmacro %}
 {% macro auth_param(route) %}{% if auth.enabled and route.needs_auth %}, principal: dict[str, Any]{{ " | None" if route.admits_anonymous }} = Depends({{ route | principal_dependency }}){% endif %}{% endmacro %}
-{% macro svc_dep() %}svc=Depends(get_{{ service_groups | first }}_service){% endmacro %}
+{% macro svc_dep() %}svc=Depends(get_{{ collection_name }}_service){% endmacro %}
 {% macro extra_path_params(route) %}{% for name in route.path_params if name != route.record_id_param %}, {{ name }}: str{% endfor %}{% endmacro %}
 {% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": {{ param }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% macro path_values(route) %}{{ "{" }}{% for name in route.path_params %}"{{ name }}": {{ name }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}

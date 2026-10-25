@@ -3,8 +3,9 @@ from yaml_api_generator.parsers.transformers.auth_validation import (
 )
 
 
-def _codes(entities: dict) -> set[str]:
-    return {error.code for error in validate_spec_auth({"entities": entities})}
+def _codes(entities: dict, providers: dict | None = None) -> set[str]:
+    spec = {"entities": entities, "providers": providers or {}}
+    return {error.code for error in validate_spec_auth(spec)}
 
 
 def _auth_entity(auth: dict, fields: dict | None = None) -> dict:
@@ -94,4 +95,19 @@ def test_non_auth_entity_ignored():
 
 def test_oidc_only_via_needs_no_identifier():
     entities = {"user": _auth_entity({"via": ["oidc"]})}
-    assert _codes(entities) == set()
+    assert _codes(entities, {"oidc": {"type": "oidc"}}) == set()
+
+
+# ---- AUTH_VIA_UNKNOWN_PROVIDER ----
+
+def test_via_undeclared_provider_rejected():
+    entities = {"user": _auth_entity({"via": ["keycloak"]})}
+    assert _codes(entities) == {"AUTH_VIA_UNKNOWN_PROVIDER"}
+
+
+def test_via_undeclared_provider_rejected_in_v01_collections():
+    spec = {"collections": {"user": _auth_entity({"via": ["keycloak"], "identifier": "id"})}}
+    errors = validate_spec_auth(spec, "collections")
+    assert [(e.code, e.path) for e in errors] == [
+        ("AUTH_VIA_UNKNOWN_PROVIDER", "collections.user.auth.via")
+    ]

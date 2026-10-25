@@ -37,7 +37,7 @@ from yaml_api_generator.ir.when import (
     NotEquals,
     StringLiteral,
 )
-from yaml_api_generator.server.common.auth.password import hash_password
+from yaml_api_generator.server.common.auth import hash_api_key, hash_password
 
 
 TOKENS = SymmetricSessionTokens("test-secret-at-least-thirty-two-bytes")
@@ -242,7 +242,7 @@ class TestResolvePrincipalStep:
                     {
                         "id": "c1",
                         "clientId": "myclient",
-                        "_auth": {"apiKey": "ak123"},
+                        "apiKey": hash_api_key("ak123"),
                     }
                 ]
             }
@@ -273,7 +273,7 @@ class TestResolvePrincipalStep:
                     {
                         "id": "c1",
                         "clientId": "myclient",
-                        "_auth": {"apiKey": "ak123"},
+                        "apiKey": hash_api_key("ak123"),
                     }
                 ]
             }
@@ -488,7 +488,7 @@ class TestResolvePrincipalStep:
                 "clients": [
                     {
                         "id": "c1",
-                        "_auth": {"apiKey": "ak123"},
+                        "apiKey": hash_api_key("ak123"),
                     }
                 ]
             }

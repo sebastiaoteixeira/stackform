@@ -1,12 +1,4 @@
-{% set creates_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
-{% if creates_indexes %}
-import asyncio
-
-{% endif %}
 from django.apps import AppConfig
-
-from api.authentication.mongodb import {% if creates_indexes %}close_db, connect_db, initialize_indexes{% else %}connect_db{% endif %}
-
 
 
 class ApiConfig(AppConfig):
@@ -14,16 +6,5 @@ class ApiConfig(AppConfig):
     name = "api"
 
     def ready(self):
-{% if creates_indexes %}
-        asyncio.run(self.create_indexes())
-{% endif %}
+        from api.authentication.mongodb import connect_db
         connect_db()
-{% if creates_indexes %}
-
-    @staticmethod
-    async def create_indexes():
-        """Runs on a client of its own: an async client stays bound to the event loop it first ran on."""
-        connect_db()
-        await initialize_indexes({{ ctx.mongo_unique_indexes | tojson }})
-        await close_db()
-{% endif %}

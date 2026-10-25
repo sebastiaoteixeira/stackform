@@ -122,6 +122,7 @@ class GeneratorContext:
     api_name: str
     api_version: str
     base_url: str
+    api_port: int
     collections: dict[str, UICollection]
     components: dict[str, UIComponent]
     views: dict[str, UIView]

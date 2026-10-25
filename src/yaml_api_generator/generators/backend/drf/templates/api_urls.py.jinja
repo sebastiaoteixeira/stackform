@@ -17,7 +17,7 @@ from api.views.login import {{ identity.name | capitalize_collection }}LoginView
 urlpatterns = [
 {% if auth %}
 {% for identity in auth.login_identities %}
-    path("{{ identity.name }}/login", {{ identity.name | capitalize_collection }}LoginView.as_view(), name="{{ identity.name }}-login"),
+    path("{{ identity.login_path.lstrip('/') }}", {{ identity.name | capitalize_collection }}LoginView.as_view(), name="{{ identity.name }}-login"),
 {% endfor %}
 {% endif %}
 {% for view_name in served | map(attribute="view_name") | unique %}

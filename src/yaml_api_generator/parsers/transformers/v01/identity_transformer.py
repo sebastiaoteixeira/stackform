@@ -1,12 +1,14 @@
 """Identity and auth transformation for v0.1 specifications.
 
-Validates auth collections and implicit auth fields.
+Validates auth collections, their roles and implicit auth fields.
 """
 
 from typing import Any, cast
 
 from yaml_api_generator.ir import IRCollection, IRIdentityCollection, IRProviderBinding
-from yaml_api_generator.parsers.yaml_parser import ConfigError
+from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
+
+from ..roles_config import parse_roles_config
 
 
 class IdentityTransformer:
@@ -25,22 +27,30 @@ class IdentityTransformer:
 
         Returns:
             Dictionary of identity collections
+
+        Raises:
+            ConfigErrors: If a role hierarchy is invalid
         """
         identity_collections: dict[str, IRIdentityCollection] = {}
+        errors: list[ConfigError] = []
         for name, collection in collections.items():
             if collection.type != "auth":
                 continue
             collection_data = collections_data.get(name, {})
             identifier, via = self._extract_identity_auth(collection_data)
-            bindings = tuple(
-                IRProviderBinding(provider=p, identifier=identifier or "")
-                for p in via
-                if identifier
-            )
+            roles, roles_errors = parse_roles_config("collections", name, collection_data.get("roles"))
+            errors.extend(roles_errors)
             identity_collections[name] = IRIdentityCollection(
                 name=name,
-                bindings=bindings,
+                bindings=tuple(
+                    IRProviderBinding(provider=p, identifier=identifier or "")
+                    for p in via
+                    if identifier
+                ),
+                roles=roles,
             )
+        if errors:
+            raise ConfigErrors(errors)
         return identity_collections
 
     def validate_implicit_auth_fields(

@@ -26,7 +26,7 @@ class {{ path_routes[0].view_name }}(APIView):
 
     async def {{ route.method | lower }}(self, request, **path_params):
 {% if route.needs_auth %}
-        _resolved_principal = await resolve_principal(request, get_database())
+        _resolved_principal = await resolve_principal(request.headers, get_database())
 {% if not route.admits_anonymous %}
         if _resolved_principal is None:
             return Response(

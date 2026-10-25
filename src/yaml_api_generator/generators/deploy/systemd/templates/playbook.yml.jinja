@@ -2,7 +2,7 @@
   hosts: app
   become: true
   roles:
-    {% if ctx.mongo_local %}
+    {% if ctx.local_mongo %}
     - mongodb
     {% endif %}
     - python

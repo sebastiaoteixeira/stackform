@@ -41,6 +41,7 @@ controllers:
         service: archive
         method: POST
         path: /{postId}/archive
+        access: public
   notifications:
     base_path: /notifications
     routes:
@@ -48,3 +49,4 @@ controllers:
         service: notify
         method: POST
         path: /{postId}
+        access: public

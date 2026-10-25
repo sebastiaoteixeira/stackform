@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, cast
 
-from ..auth import hash_password
+from ..auth import hash_api_key, hash_password
 from ..request_context import RequestContext
 from ..server_context import RuntimeIdentityDescriptor
 from yaml_api_generator.ir.api import IRPagination
@@ -105,6 +105,9 @@ def _prepare_payload(
                 auth_data = {}
             auth_data["passwordHash"] = hash_password(raw_password)
             normalized["_auth"] = auth_data
+
+    if identity is not None and identity.has_api_key and "apiKey" in normalized:
+        normalized["apiKey"] = hash_api_key(normalized["apiKey"])
 
     return normalized
 

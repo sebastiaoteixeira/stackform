@@ -3,6 +3,7 @@
 {% for op in operations %}{% set _ = bases.append((op | capitalize) ~ "Svc") %}{% endfor %}
 {% if is_identity_collection %}{% set _ = bases.append("IdentityFieldsMixin") %}{% endif %}
 {% if password_via %}{% set _ = bases.append("PasswordMixin") %}{% endif %}
+{% if api_key_via %}{% set _ = bases.append("ApiKeyMixin") %}{% endif %}
 {% set ops_bases = bases + ([] if generated_base else ["ServiceBase"]) %}
 {% if ops_bases %}
 from services._ops import {{ ops_bases | join(", ") }}

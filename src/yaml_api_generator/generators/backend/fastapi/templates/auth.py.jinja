@@ -53,6 +53,11 @@ def verify_password(password: str, encoded_hash: str) -> bool:
     return hmac.compare_digest(computed, expected)
 
 
+def hash_api_key(api_key: str) -> str:
+    """API keys are high-entropy, so an unsalted digest keeps them both secret and indexable."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
 def _extract_api_key(headers: dict[str, str]) -> str | None:
     api_key = headers.get("x-api-key")
     if api_key:
@@ -251,7 +256,7 @@ async def resolve_principal(
 {% if identity.has_api_key %}
     token = _extract_api_key(headers)
     if token is not None:
-        doc = await repositories["{{ identity.name }}"].find_by("apiKey", token)
+        doc = await repositories["{{ identity.name }}"].find_by("apiKey", hash_api_key(token))
         if doc is not None:
             subject = doc.get("{{ identity.id_field }}")
             if subject is not None:

@@ -43,7 +43,7 @@ ROUTES: dict[str, list[tuple[re.Pattern[str], Any, bool]]] = {}
 ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ route.handler_name }}, {{ (route.body_model is not none) | py_literal }}))
 {% endfor %}
 {% for identity in ctx.auth.login_identities %}
-ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}, True))
+ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"{{ identity.login_path | path_to_regex }}$"), handle_login_{{ identity.name }}, True))
 {% endfor %}
 {% if ctx.session.uses_asymmetric %}
 ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), handle_jwks, False))
@@ -93,7 +93,7 @@ class ASGIApp:
             k.decode("latin-1"): v.decode("latin-1")
             for k, v in scope.get("headers", [])
         }
-        parsed_query = parse_qs(scope.get("query_string", b"").decode("utf-8"))
+        parsed_query = parse_qs(scope.get("query_string", b"").decode("utf-8"), keep_blank_values=True)
         query = {
             key: values[0] if len(values) == 1 else values
             for key, values in parsed_query.items()
@@ -156,6 +156,24 @@ class ASGIApp:
 
 
 app = ASGIApp()
+{% if ctx.app.cors %}
+
+from starlette.middleware.cors import CORSMiddleware
+
+app = CORSMiddleware(
+    app,
+    allow_origins={{ ctx.app.cors.origins }},
+    allow_methods={{ ctx.app.cors.methods }},
+    allow_headers={{ ctx.app.cors.headers }},
+    allow_credentials={{ ctx.app.cors.credentials }},
+)
+{% endif %}
+{% if ctx.app.security_headers %}
+
+from security_headers import SecurityHeadersMiddleware
+
+app = SecurityHeadersMiddleware(app)
+{% endif %}
 
 if __name__ == "__main__":
     import uvicorn

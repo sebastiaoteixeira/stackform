@@ -1,0 +1,13 @@
+import uvicorn
+from django.core.management.commands.runserver import Command as DjangoRunserver
+
+from api.settings import settings
+
+
+class Command(DjangoRunserver):
+    """Serves project.asgi:application with uvicorn: the async views share a loop-bound database client."""
+
+    default_port = str(settings.PORT)
+
+    def run(self, **options):
+        uvicorn.run("project.asgi:application", host=self.addr, port=int(self.port), reload=options["use_reloader"])

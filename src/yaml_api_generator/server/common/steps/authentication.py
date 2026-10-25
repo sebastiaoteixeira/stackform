@@ -3,7 +3,7 @@ from typing import Any
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
 from yaml_api_generator.runtime.access import Roles, role_names
-from ..auth import idp, oidc, verify_password
+from ..auth import hash_api_key, idp, oidc, verify_password
 from ..auth.jwt import SessionTokens
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
 from ..request_context import RequestContext
@@ -222,8 +222,8 @@ async def _resolve_identity_for_collection(
             return await _find_principal(
                 repository,
                 collection_name=identity.name,
-                field_name="_auth.apiKey",
-                field_value=token,
+                field_name="apiKey",
+                field_value=hash_api_key(token),
                 id_field=id_field,
                 identity=identity,
             )

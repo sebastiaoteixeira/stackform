@@ -78,7 +78,10 @@ class RawASGIGenerator(SharedLayersGenerator):
         )
 
         self._render_service_inputs(env, output_dir, "")
-        write_runtime_modules(output_dir, MONGO_RUNTIME_MODULES)
+        write_runtime_modules(output_dir, (
+            *MONGO_RUNTIME_MODULES,
+            *(("security_headers",) if context.app.security_headers else ()),
+        ))
 
         collections_by_name = group_by_collection(context)
 

@@ -8,6 +8,95 @@
     "entities"
   ],
   "additionalProperties": false,
+  "allOf": [
+    {
+      "$comment": "A record datastore replaces the mongo block, so declaring both is ambiguous",
+      "if": {
+        "required": [
+          "datastores"
+        ],
+        "properties": {
+          "datastores": {
+            "not": {
+              "additionalProperties": {
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "filesystem",
+                      "s3"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mongo": {
+            "not": {},
+            "errorMessage": "mongo and a record datastore are mutually exclusive: declare MongoDB under datastores instead"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "deploy.mongo configures the MongoDB service, which a spec whose record datastores are all PostgreSQL does not have",
+      "if": {
+        "required": [
+          "datastores",
+          "deploy"
+        ],
+        "properties": {
+          "datastores": {
+            "additionalProperties": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "not": {
+                    "enum": [
+                      "mongodb",
+                      "mongo"
+                    ]
+                  }
+                }
+              }
+            },
+            "not": {
+              "additionalProperties": {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "filesystem",
+                      "s3"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "deploy": {
+            "properties": {
+              "mongo": {
+                "not": {},
+                "errorMessage": "deploy.mongo requires a MongoDB datastore, and every record datastore is PostgreSQL"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "version": {
       "type": "string",
@@ -33,6 +122,9 @@
         },
         "cors": {
           "$ref": "#/$defs/CorsConfig"
+        },
+        "securityHeaders": {
+          "type": "boolean"
         }
       }
     },
@@ -284,7 +376,19 @@
             ]
           }
         }
-      ]
+      ],
+      "dependentSchemas": {
+        "roles": {
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "auth"
+            }
+          }
+        }
+      }
     },
     "EntityAuthConfig": {
       "type": "object",
@@ -1155,7 +1259,8 @@
         },
         "port": {
           "type": "integer",
-          "default": 8000
+          "minimum": 1,
+          "maximum": 65535
         },
         "runtime": {
           "type": "string",
@@ -1178,8 +1283,7 @@
           "additionalProperties": false,
           "properties": {
             "local": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             }
           }
         },

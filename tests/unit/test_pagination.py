@@ -310,6 +310,7 @@ def test_offset_reject_over_max_raises():
         (_offset(), {"offset": "invalid"}, "offset"),
         (_offset(), {"limit": "-1"}, "limit"),
         (_offset(), {"offset": "-1"}, "offset"),
+        (_offset(), {"limit": "0"}, "limit"),
         (_keyset(), {"limit": "0"}, "limit"),
     ],
 )
@@ -484,13 +485,13 @@ def test_keyset_without_sort_is_coded_error(tmp_path):
     assert "PAGINATION_KEYSET_SORT_REQUIRED" in _error_codes(excinfo)
 
 
-def test_keyset_zero_default_is_coded_error(tmp_path):
+def test_keyset_zero_default_is_schema_error(tmp_path):
     with pytest.raises(ConfigErrors) as excinfo:
         _load(
             tmp_path,
             "strategy: keyset\nsize: { default: 0, max: 100 }\nsort:\n  - { field: id }",
         )
-    assert "PAGINATION_INVALID_SIZE" in _error_codes(excinfo)
+    assert "SCHEMA_VALIDATION_ERROR" in _error_codes(excinfo)
 
 
 def test_keyset_non_unique_tiebreaker_is_coded_error(tmp_path):

@@ -91,7 +91,7 @@ from api.access import matching
 {% macro pre_fetch_check(route) %}
 {% if route.needs_auth %}
         db = get_database()
-        _resolved_principal = await resolve_principal(request, db)
+        _resolved_principal = await resolve_principal(request.headers, db)
 {% if not route.admits_anonymous %}
         if _resolved_principal is None:
             return Response({"detail": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)

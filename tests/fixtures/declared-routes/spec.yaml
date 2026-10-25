@@ -1,0 +1,24 @@
+version: "0.3"
+api:
+  basePath: /api
+  operations:
+    auth: { register: true, login: true }
+entities:
+  user:
+    type: auth
+    auth: { identifier: email, via: password }
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+repositories:
+  users: { entity: user }
+services:
+  users: { repository: users }
+controllers:
+  users:
+    service: users
+    base_path: /users
+    access: "*"
+    operations:
+      register: { access: public }
+      login: { access: public }

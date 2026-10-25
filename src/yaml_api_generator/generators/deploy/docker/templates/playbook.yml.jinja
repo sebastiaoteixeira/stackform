@@ -7,7 +7,5 @@
   #   ansible-playbook -i inventory.yml playbook.yml --ask-vault-pass
   # group_vars/all is auto-loaded; see README.md ("Hardening") for the full flow.
   roles:
-    {% if ctx.mongo_local %}
-    - mongodb
-    {% endif %}
+    - docker
     - app

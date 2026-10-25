@@ -2,14 +2,15 @@ version: "0.2"
 
 api:
   operations:
-    defaults: [list, get, create, update, delete]
+    defaults: { list: true, get: true, create: true, update: true, delete: true }
 
 entities:
   client:
     type: auth
-    via:
-      - provider: apiKey
-        identifier: clientId
+    auth:
+      via:
+        - provider: apiKey
+          identifier: clientId
     fields:
       id:
         type: id
@@ -35,18 +36,18 @@ repositories:
 # Services: only expose the operations we want.
 # replace is available at the repo level but intentionally not exposed.
 services:
-  list-clients:   { repository: clients, operation: list }
-  get-client:     { repository: clients, operation: get }
-  create-client:  { repository: clients, operation: create }
-  update-client:  { repository: clients, operation: update }
-  delete-client:  { repository: clients, operation: delete }
+  list_clients:   { repository: clients, operation: list }
+  get_client:     { repository: clients, operation: get }
+  create_client:  { repository: clients, operation: create }
+  update_client:  { repository: clients, operation: update }
+  delete_client:  { repository: clients, operation: delete }
 
 controllers:
   clients:
     base_path: /clients
     routes:
-      list:   { service: list-clients,   method: GET,    path: /,     access: authenticated }
-      get:    { service: get-client,     method: GET,    path: /{id}, access: authenticated }
-      create: { service: create-client,  method: POST,   path: /,     access: public }
-      update: { service: update-client,  method: PATCH,  path: /{id}, access: authenticated }
-      delete: { service: delete-client,  method: DELETE, path: /{id}, access: authenticated }
+      list:   { service: list_clients,   method: GET,    path: /,     access: "*" }
+      get:    { service: get_client,     method: GET,    path: "/{id}", access: "*" }
+      create: { service: create_client,  method: POST,   path: /,     access: public }
+      update: { service: update_client,  method: PATCH,  path: "/{id}", access: "*" }
+      delete: { service: delete_client,  method: DELETE, path: "/{id}", access: "*" }

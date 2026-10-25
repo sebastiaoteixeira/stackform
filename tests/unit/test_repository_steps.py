@@ -4,6 +4,7 @@ import pytest
 
 from tests.unit.support.repositories import InMemoryRepository
 from yaml_api_generator.ir.api import IRProviderBinding
+from yaml_api_generator.server.common.auth import hash_api_key
 from yaml_api_generator.server.common.request_context import RequestContext
 from yaml_api_generator.server.common.server_context import RuntimeIdentityDescriptor
 from yaml_api_generator.server.common.steps import NotFoundError
@@ -18,6 +19,7 @@ from yaml_api_generator.server.common.steps.repositories import (
     _inject_canonical_id,
     _prepare_payload,
 )
+from yaml_api_generator.server.common.server_context import RuntimeIdentityDescriptor
 
 
 def _make_ctx(**overrides) -> RequestContext:
@@ -61,48 +63,65 @@ def test_generate_id_unknown_format_raises():
 # --- Payload Preparation (244-249) ---
 
 
-_PASSWORD_IDENTITY = RuntimeIdentityDescriptor(
-    name="users",
-    bindings=(IRProviderBinding(provider="password", identifier="email"),),
-    id_field="id",
-)
+def _identity(*via: str, default_role: str | None = None) -> RuntimeIdentityDescriptor:
+    return RuntimeIdentityDescriptor(
+        name="users",
+        bindings=tuple(IRProviderBinding(provider=provider, identifier="email") for provider in via),
+        id_field="id",
+        default_role=default_role,
+    )
 
 
-def test_prepare_payload_keeps_non_identity_fields():
-    payload = {"title": "hello", "password": "secret", "role": "admin", "roles": ["a"]}
-    assert _prepare_payload(payload, None) == payload
+def test_prepare_payload_without_identity_keeps_password():
+    payload = {"title": "hello", "password": "secret"}
+    result = _prepare_payload(payload, None)
+    assert result == {"title": "hello", "password": "secret"}
 
 
-def test_prepare_payload_password_identity_no_password_key():
+def test_prepare_payload_password_identity_without_password_key():
     payload = {"title": "hello"}
-    result = _prepare_payload(payload, _PASSWORD_IDENTITY)
+    result = _prepare_payload(payload, _identity("password"))
     assert result == {"title": "hello"}
 
 
-def test_prepare_payload_password_identity_valid_password():
+def test_prepare_payload_password_identity_hashes_password():
     payload = {"title": "hello", "password": "secret123"}
-    result = _prepare_payload(payload, _PASSWORD_IDENTITY)
+    result = _prepare_payload(payload, _identity("password"))
     assert "password" not in result
-    assert "_auth" in result
-    assert "passwordHash" in result["_auth"]
     assert result["_auth"]["passwordHash"].startswith("pbkdf2$sha256$")
 
 
-def test_prepare_payload_password_identity_empty_password():
+def test_prepare_payload_rejects_empty_password():
     with pytest.raises(ValueError, match="non-empty string"):
-        _prepare_payload({"password": ""}, _PASSWORD_IDENTITY)
+        _prepare_payload({"password": ""}, _identity("password"))
 
 
-def test_prepare_payload_password_identity_non_string_password():
+def test_prepare_payload_rejects_non_string_password():
     with pytest.raises(ValueError, match="non-empty string"):
-        _prepare_payload({"password": 123}, _PASSWORD_IDENTITY)
+        _prepare_payload({"password": 123}, _identity("password"))
 
 
 def test_prepare_payload_existing_auth_dict_merged():
-    payload = {"_auth": {"apiKey": "abc123"}, "password": "secret"}
-    result = _prepare_payload(payload, _PASSWORD_IDENTITY)
-    assert "apiKey" in result["_auth"]
+    payload = {"_auth": {"provider": "abc123"}, "password": "secret"}
+    result = _prepare_payload(payload, _identity("password"))
+    assert result["_auth"]["provider"] == "abc123"
     assert "passwordHash" in result["_auth"]
+
+
+def test_prepare_payload_stores_api_key_digest():
+    result = _prepare_payload({"apiKey": "key-1"}, _identity("apiKey"))
+    assert result["apiKey"] == hash_api_key("key-1") != "key-1"
+
+
+def test_role_store_assigns_default_role_on_create_only():
+    roles = _identity("apiKey", default_role="reader").role_store
+    assert roles.granted({}, ())["_auth"] == {"roles": "reader"}
+    assert roles.revised({}, ()) == {}
+
+
+def test_canonical_id_hides_credentials():
+    document = {"id": "1", "_auth": {}, "password": "x", "apiKey": "digest", "name": "n"}
+    assert _inject_canonical_id(document, "id") == {"id": "1", "name": "n"}
 
 
 # --- Canonical ID Normalization (250-253) ---

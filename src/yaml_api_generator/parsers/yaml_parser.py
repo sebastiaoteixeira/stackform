@@ -28,7 +28,7 @@ from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import best_match
+from jsonschema.exceptions import ValidationError, best_match
 from referencing import Registry, Resource
 
 from ..ir import IRDocument
@@ -162,11 +162,17 @@ def _validate_schema(config: Any, schema: dict[str, Any]) -> list[ConfigError]:
     return [
         ConfigError(
             code="SCHEMA_VALIDATION_ERROR",
-            message=best_match([error]).message,
+            message=_schema_message(error),
             path=join_path(tuple(str(part) for part in error.path)),
         )
         for error in errors
     ]
+
+
+def _schema_message(error: ValidationError) -> str:
+    """A failing subschema's ``errorMessage`` annotation, else the validator's own message."""
+    custom = error.schema.get("errorMessage") if isinstance(error.schema, dict) else None
+    return custom or best_match([error]).message
 
 
 _VERSION_SCHEMA_MAP: dict[str, str] = {
@@ -219,11 +225,11 @@ def load_and_generate_ir(
     trust_warnings: tuple[ConfigError, ...] = ()
     access_warnings: tuple[ConfigError, ...] = ()
 
-    if version in ("0.2", "0.3"):
-        from .transformers.name_validation import validate_spec_names
-        name_errors = validate_spec_names(resolved)
-        if name_errors:
-            raise ConfigErrors(name_errors)
+    model_section = "collections" if version == "0.1" else "entities"
+    from .transformers.name_validation import validate_spec_names
+    name_errors = validate_spec_names(resolved, model_section)
+    if name_errors:
+        raise ConfigErrors(name_errors)
 
     from .transformers.ref_validation import validate_spec_refs
     ref_errors = validate_spec_refs(resolved)
@@ -237,6 +243,11 @@ def load_and_generate_ir(
 
     from .transformers.field_defaults import canonicalize_defaults
     canonicalize_defaults(resolved)
+
+    from .transformers.auth_validation import validate_spec_auth
+    auth_errors = validate_spec_auth(resolved, model_section)
+    if auth_errors:
+        raise ConfigErrors(auth_errors)
 
     if version in ("0.2", "0.3"):
         from .transformers.file_validation import validate_spec_files
@@ -260,10 +271,6 @@ def load_and_generate_ir(
             raise ConfigErrors(access_errors)
         access_warnings = tuple(warn_public_routes(resolved))
 
-        from .transformers.auth_validation import validate_spec_auth
-        auth_errors = validate_spec_auth(resolved)
-        if auth_errors:
-            raise ConfigErrors(auth_errors)
 
         from .transformers.binding_validation import validate_spec_bindings
         binding_errors = validate_spec_bindings(resolved)

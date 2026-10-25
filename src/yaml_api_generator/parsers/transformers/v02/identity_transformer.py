@@ -11,11 +11,10 @@ from yaml_api_generator.ir import (
     IRIdentityCollection,
     IRProviderBinding,
     IRProviderRelation,
-    IRRolesConfig,
-    RoleHierarchyCycleError,
-    flatten_role_hierarchy,
 )
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
+
+from ..roles_config import parse_roles_config
 
 
 class IdentityTransformer:
@@ -65,8 +64,8 @@ class IdentityTransformer:
                 if role_errors:
                     raise ConfigErrors(role_errors)
 
-            roles_config, roles_errors = self._build_roles_config(
-                entity_name, entity_data.get("roles")
+            roles_config, roles_errors = parse_roles_config(
+                "entities", entity_name, entity_data.get("roles")
             )
             if roles_errors:
                 raise ConfigErrors(roles_errors)
@@ -138,62 +137,6 @@ class IdentityTransformer:
                     )
                 )
         return errors
-
-    def _build_roles_config(
-        self, entity_name: str, roles_data: Any
-    ) -> tuple[IRRolesConfig | None, list[ConfigError]]:
-        if not isinstance(roles_data, dict):
-            return None, []
-
-        values = tuple(str(v) for v in roles_data.get("values", []))
-        if not values:
-            return None, []
-
-        default = str(roles_data.get("default", values[0]))
-        raw_hierarchy = roles_data.get("hierarchy", {})
-        hierarchy = {
-            str(role): tuple(str(i) for i in (includes or []))
-            for role, includes in raw_hierarchy.items()
-        } if isinstance(raw_hierarchy, dict) else {}
-
-        errors = self._validate_hierarchy(entity_name, values, hierarchy)
-        if errors:
-            return None, errors
-
-        return IRRolesConfig(values=values, default=default, hierarchy=hierarchy), []
-
-    def _validate_hierarchy(
-        self,
-        entity_name: str,
-        values: tuple[str, ...],
-        hierarchy: dict[str, tuple[str, ...]],
-    ) -> list[ConfigError]:
-        declared = set(values)
-        referenced = {role for role in hierarchy}
-        referenced.update(i for includes in hierarchy.values() for i in includes)
-        errors = [
-            ConfigError(
-                code="ROLES_HIERARCHY_UNKNOWN_ROLE",
-                message=f"Role hierarchy references undeclared role '{role}'",
-                path=f"entities.{entity_name}.roles.hierarchy",
-                hint=f"Add '{role}' to entities.{entity_name}.roles.values",
-            )
-            for role in sorted(referenced - declared)
-        ]
-        if errors:
-            return errors
-        try:
-            flatten_role_hierarchy(hierarchy)
-        except RoleHierarchyCycleError as exc:
-            return [
-                ConfigError(
-                    code="ROLES_HIERARCHY_CYCLE",
-                    message=f"Role hierarchy for '{entity_name}' is cyclic through '{exc.role}'",
-                    path=f"entities.{entity_name}.roles.hierarchy",
-                    hint="Remove the circular or self-referential role inclusion",
-                )
-            ]
-        return []
 
     def _normalize_via(self, value: Any) -> list[str]:
         if isinstance(value, str):

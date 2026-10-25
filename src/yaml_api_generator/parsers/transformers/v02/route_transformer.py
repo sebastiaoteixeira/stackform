@@ -331,6 +331,7 @@ class RouteTransformer:
             version=api_data.get("version"),
             cors=cors,
             port=int(api_data.get("port", 8000)),
+            security_headers=api_data.get("securityHeaders", True),
             files=None if files is None else LimitLayer.parse(files, "api.files")[0].limits(),
             max_files=(files or {}).get("maxFiles"),
         )
@@ -352,7 +353,7 @@ class RouteTransformer:
     def build_deploy(
         self,
         deploy_data: Any,
-        mongo_config: dict[str, Any],
+        api: IRApi,
         providers: dict[str, IRProvider],
         datastores: dict[str, IRDatastore],
     ) -> IRDeploy | None:
@@ -360,7 +361,7 @@ class RouteTransformer:
 
         Args:
             deploy_data: Raw deployment configuration from YAML.
-            mongo_config: MongoDB configuration to determine if local.
+            api: Built API IR, whose port is the default deploy port.
             providers: Already-built provider IR objects (env vars resolved at build time).
             datastores: Already-built datastore IR objects (env vars resolved at build time).
 
@@ -385,9 +386,6 @@ class RouteTransformer:
             else None
         )
 
-        mongo_uri = mongo_config.get("uri", "mongodb://localhost:27017")
-        mongo_local = not mongo_config or "localhost" in mongo_uri or "127.0.0.1" in mongo_uri
-
         env_vars = self._collect_env_vars(deploy_data, providers, datastores)
 
         extra_services = tuple(
@@ -398,8 +396,8 @@ class RouteTransformer:
         return IRDeploy(
             runtime=str(runtime),
             name=deploy_data.get("name"),
-            port=int(deploy_data.get("port", 8000)),
-            mongo_local=mongo_local,
+            port=int(deploy_data.get("port", api.port)),
+            mongo_local=deploy_data.get("mongo", {}).get("local"),
             env_vars=tuple(env_vars),
             docker=docker,
             systemd=systemd,

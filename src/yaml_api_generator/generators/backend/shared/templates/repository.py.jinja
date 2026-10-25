@@ -28,7 +28,7 @@ from {{ generated_base.module }} import {{ generated_base.class_name }}
 {% endif %}
 
 
-_HIDDEN_FIELDS = frozenset({"_id", "_auth"})
+_HIDDEN_FIELDS = frozenset({"_id", "_auth", "password", "apiKey"})
 
 _PAGINATION_COMPARATORS = {
     "gt": "$gt",
@@ -100,7 +100,7 @@ class {{ class_name }}Repository{% if generated_base %}({{ generated_base.class_
         return {self.ID_FIELD: document_id}
 
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Hide the datastore's own identifier and the stored credentials."""
+        """Hide the datastore's own identifier and every stored credential."""
         if doc is None:
             return None
         return {k: v for k, v in doc.items() if k not in _HIDDEN_FIELDS}

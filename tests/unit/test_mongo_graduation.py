@@ -18,6 +18,7 @@ import pytest
 from fastapi import APIRouter
 
 from yaml_api_generator.cli.compiler import compile_project
+from yaml_api_generator.runtime import security_headers
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from yaml_api_generator.server.common.loader import SchemaManagement, create_repositories
 from yaml_api_generator.server.common.repositories import MongoRepository
@@ -157,6 +158,7 @@ def _generated_app_dependencies(initialize_indexes) -> dict[str, types.ModuleTyp
         "dependencies.postgres": _stub(
             "dependencies.postgres", connect_db=_noop, close_db=_noop
         ),
+        "dependencies.security_headers": security_headers,
         "conflicts": _stub("conflicts", ConflictError=_Conflict),
         "services": _stub("services"),
         "services.exceptions": _stub(
@@ -206,7 +208,7 @@ class TestGeneratedFastAPIStartup:
 
 @pytest.mark.parametrize(
     ("target", "startup_file"),
-    [("drf", "api/apps.py"), ("raw", "app.py")],
+    [("drf", "project/asgi.py"), ("raw", "app.py")],
 )
 def test_generated_mongo_targets_initialize_indexes_before_graduation(
     tmp_path, target, startup_file
@@ -229,7 +231,7 @@ def test_generated_drf_views_package_does_not_import_absent_route_classes(tmp_pa
 
 @pytest.mark.parametrize(
     ("target", "startup_file"),
-    [("drf", "api/apps.py"), ("raw", "app.py")],
+    [("drf", "project/asgi.py"), ("raw", "app.py")],
 )
 def test_generated_mongo_targets_skip_indexes_after_graduation(
     tmp_path, target, startup_file

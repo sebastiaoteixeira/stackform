@@ -78,7 +78,8 @@ class IRDeploy:
     runtime: str
     name: str | None = None
     port: int = 8000
-    mongo_local: bool = False
+    mongo_local: bool | None = None
+    """Explicit ``deploy.mongo.local``; when unset each MongoDB datastore is local if its URI is."""
     env_vars: tuple[str, ...] = field(default_factory=tuple)
     docker: IRDeployDocker | None = None
     systemd: IRDeploySystemd | None = None
@@ -164,6 +165,7 @@ class IRApi:
     port: int = 8000
     files: IRFileLimits | None = None
     max_files: int | None = None
+    security_headers: bool = True
 
 
 @dataclass(frozen=True)
@@ -173,9 +175,16 @@ class IRSession:
     refresh: bool = False
     delivery: str = "token-url"
 
+    REFRESHED_ACCESS_TTL: ClassVar[int] = 900
+
     @property
     def uses_asymmetric(self) -> bool:
         return self.algorithm == "RS256"
+
+    @property
+    def access_ttl(self) -> int | None:
+        """Access-token lifetime in seconds; None leaves it to JWT_EXPIRATION_HOURS."""
+        return self.ttl or (self.REFRESHED_ACCESS_TTL if self.refresh else None)
 
 
 @dataclass(frozen=True)
@@ -183,6 +192,11 @@ class IRMongo:
     uri: str = "mongodb://localhost:27017"
     database: str = "yaml_api"
     type: str = "mongodb"
+
+    @property
+    def is_local(self) -> bool:
+        """Whether the URI points at a server on the deploy host itself."""
+        return any(host in self.uri for host in ("localhost", "127.0.0.1"))
 
 
 @dataclass(frozen=True)

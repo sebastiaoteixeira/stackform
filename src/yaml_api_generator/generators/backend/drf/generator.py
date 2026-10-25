@@ -32,6 +32,7 @@ _TEMPLATES_DIR = _BACKEND_GENERATORS / "drf" / "templates"
 _SHARED_TEMPLATES_DIR = _BACKEND_GENERATORS / "shared" / "templates"
 class DRFGenerator(SharedLayersGenerator):
     auth_module = "api.authentication.auth"
+    asgi_application = "project.asgi:application"
 
     def __init__(self):
         super().__init__()
@@ -76,7 +77,12 @@ class DRFGenerator(SharedLayersGenerator):
         self._render_serializers(env, context, collections_by_name, output_dir)
         self._render_services(env, context, collections_by_name, output_dir)
         self._render_service_inputs(env, output_dir, self.dir_prefix)
-        write_runtime_modules(api_dir, MONGO_RUNTIME_MODULES)
+        write_runtime_modules(api_dir, (
+            *MONGO_RUNTIME_MODULES,
+            *(("security_headers",) if context.app.security_headers else ()),
+        ))
+        if context.app.cors and "*" in context.app.cors.headers:
+            (api_dir / "cors.py").write_text(env.get_template("cors.py.jinja").render())
         self._render_views(env, context, collections_by_name, output_dir)
         self._render_repositories(env, context, collections_by_name, output_dir)
         self._render_authentication(env, context, output_dir)
@@ -126,6 +132,12 @@ class DRFGenerator(SharedLayersGenerator):
 
         template = env.get_template("manage.py.jinja")
         (output_dir / "manage.py").write_text(template.render())
+
+        commands_dir = output_dir / self.dir_prefix / "management" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir.parent / "__init__.py").write_text("")
+        (commands_dir / "__init__.py").write_text("")
+        (commands_dir / "runserver.py").write_text(env.get_template("runserver.py.jinja").render())
 
     def _render_serializers(
         self,
