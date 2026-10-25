@@ -351,11 +351,17 @@ class CallerDemand:
 
     principal: str
     required_role: str | None
+    effect: str
 
     @property
     def admits_anonymous(self) -> bool:
         """Whether the rule can hold for a caller who presents no credentials."""
         return not self.principal and self.required_role is None
+
+    @staticmethod
+    def anonymous_admitted(rules: "Iterable[CallerDemand] | None") -> bool:
+        """Whether an allow rule among ``rules`` can admit a caller who presents no credentials."""
+        return any(rule.effect == "allow" and rule.admits_anonymous for rule in rules or ())
 
 
 @dataclass(frozen=True)
@@ -427,7 +433,7 @@ class IRRoute:
     @property
     def admits_anonymous(self) -> bool:
         """Whether an access rule of the route can admit a caller who presents no credentials."""
-        return any(rule.admits_anonymous for rule in self.access_rules or ())
+        return CallerDemand.anonymous_admitted(self.access_rules)
 
     @property
     def serves_crud(self) -> bool:

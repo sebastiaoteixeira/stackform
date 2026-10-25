@@ -14,7 +14,7 @@ from ..server_context import (
 )
 from ..when_eval import when_predicate
 from ..utils.field_access import get_nested_field
-from yaml_api_generator.ir.api import IRLiteralRef, IRSymbolRef, IRWhereConjunct
+from yaml_api_generator.ir.api import CallerDemand, IRLiteralRef, IRSymbolRef, IRWhereConjunct
 from yaml_api_generator.runtime.access import (
     EVERY_ROW,
     NO_ROW,
@@ -312,7 +312,7 @@ def AuthorizeRouteStep(
     auth_config: RuntimeAuthConfig | None = None,
     admission: Admission = admit_record,
 ) -> Step:
-    admits_anonymous = any(rule.admits_anonymous for rule in access_rules or ())
+    admits_anonymous = CallerDemand.anonymous_admitted(access_rules)
 
     def step(ctx: RequestContext) -> RequestContext:
         if ctx.principal is None and not admits_anonymous:
