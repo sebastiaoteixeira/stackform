@@ -1,7 +1,8 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -56,12 +57,8 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        return res.json();
-      })
-      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+    listRecords('{{ entity.name }}', headers)
+      .then(data => { setItems(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [token]);
 
@@ -166,12 +163,14 @@ export default function {{ view.name | pascal_case }}() {
         <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
         <span className="wf-mono">{filtered.length} of {items.length}</span>
         <div className="flex-1" />
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table with column-header filters */}
@@ -274,7 +273,7 @@ export default function {{ view.name | pascal_case }}() {
                       {col.key === '{{ entity.pk_field }}' ? (
                         <span className="wf-mono">{String((item as any)[col.key]).slice(0, 8)}…</span>
                       ) : (
-                        String((item as any)[col.key] ?? '—')
+                        displayValue((item as any)[col.key])
                       )}
                     </td>
                   ))}

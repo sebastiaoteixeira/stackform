@@ -68,10 +68,8 @@ def test_abstract_entity_not_in_collections() -> None:
 
 def test_roles_hierarchy_in_ir() -> None:
     ir = load_and_generate_ir(str(VALID_DIR / "roles-access.yaml")).ir
-    assert "user" in ir.role_hierarchies
-    user_h = ir.role_hierarchies["user"]
-    assert "admin" in user_h
-    assert "moderator" in user_h["admin"]
+    hierarchy = ir.identityCollections["users"].roles.hierarchy
+    assert hierarchy["admin"] == ("moderator",)
 
 
 def test_access_rules_on_routes() -> None:
@@ -523,8 +521,7 @@ def test_schema_validation_failure_multiple_errors() -> None:
 def test_ui_block_extracted_and_preserved() -> None:
     result = load_and_generate_ir(str(VALID_DIR / "ui-block.yaml"))
     assert result.ui_block is not None
-    assert "dashboard" in result.ui_block
-    assert result.ui_block["theme"] == "dark"
+    assert result.ui_block["config"] == {"app_name": "My Dashboard", "require_auth": False}
 
 
 # --- Test 29: No UI block → ui_block=None ---
@@ -535,82 +532,84 @@ def test_no_ui_block_returns_none() -> None:
     assert result.ui_block is None
 
 
-# --- Binding relations validation ---
+# --- Binding cross-reference validation ---
 
 
-def test_binding_relation_unknown_collection_raises() -> None:
-    from yaml_api_generator.parsers.transformers.binding_validation import (
-        validate_spec_bindings,
-    )
-
-    spec = {
+def _binding_spec(**binding: object) -> dict:
+    return {
+        "providers": {"keycloak": {"type": "oidc"}},
         "entities": {
             "user": {
                 "type": "auth",
                 "auth": {
-                    "bindings": [
-                        {
-                            "provider": "keycloak",
-                            "relations": {
-                                "organizationId": {
-                                    "collection": "totally_unknown_collection",
-                                    "match": {"keycloakOrgId": "organization.*.id"},
-                                }
-                            },
-                        }
-                    ]
+                    "via": [{
+                        "provider": "keycloak",
+                        "identifier": "email",
+                        "relations": {
+                            "organizationId": {
+                                "collection": "organizations",
+                                "match": {"keycloakOrgId": "organization.*.id"},
+                            }
+                        },
+                        **binding,
+                    }]
+                },
+                "fields": {
+                    "id": {"type": "id"},
+                    "email": {"type": "string"},
+                    "organizationId": {"type": "ref", "ref": "organizations"},
                 },
             },
             "organization": {
-                "fields": {"id": {"type": "id"}},
+                "fields": {"id": {"type": "id"}, "keycloakOrgId": {"type": "string"}},
             },
         },
         "repositories": {
             "organizations": {"entity": "organization"},
         },
     }
-    errors = validate_spec_bindings(spec)
-    assert any(e.code == "BINDING_RELATION_COLLECTION_NOT_FOUND" for e in errors)
 
 
-def test_binding_relation_known_collection_parses_cleanly() -> None:
-    from yaml_api_generator.parsers.transformers.binding_validation import (
-        validate_spec_bindings,
-    )
-    from yaml_api_generator.ir import IRProviderRelation
+def _relation(collection: str = "organizations", match_field: str = "keycloakOrgId", fk: str = "organizationId") -> dict:
+    return {fk: {"collection": collection, "match": {match_field: "organization.*.id"}}}
 
-    spec = {
-        "entities": {
-            "user": {
-                "type": "auth",
-                "auth": {
-                    "bindings": [
-                        {
-                            "provider": "keycloak",
-                            "relations": {
-                                "organizationId": {
-                                    "collection": "organizations",
-                                    "match": {"keycloakOrgId": "organization.*.id"},
-                                }
-                            },
-                        }
-                    ]
-                },
-            },
-            "organization": {
-                "fields": {"id": {"type": "id"}},
-            },
-        },
-        "repositories": {
-            "organizations": {"entity": "organization"},
-        },
-    }
-    errors = validate_spec_bindings(spec)
-    assert errors == []
 
-    relation = IRProviderRelation(
-        collection="organizations",
-        match={"keycloakOrgId": "organization.*.id"},
-    )
-    assert relation.collection == "organizations"
-    assert relation.match == {"keycloakOrgId": "organization.*.id"}
+def test_binding_with_declared_references_parses_cleanly() -> None:
+    from yaml_api_generator.parsers.transformers.binding_validation import validate_spec_bindings
+
+    assert validate_spec_bindings(_binding_spec()) == []
+
+
+@pytest.mark.parametrize(
+    ("binding", "code", "path"),
+    [
+        ({"provider": "other"}, "BINDING_PROVIDER_NOT_FOUND", "entities.user.auth.via[0]"),
+        ({"identifier": "nope"}, "BINDING_IDENTIFIER_FIELD_NOT_FOUND", "entities.user.auth.via[0].identifier"),
+        (
+            {"relations": _relation(collection="totally_unknown_collection")},
+            "BINDING_RELATION_COLLECTION_NOT_FOUND",
+            "entities.user.auth.via[0].relations.organizationId.collection",
+        ),
+        (
+            {"relations": _relation(fk="nopeId")},
+            "BINDING_RELATION_FIELD_NOT_FOUND",
+            "entities.user.auth.via[0].relations.nopeId",
+        ),
+        (
+            {"relations": _relation(match_field="nope")},
+            "BINDING_RELATION_MATCH_FIELD_NOT_FOUND",
+            "entities.user.auth.via[0].relations.organizationId.match.nope",
+        ),
+    ],
+)
+def test_binding_with_undeclared_reference_is_rejected(binding: dict, code: str, path: str) -> None:
+    from yaml_api_generator.parsers.transformers.binding_validation import validate_spec_bindings
+
+    errors = validate_spec_bindings(_binding_spec(**binding))
+    assert [(e.code, e.path) for e in errors] == [(code, path)]
+
+
+def test_credential_provider_binding_needs_no_declaration() -> None:
+    from yaml_api_generator.parsers.transformers.binding_validation import validate_spec_bindings
+
+    assert validate_spec_bindings(_binding_spec(provider="password", relations={})) == []

@@ -95,18 +95,15 @@ controllers:
             when: principal.sub equals document.authorId
 ```
 
-The `user` entity gets its roles from the enum `role` field, wired with `auth.roles: role`. This is the only role mechanism the v0.2 transformer reads. A standalone entity-level `roles: { values, default, hierarchy }` block is accepted by the schema but silently ignored; do not rely on it.
+The `user` entity gets its roles from the enum `role` field, wired with `auth.roles: role`. See [Roles](../Reference/roles/overview.md) for the managed `roles:` block alternative.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## How inheritance works
 
@@ -168,8 +165,8 @@ When `pk:` is declared, the entity's id field (if any) is simply not processed -
 ## Key points
 
 - `abstract: true` prevents a collection from being created for the base entity.
-- Only a repository binding (`repositories.<name>.entity`) to an abstract entity is checked (`DESUGAR_ABSTRACT_REFERENCED`); a `ref:` field pointing at an abstract entity is not validated, since plain `ref:` targets are never checked at generation time.
+- Only a repository binding (`repositories.<name>.entity`) rejects an abstract entity (`DESUGAR_ABSTRACT_REFERENCED`); a `ref:` field may point at an abstract entity, though it must name a declared one (`REF_TARGET_NOT_FOUND`).
 - `extends:` accepts only one parent. There is no multiple inheritance, but chains of abstract entities are allowed.
 - Inheritance also copies `type:` and `auth:` config from the parent, if present. A child can override these.
-- Roles come from an enum field wired with `auth.roles: <fieldName>`, not from a standalone entity-level `roles:` block (which is inert).
+- Roles come from an enum field wired with `auth.roles: <fieldName>`, or from a managed `roles:` block on the auth entity.
 - `pk:` lets you use a natural key (like a country code) instead of an auto-generated UUID; the client supplies it on create.

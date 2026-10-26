@@ -111,20 +111,17 @@ Controllers declare access with the `access:` keyword, either on the whole contr
 - `public`: open, no credentials required (the default for a minified controller, so lock writes down explicitly).
 - `"*"`: any valid principal.
 - `<entity>:*`: any member of that identity collection.
-- `<entity>:<role>`: a principal of that collection holding that exact role.
+- `<entity>:<role>`: a principal of that collection holding that role, directly or through the role hierarchy.
 
 Ownership and conditional access use `when` rules. Every root the `when` references must be declared in the rule's `given` block (binding either an identity or a document/collection); an undeclared root is a build-time error (`WHEN_UNBOUND_SYMBOL`). `principal` and `document` are conventional names, not built-in roots. Document-bound rules are evaluated after the target record is fetched (a missing record returns 404 before any ownership check). `when` operators are the words `equals`, `not equals`, `and`, `or`, `not`, `in`, and `not in`; operands are field references and single-quoted strings. Stored identity fields are read through `<name>.record.<field>`.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## Glossary
 

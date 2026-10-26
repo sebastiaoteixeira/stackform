@@ -24,7 +24,7 @@ applies whichever are populated:
 | `skip`    | rows skipped before returning (`int >= 0`) |
 | `sort`    | ordered list of `{ field, dir: asc\|desc }` |
 | `bounds`  | ordered comparison keys compiled lexicographically |
-| `count`   | `none` \| `exact` \| `estimated` |
+| `count`   | `none` \| `exact` |
 
 Application is uniform and backend-agnostic:
 
@@ -34,9 +34,9 @@ rows  = find(q).sort(sort).skip(skip).limit(limit)
 total = count(filter) when count != none
 ```
 
-`filter` is the existing scoping predicate (not a primitive); it ANDs into
-`bounds`. Omitting every primitive yields the unbounded v0.2 list, byte for
-byte.
+`filter` is the route's scoping predicate, including the row filter of its
+access rules (not a primitive); it ANDs into `bounds`. Omitting every
+primitive yields the unbounded list.
 
 `bounds` is the one non-trivial primitive. Each bound is an ordered tuple of
 comparison keys that compiles to a **lexicographic** comparison, so a keyset
@@ -62,8 +62,6 @@ parameters map onto primitives as follows:
 | `limit`     | `limit` (defaulted to `size.default`, clamped to `size.max`) |
 | `offset`    | `skip` |
 | `after`     | `bounds` derived from `sort` (strict `>`/`<` per direction, compound) |
-| `since`/`until` | `bounds` on the range field (`gte`/`lt`) -- reserved |
-| `cursor`    | decoded to `bounds` -- reserved |
 
 ### Controller (explicit strategy -- the only strategy site)
 
@@ -110,15 +108,11 @@ pagination:
   envelope: true
 ```
 
-### cursor / range (reserved)
-
-`cursor`, `range`, and `count: estimated` are reserved vocabulary with no
-runtime. A spec that declares one fails with `PAGINATION_UNSUPPORTED`.
 
 ## Envelopes
 
-With `envelope: false` (the default) the response is a bare array -- the v0.2
-shape. With `envelope: true`:
+With `envelope: false` (the default) the response is a bare array. With
+`envelope: true`:
 
 | strategy | envelope |
 |----------|----------|
@@ -133,12 +127,9 @@ to pass as `after` for the following page (`null` on the last page), and
 
 | code | raised when |
 |------|-------------|
-| `PAGINATION_INVALID_STRATEGY` | `strategy` is not a recognized value |
-| `PAGINATION_UNSUPPORTED` | a reserved strategy or count mode has no runtime |
-| `PAGINATION_INVALID_SIZE` | `size.default`/`size.max` missing, non-integer, or `default > max` |
-| `PAGINATION_INVALID_COUNT` | `count` is not a recognized value |
-| `PAGINATION_INVALID_OVERFLOW` | `onOverflow` is not `clamp`/`reject` |
-| `PAGINATION_INVALID_SORT` | a sort entry is malformed |
+| `SCHEMA_VALIDATION_ERROR` | an unknown key, a `strategy` other than `offset`/`keyset`, a `count` other than `none`/`exact`, an `onOverflow` other than `clamp`/`reject`, a missing or non-integer `size.default`/`size.max`, or a sort entry without `field` or with a `dir` other than `asc`/`desc` |
+| `PAGINATION_UNSUPPORTED` | `pagination` is set on a route whose operation is not a repository list |
+| `PAGINATION_INVALID_SIZE` | `size.default` exceeds `size.max` |
 | `PAGINATION_SORT_FIELD_UNKNOWN` | a sort field is not a field of the entity |
 | `PAGINATION_KEYSET_SORT_REQUIRED` | keyset declared without a `sort` |
 | `PAGINATION_KEYSET_TIEBREAKER_NOT_UNIQUE` | the last keyset sort field is not unique/indexed |

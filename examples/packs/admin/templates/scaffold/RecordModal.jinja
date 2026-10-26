@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
-import { apiFetch } from "./lib/api"
+import { authHeaders } from "./lib/api"
+import { callOperation } from "./records"
 import { COLLECTION_SCHEMAS } from "./CollectionPage"
 
 interface RecordModalProps {
@@ -13,7 +14,7 @@ export function RecordModal({ collection, record, onClose, onSaved }: RecordModa
   const schema = COLLECTION_SCHEMAS[collection]
   const pk = schema?.pk || "id"
   const isEdit = !!record
-  const editableFields = (schema?.fields || []).filter(f => f.type !== "id")
+  const editableFields = (schema?.fields || []).filter(f => !f.readonly)
 
   const initialValues = () => {
     const vals: Record<string, any> = {}
@@ -48,11 +49,9 @@ export function RecordModal({ collection, record, onClose, onSaved }: RecordModa
     }
 
     try {
-      const path = isEdit
-        ? `/${collection}/${record[pk]}`
-        : `/${collection}`
-      const res = await apiFetch(path, {
-        method: isEdit ? "PATCH" : "POST",
+      const res = await callOperation(collection, isEdit ? schema.edit! : "create", {
+        id: isEdit ? record[pk] : undefined,
+        headers: authHeaders(),
         body: JSON.stringify(body),
       })
       if (!res.ok) {

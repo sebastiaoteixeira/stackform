@@ -46,7 +46,7 @@ difference is what a DTO is NOT allowed to declare.
 | `array` | yes |
 | `object` | yes |
 | `ref` | yes (target must be a declared entity or DTO) |
-| `id` | NO — rejected with `DTO_FORBIDS_PERSISTENCE_ATTR` |
+| `id` | NO — rejected with `SCHEMA_VALIDATION_ERROR` |
 
 A DTO describes request input, not a stored record, so it has no primary key.
 `type: id` is rejected.
@@ -54,22 +54,23 @@ A DTO describes request input, not a stored record, so it has no primary key.
 ## Forbidden persistence attributes
 
 The following attributes are persistence concerns and are rejected anywhere in a
-DTO field, failing generation with `DTO_FORBIDS_PERSISTENCE_ATTR`:
+DTO field, failing generation with `SCHEMA_VALIDATION_ERROR`:
 
 | Attribute | Why it is forbidden |
 |-----------|---------------------|
 | `type: id` | A DTO is request input, not a stored record; it has no primary key. |
 | `unique` | Uniqueness is a storage/index concern; a DTO is never persisted. |
-| `format` | The persistence/OpenAPI metadata hint has no meaning on a transient request shape. |
 
-Lifecycle attributes that describe the field's behavior rather than storage are
-allowed everywhere in a DTO: `default` and `readonly` are accepted.
+Attributes that describe the value rather than its storage are allowed everywhere
+in a DTO: `format`, `default`, and `readonly` are accepted, and `format` is
+validated like on an entity field. A body that carries a key the DTO does not
+declare returns 422.
 
 ## Validation timing
 
 When a request binding names a DTO (for example `given: { body: request:createMembership }`),
-the request body is validated against that DTO **before** authorization runs. An
-invalid body returns 422 and the access rule never executes. See
+the request body is validated against that DTO. A request the access rules admit
+whose body does not match returns 422. See
 [when expressions](../when-expressions/overview.md) for the binding forms and the
 runtime model.
 
@@ -115,8 +116,7 @@ target is neither fails generation with `DTO_NOT_FOUND`.
 - **No id field.** Unlike entities, a DTO must not declare `type: id` and is not
   required to. It is never persisted, so it has no primary key.
 
-- **`format`/`unique` are not silently ignored.** On entities these are
-  metadata-only and accepted; inside a DTO they are an error, not a no-op.
+- **`unique` is not silently ignored.** Inside a DTO it is an error, not a no-op.
 
 - **`ref` target resolution.** A DTO `ref` is resolved against the union of
   declared entity names and declared DTO names. An unknown target is
@@ -129,8 +129,8 @@ target is neither fails generation with `DTO_NOT_FOUND`.
 
 | Condition | Error code | Message |
 |-----------|-----------|---------|
-| `type: id`, `unique`, or `format` on a DTO field | `DTO_FORBIDS_PERSISTENCE_ATTR` | "DTO field may not declare persistence attribute '<attr>'" |
-| A DTO `ref` whose target is neither a declared entity nor DTO | `DTO_NOT_FOUND` | "DTO '<name>' references unknown type '<target>'" |
+| `type: id` or `unique` on a DTO field | `SCHEMA_VALIDATION_ERROR` | The schema violation, for example "Unevaluated properties are not allowed ('unique' was unexpected)" |
+| A DTO `ref` whose target is neither a declared entity nor DTO | `DTO_NOT_FOUND` | "DTO field references undeclared type '<target>'" |
 | A request binding `:<type>` naming a missing DTO/entity/primitive | `REQUEST_TYPE_NOT_FOUND` | "Request binding type '<type>' is not a primitive, entity, or DTO" |
 
 ## See Also

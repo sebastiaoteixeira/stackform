@@ -18,16 +18,13 @@ served under `/api/v1/...` (for example `POST /api/v1/users/login`). The two
 MongoDB settings are read from `MONGO_URI` / `MONGO_DB` at build time, with the
 inline defaults used when those variables are unset.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ```yaml
 version: "0.2"
@@ -71,6 +68,12 @@ entities:
       identifier: clientId
       via: apiKey
       roles: tier
+    roles:
+      values: [free, premium, enterprise]
+      default: free
+      hierarchy:
+        enterprise: [premium]
+        premium: [free]
     fields:
       clientId: { type: string, required: true, unique: true }
       name: { type: string, required: true }
@@ -192,12 +195,10 @@ every route that uses it.
 
 **Tier roles come from an enum field.** `auth.roles: tier` points the `apiClient`
 entity at its `tier` enum field; that is what makes `access: apiClient:enterprise`
-meaningful. The standalone entity-level `roles: { values, default, hierarchy }` block
-that earlier drafts used is not consumed in v0.2 -- only `auth.roles: <enumField>`
-wires a role. New clients get the `tier` field's `default: free` only when the create
-payload omits `tier`. Note that tier matching is exact: there is no inheritance, so
-`apiClient:enterprise` does not also accept `premium` (see the Enforcement status
-note above on hierarchy).
+meaningful. The `roles:` block ranks the tiers, so `apiClient:premium` also accepts
+an `enterprise` client, while `apiClient:enterprise` accepts only `enterprise`. A
+create stores the tier it names only when the caller holds that tier itself;
+otherwise the client gets `free`.
 
 **Ownership rules see only the route's own record.** A rule with `given.caller:
 identity:user` plus `given.document: orgs` (or `document: resources`) and
@@ -248,13 +249,8 @@ authenticate by header, not by exchanging credentials for a token).
 
 **Current limitations to keep in mind.**
 
-- The standalone entity-level `roles:` block is unconsumed; wire roles via
-  `auth.roles: <enumField>`.
-- Role hierarchy is parsed but not enforced -- only exact role matches apply.
 - Access must be a YAML list; the inline bracket-string form is not supported.
 - Ownership/`document` rules see only the route's own fetched record; there is no
   cross-collection document fetch.
-- `filter`, `writeFields`, and `reason` keys on a rule are accepted but currently
-  have no effect.
 - `unique: true` creates a datastore constraint or index; duplicate writes return
   `409 Conflict`.

@@ -3,8 +3,7 @@
 Covers the three layers the feature decomposes into -- repository primitives
 applied backend-agnostically (offset and keyset over SQL and Mongo), the
 implicit query-param -> primitive mapping, and the explicit controller grammar
-with its build-time validation. offset and keyset are exercised end to end;
-cursor, range and count: estimated are only checked to be accepted as reserved.
+with its build-time validation. offset and keyset are exercised end to end.
 """
 
 import textwrap
@@ -311,6 +310,7 @@ def test_offset_reject_over_max_raises():
         (_offset(), {"offset": "invalid"}, "offset"),
         (_offset(), {"limit": "-1"}, "limit"),
         (_offset(), {"offset": "-1"}, "offset"),
+        (_offset(), {"limit": "0"}, "limit"),
         (_keyset(), {"limit": "0"}, "limit"),
     ],
 )
@@ -468,11 +468,23 @@ def test_keyset_pagination_parsed_with_sort(tmp_path):
     assert pagination.sort == (IRSortKey("score", "desc"), IRSortKey("id", "asc"))
 
 
-def test_reserved_strategies_rejected(tmp_path):
-    for reserved in ("cursor", "range"):
-        extra = "sort:\n  - { field: id }" if reserved == "cursor" else '"on": score'
-        with pytest.raises(ConfigErrors):
-            _load(tmp_path, f"strategy: {reserved}\nsize: {{ default: 10, max: 50 }}\ncount: none\n{extra}")
+@pytest.mark.parametrize("unimplemented", ["strategy: cursor", "strategy: range", "strategy: offset\ncount: estimated"])
+def test_unimplemented_modes_are_rejected_by_the_schema(tmp_path, unimplemented):
+    with pytest.raises(ConfigErrors) as excinfo:
+        _load(tmp_path, f"{unimplemented}\nsize: {{ default: 10, max: 50 }}")
+    assert _error_codes(excinfo) == {"SCHEMA_VALIDATION_ERROR"}
+
+
+@pytest.mark.parametrize(
+    ("sort", "expected"),
+    [
+        ("[{ field: score, dir: desc }]", (IRSortKey("score", "desc"), IRSortKey("id", "asc"))),
+        ("[{ field: score }, { field: slug }]", (IRSortKey("score", "asc"), IRSortKey("slug", "asc"))),
+    ],
+)
+def test_offset_sort_ends_on_a_unique_field(tmp_path, sort, expected):
+    ir = _load(tmp_path, f"strategy: offset\nsize: {{ default: 20, max: 100 }}\nsort: {sort}")
+    assert _list_route(ir).pagination.sort == expected
 
 
 def _error_codes(excinfo) -> set[str]:
@@ -485,13 +497,13 @@ def test_keyset_without_sort_is_coded_error(tmp_path):
     assert "PAGINATION_KEYSET_SORT_REQUIRED" in _error_codes(excinfo)
 
 
-def test_keyset_zero_default_is_coded_error(tmp_path):
+def test_keyset_zero_default_is_schema_error(tmp_path):
     with pytest.raises(ConfigErrors) as excinfo:
         _load(
             tmp_path,
             "strategy: keyset\nsize: { default: 0, max: 100 }\nsort:\n  - { field: id }",
         )
-    assert "PAGINATION_INVALID_SIZE" in _error_codes(excinfo)
+    assert "SCHEMA_VALIDATION_ERROR" in _error_codes(excinfo)
 
 
 def test_keyset_non_unique_tiebreaker_is_coded_error(tmp_path):

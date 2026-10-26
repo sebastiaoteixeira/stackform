@@ -1,5 +1,9 @@
 {% set col_name = props.collection.value if props.collection else "items" %}
 {% set columns = props.columns.value if props.columns else 3 %}
+{% set fields = collection.fields.values() | list %}
+{% set key = context.entities[collection.entity].pk_field %}
+{% set byline = fields[1:] | rejectattr("resolved_type", "equalto", "enum") | list | last %}
+{% set dated = fields | selectattr("resolved_type", "equalto", "datetime") | first %}
 import { Link } from "react-router-dom"
 import { use{{ col_name | pascal_case }} } from "@/__generated__/hooks/use{{ col_name | pascal_case }}"
 
@@ -74,38 +78,36 @@ export function {{ view.name | pascal_case }}Page() {
   return (
     <div className="max-w-5xl mx-auto px-6 py-12">
       {/* Featured post */}
-      <Link to={`{{ view.path }}/${featured.id}`} className="group block mb-16">
+      <Link to={`{{ view.path }}/${featured.{{ key }}}`} className="group block mb-16">
         <article className="grid md:grid-cols-2 gap-8 items-center">
           <div className="aspect-[4/3] bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center">
             <span className="text-6xl font-serif text-gray-200 select-none">
-              {featured.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}?.charAt(0)?.toUpperCase()}
+              {featured.{{ fields[0].name }}?.charAt(0)?.toUpperCase()}
             </span>
           </div>
           <div>
-            {% if collection %}
             {% for field_name, field in collection.fields.items() %}
             {% if field.resolved_type == "enum" %}
-            <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mb-4 ${statusColors[featured.{{ field.source_field_path[0] }}] || "bg-gray-100 text-gray-600"}`}>
-              {featured.{{ field.source_field_path[0] }}}
+            <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mb-4 ${statusColors[featured.{{ field_name }}] || "bg-gray-100 text-gray-600"}`}>
+              {featured.{{ field_name }}}
             </span>
             {% endif %}
             {% endfor %}
-            {% endif %}
             <h2 className="text-3xl font-serif font-bold text-gray-900 mb-3 group-hover:text-gray-600 transition-colors leading-tight">
-              {featured.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}}
+              {featured.{{ fields[0].name }}}
             </h2>
-            {% if collection and (collection.fields.values() | list) | length > 2 %}
+            {% if fields | length > 2 %}
             <p className="text-gray-500 leading-relaxed line-clamp-3 mb-4">
-              {featured.{{ (collection.fields.values() | list)[1].source_field_path[0] }}}
+              {featured.{{ fields[1].name }}}
             </p>
             {% endif %}
             <div className="flex items-center gap-3 text-sm text-gray-400">
-              {% if collection and (collection.fields | length) > 2 %}
-              {% set last_field = (collection.fields.values() | list)[-1] %}
-              <span>{featured.{{ last_field.source_field_path[0] }} || "Anonymous"}</span>
-              <span aria-hidden="true">&middot;</span>
+              {% if byline %}
+              <span>{featured.{{ byline.name }} || "Anonymous"}</span>
               {% endif %}
-              <time>{formatDate(featured.createdAt)}</time>
+              {% if dated %}
+              <time>{formatDate(featured.{{ dated.name }})}</time>
+              {% endif %}
             </div>
           </div>
         </article>
@@ -119,37 +121,35 @@ export function {{ view.name | pascal_case }}Page() {
 
           <div className="grid grid-cols-1 md:grid-cols-{{ columns }} gap-x-8 gap-y-12">
             {rest.map((item: any) => (
-              <Link key={item.id} to={`{{ view.path }}/${item.id}`} className="group block">
+              <Link key={item.{{ key }}} to={`{{ view.path }}/${item.{{ key }}}`} className="group block">
                 <article>
                   <div className="aspect-[16/10] bg-gradient-to-br from-gray-100 to-gray-50 rounded-xl mb-4 flex items-center justify-center">
                     <span className="text-4xl font-serif text-gray-200 select-none">
-                      {item.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}?.charAt(0)?.toUpperCase()}
+                      {item.{{ fields[0].name }}?.charAt(0)?.toUpperCase()}
                     </span>
                   </div>
-                  {% if collection %}
                   {% for field_name, field in collection.fields.items() %}
                   {% if field.resolved_type == "enum" %}
-                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium mb-2 ${statusColors[item.{{ field.source_field_path[0] }}] || "bg-gray-100 text-gray-600"}`}>
-                    {item.{{ field.source_field_path[0] }}}
+                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium mb-2 ${statusColors[item.{{ field_name }}] || "bg-gray-100 text-gray-600"}`}>
+                    {item.{{ field_name }}}
                   </span>
                   {% endif %}
                   {% endfor %}
-                  {% endif %}
                   <h3 className="font-semibold text-gray-900 group-hover:text-gray-600 transition-colors mb-1.5 line-clamp-2 leading-snug">
-                    {item.{{ (collection.fields.values() | list)[0].source_field_path[0] if collection else "title" }}}
+                    {item.{{ fields[0].name }}}
                   </h3>
-                  {% if collection and (collection.fields.values() | list) | length > 2 %}
+                  {% if fields | length > 2 %}
                   <p className="text-sm text-gray-400 line-clamp-2 mb-3">
-                    {item.{{ (collection.fields.values() | list)[1].source_field_path[0] }}}
+                    {item.{{ fields[1].name }}}
                   </p>
                   {% endif %}
                   <div className="flex items-center gap-2 text-xs text-gray-400">
-                    {% if collection and (collection.fields | length) > 2 %}
-                    {% set last_field = (collection.fields.values() | list)[-1] %}
-                    <span>{item.{{ last_field.source_field_path[0] }} || "Anonymous"}</span>
-                    <span aria-hidden="true">&middot;</span>
+                    {% if byline %}
+                    <span>{item.{{ byline.name }} || "Anonymous"}</span>
                     {% endif %}
-                    <time>{formatDate(item.createdAt)}</time>
+                    {% if dated %}
+                    <time>{formatDate(item.{{ dated.name }})}</time>
+                    {% endif %}
                   </div>
                 </article>
               </Link>

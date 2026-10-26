@@ -1,8 +1,9 @@
 """Unit tests for the FastAPI access-rule compilation filters.
 
-Verifies that ``rule_to_python`` compiles IR access rules to correct inline
-Python boolean expressions, and that ``needs_post_fetch`` correctly identifies
-routes requiring a post-fetch authorization check.
+Verifies that ``rule_to_predicate`` compiles IR access rules to expressions over
+the shipped ``access`` runtime that admit exactly the intended principals and
+rows, and that ``needs_post_fetch`` identifies routes requiring a post-fetch
+authorization check.
 """
 
 import pytest
@@ -14,9 +15,23 @@ from yaml_api_generator.generators.backend.fastapi.access_filters import (
     needs_post_fetch,
     py_bool,
     role_hierarchies_py,
-    rule_to_python,
+    rule_to_predicate,
 )
 from yaml_api_generator.ir.when import And, Equals, FieldRef, In, IsNotNull, IsNull, Not, NotIn, Or, StringLiteral
+from yaml_api_generator.runtime import access
+from yaml_api_generator.runtime.access import EVERY_ROW, NO_ROW, Field
+
+USER = {"identity_collection": "users", "sub": "u1", "roles": ["admin"], "record": {"role": "admin"}}
+
+
+def _predicate(rule, **symbols):
+    namespace = {
+        **vars(access),
+        "_principal_has_role": lambda principal, role: role in principal.get("roles", ()),
+        "principal": USER,
+        **symbols,
+    }
+    return eval(rule_to_predicate(rule), namespace)
 
 
 def test_py_bool():
@@ -26,81 +41,66 @@ def test_py_bool():
     assert py_bool(["x"]) == "True"
 
 
-def test_rule_to_python_unconditional():
+def test_identity_scope_admits_only_its_collection():
     rule = AccessRuleDescriptor(principal="identity:admins")
-    assert rule_to_python(rule) == 'principal.get("identity_collection") == "admins"'
+    assert _predicate(rule) == NO_ROW
+    assert _predicate(rule, principal={**USER, "identity_collection": "admins"}) == EVERY_ROW
 
 
-def test_rule_to_python_role_only():
-    rule = AccessRuleDescriptor(principal="identity:admins", required_role="admin")
-    assert rule_to_python(rule) == (
-        'principal.get("identity_collection") == "admins" and '
-        '_principal_has_role(principal, "admin")'
-    )
+def test_required_role_is_checked():
+    assert _predicate(AccessRuleDescriptor(principal="identity:users", required_role="admin")) == EVERY_ROW
+    assert _predicate(AccessRuleDescriptor(principal="identity:users", required_role="owner")) == NO_ROW
 
 
-def test_rule_to_python_when_equals():
+def test_when_equals_against_loaded_document():
     rule = AccessRuleDescriptor(
         principal="identity:users",
         when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("created_by",))),
     )
-    result = rule_to_python(rule)
-    assert '_values_equal(principal.get("sub"), document.get("created_by"))' in result
+    assert _predicate(rule, document={"created_by": "u1"}) == EVERY_ROW
+    assert _predicate(rule, document={"created_by": "u2"}) == NO_ROW
 
 
-def test_rule_to_python_role_and_when():
+def test_when_equals_against_listed_rows_is_a_row_predicate():
     rule = AccessRuleDescriptor(
         principal="identity:users",
-        required_role="admin",
-        when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("id",))),
+        when=Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("created_by",))),
     )
-    result = rule_to_python(rule)
-    assert result.startswith(
-        'principal.get("identity_collection") == "users" and '
-        '_principal_has_role(principal, "admin") and '
+    predicate = _predicate(rule, document=Field(()))
+    assert predicate.mongo() == {"created_by": "u1"}
+    assert [row["created_by"] for row in ({"created_by": "u1"}, {"created_by": "u2"}) if predicate.matches(row)] == ["u1"]
+
+
+def test_in_and_not_in():
+    role_in = AccessRuleDescriptor(
+        principal="identity:users", when=In(FieldRef("principal", ("record", "role")), ("admin", "moderator"))
     )
-    assert '_values_equal(principal.get("sub"), document.get("id"))' in result
-
-
-def test_rule_to_python_in():
-    rule = AccessRuleDescriptor(
-        principal="identity:users",
-        when=In(FieldRef("principal", ("role",)), ("admin", "moderator")),
+    role_not_in = AccessRuleDescriptor(
+        principal="identity:users", when=NotIn(FieldRef("principal", ("record", "role")), ("admin",))
     )
-    assert "any(_values_equal(principal.get(\"role\"), _v) for _v in ('admin', 'moderator'))" in rule_to_python(rule)
+    assert _predicate(role_in) == EVERY_ROW
+    assert _predicate(role_not_in) == NO_ROW
 
 
-def test_rule_to_python_not_in():
-    rule = AccessRuleDescriptor(
-        principal="identity:users",
-        when=NotIn(FieldRef("principal", ("role",)), ("guest",)),
-    )
-    assert "not any(_values_equal(principal.get(\"role\"), _v) for _v in ('guest',))" in rule_to_python(rule)
-
-
-def test_rule_to_python_nested_record_path():
-    rule = AccessRuleDescriptor(
-        principal="identity:users",
-        when=Equals(FieldRef("principal", ("record", "role")), StringLiteral("admin")),
-    )
-    assert 'principal.get("record", {}).get("role")' in rule_to_python(rule)
-
-
-def test_rule_to_python_and_or():
+def test_and_or_not():
     rule = AccessRuleDescriptor(
         principal="identity:users",
         when=And(
             Equals(FieldRef("principal", ("sub",)), FieldRef("document", ("owner",))),
             Or(
-                Equals(FieldRef("principal", ("role",)), StringLiteral("admin")),
-                Not(Equals(FieldRef("principal", ("role",)), StringLiteral("banned"))),
+                Equals(FieldRef("principal", ("record", "role")), StringLiteral("editor")),
+                Not(Equals(FieldRef("principal", ("record", "role")), StringLiteral("banned"))),
             ),
         ),
     )
-    result = rule_to_python(rule)
-    assert "and" in result
-    assert "or" in result
-    assert "not" in result
+    assert _predicate(rule, document={"owner": "u1"}) == EVERY_ROW
+    assert _predicate(rule, document={"owner": "u2"}) == NO_ROW
+
+
+def test_missing_document_admits_nothing():
+    rule = AccessRuleDescriptor(principal="identity:users", document_symbols=["document"])
+    assert _predicate(rule, document=None) == NO_ROW
+    assert _predicate(rule, document={}) == EVERY_ROW
 
 
 def test_is_unconditional_true():
@@ -189,18 +189,13 @@ def test_needs_post_fetch_false_for_non_fetching_op():
     assert not needs_post_fetch(_route("list", document_symbols=["document"]))
 
 
-def test_rule_to_python_is_null():
-    rule = AccessRuleDescriptor(
-        principal="identity:users",
-        when=IsNull(operand=FieldRef("document", ("organizationId",))),
+def test_is_null_and_is_not_null():
+    is_null = AccessRuleDescriptor(
+        principal="identity:users", when=IsNull(operand=FieldRef("document", ("organizationId",)))
     )
-    assert 'document.get("organizationId") is None' in rule_to_python(rule)
-
-
-def test_rule_to_python_is_not_null():
-    rule = AccessRuleDescriptor(
-        principal="identity:users",
-        when=IsNotNull(operand=FieldRef("principal", ("record", "role"))),
+    is_not_null = AccessRuleDescriptor(
+        principal="identity:users", when=IsNotNull(operand=FieldRef("principal", ("record", "role")))
     )
-    result = rule_to_python(rule)
-    assert "is not None" in result
+    assert _predicate(is_null, document={}) == EVERY_ROW
+    assert _predicate(is_null, document={"organizationId": "o1"}) == NO_ROW
+    assert _predicate(is_not_null) == EVERY_ROW

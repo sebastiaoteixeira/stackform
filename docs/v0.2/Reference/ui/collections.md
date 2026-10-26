@@ -38,9 +38,9 @@ Each collection has a `fields` map. Each entry maps a display name to a definiti
 | `from` | string | Entity traversal path `<entityName>.[refField...].<fieldName>`. Required. |
 | `format` | string | Free-form, pack-interpreted hint (for example `rich_text`). Optional. |
 
-`format` is passed through verbatim to the pack. It is not validated against a fixed
-set of values, and the built-in `generic` pack does not currently read it; only a
-custom pack that inspects the collection field map can act on it.
+`format` is passed through verbatim to the pack and is not validated against a
+fixed set of values. The built-in `generic` pack ignores it; a custom pack that
+inspects the collection field map can act on it.
 
 ## Traversal Rules
 

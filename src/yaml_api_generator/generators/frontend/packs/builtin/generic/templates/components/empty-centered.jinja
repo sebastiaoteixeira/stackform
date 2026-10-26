@@ -7,7 +7,7 @@ interface EmptyCenteredProps {
 }
 
 export function EmptyCentered({
-  title = 'No {{ entity.name | lower | plural }} yet',
+  title = 'No {{ entity.repository_name }} yet',
   subtitle = 'Create your first record to get started.',
   actionLabel = '+ New {{ entity.name | title }}',
   onAction,
@@ -30,3 +30,5 @@ export function EmptyCentered({
     </div>
   );
 }
+
+export default EmptyCentered;

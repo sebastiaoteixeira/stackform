@@ -5,13 +5,11 @@ and nowhere else: the repository primitives and the service mapping stay implici
 This module turns that declaration into an ``IRPagination`` and validates it
 against the entity it pages.
 
-``offset`` and ``keyset`` are the implemented strategies. The grammar names
-``cursor`` and ``range`` -- and ``count: estimated`` -- but no runtime backs
-them, so a spec that asks for one is rejected here rather than built into an
-app that would ignore it.
+The JSON schema closes every enumerated key (strategy, count, onOverflow,
+sort direction); this module checks what depends on the paged entity or on
+several keys at once.
 """
 
-from dataclasses import dataclass
 from typing import Any
 
 from yaml_api_generator.ir import IRCollection
@@ -19,56 +17,6 @@ from yaml_api_generator.ir.api import IRPageSize, IRPagination, IRSortKey
 from yaml_api_generator.parsers.yaml_parser import ConfigError
 
 _DIRECTIONS = {"asc", "desc"}
-
-
-@dataclass(frozen=True)
-class Choice:
-    """A closed set of accepted values, split into implemented and unsupported."""
-
-    subject: str
-    supported: frozenset[str]
-    unknown_code: str
-    unsupported: frozenset[str] = frozenset()
-
-    def validate(self, value: Any, path: str) -> list[ConfigError]:
-        if value in self.supported:
-            return []
-        hint = f"Use one of: {', '.join(sorted(self.supported))}"
-        if value in self.unsupported:
-            return [ConfigError(
-                code="PAGINATION_UNSUPPORTED",
-                message=(
-                    f"{self.subject} '{value}' is named by the v0.3 grammar but is "
-                    "not supported yet"
-                ),
-                path=path,
-                hint=hint,
-            )]
-        return [ConfigError(
-            code=self.unknown_code,
-            message=f"Unknown {self.subject} '{value}'",
-            path=path,
-            hint=hint,
-        )]
-
-
-_STRATEGY = Choice(
-    subject="pagination strategy",
-    supported=frozenset({"offset", "keyset"}),
-    unknown_code="PAGINATION_INVALID_STRATEGY",
-    unsupported=frozenset({"cursor", "range"}),
-)
-_COUNT = Choice(
-    subject="count mode",
-    supported=frozenset({"none", "exact"}),
-    unknown_code="PAGINATION_INVALID_COUNT",
-    unsupported=frozenset({"estimated"}),
-)
-_OVERFLOW = Choice(
-    subject="onOverflow mode",
-    supported=frozenset({"clamp", "reject"}),
-    unknown_code="PAGINATION_INVALID_OVERFLOW",
-)
 
 
 def parse_pagination(
@@ -87,28 +35,17 @@ def parse_pagination(
 
     errors: list[ConfigError] = []
     strategy = raw.get("strategy")
-    errors.extend(_STRATEGY.validate(strategy, f"{path}.strategy"))
 
-    size, size_errors = _parse_size(raw.get("size"), f"{path}.size")
+    size, size_errors = _parse_size(raw["size"], f"{path}.size")
     errors.extend(size_errors)
-
-    count = raw.get("count", "none")
-    errors.extend(_COUNT.validate(count, f"{path}.count"))
-
-    on_overflow = raw.get("onOverflow", "clamp")
-    errors.extend(_OVERFLOW.validate(on_overflow, f"{path}.onOverflow"))
 
     sort, sort_errors = _parse_sort(raw.get("sort"), collection, f"{path}.sort")
     errors.extend(sort_errors)
 
+    if strategy == "offset" and sort and collection is not None:
+        sort = _broken_ties(sort, collection)
     if strategy == "keyset":
         errors.extend(_validate_keyset(sort, collection, path))
-        if not size_errors and size.default == 0:
-            errors.append(ConfigError(
-                code="PAGINATION_INVALID_SIZE",
-                message="keyset pagination size.default must be positive",
-                path=f"{path}.size.default",
-            ))
 
     if errors:
         return None, errors
@@ -116,42 +53,23 @@ def parse_pagination(
     return IRPagination(
         strategy=strategy,
         size=size,
-        count=count,
-        on_overflow=on_overflow,
+        count=raw.get("count", "none"),
+        on_overflow=raw.get("onOverflow", "clamp"),
         envelope=bool(raw.get("envelope", False)),
         sort=sort,
     ), []
 
 
-def _parse_size(raw: Any, path: str) -> tuple[IRPageSize, list[ConfigError]]:
-    if not isinstance(raw, dict):
-        return IRPageSize(default=0, max=0), [ConfigError(
+def _parse_size(raw: dict[str, int], path: str) -> tuple[IRPageSize, list[ConfigError]]:
+    """The schema bounds each size; only their ordering is left to check."""
+    size = IRPageSize(default=raw["default"], max=raw["max"])
+    if size.default > size.max:
+        return size, [ConfigError(
             code="PAGINATION_INVALID_SIZE",
-            message="pagination.size must declare 'default' and 'max'",
+            message=f"Default page size {size.default} exceeds the maximum page size {size.max}",
             path=path,
         )]
-    default = raw.get("default")
-    maximum = raw.get("max")
-    errors: list[ConfigError] = []
-    if not isinstance(default, int) or isinstance(default, bool) or default < 0:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_SIZE",
-            message="pagination.size.default must be a non-negative integer",
-            path=f"{path}.default",
-        ))
-    if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_SIZE",
-            message="pagination.size.max must be a positive integer",
-            path=f"{path}.max",
-        ))
-    if not errors and default > maximum:
-        errors.append(ConfigError(
-            code="PAGINATION_INVALID_SIZE",
-            message="pagination.size.default must not exceed size.max",
-            path=path,
-        ))
-    return IRPageSize(default=default or 0, max=maximum or 0), errors
+    return size, []
 
 
 def _parse_sort(
@@ -200,6 +118,13 @@ def _parse_sort(
             continue
         keys.append(IRSortKey(field=field, dir=direction))
     return tuple(keys), errors
+
+
+def _broken_ties(sort: tuple[IRSortKey, ...], collection: IRCollection) -> tuple[IRSortKey, ...]:
+    """`sort` ending on a unique field, so offset pages never share or skip rows with tied values."""
+    if _is_unique(collection, sort[-1].field):
+        return sort
+    return (*sort, IRSortKey(field=collection.idField))
 
 
 def _validate_keyset(

@@ -7,9 +7,11 @@ description: Declaring roles with an enum field and using them in role-based acc
 
 ## Declaring roles
 
-Roles are not a standalone block. A role is an ordinary `enum` field on the auth
-entity, and you point `auth.roles` at that field's name. The field's `values` list
-defines the valid roles and its `default` decides the role a new record gets.
+Here a role is an ordinary `enum` field on the auth entity, and you point
+`auth.roles` at that field's name. The field's `values` list defines the valid roles
+and its `default` decides the role a new record gets. An auth entity may instead keep
+its roles out of its fields with a managed `roles:` block; see
+[Roles](../Reference/roles/overview.md).
 
 ```yaml
 version: "0.2"
@@ -90,16 +92,13 @@ The `role` field must be of type `enum`, and its name must match `auth.roles`.
 A mismatch fails generation with `AUTH_ROLES_FIELD_NOT_FOUND`; pointing `auth.roles`
 at a non-enum field fails with `AUTH_ROLES_FIELD_NOT_ENUM`.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 ## How a role reaches an access decision
 
@@ -118,7 +117,7 @@ sequenceDiagram
     S->>DB: Load record by sub
     DB-->>S: User document
     S->>S: Read role from the auth.roles enum field
-    S->>S: Evaluate access rule (exact role match)
+    S->>S: Evaluate access rule (role and the roles it includes)
     alt role matches
         S-->>C: 200 OK
     else missing or invalid credentials
@@ -130,7 +129,7 @@ sequenceDiagram
 
 ## Using a role in an access rule
 
-The access value `entity:role` requires a principal of that entity holding that exact
+The access value `entity:role` requires a principal of that entity holding that
 role. In the example, `access: user:moderator` allows any `user` whose `role` is
 `moderator`.
 
@@ -144,7 +143,7 @@ Other access values you can combine with roles:
 - `public` -- no authentication.
 - `"*"` -- any authenticated principal, role ignored.
 - `user:*` -- any `user`, role ignored.
-- `user:admin` -- a `user` whose role is exactly `admin`.
+- `user:admin` -- a `user` holding `admin`, directly or through the hierarchy.
 
 ### Single auth entity: prefix is optional
 
@@ -161,46 +160,56 @@ cannot tell which entity's `admin` you mean; write `user:admin` (or `apiClient:a
 to disambiguate. Using a bare role when there is no auth entity at all fails with
 `ACCESS_NO_AUTH_ENTITY`.
 
-## Role hierarchy is not applied yet
+## Role hierarchy
 
-You may see a top-level `roles:` map (keyed by auth-entity name) that declares a
-hierarchy. It is accepted by the parser but **not applied during enforcement** in any
-target today: only exact role matches are checked. An `admin` user does NOT
-automatically satisfy `access: user:moderator`. Do not rely on inheritance.
+A `roles:` block on the auth entity can declare which roles include others. Repeat
+the enum's values and default there, then add the `hierarchy`:
 
 ```yaml
-# Parsed, but inert during access enforcement today.
-roles:
+entities:
   user:
-    admin: [moderator]
-    moderator: [user]
+    type: auth
+    auth:
+      identifier: email
+      via: password
+      roles: role
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
 ```
 
-If you need "admin OR owner" style logic, express it with an access rule list and a
-`when` ownership condition rather than a hierarchy. See Tutorial 07 (ABAC rules).
+An `admin` now satisfies `access: user:moderator` and `access: user:user`, so each rule
+names the lowest role allowed. See [Role hierarchy](../Reference/roles/hierarchy.md).
+
+For "admin OR owner" style logic, combine a role rule with a `when` ownership
+condition in an access rule list. See Tutorial 07 (ABAC rules).
 
 ## Setting and changing a role
 
-A new record gets the role from the enum field's `default:` on register. There is no
-built-in endpoint dedicated to changing a role: to promote a user, update the `role`
-field on the record (through an `update`/`replace` route you have authorized, or
-directly in MongoDB).
+A new record gets the role from the enum field's `default:` on register. To promote
+a user, update the `role` field through an `update`/`replace` route, or directly in
+MongoDB.
 
-**Watch out:** the role field is a normal field on the document. In the generated
-FastAPI backend it is accepted on write and returned in responses, so anyone allowed
-to update a user could set their own role unless you gate the write. Restrict the
-`update`/`replace` operations (for example `access: user:admin`) on the users
-controller if self-service role changes are a concern.
+A caller sets the role field only to a role it holds itself, counting the roles its
+hierarchy includes. A create that names a role the caller does not hold stores the
+default role instead, and an update that does so leaves the role unchanged. So a
+public `register` always yields `user`, and only an `admin` can make another user an
+`admin`.
 
 ## Key points
 
-- A role is an `enum` field; `auth.roles` names that field. There is no standalone
-  `roles:` block on the entity (any such block is ignored).
+- A role is an `enum` field named by `auth.roles`, or a managed role declared in a
+  `roles:` block.
 - The enum `values` define valid roles; the enum `default` sets the role on register.
+- A caller grants only roles it holds.
 - Roles are loaded from the database on every request, so role changes apply
   immediately without re-login.
 - Use roles in access rules as `entity:role` (or a bare role when there is one auth
   entity); `entity:*` matches the entity regardless of role.
-- Role hierarchy is parsed but inert; only exact role matches are enforced today.
+- `roles.hierarchy` lets a role include others, so a higher role passes every rule
+  for the roles it includes.
 - Roles are per-entity: different auth entities can define completely different role
   sets, each in its own enum field.

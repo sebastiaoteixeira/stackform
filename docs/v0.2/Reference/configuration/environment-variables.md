@@ -191,7 +191,7 @@ template task then renders the remote `/opt/<name>/.env` (mode `0600`) from thos
 values, and `docker compose` reads it via `env_file`. The `.secrets/` directory and
 the remote `.env` are the only places the plaintext secret ever exists.
 
-This currently covers the framework secrets the generated code reads (`JWT_SECRET`
+This covers the framework secrets the generated code reads (`JWT_SECRET`
 and each confidential provider's `<PROVIDER>_CLIENT_SECRET`). Any additional runtime
 variables your backend needs are declared explicitly in the spec's `deploy.env_vars`
 list and emitted with an empty default for you to fill.

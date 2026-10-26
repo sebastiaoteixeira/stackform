@@ -54,7 +54,7 @@ flowchart TD
     F -- 1 --> I{format value}
     I -- omitted --> J[uuidv7 default]
     I -- uuidv7 / uuidv4 --> K[explicit format]
-    I -- other --> L[ID_FORMAT_INVALID]
+    I -- other --> L[SCHEMA_VALIDATION_ERROR]
 ```
 
 ## Behavior
@@ -170,7 +170,7 @@ curl -X POST http://localhost:8000/api/v1/my-collection \
 | `pk:` references a non-existent field | `PK_FIELD_NOT_FOUND` | "pk field 'X' not found in entity 'Y'" |
 | No `type: id` field and no `pk:` | `ID_FIELD_MISSING` | "Entity must define exactly one field with type 'id'" |
 | Two or more `type: id` fields | `ID_FIELD_MULTIPLE` | "Entity must define exactly one field with type 'id'" |
-| Invalid `format` on `type: id` | `ID_FORMAT_INVALID` | "id field format must be uuidv7 or uuidv4" |
+| Invalid `format` on `type: id` | `SCHEMA_VALIDATION_ERROR` | "'<format>' is not one of ['uuidv7', 'uuidv4']" |
 
 ## See Also
 

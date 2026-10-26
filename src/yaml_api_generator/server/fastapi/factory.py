@@ -2,8 +2,8 @@ import os
 import re
 import secrets
 from collections.abc import Callable, Mapping
-from datetime import datetime
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
@@ -12,17 +12,27 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, create_model
 
 from yaml_api_generator.runtime.dpop import DPoPProofFactory
+from yaml_api_generator.runtime.payloads import (
+    CONSTRAINTS,
+    SCALAR_TYPES,
+    STRICT_TYPES,
+    Payload,
+    partial,
+)
 from yaml_api_generator.runtime.files import FileError, RecordFiles
 from yaml_api_generator.runtime.file_requests import (
+    json_body,
     json_request_body,
     read_json,
     read_upload,
     upload_request_body,
 )
 from yaml_api_generator.runtime.multipart import file_download_responses, file_upload_body
-from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
+from yaml_api_generator.ir import payload_fields
+from yaml_api_generator.ir.api import IRDto, IROIDCProvider, IRProviderBinding, IRSAMLProvider
+from yaml_api_generator.runtime.saml import SAMLServiceProvider
 from yaml_api_generator.utils.strings import to_pascal_case, to_py_identifier
-from ..common.auth import oidc
+from ..common.auth import oidc, provisioning
 from ..common.auth.login_codes import login_codes
 from ..common.auth.session_tokens import SessionTokens
 from ..common.server_context import (
@@ -39,6 +49,7 @@ from ..common.repositories import BaseRepository, RepositoryRegistry
 from ..common.request_body import RecordBody, RequestBody
 from ..common.request_context import RequestContext
 from ..common.steps import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
+from ..common.steps.validation import credential_properties, login_properties
 from .session_cookie import clear_session_cookies, issue_csrf_token, set_session_cookies
 
 
@@ -55,96 +66,64 @@ _UPLOAD_BODIES = {
 }
 
 
+def _model_field(config: dict[str, Any]) -> tuple[Any, Any]:
+    annotation = _field_annotation(config)
+    constraints = {CONSTRAINTS[key]: config[key] for key in CONSTRAINTS if key in config}
+    if config.get("required"):
+        return annotation, Field(config.get("default", ...), **constraints)
+    return annotation | None, Field(config.get("default"), **constraints)
+
+
 def create_pydantic_model_fields(
-    collection: RuntimeCollectionDescriptor,
-    operation: str,
-    identity_collection: RuntimeIdentityDescriptor | None = None,
+    properties: dict[str, dict[str, Any]],
 ) -> dict[str, tuple[Any, Any]]:
-    make_optional = operation == "update"
-    fields: dict[str, tuple[Any, Any]] = {}
-
-    for field_name, raw_config in collection.fields.items():
-        if not isinstance(raw_config, dict):
-            continue
-        if raw_config.get("type") == "id":
-            continue
-        if field_name == "_auth" or field_name in collection.files:
-            continue
-
-        annotation = _field_annotation(raw_config)
-        required = bool(raw_config.get("required", False))
-        has_default = "default" in raw_config
-        default_value: Any
-
-        if make_optional:
-            annotation = annotation | None
-            default_value = raw_config.get("default", None)
-        elif has_default:
-            default_value = raw_config["default"]
-        elif required:
-            default_value = ...
-        else:
-            annotation = annotation | None
-            default_value = None
-
-        field_kwargs: dict[str, Any] = {}
-        if raw_config.get("min") is not None:
-            field_kwargs["ge"] = raw_config["min"]
-        if raw_config.get("max") is not None:
-            field_kwargs["le"] = raw_config["max"]
-        if raw_config.get("minLength") is not None:
-            field_kwargs["min_length"] = raw_config["minLength"]
-        if raw_config.get("maxLength") is not None:
-            field_kwargs["max_length"] = raw_config["maxLength"]
-
-        default: Any = (
-            Field(default_value, **field_kwargs) if field_kwargs else default_value
-        )
-        fields[field_name] = (annotation, default)
-
-    if (
-        identity_collection is not None
-        and operation == "create"
-        and identity_collection.has_password
-        and "password" not in fields
-    ):
-        fields["password"] = (str, Field(..., min_length=1))
-
-    return fields
+    return {
+        name: _model_field(config)
+        for name, config in properties.items()
+        if not config.get("readonly")
+    }
 
 
 def create_pydantic_model(
     collection: RuntimeCollectionDescriptor,
     operation: str,
     identity_collection: RuntimeIdentityDescriptor | None = None,
+    dto: IRDto | None = None,
 ) -> type[BaseModel] | None:
+    """The documented body of ``operation``; ``ValidateBodyStep`` validates the body itself."""
+    model_name = to_pascal_case(collection.name)
     if operation == "login" and identity_collection is not None:
-        pw_binding = identity_collection.get_binding("password")
-        identifier_field = pw_binding.identifier if pw_binding else "identifier"
-        fields = {
-            identifier_field: (str, Field(..., min_length=1)),
-            "password": (str, Field(..., min_length=1)),
-        }
-        model_name = to_pascal_case(collection.name)
-        return create_model(f"{model_name}LoginPayload", **fields)
-
+        return create_model(
+            f"{model_name}LoginPayload",
+            __base__=Payload,
+            **create_pydantic_model_fields(login_properties(identity_collection)),
+        )
     if operation == "refresh":
         return create_model(
-            f"{to_pascal_case(collection.name)}RefreshPayload",
+            f"{model_name}RefreshPayload",
+            __base__=Payload,
             refresh_token=(str, Field(..., min_length=1)),
         )
-
     if operation not in WRITE_OPERATIONS:
         return None
-
-    model_fields = create_pydantic_model_fields(
-        collection,
-        operation,
-        identity_collection,
+    if dto is not None:
+        return create_model(
+            to_pascal_case(dto.name),
+            __base__=Payload,
+            **create_pydantic_model_fields(payload_fields(dto.fields)),
+        )
+    fields = create_model(
+        f"{model_name}Fields",
+        __base__=Payload,
+        **create_pydantic_model_fields(payload_fields(collection.fields, collection.files)),
     )
-    operation_suffix = operation.capitalize()
-    model_name = to_pascal_case(collection.name)
-    return create_model(f"{model_name}{operation_suffix}Payload", **model_fields)
+    if operation == "update":
+        return partial(fields, f"{model_name}UpdatePayload")
+    return create_model(
+        f"{model_name}{operation.capitalize()}Payload",
+        __base__=fields,
+        **create_pydantic_model_fields(credential_properties(operation, identity_collection)),
+    )
 
 
 def register_fastapi_routes(
@@ -169,6 +148,7 @@ def register_fastapi_routes(
                 collection,
                 route.operation,
                 identity_collection,
+                route.body_dto,
             )
             if ctx.session.uses_cookie and route.operation == "refresh":
                 body_model = None
@@ -186,11 +166,17 @@ def register_fastapi_routes(
         endpoint = _build_endpoint(
             pipeline, body_model, route, uses_cookie=ctx.session.uses_cookie
         )
+        body_document = (
+            {} if body_model is None
+            else {"requestBody": json_request_body(None, body_model, partial=route.operation == "update")}
+        )
         app.add_api_route(
             route.path,
             endpoint,
             methods=[route.method],
-            openapi_extra=_openapi_extra(route, ctx.auth),
+            openapi_extra=_openapi_extra(
+                route, ctx.auth, parameters=_path_parameters(route.path), **body_document
+            ),
         )
 
     for file_route in ctx.file_routes:
@@ -335,7 +321,6 @@ def _record_endpoint(
             pipeline=pipeline,
             request=request,
             body=None,
-            url_params={},
             uses_cookie=uses_cookie,
             operation=operation,
             upload=read(request),
@@ -350,7 +335,6 @@ def _download_endpoint(pipeline: Pipeline, *, uses_cookie: bool):
             pipeline=pipeline,
             request=request,
             body=None,
-            url_params={},
             uses_cookie=uses_cookie,
         )
         return StreamingResponse(ctx.response.chunks, headers=ctx.response.headers)
@@ -371,70 +355,123 @@ def register_provider_routes(
     registry: RepositoryRegistry,
     session_tokens: SessionTokens,
 ) -> None:
-    """Mount OIDC provider routes for each identity collection that binds one.
+    """Mount the external provider routes of every identity collection that binds one.
 
-    Reaches parity with the generated backend's oidc_routes for the dev server:
-    a provider-listing endpoint, the login redirect, the callback, and the
-    shared one-time-code exchange.
+    Reaches parity with the generated backend: a provider listing per collection,
+    each provider's login flow, and the shared one-time-code exchange.
     """
     auth = ctx.auth
     base_prefix = _base_prefix(ctx)
-    has_oidc = False
+    has_external_login = False
 
     for name, identity in auth.identity_collections.items():
         bound = [
-            (binding, auth.providers.get(binding.provider))
+            (binding, auth.providers[binding.provider])
             for binding in identity.bindings
-            if auth.providers.get(binding.provider) is not None
+            if binding.provider in auth.providers
         ]
         if not bound:
             continue
 
-        listing = [{"name": b.provider, "type": p.type} for b, p in bound]
         app.add_api_route(
             f"{base_prefix}/{name}/auth/providers",
-            _providers_listing_endpoint(listing),
+            _providers_listing_endpoint([{"name": b.provider, "type": p.type} for b, p in bound]),
             methods=["GET"],
         )
-
+        login = _ExternalLogin(ctx.collections[name], registry, ctx.collections)
         for binding, provider in bound:
-            if not isinstance(provider, IROIDCProvider):
-                continue
-            login_path = f"{base_prefix}/{name}/auth/{binding.provider}"
-            app.add_api_route(
-                f"{login_path}/logout", _oidc_logout_endpoint(provider), methods=["GET"]
+            _PROVIDER_ROUTES[type(provider)](
+                app, f"{base_prefix}/{name}/auth/{binding.provider}", provider, binding, login
             )
-            if provider.is_idp:
-                continue
-            has_oidc = True
-            collection = ctx.collections[name]
-            callback_path = f"{login_path}/callback"
-            dpop = _load_dpop_factory(provider) if provider.dpop else None
-            app.add_api_route(
-                login_path,
-                _oidc_login_endpoint(provider, callback_path, name),
-                methods=["GET"],
-            )
-            app.add_api_route(
-                callback_path,
-                _oidc_callback_endpoint(
-                    provider,
-                    binding,
-                    collection,
-                    registry,
-                    callback_path,
-                    collections=ctx.collections,
-                    dpop=dpop,
-                ),
-                methods=["GET"],
-            )
+            has_external_login = has_external_login or not provider.is_idp
 
-    if has_oidc:
+    if has_external_login:
         app.add_api_route(
             f"{base_prefix}/auth/exchange",
             _exchange_endpoint(session_tokens, uses_cookie=ctx.session.uses_cookie),
             methods=["POST"],
         )
+
+
+@dataclass(frozen=True)
+class _ExternalLogin:
+    """Signs a provider-authenticated user into one identity collection."""
+
+    collection: RuntimeCollectionDescriptor
+    registry: RepositoryRegistry
+    collections: dict[str, RuntimeCollectionDescriptor]
+
+    async def redirect(
+        self, request: Request, claims: dict[str, Any], binding: IRProviderBinding
+    ) -> RedirectResponse:
+        try:
+            record = await provisioning.provider_binding(binding).sign_in(
+                claims, provisioning.records_of(self.registry, self.collections), self.collection.name
+            )
+        except provisioning.REFUSALS as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        if record is None:
+            raise HTTPException(status_code=403, detail="User not found and auto-provisioning is disabled")
+        code = login_codes.issue(str(record[self.collection.id_field]), self.collection.name)
+        # 303 so the browser follows a POSTed SAML assertion with a GET
+        return RedirectResponse(url=f"{_frontend_url(request)}/auth/callback?code={code}", status_code=303)
+
+
+def _frontend_url(request: Request) -> str:
+    return os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
+
+
+def _mount_oidc_routes(
+    app: FastAPI,
+    login_path: str,
+    provider: IROIDCProvider,
+    binding: IRProviderBinding,
+    login: _ExternalLogin,
+) -> None:
+    app.add_api_route(f"{login_path}/logout", _oidc_logout_endpoint(provider), methods=["GET"])
+    if provider.is_idp:
+        return
+    callback_path = f"{login_path}/callback"
+    dpop = _load_dpop_factory(provider) if provider.dpop else None
+    app.add_api_route(
+        login_path,
+        _oidc_login_endpoint(provider, callback_path, login.collection.name),
+        methods=["GET"],
+    )
+    app.add_api_route(
+        callback_path,
+        _oidc_callback_endpoint(provider, binding, login, callback_path, dpop=dpop),
+        methods=["GET"],
+    )
+
+
+def _mount_saml_routes(
+    app: FastAPI,
+    login_path: str,
+    provider: IRSAMLProvider,
+    binding: IRProviderBinding,
+    login: _ExternalLogin,
+) -> None:
+    sp = SAMLServiceProvider(provider.idp_metadata_url, provider.sp_entity_id, login_path)
+
+    async def callback_endpoint(request: Request) -> RedirectResponse:
+        response = await login.redirect(request, await sp.claims(request), binding)
+        sp.forget_request(response)
+        return response
+
+    async def metadata_endpoint(request: Request) -> Response:
+        return Response(await sp.metadata(request), media_type="application/xml")
+
+    async def logout_endpoint(request: Request) -> RedirectResponse:
+        return RedirectResponse(url=await sp.logout_redirect(request, _frontend_url(request)))
+
+    app.add_api_route(login_path, sp.login, methods=["GET"])
+    app.add_api_route(sp.callback_path, callback_endpoint, methods=["POST"])
+    app.add_api_route(f"{login_path}/metadata", metadata_endpoint, methods=["GET"])
+    app.add_api_route(sp.logout_path, logout_endpoint, methods=["GET"])
+
+
+_PROVIDER_ROUTES = {IROIDCProvider: _mount_oidc_routes, IRSAMLProvider: _mount_saml_routes}
 
 
 def _providers_listing_endpoint(listing: list[dict[str, str]]):
@@ -503,8 +540,9 @@ def _oidc_login_endpoint(
 
 def _oidc_logout_endpoint(provider: IROIDCProvider):
     async def endpoint(request: Request) -> RedirectResponse:
-        post_logout = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
-        return RedirectResponse(url=await oidc.build_logout_redirect(provider, post_logout))
+        return RedirectResponse(
+            url=await oidc.build_logout_redirect(provider, _frontend_url(request))
+        )
 
     return endpoint
 
@@ -512,10 +550,8 @@ def _oidc_logout_endpoint(provider: IROIDCProvider):
 def _oidc_callback_endpoint(
     provider: IROIDCProvider,
     binding: IRProviderBinding,
-    collection: RuntimeCollectionDescriptor,
-    registry: RepositoryRegistry,
+    login: _ExternalLogin,
     callback_path: str,
-    collections: dict[str, RuntimeCollectionDescriptor] | None = None,
     dpop: DPoPProofFactory | None = None,
 ):
     async def endpoint(
@@ -523,7 +559,7 @@ def _oidc_callback_endpoint(
         code: str,
         state: str | None = None,
     ) -> RedirectResponse:
-        state_cookie = _oidc_cookie_name(collection.name, provider.name, "state")
+        state_cookie = _oidc_cookie_name(login.collection.name, provider.name, "state")
         expected_state = request.cookies.get(state_cookie)
         if (
             not state
@@ -532,23 +568,16 @@ def _oidc_callback_endpoint(
         ):
             raise HTTPException(status_code=400, detail="Invalid OIDC state")
         verifier_cookie = _oidc_cookie_name(
-            collection.name, provider.name, "pkce_verifier"
+            login.collection.name, provider.name, "pkce_verifier"
         )
         verifier = request.cookies.get(verifier_cookie) if provider.pkce else None
         if provider.pkce and not verifier:
             raise HTTPException(status_code=400, detail="Missing PKCE verifier")
-        repo = registry.for_collection(collection.name)
         callback_url = str(request.base_url).rstrip("/") + callback_path
-        login_code = await oidc.handle_callback(
-            provider, binding, collection, repo, code, callback_url,
-            collections=collections, registry=registry,
-            code_verifier=verifier,
-            dpop=dpop,
+        claims = await oidc.fetch_claims(
+            provider, code, callback_url, code_verifier=verifier, dpop=dpop
         )
-        frontend_url = os.environ.get("FRONTEND_URL") or str(request.base_url).rstrip("/")
-        response = RedirectResponse(
-            url=f"{frontend_url}/auth/callback?code={login_code}"
-        )
+        response = await login.redirect(request, claims, binding)
         response.delete_cookie(state_cookie, path=callback_path)
         if provider.pkce:
             response.delete_cookie(verifier_cookie, path=callback_path)
@@ -592,30 +621,23 @@ def _logout_endpoint():
     return endpoint
 
 
-def _field_annotation(field_config: dict[str, Any]) -> Any:
-    field_type = field_config.get("type")
-
-    if field_type in {"string", "id", "ref"}:
-        return str
-    if field_type == "number":
-        return float
-    if field_type == "boolean":
-        return bool
-    if field_type == "datetime":
-        return datetime
-    if field_type == "enum":
-        values = field_config.get("values")
-        if isinstance(values, list) and values:
-            return Literal[tuple(values)]
-        return str
-    if field_type == "array":
-        item_config = field_config.get("items")
-        if isinstance(item_config, dict):
-            return list[_field_annotation(item_config)]
-        return list[Any]
-    if field_type == "object":
+def _field_annotation(config: dict[str, Any]) -> Any:
+    kind = config.get("type", "string")
+    if kind == "enum":
+        return Literal[tuple(config["values"])]
+    if kind == "array":
+        return list[_field_annotation(config["items"])] if "items" in config else list[Any]
+    if kind == "object":
         return dict[str, Any]
-    return Any
+    scalar = SCALAR_TYPES[kind]
+    return Annotated[scalar, Field(strict=True)] if scalar in STRICT_TYPES else scalar
+
+
+async def _json_body(request: Request) -> Any:
+    try:
+        return await request.json()
+    except (ValueError, UnicodeDecodeError):
+        return None
 
 
 def _build_endpoint(
@@ -625,82 +647,30 @@ def _build_endpoint(
     *,
     uses_cookie: bool = False,
 ):
-    has_id_param = "{id}" in route.path
+    """An endpoint passing the raw JSON body to ``pipeline``, which validates it after the access checks."""
 
-    if body_model is None:
-        if has_id_param:
-
-            async def endpoint_no_body_with_id(request: Request, id: str) -> Any:
-                return await _run_pipeline(
-                    pipeline=pipeline,
-                    request=request,
-                    body=None,
-                    url_params={"id": id},
-                    uses_cookie=uses_cookie,
-                    operation=route.operation,
-                )
-
-            return endpoint_no_body_with_id
-
-        async def endpoint_no_body(request: Request) -> Any:
-            return await _run_pipeline(
-                pipeline=pipeline,
-                request=request,
-                body=None,
-                url_params={},
-                uses_cookie=uses_cookie,
-                operation=route.operation,
-            )
-
-        return endpoint_no_body
-
-    exclude_unset = route.operation == "update"
-
-    if has_id_param:
-
-        async def endpoint_with_body_and_id(
-            request: Request,
-            id: str,
-            payload: BaseModel,
-        ) -> Any:
-            return await _run_pipeline(
-                pipeline=pipeline,
-                request=request,
-                body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
-                url_params={"id": id},
-                uses_cookie=uses_cookie,
-                operation=route.operation,
-            )
-
-        endpoint_with_body_and_id.__annotations__["payload"] = body_model
-        return endpoint_with_body_and_id
-
-    async def endpoint_with_body(request: Request, payload: BaseModel) -> Any:
+    async def endpoint(request: Request) -> Any:
         return await _run_pipeline(
             pipeline=pipeline,
             request=request,
-            body=payload.model_dump(mode="json", exclude_unset=exclude_unset),
-            url_params={},
+            body=await (_json_body if body_model is None else json_body)(request),
             uses_cookie=uses_cookie,
             operation=route.operation,
         )
 
-    endpoint_with_body.__annotations__["payload"] = body_model
-    return endpoint_with_body
+    return endpoint
 
 
 async def _execute(
     pipeline: Pipeline,
     request: Request,
     body: dict[str, Any] | None,
-    url_params: dict[str, str],
     uses_cookie: bool = False,
     operation: str | None = None,
     upload: RequestBody | None = None,
 ) -> RequestContext:
     try:
         path_params = {key: str(value) for key, value in request.path_params.items()}
-        path_params.update(url_params)
         query_params = getattr(request, "query_params", None)
         query: dict[str, str | list[str]] = (
             {
@@ -747,12 +717,11 @@ async def _run_pipeline(
     pipeline: Pipeline,
     request: Request,
     body: dict[str, Any] | None,
-    url_params: dict[str, str],
     uses_cookie: bool = False,
     operation: str | None = None,
     upload: RequestBody | None = None,
 ) -> Any:
-    ctx = await _execute(pipeline, request, body, url_params, uses_cookie, operation, upload)
+    ctx = await _execute(pipeline, request, body, uses_cookie, operation, upload)
     response_payload = jsonable_encoder(ctx.response)
     if not uses_cookie or operation not in {"login", "refresh"}:
         return response_payload

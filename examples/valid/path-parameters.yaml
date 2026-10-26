@@ -95,37 +95,6 @@ controllers:
     base_path: /posts
     service: posts
     access: public
-    routes:
-      list:
-        method: GET
-        path: ""
-        service: posts
-        access: public
-      create:
-        method: POST
-        path: ""
-        service: posts
-        access: public
-      get_by_id:
-        method: GET
-        path: /{id}
-        service: posts
-        access: public
-      get_by_slug:
-        method: GET
-        path: /slug/{slug}
-        service: posts
-        access: public
-      update:
-        method: PUT
-        path: /{id}
-        service: posts
-        access: public
-      delete:
-        method: DELETE
-        path: /{id}
-        service: posts
-        access: public
 
   comments:
     base_path: /posts
@@ -160,29 +129,3 @@ controllers:
     base_path: /categories
     service: categories
     access: public
-    routes:
-      list:
-        method: GET
-        path: ""
-        service: categories
-        access: public
-      get_by_slug:
-        method: GET
-        path: /{slug}
-        service: categories
-        access: public
-      create:
-        method: POST
-        path: ""
-        service: categories
-        access: public
-      update:
-        method: PUT
-        path: /{slug}
-        service: categories
-        access: public
-      delete:
-        method: DELETE
-        path: /{slug}
-        service: categories
-        access: public

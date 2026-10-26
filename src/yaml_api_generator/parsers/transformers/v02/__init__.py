@@ -4,6 +4,7 @@ Coordinates specialized transformers to convert v0.2 YAML specifications into IR
 """
 
 from dataclasses import fields as dataclass_fields
+from operator import attrgetter
 from typing import Any
 
 from yaml_api_generator.ir import IRDocument
@@ -13,17 +14,21 @@ from yaml_api_generator.parsers.yaml_parser import ConfigErrors
 from .access_transformer import AccessTransformer
 from .collection_transformer import CollectionTransformer
 from .datastore_transformer import parse_datastores, parse_file_datastores
+from .document_lookup import desugar_document_lookups
 from .dto_transformer import DtoTransformer
 from .file_transformer import FileStoreRegistry, FileTransformer
 from .identity_transformer import IdentityTransformer
 from .policies_transformer import PoliciesTransformer
 from .policy_expansion import expand_rule_policies
+from .record_location import id_param, locate_records
 from .repository_transformer import RepositoryTransformer
 from .route_transformer import RouteTransformer
 
 
 class V02Transformer:
     """Orchestrates v0.2 YAML to IR transformation."""
+
+    _record_param = staticmethod(id_param)
 
     def __init__(self):
         self._repository = RepositoryTransformer()
@@ -54,7 +59,6 @@ class V02Transformer:
         repos_data: dict[str, Any] = resolved.get("repositories", {})
         services_data: dict[str, Any] = resolved.get("services", {})
         controllers_data: dict[str, Any] = resolved.get("controllers", {})
-        roles_data: dict[str, Any] = resolved.get("roles", {})
         providers_data: dict[str, Any] = resolved.get("providers", {})
         dtos_data: dict[str, Any] = resolved.get("dto", {})
         policies_data: dict[str, Any] = resolved.get("policies", {})
@@ -89,6 +93,7 @@ class V02Transformer:
             repos_data, defaults, datastore_names, default_datastore, datastore_types,
             handler_resolver=self._operation_handler_resolver(import_map),
             file_datastore_names=set(file_stores),
+            collections=collections,
         )
         if repo_errors:
             raise ConfigErrors(repo_errors)
@@ -101,20 +106,13 @@ class V02Transformer:
             raise ConfigErrors(binding_errors)
 
         identity_collections = self._identity.transform(
-            entities_data, collections, repo_entity_map
+            entities_data, collections, repo_entity_map,
+            _login_collections(api_data, services_data, repo_entity_map),
         )
 
         field_errors = self._identity.validate_auth_fields(collections, identity_collections)
         if field_errors:
             raise ConfigErrors(field_errors)
-
-        role_hierarchies: dict[str, dict[str, list[str]]] = {}
-        if roles_data:
-            role_hierarchies, role_errors = self._identity.parse_role_hierarchies(
-                roles_data, auth_entities
-            )
-            if role_errors:
-                raise ConfigErrors(role_errors)
 
         services = self._route.transform_services(
             services_data, repo_entity_map, import_map, dtos_data
@@ -122,6 +120,7 @@ class V02Transformer:
         routes = self._route.transform_routes(
             controllers_data,
             services,
+            repositories,
             api_data,
             repo_entity_map,
             auth_entities,
@@ -135,7 +134,14 @@ class V02Transformer:
         if policy_errors:
             raise ConfigErrors(policy_errors)
 
-        routes = self._expand_route_policies(routes, policies, entity_to_collection)
+        routes = desugar_document_lookups(
+            locate_records(
+                self._expand_route_policies(routes, policies, entity_to_collection),
+                collections,
+                self._record_param,
+            ),
+            collections,
+        )
         file_routes, file_route_errors = self._files.derive(collections, routes)
         if file_route_errors:
             raise ConfigErrors(file_route_errors)
@@ -146,23 +152,23 @@ class V02Transformer:
         if dto_errors:
             raise ConfigErrors(dto_errors)
 
-        mongo_config = resolved.get("mongo", {})
+        api = self._route.build_api(api_data)
         return IRDocument(
             version=str(resolved["version"]),
-            api=self._route.build_api(api_data),
+            api=api,
             collections=collections,
-            routes=routes,
+            routes=sorted(routes, key=attrgetter("precedence")),
             identityCollections=identity_collections,
             dtos=dtos,
             services=services,
-            role_hierarchies=role_hierarchies,
-            mongo=self._route.build_mongo(mongo_config),
+            service_bases=self._route.transform_service_bases(services_data, import_map),
+            mongo=self._route.build_mongo(resolved.get("mongo", {})),
             datastores=datastores,
             default_datastore=default_datastore,
             file_stores=file_stores,
             default_file_store=default_file_store,
             file_routes=file_routes,
-            deploy=self._route.build_deploy(resolved.get("deploy"), mongo_config, providers, datastores),
+            deploy=self._route.build_deploy(resolved.get("deploy"), api, providers, datastores),
             repositories=repositories,
             providers=providers,
             policies=policies,
@@ -234,3 +240,17 @@ class V02Transformer:
                 kwargs["audiences"] = tuple(kwargs["audiences"])
             providers[name] = ctor(name=name, **kwargs)
         return providers
+
+
+def _login_collections(
+    api_data: dict[str, Any], services_data: dict[str, Any], repo_entity_map: dict[str, str]
+) -> set[str]:
+    """Every collection serves login unless `api.operations.auth.login` is false; then only
+    collections with an explicit login service do."""
+    if api_data.get("operations", {}).get("auth", {}).get("login") is not False:
+        return set(repo_entity_map)
+    return {
+        service["repository"]
+        for service in services_data.values()
+        if isinstance(service, dict) and service.get("operation") == "login"
+    }

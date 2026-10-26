@@ -19,14 +19,18 @@ The IR serves as the single source of truth for code generation,
 eliminating repeated YAML parsing and validation.
 """
 
-from collections.abc import Iterable
+import re
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from .when import WhenExpr
 from ..constants import CRUD_OPERATIONS
+from ..runtime.lifecycle import Lifecycle
+
+_PATH_PARAM = re.compile(r"\{(\w+)\}")
 
 
 @dataclass(frozen=True)
@@ -51,15 +55,9 @@ class IROIDCProvider:
 class IRSAMLProvider:
     name: str
     type: str = "saml"
-    trust: str = "app"
     idp_metadata_url: str | None = None
     sp_entity_id: str | None = None
-    issuer: str | None = None
-    audience: str | None = None
-
-    @property
-    def is_idp(self) -> bool:
-        return self.trust == "idp"
+    is_idp: ClassVar[bool] = False
 
 
 IRProvider = IROIDCProvider | IRSAMLProvider
@@ -81,7 +79,8 @@ class IRDeploy:
     runtime: str
     name: str | None = None
     port: int = 8000
-    mongo_local: bool = False
+    mongo_local: bool | None = None
+    """Explicit ``deploy.mongo.local``; when unset each MongoDB datastore is local if its URI is."""
     env_vars: tuple[str, ...] = field(default_factory=tuple)
     docker: IRDeployDocker | None = None
     systemd: IRDeploySystemd | None = None
@@ -167,6 +166,7 @@ class IRApi:
     port: int = 8000
     files: IRFileLimits | None = None
     max_files: int | None = None
+    security_headers: bool = True
 
 
 @dataclass(frozen=True)
@@ -176,9 +176,16 @@ class IRSession:
     refresh: bool = False
     delivery: str = "token-url"
 
+    REFRESHED_ACCESS_TTL: ClassVar[int] = 900
+
     @property
     def uses_asymmetric(self) -> bool:
         return self.algorithm == "RS256"
+
+    @property
+    def access_ttl(self) -> int | None:
+        """Access-token lifetime in seconds; None leaves it to JWT_EXPIRATION_HOURS."""
+        return self.ttl or (self.REFRESHED_ACCESS_TTL if self.refresh else None)
 
 
 @dataclass(frozen=True)
@@ -186,6 +193,11 @@ class IRMongo:
     uri: str = "mongodb://localhost:27017"
     database: str = "yaml_api"
     type: str = "mongodb"
+
+    @property
+    def is_local(self) -> bool:
+        """Whether the URI points at a server on the deploy host itself."""
+        return any(host in self.uri for host in ("localhost", "127.0.0.1"))
 
 
 @dataclass(frozen=True)
@@ -252,6 +264,32 @@ class IRCollection:
     datastore: str | None = None
     files: dict[str, IRFileField] = field(default_factory=dict)
     file_store: str | None = None
+    lifecycle: Lifecycle = Lifecycle()
+
+    def scope(self, params: Iterable[str], record_param: str | None) -> tuple[str, ...]:
+        """The path parameters, besides the record's own, that name fields of this collection."""
+        return tuple(param for param in params if param != record_param and param in self.fields)
+
+
+SECRET_FIELD: dict[str, Any] = {"type": "string", "required": True, "minLength": 1}
+"""The config of a credential a request sends, such as a password."""
+
+
+def payload_fields(
+    fields: dict[str, Any], excluded: Collection[str] = ()
+) -> dict[str, dict[str, Any]]:
+    """The field configs a request payload is checked against: no ids, auth or ``excluded`` fields.
+
+    Readonly fields stay, since their keys are rejected and their defaults filled in.
+    """
+    return {
+        name: config
+        for name, config in fields.items()
+        if isinstance(config, dict)
+        and config.get("type") != "id"
+        and name != "_auth"
+        and name not in excluded
+    }
 
 
 @dataclass(frozen=True)
@@ -319,8 +357,31 @@ class IRVendoredImport:
     requires: tuple[str, ...] = ()
 
 
+AUTHENTICATED = "*"
+"""The principal of a rule that any authenticated caller satisfies."""
+
+
+class CallerDemand:
+    """What an access rule asks of the caller: ``principal`` names the identity collection
+    (``identity:<collection>``), ``AUTHENTICATED`` or nothing; ``required_role`` a role it holds."""
+
+    principal: str
+    required_role: str | None
+    effect: str
+
+    @property
+    def admits_anonymous(self) -> bool:
+        """Whether the rule can hold for a caller who presents no credentials."""
+        return not self.principal and self.required_role is None
+
+    @staticmethod
+    def anonymous_admitted(rules: "Iterable[CallerDemand] | None") -> bool:
+        """Whether an allow rule among ``rules`` can admit a caller who presents no credentials."""
+        return any(rule.effect == "allow" and rule.admits_anonymous for rule in rules or ())
+
+
 @dataclass(frozen=True)
-class IRAccessRule:
+class IRAccessRule(CallerDemand):
     principal: str
     required_role: str | None = None
     identity_symbols: dict[str, IRIdentityBinding] = field(default_factory=dict)
@@ -328,8 +389,6 @@ class IRAccessRule:
     request_symbols: dict[str, IRRequestBinding] = field(default_factory=dict)
     when: WhenExpr | None = None
     effect: str = "allow"
-    filter: str | None = None
-    write_fields: list[str] = field(default_factory=list)
     reason: str | None = None
     bind: dict[str, WhereRhs] = field(default_factory=dict)
 
@@ -349,10 +408,22 @@ class IRService:
     repository: str | None = None
     operation: str | None = None
     handler: str | None = None
-    abstract: bool = False
     inherits: str | None = None
     input: IRServiceInput | None = None
     forwarding: dict[str, WhereRhs] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class IRServiceBase:
+    """An abstract service, generated as the base class of the services extending it.
+
+    ``operations`` maps each operation the class implements to its handler, or
+    to None when the service runs the repository operation of the same name.
+    """
+
+    name: str
+    operations: dict[str, str | None] = field(default_factory=dict)
+    inherits: str | None = None
 
 
 @dataclass(frozen=True)
@@ -366,6 +437,41 @@ class IRRoute:
     access_rules: list[IRAccessRule] | None = None
     handler: str | None = None
     pagination: IRPagination | None = None
+    # The path parameter carrying the id of the record the route acts on.
+    record_param: str | None = None
+    # Path parameters naming fields of the collection: the route reaches only rows holding their values.
+    scope: tuple[str, ...] = ()
+
+    @property
+    def path_params(self) -> list[str]:
+        return _PATH_PARAM.findall(self.path)
+
+    @property
+    def admits_anonymous(self) -> bool:
+        """Whether an access rule of the route can admit a caller who presents no credentials."""
+        return CallerDemand.anonymous_admitted(self.access_rules)
+
+    @property
+    def serves_crud(self) -> bool:
+        """Whether a repository CRUD operation serves the route, fetching its own record."""
+        return self.handler is None and self.collection is not None and self.operation in CRUD_OPERATIONS
+
+    @property
+    def precedence(self) -> tuple[bool, ...]:
+        """Sort key under which a literal path segment outranks a parameter at the same position."""
+        return tuple(segment.startswith("{") for segment in self.path.split("/"))
+
+    def body_dto(self, dtos: dict[str, IRDto]) -> IRDto | None:
+        """The DTO that the first DTO-typed request-body binding gives this route's body."""
+        return next(
+            (
+                dtos[binding.type_name]
+                for rule in self.access_rules or ()
+                for binding in rule.request_symbols.values()
+                if binding.part in (None, "body") and binding.type_name in dtos
+            ),
+            None,
+        )
 
 
 @dataclass(frozen=True)
@@ -432,6 +538,11 @@ def flatten_role_hierarchy(
 class IRProviderRelation:
     collection: str
     match: dict[str, str] = field(default_factory=dict)
+    id_field: str = "id"
+    match_types: dict[str, str] = field(default_factory=dict)
+
+
+CREDENTIAL_PROVIDERS = frozenset({"password", "apiKey"})
 
 
 @dataclass(frozen=True)
@@ -441,6 +552,12 @@ class IRProviderBinding:
     claim_mapping: dict[str, str] = field(default_factory=dict)
     auto_provision: bool = True
     relations: dict[str, IRProviderRelation] = field(default_factory=dict)
+    field_types: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def stores_credential(self) -> bool:
+        """``password`` and ``apiKey`` bindings take their secret from a body field named after the provider."""
+        return self.provider in CREDENTIAL_PROVIDERS
 
 
 @dataclass(frozen=True)
@@ -449,10 +566,21 @@ class IRIdentityCollection:
     bindings: tuple[IRProviderBinding, ...]
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
+    login: bool = True
 
     @property
     def has_password(self) -> bool:
         return any(b.provider == "password" for b in self.bindings)
+
+    @property
+    def serves_login(self) -> bool:
+        return self.login and self.has_password
+
+    def default_role(self, collection: IRCollection) -> str | None:
+        """The role of a record whose creator may not choose one."""
+        if self.roles is not None:
+            return self.roles.default
+        return collection.fields[self.roles_field].get("default") if self.roles_field else None
 
     @property
     def has_api_key(self) -> bool:
@@ -460,6 +588,12 @@ class IRIdentityCollection:
 
     def get_binding(self, provider: str) -> "IRProviderBinding | None":
         return next((b for b in self.bindings if b.provider == provider), None)
+
+    def issues_sessions(self, providers: Mapping[str, IRProvider]) -> bool:
+        """Password login and every login flow the app runs itself end in an app-issued session."""
+        return self.has_password or any(
+            not providers[b.provider].is_idp for b in self.bindings if b.provider in providers
+        )
 
 
 @dataclass(frozen=True)
@@ -471,7 +605,7 @@ class IRDocument:
     identityCollections: dict[str, IRIdentityCollection]
     dtos: dict[str, IRDto] = field(default_factory=dict)
     services: dict[str, IRService] = field(default_factory=dict)
-    role_hierarchies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    service_bases: dict[str, IRServiceBase] = field(default_factory=dict)
     providers: dict[str, IRProvider] = field(default_factory=dict)
     mongo: IRMongo = field(default_factory=IRMongo)
     datastores: dict[str, IRDatastore] = field(default_factory=dict)

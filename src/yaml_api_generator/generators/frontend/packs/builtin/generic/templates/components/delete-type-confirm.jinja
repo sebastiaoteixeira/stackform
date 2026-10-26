@@ -2,16 +2,16 @@ import { useState } from 'react';
 
 interface DeleteTypeConfirmProps {
   entityLabel?: string;
-  recordSlug: string;
+  recordSlug?: string;
   recordPreview?: Record<string, string>;
-  onConfirm: () => void;
-  onCancel: () => void;
+  onConfirm?: () => void;
+  onCancel?: () => void;
   loading?: boolean;
 }
 
 export function DeleteTypeConfirm({
   entityLabel = '{{ entity.name | title }}',
-  recordSlug,
+  recordSlug = '{{ entity.name }}',
   recordPreview,
   onConfirm,
   onCancel,
@@ -75,3 +75,5 @@ export function DeleteTypeConfirm({
     </div>
   );
 }
+
+export default DeleteTypeConfirm;

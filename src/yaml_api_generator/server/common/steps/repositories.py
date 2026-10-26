@@ -1,23 +1,33 @@
-import re
 from dataclasses import dataclass
 from typing import Any, cast
 
-from ..auth import hash_password
+from ..auth import hash_api_key, hash_password
 from ..request_context import RequestContext
-from yaml_api_generator.ir.api import IRPagination, IRRolesConfig
+from ..server_context import RuntimeIdentityDescriptor
+from yaml_api_generator.ir.api import IRPagination
+from yaml_api_generator.runtime.access import RoleHierarchies, Roles, conjoin, held_roles, matching
+from yaml_api_generator.runtime.operations import (
+    present,
+    present_document as _inject_canonical_id,
+    resolve,
+)
 from ..pagination import Page, build_response, map_request
 from ..repositories.base import BaseRepository
-from ..utils.ids import generate_id as _generate_id
+from yaml_api_generator.runtime.ids import generate_id as _generate_id
 from . import NotFoundError, Step
+from .handlers import handler_request
 
 
-_PATH_TOKEN = re.compile(r"\{(\w+)\}")
 _REQUEST_BODY_MESSAGE = "Request body must be a JSON object"
 _NOT_FOUND_MESSAGE = "Resource not found"
 
 
 def _repository(ctx: RequestContext) -> BaseRepository:
     return cast(BaseRepository, ctx.repository)
+
+
+def _role_store(identity: RuntimeIdentityDescriptor | None) -> Roles:
+    return identity.role_store if identity else Roles()
 
 
 def _require_param(url_params: dict[str, str], token: str) -> str:
@@ -29,39 +39,28 @@ def _require_param(url_params: dict[str, str], token: str) -> str:
 
 @dataclass(frozen=True)
 class RecordLocator:
-    """Locates a single record from a route's path tokens.
+    """Locates the rows a route reaches from its path parameters.
 
-    The final path token identifies the record by its id field; each preceding
-    token constrains a same-named field, scoping the record to its parents.
+    The record parameter names the record by its id field; each scope parameter
+    constrains the same-named field.
     """
 
     id_field: str
-    id_token: str = "id"
-    parents: tuple[tuple[str, str], ...] = ()
+    record_param: str | None = "id"
+    scope: tuple[str, ...] = ()
 
     @property
     def is_scoped(self) -> bool:
-        return bool(self.parents)
+        return bool(self.scope)
+
+    def scope_criteria(self, url_params: dict[str, str]) -> dict[str, str]:
+        return {name: _require_param(url_params, name) for name in self.scope}
 
     def document_id(self, url_params: dict[str, str]) -> str:
-        return _require_param(url_params, self.id_token)
+        return _require_param(url_params, self.record_param)
 
     def criteria(self, url_params: dict[str, str]) -> dict[str, Any]:
-        constraints = {
-            field_name: _require_param(url_params, token)
-            for field_name, token in self.parents
-        }
-        constraints[self.id_field] = _require_param(url_params, self.id_token)
-        return constraints
-
-
-def record_locator(path: str, id_field: str) -> RecordLocator:
-    *parents, id_token = _PATH_TOKEN.findall(path) or ["id"]
-    return RecordLocator(
-        id_field=id_field,
-        id_token=id_token,
-        parents=tuple((token, token) for token in parents),
-    )
+        return {**self.scope_criteria(url_params), self.id_field: self.document_id(url_params)}
 
 
 async def _fetch_record(
@@ -74,26 +73,11 @@ async def _fetch_record(
     return await _repository(ctx).get(collection_name, locator.document_id(ctx.url_params))
 
 
-def _payload(ctx: RequestContext) -> dict[str, Any]:
+def _record(ctx: RequestContext) -> dict[str, Any]:
+    """The values a write stores: the body, overridden by those the authorizing rule binds."""
     if not isinstance(ctx.body, dict):
         raise ValueError(_REQUEST_BODY_MESSAGE)
-    return cast(dict[str, Any], ctx.body)
-
-
-def _inject_canonical_id(
-    document: dict[str, Any] | None,
-    id_field: str,
-) -> dict[str, Any] | None:
-    if document is None:
-        return None
-    normalized = dict(document)
-    if id_field not in normalized and normalized.get("_id") is not None:
-        normalized[id_field] = str(normalized["_id"])
-    if id_field != "_id":
-        normalized.pop("_id", None)
-    normalized.pop("_auth", None)
-    normalized.pop("password", None)
-    return normalized
+    return {**ctx.body, **(ctx.bound_inputs or {})}
 
 
 def _inject_canonical_id_list(
@@ -107,19 +91,11 @@ def _inject_canonical_id_list(
 
 
 def _prepare_payload(
-    payload: dict[str, Any],
-    *,
-    password_via: bool,
-    roles_config: IRRolesConfig | None = None,
-    is_create: bool = False,
+    payload: dict[str, Any], identity: RuntimeIdentityDescriptor | None
 ) -> dict[str, Any]:
     normalized = dict(payload)
 
-    # Roles are managed exclusively through _auth namespace — never writable via CRUD
-    normalized.pop("roles", None)
-    normalized.pop("role", None)
-
-    if password_via:
+    if identity is not None and identity.has_password:
         raw_password = normalized.pop("password", None)
         if raw_password is not None:
             if not isinstance(raw_password, str) or not raw_password.strip():
@@ -130,12 +106,8 @@ def _prepare_payload(
             auth_data["passwordHash"] = hash_password(raw_password)
             normalized["_auth"] = auth_data
 
-    if is_create and roles_config is not None:
-        auth_data = normalized.get("_auth", {})
-        if not isinstance(auth_data, dict):
-            auth_data = {}
-        auth_data["roles"] = roles_config.default
-        normalized["_auth"] = auth_data
+    if identity is not None and identity.has_api_key and "apiKey" in normalized:
+        normalized["apiKey"] = hash_api_key(normalized["apiKey"])
 
     return normalized
 
@@ -144,15 +116,19 @@ def RepositoryListStep(
     collection_name: str,
     id_field: str,
     pagination: IRPagination | None = None,
+    locator: RecordLocator | None = None,
 ) -> Step:
+    locator = locator or RecordLocator(id_field, None)
+
     async def step(ctx: RequestContext) -> RequestContext:
+        rows = conjoin(ctx.row_filter, matching(locator.scope_criteria(ctx.url_params)))
         if pagination is None:
-            result = await _repository(ctx).list(collection_name)
+            result = await _repository(ctx).list(collection_name, rows)
             ctx.response = _inject_canonical_id_list(result, id_field)
             return ctx
         query = ctx.query or {}
         primitives = map_request(pagination, query)
-        page = await _repository(ctx).paginate(collection_name, primitives)
+        page = await _repository(ctx).paginate(collection_name, primitives, rows)
         canonical = Page(
             rows=_inject_canonical_id_list(page.rows, id_field),
             total=page.total,
@@ -182,16 +158,19 @@ def RepositoryCreateStep(
     collection_name: str,
     id_field: str,
     id_format: str,
-    password_via: bool,
-    roles_config: IRRolesConfig | None = None,
+    identity: RuntimeIdentityDescriptor | None = None,
+    hierarchies: RoleHierarchies | None = None,
+    locator: RecordLocator | None = None,
 ) -> Step:
+    """A new identity record keeps the roles it names only when its caller holds them;
+    a new record holds the values of the path parameters scoping the route."""
+    roles = _role_store(identity)
+    locator = locator or RecordLocator(id_field, None)
+
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(
-            _payload(ctx),
-            password_via=password_via,
-            roles_config=roles_config,
-            is_create=True,
-        )
+        scoped = {**_record(ctx), **locator.scope_criteria(ctx.url_params)}
+        granted = roles.granted(scoped, held_roles(ctx.principal, hierarchies or {}))
+        payload = _prepare_payload(granted, identity)
         if id_format != "natural":
             payload[id_field] = _generate_id(id_format)
         result = await _repository(ctx).create(collection_name, payload)
@@ -204,13 +183,17 @@ def RepositoryCreateStep(
 def RepositoryUpdateStep(
     collection_name: str,
     id_field: str,
-    password_via: bool,
     locator: RecordLocator | None = None,
+    *,
+    identity: RuntimeIdentityDescriptor | None = None,
+    hierarchies: RoleHierarchies | None = None,
 ) -> Step:
+    roles = _role_store(identity)
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        revised = roles.revised(_record(ctx), held_roles(ctx.principal, hierarchies or {}))
+        payload = _prepare_payload(revised, identity)
         if locator.is_scoped:
             result = await _repository(ctx).update_by(
                 collection_name, locator.criteria(ctx.url_params), payload
@@ -230,13 +213,17 @@ def RepositoryUpdateStep(
 def RepositoryReplaceStep(
     collection_name: str,
     id_field: str,
-    password_via: bool,
     locator: RecordLocator | None = None,
+    *,
+    identity: RuntimeIdentityDescriptor | None = None,
+    hierarchies: RoleHierarchies | None = None,
 ) -> Step:
+    roles = _role_store(identity)
     locator = locator or RecordLocator(id_field)
 
     async def step(ctx: RequestContext) -> RequestContext:
-        payload = _prepare_payload(_payload(ctx), password_via=password_via)
+        revised = roles.revised(_record(ctx), held_roles(ctx.principal, hierarchies or {}))
+        payload = _prepare_payload(revised, identity)
         if locator.is_scoped:
             result = await _repository(ctx).replace_by(
                 collection_name, locator.criteria(ctx.url_params), payload
@@ -281,25 +268,9 @@ def RepositoryOperationStep(
     id_field: str,
 ) -> Step:
     async def step(ctx: RequestContext) -> RequestContext:
-        params = {**ctx.url_params, **(ctx.service_inputs or {})}
-        bindings = {
-            **params,
-            "principal": ctx.principal or {},
-            "params": params,
-            "body": ctx.body or {},
-        }
-        result = await _repository(ctx).run_operation(collection_name, query, bindings)
-        ctx.response = _normalize_operation_result(result, id_field)
+        bindings = handler_request(ctx).bindings
+        result = await _repository(ctx).run_operation(collection_name, resolve(query, bindings))
+        ctx.response = present(result, id_field)
         return ctx
 
     return step
-
-
-def _normalize_operation_result(result: Any, id_field: str) -> Any:
-    if isinstance(result, list):
-        if all(isinstance(item, dict) for item in result):
-            return _inject_canonical_id_list(result, id_field)
-        return result
-    if isinstance(result, dict):
-        return _inject_canonical_id(result, id_field)
-    return result

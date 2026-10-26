@@ -1,45 +1,28 @@
 from typing import Any
 
-from dependencies.auth import verify_password
+from dependencies.auth import find_by_password
 from dependencies.jwt_utils import create_jwt_token
-import validation
+from fields import Model
 
 
-{% for identity in ctx.auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
+{% for identity in ctx.auth.login_identities %}
+{% set login_payload = identity.name | capitalize_collection ~ "LoginPayload" %}
+{{ login_payload }} = Model({{ {identity.identifier: secret, "password": secret} | py_literal }})
+
+
 async def handle_login_{{ identity.name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
-    if body is None:
-        return 422, {"detail": "Request body is required"}
     try:
-        data = validation.validate_{{ identity.name }}_login(body)
+        data = {{ login_payload }}.conform(body)
     except ValueError as exc:
         return 422, {"detail": str(exc)}
 
-    col = db["{{ identity.name }}"]
-    cursor = col.find({})
-    docs = await cursor.to_list(length=None)
+    doc = await find_by_password(db, "{{ identity.name }}", data[{{ identity.identifier | tojson }}], data["password"])
+    subject = doc.get("{{ identity.id_field }}") if doc is not None else None
+    if subject is None:
+        return 401, {"detail": "Invalid credentials"}
 
-    for doc in docs:
-        if str(doc.get("{{ identity.identifier }}", "")) != data[{{ identity.identifier | tojson }}]:
-            continue
-        stored_hash = doc["_auth"]["passwordHash"]
-        if not isinstance(stored_hash, str):
-            continue
-        if not verify_password(data["password"], stored_hash):
-            continue
+    token = create_jwt_token(str(subject), "{{ identity.name }}")
+    safe_user = {k: v for k, v in doc.items() if k not in ("_id", "_auth", "password", "apiKey")}
+    return 200, {"token": token, "user": safe_user}
 
-        subject = doc.get("{{ identity.id_field }}")
-        if subject is None:
-            continue
-
-        token = create_jwt_token(str(subject), "{{ identity.name }}")
-        safe_user = {
-            k: v for k, v in doc.items()
-            if k not in ("password", "_id", "_auth")
-        }
-        return 200, {"token": token, "user": safe_user}
-
-    return 401, {"detail": "Invalid credentials"}
-
-{% endif %}
 {% endfor %}

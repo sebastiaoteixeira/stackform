@@ -13,6 +13,7 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeIdentityDescriptor,
 )
 from yaml_api_generator.server.common.steps.authentication import _resolve_idp_principal
+from tests.unit.support.repositories import InMemoryRepository
 
 _ISSUER = "https://kc.test/realms/main"
 _AUDIENCE = "my-app"
@@ -21,33 +22,6 @@ _JWKS_URI = "https://kc.test/jwks"
 _DISCOVERY_URL = "https://kc.test/.well-known/openid-configuration"
 
 _UNPATCHED_GET_SIGNING_KEY = idp._get_signing_key
-
-
-class _FakeRepo:
-    def __init__(self):
-        self.docs: list[dict] = []
-
-    async def list(self, _collection):
-        return list(self.docs)
-
-    async def create(self, _collection, payload):
-        self.docs.append(payload)
-        return payload
-
-    async def update(self, _collection, document_id, payload):
-        for doc in self.docs:
-            if str(doc.get("id", "")) == str(document_id):
-                doc.update(payload)
-                return doc
-        return None
-
-    async def upsert_by(self, _collection, key_field, payload):
-        for doc in self.docs:
-            if str(doc.get(key_field)) == str(payload.get(key_field)):
-                doc.update(payload)
-                return doc
-        self.docs.append(payload)
-        return payload
 
 
 @pytest.fixture
@@ -117,7 +91,7 @@ _COLLECTIONS = {"users": _COLLECTION}
 
 
 async def test_valid_idp_token_provisions_and_resolves_principal(rsa_key):
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
     token = _sign(rsa_key, sub="kc-123", email="alice@example.com")
 
     principal = await _resolve_idp_principal(
@@ -128,11 +102,11 @@ async def test_valid_idp_token_provisions_and_resolves_principal(rsa_key):
     assert principal is not None
     assert principal["identity_collection"] == "users"
     assert principal["record"]["email"] == "alice@example.com"
-    assert len(repo.docs) == 1
+    assert len(repo.documents("users")) == 1
 
 
 async def test_idp_provision_sets_primary_id_to_sub(rsa_key):
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
     token = _sign(rsa_key, sub="kc-abc-123", email="bob@example.com")
 
     principal = await _resolve_idp_principal(
@@ -142,12 +116,12 @@ async def test_idp_provision_sets_primary_id_to_sub(rsa_key):
 
     assert principal is not None
     assert principal["sub"] == "kc-abc-123"
-    assert repo.docs[0]["id"] == "kc-abc-123"
-    assert repo.docs[0]["email"] == "bob@example.com"
+    assert repo.documents("users")[0]["id"] == "kc-abc-123"
+    assert repo.documents("users")[0]["email"] == "bob@example.com"
 
 
 async def test_second_idp_login_with_same_sub_returns_same_record(rsa_key):
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
     token = _sign(rsa_key, sub="kc-xyz", email="carol@example.com")
 
     first = await _resolve_idp_principal(
@@ -161,7 +135,7 @@ async def test_second_idp_login_with_same_sub_returns_same_record(rsa_key):
 
     assert first is not None and second is not None
     assert first["sub"] == second["sub"] == "kc-xyz"
-    assert len(repo.docs) == 1
+    assert len(repo.documents("users")) == 1
 
 
 async def test_idp_auto_provision_disabled_rejects_unknown_sub(rsa_key):
@@ -175,7 +149,7 @@ async def test_idp_auto_provision_disabled_rejects_unknown_sub(rsa_key):
         ),),
         id_field="id",
     )
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
     token = _sign(rsa_key, sub="kc-new", email="dave@example.com")
 
     with pytest.raises(UnauthorizedError):
@@ -184,12 +158,12 @@ async def test_idp_auto_provision_disabled_rejects_unknown_sub(rsa_key):
             {"keycloak": _provider_with_overrides()}, _registry(repo),
         )
 
-    assert len(repo.docs) == 0
+    assert len(repo.documents("users")) == 0
 
 
 async def test_issuer_derived_from_discovery_when_not_in_spec(rsa_key):
     """Without issuer in spec, the provider must derive it from the discovery doc."""
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
     token = _sign(rsa_key, sub="kc-123", email="alice@example.com")
 
     principal = await _resolve_idp_principal(
@@ -204,7 +178,7 @@ async def test_issuer_derived_from_discovery_when_not_in_spec(rsa_key):
 async def test_audience_defaults_to_client_id(rsa_key):
     """When no audience is declared, the token aud is verified against client_id."""
     token = _sign(rsa_key, sub="kc-123", email="b@example.com", aud=_CLIENT_ID)
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
 
     principal = await _resolve_idp_principal(
         token, {"users": _identity()}, _COLLECTIONS,
@@ -225,7 +199,7 @@ async def test_audience_override_is_honored(rsa_key):
     )
     payload = {"iss": _ISSUER, "aud": override_audience, "exp": int(time.time()) + 300, "sub": "x", "email": "c@example.com"}
     token = jwt.encode(payload, rsa_key, algorithm="RS256")
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
 
     principal = await _resolve_idp_principal(
         token, {"users": _identity()}, _COLLECTIONS,
@@ -238,7 +212,7 @@ async def test_token_from_unknown_issuer_is_not_an_idp_token(rsa_key):
     token = _sign(rsa_key, sub="x", email="a@b.com", iss="https://other/realms/x")
     result = await _resolve_idp_principal(
         token, {"users": _identity()}, _COLLECTIONS,
-        {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+        {"keycloak": _provider_with_overrides()}, _registry(InMemoryRepository()),
     )
     assert result is None
 
@@ -250,7 +224,7 @@ async def test_wrong_audience_is_rejected(rsa_key):
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,
-            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+            {"keycloak": _provider_with_overrides()}, _registry(InMemoryRepository()),
         )
 
 
@@ -263,7 +237,7 @@ async def test_default_audience_rejects_wrong_aud(rsa_key):
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,
-            {"keycloak": _provider_minimal()}, _registry(_FakeRepo()),
+            {"keycloak": _provider_minimal()}, _registry(InMemoryRepository()),
         )
 
 
@@ -284,7 +258,7 @@ async def test_audience_override_rejects_wrong_aud(rsa_key):
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,
-            {"keycloak": provider}, _registry(_FakeRepo()),
+            {"keycloak": provider}, _registry(InMemoryRepository()),
         )
 
 
@@ -298,7 +272,7 @@ async def test_multiple_audiences_accepted(rsa_key):
         audiences=("api://resource", _AUDIENCE),
     )
     token = _sign(rsa_key, sub="kc-multi", email="multi@example.com", aud=_AUDIENCE)
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
 
     principal = await _resolve_idp_principal(
         token, {"users": _identity()}, _COLLECTIONS,
@@ -309,7 +283,7 @@ async def test_multiple_audiences_accepted(rsa_key):
 
 async def test_service_principal_returned_when_identifier_claim_absent(rsa_key):
     """M2M token without email yields a service principal — no user row created."""
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
     payload = {
         "iss": _ISSUER,
         "aud": _CLIENT_ID,
@@ -330,7 +304,7 @@ async def test_service_principal_returned_when_identifier_claim_absent(rsa_key):
     assert principal["client_id"] == "my-service"
     assert principal["record"] is None
     assert principal["identity_collection"] is None
-    assert len(repo.docs) == 0
+    assert len(repo.documents("users")) == 0
 
 
 async def test_es256_token_is_verified(monkeypatch):
@@ -348,7 +322,7 @@ async def test_es256_token_is_verified(monkeypatch):
         "sub": "kc-ec", "email": "ec@example.com",
     }
     token = jwt.encode(payload, ec_key, algorithm="ES256")
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
 
     principal = await _resolve_idp_principal(
         token, {"users": _identity()}, _COLLECTIONS,
@@ -366,7 +340,7 @@ async def test_expired_token_is_rejected(rsa_key):
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,
-            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+            {"keycloak": _provider_with_overrides()}, _registry(InMemoryRepository()),
         )
 
 
@@ -394,7 +368,7 @@ async def test_hs256_token_is_rejected(rsa_key):
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,
-            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+            {"keycloak": _provider_with_overrides()}, _registry(InMemoryRepository()),
         )
 
 
@@ -409,7 +383,7 @@ async def test_token_without_exp_is_rejected(rsa_key):
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,
-            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+            {"keycloak": _provider_with_overrides()}, _registry(InMemoryRepository()),
         )
 
 
@@ -430,13 +404,13 @@ async def test_token_without_kid_header_is_rejected(rsa_key, monkeypatch):
     with pytest.raises(UnauthorizedError):
         await _resolve_idp_principal(
             token, {"users": _identity()}, _COLLECTIONS,
-            {"keycloak": _provider_with_overrides()}, _registry(_FakeRepo()),
+            {"keycloak": _provider_with_overrides()}, _registry(InMemoryRepository()),
         )
 
 
 async def test_service_principal_with_email_creates_user(rsa_key):
     """A token WITH email always yields a user principal (lookup-or-create)."""
-    repo = _FakeRepo()
+    repo = InMemoryRepository()
     token = _sign(rsa_key, sub="kc-user", email="user@example.com")
 
     principal = await _resolve_idp_principal(
@@ -447,4 +421,4 @@ async def test_service_principal_with_email_creates_user(rsa_key):
     assert principal is not None
     assert principal.get("is_service") is not True
     assert principal["record"] is not None
-    assert len(repo.docs) == 1
+    assert len(repo.documents("users")) == 1

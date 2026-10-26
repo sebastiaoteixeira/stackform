@@ -8,8 +8,8 @@ description: Declare the request values a service requires and map them to its r
 In v0.3, a service declares the request values it requires with `input:` and
 maps those validated values to its repository operation or custom handler with
 `with:`. Both the in-process server and generated FastAPI, DRF, and raw-ASGI
-backends enforce the same contract. A v0.2 spec using either key is rejected
-with `SERVICE_INPUT_UNSUPPORTED`.
+backends enforce the same contract. Both keys are v0.3 only; a v0.2 spec using
+either is rejected with `SCHEMA_VALIDATION_ERROR`.
 
 ## Declaring inputs
 
@@ -95,7 +95,6 @@ signature:
 
 | Code | Raised when |
 | --- | --- |
-| `SERVICE_INPUT_UNSUPPORTED` | `input:` or `with:` is used before v0.3 |
 | `SERVICE_INPUT_INVALID` | `input:` is neither a non-empty field map nor a non-empty DTO list |
 | `SERVICE_INPUT_FIELD_INVALID` | an input field type or `required` flag is invalid |
 | `SERVICE_INPUT_DTO_NOT_FOUND` | an input lists a DTO that does not exist |

@@ -1,9 +1,13 @@
+from uuid import uuid4
+
 import pytest
+from pymongo import MongoClient
 
 from tests.integration.support.file_apps import BACKENDS, CLIENT_ID, serve
 from tests.integration.support.minio import MINIO
 from tests.integration.support.mongo import MONGO
 from tests.integration.support.oidc import live_issuer
+from tests.integration.support.postgres import POSTGRES
 
 
 @pytest.fixture(scope="session")
@@ -15,6 +19,21 @@ def s3_endpoint():
 @pytest.fixture(scope="session")
 def mongo_uri():
     with MONGO.endpoint() as uri:
+        yield uri
+
+
+@pytest.fixture
+def mongo_database(mongo_uri):
+    """Name of a fresh database, dropped after the test."""
+    name = f"test_{uuid4().hex[:12]}"
+    yield name
+    with MongoClient(mongo_uri) as mongo:
+        mongo.drop_database(name)
+
+
+@pytest.fixture(scope="session")
+def postgres_uri():
+    with POSTGRES.endpoint() as uri:
         yield uri
 
 

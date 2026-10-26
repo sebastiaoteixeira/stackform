@@ -6,18 +6,18 @@ interface CascadeRelation {
 }
 
 interface DeleteBulkCascadeProps {
-  count: number;
+  count?: number;
   entityLabel?: string;
-  relations: CascadeRelation[];
-  onConfirm: (cascade: boolean) => void;
-  onCancel: () => void;
+  relations?: CascadeRelation[];
+  onConfirm?: (cascade: boolean) => void;
+  onCancel?: () => void;
   loading?: boolean;
 }
 
 export function DeleteBulkCascade({
-  count,
-  entityLabel = '{{ entity.name | lower | plural }}',
-  relations,
+  count = 1,
+  entityLabel = '{{ entity.repository_name }}',
+  relations = [],
   onConfirm,
   onCancel,
   loading = false,
@@ -73,7 +73,7 @@ export function DeleteBulkCascade({
               Cancel
             </button>
             <button
-              onClick={() => onConfirm(cascade)}
+              onClick={() => onConfirm?.(cascade)}
               disabled={loading}
               className="wf-btn wf-btn-danger"
             >
@@ -85,3 +85,5 @@ export function DeleteBulkCascade({
     </div>
   );
 }
+
+export default DeleteBulkCascade;

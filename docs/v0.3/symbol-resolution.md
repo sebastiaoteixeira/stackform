@@ -80,8 +80,8 @@ Service forwarding keys are also bound roots. A repository query may reference
 `with:`. Validation is per route, so one correctly bound route cannot hide a
 missing binding on another route to the same operation.
 
-## v0.2 is unchanged
+## In v0.2
 
-This model applies only to `version: "0.3"`. A `version: "0.2"` spec keeps its
-existing behavior: `when:` operands report the legacy `WHEN_UNBOUND_SYMBOL`
-error, and repository filters keep their ambient `principal` / request roots.
+This model applies to `version: "0.3"`. In a `version: "0.2"` spec an unbound
+`when:` operand reports `WHEN_UNBOUND_SYMBOL`, and repository filters read the
+ambient `principal` and request roots.

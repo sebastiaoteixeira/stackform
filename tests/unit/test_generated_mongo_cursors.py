@@ -50,15 +50,21 @@ _VERIFY = """
     repository_module = importlib.import_module({repository_module!r})
 
     class Cursor:
-        async def to_list(self, length=None):
-            return [{{"total": 1}}]
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if getattr(self, "consumed", False):
+                raise StopAsyncIteration
+            self.consumed = True
+            return {{"total": 1}}
 
     class Collection:
         async def aggregate(self, pipeline):
             return Cursor()
 
     repository = repository_module.MembersRepository({{"members": Collection()}})
-    assert asyncio.run(repository.summarize([{{"$count": "total"}}])) == [{{"total": 1}}]
+    assert asyncio.run(repository.summarize({{}})) == [{{"total": 1}}]
 """
 
 

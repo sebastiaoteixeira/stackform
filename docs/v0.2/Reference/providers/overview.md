@@ -1,13 +1,12 @@
 ---
 title: "Providers Overview"
-description: The top-level providers section declares external identity providers (OIDC, SAML) that auth entities attach to through auth.bindings.
+description: The top-level providers section declares external identity providers (OIDC, SAML) that auth entities sign users in through with auth.via.
 ---
 
 The top-level `providers:` section declares external identity providers (OIDC and
-SAML) that auth entities can attach to. A declared provider does nothing on its own:
-it becomes active only once an auth entity references it from `auth.bindings`. The
-built-in `password` and `apiKey` providers are not declared here; they are selected
-with `auth.via`.
+SAML). A declared provider does nothing on its own: it becomes active once an auth
+entity names it in `auth.via`. The built-in `password` and `apiKey` providers are
+not declared here; `auth.via` names them directly.
 
 ## Structure
 
@@ -24,8 +23,8 @@ providers:
     sp_entity_id: ${APP_URL}
 ```
 
-Each key under `providers:` is the provider name. That name is what an auth entity
-references in a binding:
+Each key under `providers:` is the provider name. An auth entity signs users in
+through it by naming it in `auth.via`:
 
 ```yaml
 entities:
@@ -33,43 +32,50 @@ entities:
     type: auth
     auth:
       identifier: email
-      via: password           # built-in providers go in `via`
-      bindings:               # external providers attach here
-        - provider: myoidc   # references providers.myoidc
-          identifier: email
+      via:
+        - provider: password
+        - provider: myoidc
+          claim_mapping:
+            name: name
+          auto_provision: true
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      name: { type: string }
 ```
 
-`auth.via` selects built-in providers (`password`, `apiKey`). External OIDC/SAML
-providers attach through `auth.bindings`, where each entry carries the provider
-name plus its own `identifier`, optional `claim_mapping`, and `auto_provision`
-(defaults to true). See [Claim mapping](../auth/claim-mapping.md) for the binding
-fields and [Login, SSO, and the token flow](../auth/login-and-sso.md) for the
-runtime flow.
+`auth.via` takes a provider name, a list of names, or a list of binding objects.
+A name (`via: [password, myoidc]`) uses the entity's `auth.identifier` and the
+binding defaults. A binding object carries the provider name plus its own
+`identifier`, `claim_mapping`, `auto_provision` (default `true`) and `relations`.
+See [Claim mapping](../auth/claim-mapping.md) for the binding fields and
+[Login, SSO, and the token flow](../auth/login-and-sso.md) for the runtime flow.
+
+A `via` entry naming neither a built-in provider nor a key of `providers` is
+rejected with `AUTH_VIA_UNKNOWN_PROVIDER`.
 
 ## Provider types
 
 | Type | Description |
 |------|-------------|
-| `oidc` | OpenID Connect. The backend reads the provider's `discovery_url` at request time to find the authorization, token, and userinfo endpoints. |
+| `oidc` | OpenID Connect. The backend reads the provider's `discovery_url` to find the authorization, token, userinfo and JWKS endpoints. |
 | `saml` | SAML 2.0 service provider. The backend fetches the IdP metadata at request time. |
 
 ## Token trust
 
-A provider's `trust` decides who verifies its tokens on each request:
+An OIDC provider's `trust` decides who verifies its tokens on each request:
 
 | `trust` | Meaning |
 |---------|---------|
-| `app` (default) | After login the app mints and verifies its **own** session token. The IdP is used only during login; from then on the client carries the app's JWT. This is the current end-to-end behavior. |
-| `idp` | The client keeps carrying the **IdP's** token and the app verifies it against the IdP on every call, issuing no session of its own. Only `discovery_url` is required; `issuer` is derived from the discovery document automatically. |
+| `app` (default) | The IdP is used only during login. The app then mints its own session token, and the client carries that token. |
+| `idp` | The client keeps carrying the **IdP's** access token and the app verifies it against the IdP on every call, issuing no session of its own. |
 
-`trust: idp` is only valid for `oidc`/`saml` providers, and rejects the
-app-signing fields (`algorithm`, `secret`, `ttl`, `refresh`, `delivery`) that only
-make sense under `app` trust.
+A SAML provider always signs users in through the app.
 
-When both an `app` provider and an `idp` provider exist, the generated auth
-dependency dispatches strictly on the bearer token's `iss` claim -- the app
-issuer is verified with the app's own key, each IdP issuer against that IdP, and
-anything else is rejected (no "try every verifier"):
+When both an app-trust login and an `idp` provider exist, the generated auth
+dependency dispatches strictly on the bearer token's `iss` claim: the app issuer
+is verified with the app's own key, each IdP issuer against that IdP, and anything
+else is rejected (no "try every verifier"):
 
 ```mermaid
 sequenceDiagram
@@ -79,7 +85,7 @@ sequenceDiagram
   C->>A: request + Authorization: Bearer <token>
   A->>A: read iss (unverified)
   alt iss == app issuer
-    A->>A: verify with app key (HS256)
+    A->>A: verify with app key
   else iss == <idp issuer>
     A->>I: verify against issuer/audience
     I-->>A: ok / reject
@@ -89,11 +95,10 @@ sequenceDiagram
   A-->>C: response (principal resolved) or 401
 ```
 
-## Required fields per type
+## Fields per type
 
-Each provider config is closed (`additionalProperties: false`): only the fields
-below are accepted, and unknown keys fail schema validation. Which fields are
-required depends on `trust`.
+Each provider config is closed: only the fields below are accepted, and any other
+key fails with `SCHEMA_VALIDATION_ERROR`.
 
 ### OIDC
 
@@ -102,34 +107,31 @@ required depends on `trust`.
 | `type` | yes | Must be `oidc`. |
 | `trust` | no | `app` (default) or `idp`. |
 | `client_id` | yes | OAuth client identifier issued by the IdP (e.g. "Client ID" in Google console, "Application (client) ID" in Azure). |
-| `client_secret` | no | OAuth client secret. Omit it for a public client -- the token exchange runs without a `client_secret`. For confidential clients, its presence emits a `<PROVIDER>_CLIENT_SECRET` env var read at run time via a `SecretStr` setting; the spec value is only a placeholder, never the literal secret. |
-| `discovery_url` | yes | OpenID configuration URL (`.../.well-known/openid-configuration`); used to resolve endpoints, JWKS keys, and the expected token issuer. |
-| `issuer` | no | Override for the expected token `iss`. Normally not needed — the value is read from the discovery document automatically. |
-| `audience` | no | Override for the expected token `aud`. Defaults to `client_id`, which is correct for ID tokens on Google, Azure, and standard Keycloak. Set this only when the token's `aud` differs from `client_id` — for example, Azure access tokens scoped to a separate API registration (`api://...` or a Microsoft Graph scope), or when you configure a Keycloak audience mapper to add a custom audience. |
+| `discovery_url` | yes | OpenID configuration URL (`.../.well-known/openid-configuration`); used to resolve endpoints, JWKS keys and the expected token issuer. |
+| `client_secret` | no, `trust: app` only | OAuth client secret. Omit it for a public client. For a confidential client the generated backend reads it at run time from the `<PROVIDER>_CLIENT_SECRET` env var, seeded with the spec value. |
+| `issuer` | no, `trust: idp` only | Override for the expected token `iss`; read from the discovery document by default. |
+| `audiences` | no, `trust: idp` only | The accepted token `aud` values. Defaults to `[client_id]`, and generation then warns with `TRUST_IDP_AUDIENCE_DEFAULTED`. For Keycloak, see [Keycloak: putting the API in `aud`](./oidc.md#keycloak-putting-the-api-in-aud). |
+
+`client_secret` under `trust: idp`, and `issuer` or `audiences` under
+`trust: app`, fail with `SCHEMA_VALIDATION_ERROR`.
 
 There is no built-in discovery for any provider name. Names such as `google`,
-`microsoft`, or `apple` are not special; you must supply `discovery_url` for every
-`trust: app` OIDC provider.
+`microsoft`, or `apple` are not special; supply `discovery_url` for every OIDC
+provider.
 
 ### SAML
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | yes | Must be `saml`. |
-| `trust` | no | `app` (default) or `idp`. |
-| `idp_metadata_url` | yes under `trust: app` | IdP metadata URL (fetched at request time). |
-| `sp_entity_id` | yes under `trust: app` | This service provider's entity ID. |
-| `issuer` | no | Expected `iss` of the IdP's tokens. |
-| `audience` | no | Expected `aud` of the IdP's tokens. |
+| `idp_metadata_url` | yes | IdP metadata URL (fetched at request time). |
+| `sp_entity_id` | yes | This service provider's entity ID. |
 
 ## Environment interpolation
 
 Any value may use `${VAR}` interpolation, resolved at build time before schema
-validation. This keeps secrets out of the *spec file*. Most resolved values are baked
-into the built artifact, but `client_secret` is the exception: it is deferred to
-runtime through a `<PROVIDER>_CLIENT_SECRET` env var backed by a pydantic `SecretStr`
-setting, never baked as a literal. A `${VAR:-default}` form supplies a fallback when
-the variable is unset:
+validation. A `${VAR:-default}` form supplies a fallback when the variable is
+unset:
 
 ```yaml
 providers:
@@ -141,50 +143,45 @@ providers:
 ```
 
 A referenced variable that has no value and no default aborts generation with
-`INTERPOLATION_MISSING_VAR`. The literal `client_secret` must never appear in the
-spec: the `${OIDC_CLIENT_SECRET}` placeholder above only marks the field
-confidential, and the deployed backend reads the real value from its own
-`<PROVIDER>_CLIENT_SECRET` runtime env var.
+`INTERPOLATION_MISSING_VAR`. Keep the literal client secret out of the spec file;
+the deployed backend reads it from its own `<PROVIDER>_CLIENT_SECRET` env var.
 See [Environment variables](../configuration/environment-variables.md).
 
-## Routes a bound provider adds
+## Routes a provider adds
 
-Once an auth entity binds an OIDC provider, the generated backend exposes these
+Once an auth entity signs users in through a provider, the backend exposes these
 routes under the entity's collection (the full path is
 `{api.basePath}[/{api.version}]/{collection}/...`). With
-`api: { basePath: /api, version: v1 }` and a `users` collection bound to a
-`myoidc` provider:
+`api: { basePath: /api, version: v1 }` and a `users` collection:
 
 | Method and path | Purpose |
 |-----------------|---------|
-| `GET /api/v1/users/auth/providers` | Lists the external providers bound to this collection (consumed by the generated login page). |
-| `GET /api/v1/users/auth/myoidc` | Starts the login: 302 redirect to the IdP. |
-| `GET /api/v1/users/auth/myoidc/callback` | Completes the IdP exchange: maps claims, finds or provisions the user, mints a one-time login code, and redirects to `{FRONTEND_URL}/auth/callback?code=<code>`. |
-| `POST /api/v1/auth/exchange` | Redeems the one-time login code (`{"code": "..."}`) for the app JWT (`{"token": "<jwt>"}`). Emitted once whenever any collection binds an OIDC provider. |
-| `GET /api/v1/users/auth/myoidc/logout` | RP-initiated logout: 302s to the provider's `end_session_endpoint` (with `client_id` and `post_logout_redirect_uri`) to end the IdP's SSO session. |
+| `GET /api/v1/users/auth/providers` | Lists the external providers of this collection (consumed by the generated login page). |
+| `GET /api/v1/users/auth/myoidc` | Starts the OIDC login: 302 redirect to the IdP. |
+| `GET /api/v1/users/auth/myoidc/callback` | Completes the OIDC exchange: maps claims, finds or provisions the user, mints a one-time login code, and redirects to `{FRONTEND_URL}/auth/callback?code=<code>`. |
+| `GET /api/v1/users/auth/myoidc/logout` | RP-initiated logout: redirects to the provider's `end_session_endpoint`. |
+| `GET /api/v1/users/auth/mysaml` | Starts the SAML login: redirect to the IdP. |
+| `POST /api/v1/users/auth/mysaml/callback` | SAML Assertion Consumer Service: validates the response, then 303-redirects to `{FRONTEND_URL}/auth/callback?code=<code>`. |
+| `GET /api/v1/users/auth/mysaml/metadata` | SP metadata XML. |
+| `GET /api/v1/users/auth/mysaml/logout` | Redirects to the IdP's single logout service. |
+| `POST /api/v1/auth/exchange` | Redeems the one-time login code (`{"code": "..."}`) for the app JWT (`{"token": "<jwt>"}`). |
 
-These routes exist only when an entity actually binds the provider; a declared but
-unbound provider emits nothing.
+A `trust: idp` OIDC provider adds only the logout route, since it signs no one in
+through the app. A declared provider that no entity names emits nothing.
 
-Both `stackform build` and the `stackform run` dev server mount these OIDC routes.
-SAML routes are currently only mounted by `stackform build`; SAML SSO under the dev
-server is not yet implemented.
-
-The runtime compatibility suite drives this entire OIDC path against a live
-loopback provider over HTTP: discovery, authorization redirect, `state`, PKCE
-S256, DPoP token exchange, DPoP userinfo, automatic provisioning, one-time-code
-redemption, and app-session issuance. Run it with
-`pytest tests/integration/test_live_auth_flows.py`.
+The `stackform run` development server and the generated FastAPI backend serve
+these routes. The `drf` and `raw` targets and `stackform run --raw` reject a
+provider that signs users in through the app with `BACKEND_FEATURE_UNSUPPORTED`.
 
 ### Logout
 
 Clearing the app JWT only ends the *app* session; the IdP keeps its own SSO cookie,
 so the next login is silent. The logout route ends the IdP session: the generated
 frontend's logout clears the token and, for an SSO session, navigates to
-`/{collection}/auth/{provider}/logout`, which redirects to the IdP's
-`end_session_endpoint`. Because the app mints its own token from `userinfo` and does
-not retain the IdP `id_token`, logout is requested with `client_id` +
-`post_logout_redirect_uri` (supported by Keycloak 18+) rather than `id_token_hint`.
+`/{collection}/auth/{provider}/logout`, which redirects to the IdP. Because the app
+mints its own token and does not retain the IdP `id_token`, OIDC logout is requested
+with `client_id` + `post_logout_redirect_uri` (supported by Keycloak 18+) rather
+than `id_token_hint`.
 
 ## See also
 

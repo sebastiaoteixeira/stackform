@@ -1,22 +1,20 @@
-from yaml_api_generator.parsers.transformers.trust_validation import (
-    validate_spec_trust,
-)
+import pytest
+from jsonschema import Draft202012Validator
 
-
-def _results(providers: dict):
-    return validate_spec_trust({"providers": providers})
-
-
-def _codes(providers: dict) -> set[str]:
-    return {e.code for e in _results(providers)}
-
-
-def _error_codes(providers: dict) -> set[str]:
-    return {e.code for e in _results(providers) if e.severity == "error"}
+from yaml_api_generator.parsers.transformers.trust_validation import validate_spec_trust
+from yaml_api_generator.parsers.yaml_parser import SCHEMA_REGISTRY
 
 
 def _warning_codes(providers: dict) -> set[str]:
-    return {e.code for e in _results(providers) if e.severity == "warning"}
+    return {e.code for e in validate_spec_trust({"providers": providers})}
+
+
+def _schema_errors(version: str, provider: dict) -> list[str]:
+    validator = Draft202012Validator(
+        {"$ref": f"yaml-spec-v{version}.schema.json#/$defs/ProviderConfig"},
+        registry=SCHEMA_REGISTRY,
+    )
+    return [error.message for error in validator.iter_errors(provider)]
 
 
 def _oidc(**overrides) -> dict:
@@ -39,78 +37,53 @@ def _idp(**overrides) -> dict:
     }
 
 
-# ---- defaults ----
+VERSIONS = ["0.2", "0.3"]
 
-def test_app_trust_is_the_default_and_accepted():
-    assert _error_codes({"keycloak": _oidc()}) == set()
+ACCEPTED = {
+    "app-default": _oidc(),
+    "idp": _idp(),
+    "idp-audiences": _idp(audiences=["api://my-api"]),
+    "idp-issuer": _idp(issuer="https://idp/"),
+}
+
+REJECTED = {
+    "unknown-trust": _oidc(trust="external"),
+    "idp-without-discovery-url": {"type": "oidc", "client_id": "id", "trust": "idp"},
+    "idp-on-password-type": _idp(type="password"),
+    "idp-with-app-signing-field": _idp(secret="x"),
+    "app-with-issuer": _oidc(issuer="https://idp/"),
+}
 
 
-def test_explicit_idp_trust_accepted():
-    assert _error_codes({"keycloak": _idp()}) == set()
+@pytest.mark.parametrize("version", VERSIONS)
+@pytest.mark.parametrize("provider", ACCEPTED.values(), ids=list(ACCEPTED))
+def test_schema_accepts_coherent_trust(version, provider):
+    assert _schema_errors(version, provider) == []
+
+
+@pytest.mark.parametrize("version", VERSIONS)
+@pytest.mark.parametrize("provider", REJECTED.values(), ids=list(REJECTED))
+def test_schema_rejects_incoherent_trust(version, provider):
+    assert _schema_errors(version, provider) != []
+
+
+@pytest.mark.parametrize("key", ["pkce", "dpop"])
+def test_v03_schema_rejects_app_only_flags_under_idp_trust(key):
+    assert _schema_errors("0.3", _idp(**{key: True})) != []
+    assert _schema_errors("0.3", _oidc(**{key: True})) == []
 
 
 def test_idp_trust_without_audiences_produces_warning():
-    config = {
-        "type": "oidc",
-        "client_id": "id",
-        "trust": "idp",
-        "discovery_url": "https://idp/.well-known/openid-configuration",
-    }
-    assert "TRUST_IDP_AUDIENCE_DEFAULTED" in _warning_codes({"keycloak": config})
-    assert _error_codes({"keycloak": config}) == set()
+    assert _warning_codes({"keycloak": _idp()}) == {"TRUST_IDP_AUDIENCE_DEFAULTED"}
 
 
 def test_idp_trust_with_explicit_audiences_no_warning():
-    assert "TRUST_IDP_AUDIENCE_DEFAULTED" not in _warning_codes(
-        {"keycloak": _idp(audiences=["api://my-api"])}
-    )
-    assert _error_codes({"keycloak": _idp(audiences=["api://my-api"])}) == set()
+    assert _warning_codes({"keycloak": _idp(audiences=["a", "b"])}) == set()
 
 
-def test_idp_trust_with_explicit_issuer_accepted():
-    assert _error_codes({"keycloak": _idp(issuer="https://idp/")}) == set()
+def test_app_trust_produces_no_warning():
+    assert _warning_codes({"keycloak": _oidc()}) == set()
 
-
-def test_idp_trust_audiences_tuple_reaches_ir_correctly():
-    """Explicit audiences list suppresses TRUST_IDP_AUDIENCE_DEFAULTED warning."""
-    assert "TRUST_IDP_AUDIENCE_DEFAULTED" not in _warning_codes(
-        {"keycloak": _idp(audiences=["a", "b"])}
-    )
-
-
-# ---- TRUST_INVALID_VALUE ----
-
-def test_unknown_trust_value_rejected():
-    assert "TRUST_INVALID_VALUE" in _codes({"keycloak": _oidc(trust="external")})
-
-
-# ---- TRUST_IDP_DISCOVERY_URL_REQUIRED (OIDC only) ----
-
-def test_oidc_idp_without_discovery_url_rejected():
-    config = {"type": "oidc", "client_id": "id", "trust": "idp"}
-    assert "TRUST_IDP_DISCOVERY_URL_REQUIRED" in _codes({"keycloak": config})
-
-
-# ---- TRUST_IDP_PROVIDER_UNSUPPORTED ----
-
-def test_idp_trust_on_non_idp_type_rejected():
-    config = _idp(type="password")
-    assert "TRUST_IDP_PROVIDER_UNSUPPORTED" in _codes({"local": config})
-
-
-# ---- TRUST_IDP_APP_FIELD_FORBIDDEN ----
-
-def test_idp_with_app_signing_field_rejected():
-    assert "TRUST_IDP_APP_FIELD_FORBIDDEN" in _codes({"keycloak": _idp(secret="x")})
-
-
-# ---- TRUST_APP_FIELD_FORBIDDEN ----
-
-def test_app_trust_with_issuer_rejected():
-    assert "TRUST_APP_FIELD_FORBIDDEN" in _codes({"keycloak": _oidc(issuer="https://idp/")})
-
-
-# ---- scope ----
 
 def test_no_providers_block_is_clean():
     assert validate_spec_trust({}) == []

@@ -5,16 +5,13 @@ description: Determines who is allowed to call each route, declared on controlle
 
 `access:` determines who is allowed to call each route. You declare it on a controller (the default for every operation it exposes) and you can override it per operation.
 
-> **Enforcement status**
+> **Enforcement**
 >
-> Roles (exact match), `<entity>:*` scoping, and ownership/ABAC `when` rules
+> Roles, role hierarchies, `<entity>:*` scoping, and ownership/ABAC `when` rules
 > are enforced by the generated FastAPI backend, the generated DRF backend, and the
-> `stackform run` dev server alike. A request that fails a rule gets 401 (missing or
-> invalid credentials), 403 (authenticated but not allowed), or 404 (record not
-> found, checked before ownership). Two current limitations: role hierarchy (for
-> example `admin` inheriting `moderator`) is accepted in YAML but not yet applied
-> during enforcement -- only exact role matches are checked; and conditional or
-> ownership rules require a v0.2 spec, because v0.1 specs do not parse `when` rules.
+> `stackform run` dev server alike. A request that no rule admits gets 401 when it
+> carries no valid credentials and 403 otherwise; a missing record answers 404
+> before ownership is checked.
 
 The URLs shown on this page assume this `api:` block:
 
@@ -95,6 +92,7 @@ access:
 | `given.<symbol>` | yes, for every root in `when:` | `identity:<entityName>` or `<collection>[ by <param>]` | Binds a symbol used in `when:`. The symbol name is yours to choose. Any root referenced in `when:` but not declared here aborts generation with `WHEN_UNBOUND_SYMBOL`. |
 | `when` | no | string or list of strings | Condition expression. List entries are ANDed. See [when expressions](../when-expressions/overview.md). |
 | `then` | no | `"allow"` (default) or `"deny"` | Effect when the rule matches. |
+| `reason` | no | string | Detail of the 403 response this rule produces; see Evaluation Order. |
 
 Symbol names in `given` are arbitrary. There are no built-in roots: every symbol a
 `when:` references must be declared in `given`, or generation aborts with
@@ -111,19 +109,13 @@ given:
 A `<collection> by <param>` document binding loads a record by a different path
 parameter (for example `given: { owner: myOtherCollection by myRefId }`).
 
-### Parsed but not enforced
-
-`filter`, `writeFields`, and `reason` are accepted on a rule object and validated,
-but they do not affect enforcement in the generated backend. Use `then: deny` for
-explicit denials; do not rely on `filter`/`writeFields` to scope reads or writes.
-
 ## Evaluation Order
 
 1. If the route is `public`, it is served with no checks.
 2. Otherwise a principal must be present, or the request is rejected with 401.
 3. Rules in the `access:` list are evaluated top-to-bottom.
-4. The first rule that matches the principal and whose `when:` evaluates true wins. `then: allow` (the default) serves the request; `then: deny` returns 403.
-5. If no rule matches, the request is denied with 403.
+4. The first rule that matches the principal and whose `when:` evaluates true wins. `then: allow` (the default) serves the request; `then: deny` returns 403 with the rule's `reason` as detail.
+5. If no rule matches, the request is denied with 403, whose detail is the `reason` of the first allow rule that has one, or `Forbidden`.
 
 ### Document rules and short-circuiting
 
@@ -171,12 +163,12 @@ controllers:
           - given:
               principal: identity:user
               member: request.body:createMembership
-            when: member.body.role not equals 'admin'
+            when: member.role not equals 'admin'
 ```
 
 Admins fall through the first rule. Everyone else may create a membership only
 when the submitted `role` is not `admin`. The `:createMembership` DTO validates
-the body before the rule runs; an invalid body is 422 and the rule never fires.
+the body; an admitted request with an invalid body gets 422.
 
 ### Applicability matrix
 
@@ -194,9 +186,9 @@ A body binding (`request.body` or `request:<type>`) on a bodiless operation
 ### Runtime model
 
 Request resolution is fail-safe: a missing leaf resolves to `null`, never an
-error. A typed body is validated **before** authorization — an invalid body
-returns 422 and the rule never executes. This runs identically in the generated
-FastAPI backend, the generated DRF backend, and `stackform run`.
+error. A typed body is validated against its DTO: a request the rules admit
+whose body does not match returns 422. Request bindings resolve the same way in the
+generated FastAPI backend, the generated DRF backend, and `stackform run`.
 
 ```mermaid
 flowchart TD

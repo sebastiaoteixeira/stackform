@@ -3,14 +3,14 @@
 Validates collection fields and extracts ID field configurations.
 """
 
-import re
 from typing import Any, cast
 
 from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.parsers.transformers.lifecycle_binding import bind_lifecycle
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+from yaml_api_generator.runtime.lifecycle import Lifecycle
 
-FIELD_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
-
+SOFT_DELETE_FIELD = "deletedAt"
 
 class CollectionTransformer:
     """Transforms v0.1 collection definitions to IR."""
@@ -35,11 +35,6 @@ class CollectionTransformer:
             collection_type = str(collection_data.get("type", "base"))
             fields = cast(dict[str, Any], collection_data["fields"])
 
-            field_name_errors = self._validate_field_names(name, fields)
-            id_field_errors.extend(field_name_errors)
-            if field_name_errors:
-                continue
-
             id_field, errors = self._extract_id_field(name, fields)
             id_field_errors.extend(errors)
 
@@ -58,13 +53,22 @@ class CollectionTransformer:
             if id_field is None or id_format is None:
                 continue
 
+            lifecycle = Lifecycle(
+                removal=SOFT_DELETE_FIELD if collection_data.get("softDelete") else None
+            )
+            bound_fields, lifecycle_errors = bind_lifecycle(
+                lifecycle, fields, f"collections.{name}"
+            )
+            id_field_errors.extend(lifecycle_errors)
+
             collections[name] = IRCollection(
                 name=name,
                 entity_name=name,
                 type=collection_type,
                 idField=id_field,
                 idFormat=id_format,
-                fields=fields,
+                fields=bound_fields,
+                lifecycle=lifecycle,
             )
 
         return collections, collection_access_policies, id_field_errors
@@ -108,31 +112,4 @@ class CollectionTransformer:
                     path=f"collections.{collection_name}.fields.{id_field}",
                 )
             ]
-        raw_format = field_config.get("format")
-        if raw_format is None:
-            return "uuidv7", []
-        if raw_format in {"uuidv7", "uuidv4"}:
-            return str(raw_format), []
-        return None, [
-            ConfigError(
-                code="ID_FORMAT_INVALID",
-                message="id field format must be uuidv7 or uuidv4",
-                path=f"collections.{collection_name}.fields.{id_field}.format",
-            )
-        ]
-
-    def _validate_field_names(
-        self, collection_name: str, fields: dict[str, Any]
-    ) -> list[ConfigError]:
-        errors: list[ConfigError] = []
-        for field_name in fields:
-            if not FIELD_NAME_PATTERN.match(field_name):
-                errors.append(
-                    ConfigError(
-                        code="INVALID_FIELD_NAME",
-                        message=f"Invalid field name '{field_name}'",
-                        path=f"collections.{collection_name}.fields.{field_name}",
-                        hint="Field names must start with a letter and contain only letters, numbers, or underscores",
-                    )
-                )
-        return errors
+        return str(field_config.get("format", "uuidv7")), []

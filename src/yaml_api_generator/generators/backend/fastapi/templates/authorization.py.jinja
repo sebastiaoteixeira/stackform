@@ -1,38 +1,12 @@
 from typing import Any
-from uuid import UUID
 
 from fastapi import HTTPException
 
-try:
-    from bson import ObjectId
-
-    _IDISH = (UUID, ObjectId)
-except ImportError:
-    _IDISH = (UUID,)
-
-
-def _values_equal(left: Any, right: Any) -> bool:
-    if left is None or right is None:
-        return left is None and right is None
-    if isinstance(left, bool) or isinstance(right, bool):
-        return isinstance(left, bool) and isinstance(right, bool) and left is right
-    if left == right:
-        return True
-    if isinstance(left, _IDISH) or isinstance(right, _IDISH):
-        return str(left) == str(right)
-    return False
+from dependencies.access import held_roles
 
 
 ROLE_HIERARCHIES: dict[str, dict[str, set[str]]] = {{ auth.role_hierarchies | role_hierarchies_py }}
 
 
 def _principal_has_role(principal: dict, required_role: str) -> bool:
-    principal_roles = principal.get("roles", [])
-    if required_role in principal_roles:
-        return True
-    collection = principal.get("identity_collection", "")
-    entity_hierarchy = ROLE_HIERARCHIES.get(collection, {})
-    for role in principal_roles:
-        if required_role in entity_hierarchy.get(role, set()):
-            return True
-    return False
+    return required_role in held_roles(principal, ROLE_HIERARCHIES)

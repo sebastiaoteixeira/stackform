@@ -1,4 +1,4 @@
-"""Semantic coherence checks for auth configuration in a v0.2 spec.
+"""Semantic coherence checks for auth configuration in a spec.
 
 The JSON schema validates each auth key's shape but not its meaning, so an auth
 entity can build cleanly while its authentication is silently dead. These checks
@@ -13,6 +13,8 @@ spec with coded errors:
   the existing ``AUTH_ROLES_FIELD_NOT_FOUND`` check.
 - AUTH_API_KEY_FIELD_MISSING: a ``via: apiKey`` identity whose entity declares
   no ``apiKey`` field, so no document can ever store a key and auth always fails.
+- AUTH_VIA_UNKNOWN_PROVIDER: a ``via`` entry that is neither a built-in provider
+  nor a key of ``providers``, so no login can ever reach the identity through it.
 
 Inheritance is resolved on the fly: ``fields`` and ``auth`` may be supplied by a
 parent through ``extends``, exactly as the entity desugarer later merges them.
@@ -20,68 +22,46 @@ parent through ``extends``, exactly as the entity desugarer later merges them.
 
 from typing import Any
 
+from yaml_api_generator.ir.api import CREDENTIAL_PROVIDERS
 from yaml_api_generator.parsers.yaml_parser import ConfigError
-
-_IDENTIFIER_PROVIDERS = frozenset({"password", "apiKey"})
-
-
-def _normalize_via(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    return []
+from .entity_inheritance import inherited, inherited_fields
 
 
-def _resolved(entity: str, entities: dict[str, Any], key: str) -> Any:
-    """Walk the ``extends`` chain returning the nearest ``key`` value."""
-    seen: set[str] = set()
-    current: str | None = entity
-    while isinstance(current, str) and current not in seen:
-        seen.add(current)
-        node = entities.get(current)
-        if not isinstance(node, dict):
-            return None
-        if key in node:
-            return node[key]
-        current = node.get("extends")
-    return None
+def _via_entries(value: Any) -> list[Any]:
+    return [value] if isinstance(value, str | dict) else value if isinstance(value, list) else []
 
 
-def _resolved_fields(entity: str, entities: dict[str, Any]) -> dict[str, Any]:
-    """Merge ``fields`` along the ``extends`` chain (parents first)."""
-    chain: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    current: str | None = entity
-    while isinstance(current, str) and current not in seen:
-        seen.add(current)
-        node = entities.get(current)
-        if not isinstance(node, dict):
-            break
-        fields = node.get("fields")
-        if isinstance(fields, dict):
-            chain.append(fields)
-        current = node.get("extends")
-    merged: dict[str, Any] = {}
-    for fields in reversed(chain):
-        merged.update(fields)
-    return merged
+def _provider_name(entry: Any) -> str:
+    return str(entry.get("provider")) if isinstance(entry, dict) else str(entry)
 
 
 def _check_entity(
-    name: str, entities: dict[str, Any], errors: list[ConfigError]
+    name: str,
+    entities: dict[str, Any],
+    section: str,
+    providers: frozenset[str],
+    errors: list[ConfigError],
 ) -> None:
-    auth = _resolved(name, entities, "auth")
+    auth = inherited(name, entities, "auth")
     if not isinstance(auth, dict):
         return
 
-    via = _normalize_via(auth.get("via"))
-    if not _IDENTIFIER_PROVIDERS.intersection(via):
-        return
-
+    base = f"{section}.{name}.auth"
+    entries = _via_entries(auth.get("via"))
+    errors.extend(
+        ConfigError(
+            code="AUTH_VIA_UNKNOWN_PROVIDER",
+            message=f"Auth entity '{name}' uses via '{provider}', which is not a declared provider",
+            path=f"{base}.via",
+            hint=f"Declare providers.{provider} or use one of: {', '.join(sorted(CREDENTIAL_PROVIDERS))}",
+        )
+        for provider in map(_provider_name, entries)
+        if provider not in CREDENTIAL_PROVIDERS | providers
+    )
+    # A mapping entry carries its own identifier, so only bare names need auth.identifier.
+    via = [entry for entry in entries if isinstance(entry, str)]
     identifier = auth.get("identifier")
-    base = f"entities.{name}.auth"
-    if not identifier:
+    if CREDENTIAL_PROVIDERS.intersection(via) and not identifier:
         errors.append(ConfigError(
             code="AUTH_IDENTIFIER_REQUIRED",
             message=f"Auth entity '{name}' uses via {via} but declares no identifier",
@@ -90,8 +70,8 @@ def _check_entity(
         ))
         return
 
-    fields = _resolved_fields(name, entities)
-    if identifier not in fields:
+    fields = inherited_fields(name, entities)
+    if identifier is not None and identifier not in fields:
         errors.append(ConfigError(
             code="AUTH_IDENTIFIER_FIELD_NOT_FOUND",
             message=f"Auth identifier '{identifier}' not found in entity '{name}'",
@@ -103,16 +83,17 @@ def _check_entity(
         errors.append(ConfigError(
             code="AUTH_API_KEY_FIELD_MISSING",
             message=f"Auth entity '{name}' uses via apiKey but declares no apiKey field",
-            path=f"entities.{name}.fields.apiKey",
+            path=f"{section}.{name}.fields.apiKey",
             hint="Declare an 'apiKey' field so a key can be stored and matched",
         ))
 
 
-def validate_spec_auth(spec: dict[str, Any]) -> list[ConfigError]:
-    """Validate auth-configuration coherence across every entity in the spec."""
+def validate_spec_auth(spec: dict[str, Any], section: str = "entities") -> list[ConfigError]:
+    """Validate auth-configuration coherence across every model of ``section``."""
     errors: list[ConfigError] = []
-    entities = spec.get("entities") or {}
+    entities = spec.get(section) or {}
+    providers = frozenset(spec.get("providers") or {})
     for name, entity in entities.items():
-        if isinstance(entity, dict) and str(_resolved(name, entities, "type") or "base") == "auth":
-            _check_entity(name, entities, errors)
+        if isinstance(entity, dict) and str(inherited(name, entities, "type") or "base") == "auth":
+            _check_entity(name, entities, section, providers, errors)
     return errors

@@ -2,19 +2,110 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "yaml-spec-v0.3.schema.json",
   "title": "YAML API Generator Structure Spec v0.3",
-  "$comment": "Superset of v0.2. Adds the where binding form (given: strings), service input:/with:, and controller/access-rule bind:. Everything v0.2 accepted stays valid.",
+  "$comment": "Extends v0.2 with files, pagination, service input:/with:, the where binding form and access-rule bind:. Definitions v0.3 leaves unchanged are referenced from v0.2.",
   "type": "object",
-  "required": ["version", "entities"],
+  "required": [
+    "version",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "$comment": "A record datastore replaces the mongo block, so declaring both is ambiguous",
+      "if": {
+        "required": [
+          "datastores"
+        ],
+        "properties": {
+          "datastores": {
+            "not": {
+              "additionalProperties": {
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "filesystem",
+                      "s3"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mongo": {
+            "not": {},
+            "errorMessage": "mongo and a record datastore are mutually exclusive: declare MongoDB under datastores instead"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "deploy.mongo configures the MongoDB service, which a spec whose record datastores are all PostgreSQL does not have",
+      "if": {
+        "required": [
+          "datastores",
+          "deploy"
+        ],
+        "properties": {
+          "datastores": {
+            "additionalProperties": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "not": {
+                    "enum": [
+                      "mongodb",
+                      "mongo"
+                    ]
+                  }
+                }
+              }
+            },
+            "not": {
+              "additionalProperties": {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "filesystem",
+                      "s3"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "deploy": {
+            "properties": {
+              "mongo": {
+                "not": {},
+                "errorMessage": "deploy.mongo requires a MongoDB datastore, and every record datastore is PostgreSQL"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "version": {
       "type": "string",
       "const": "0.3"
     },
-    "input": {
-      "$ref": "#/$defs/InputConfig"
-    },
     "api": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "basePath": {
           "type": "string"
@@ -28,88 +119,58 @@
           "maximum": 65535
         },
         "operations": {
-          "type": "object",
-          "properties": {
-            "defaults": {
-              "$ref": "#/$defs/OperationFlags"
-            },
-            "auth": {
-              "$ref": "#/$defs/OperationFlags"
-            }
-          }
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/ApiOperations"
         },
         "cors": {
-          "type": "object",
-          "properties": {
-            "origins": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "methods": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "headers": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "credentials": {
-              "type": "boolean"
-            }
-          }
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/CorsConfig"
         },
         "files": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "maxSize": { "$ref": "#/$defs/FileSize" },
-            "types": { "$ref": "#/$defs/MimeTypes" },
-            "maxFiles": { "type": "integer", "minimum": 1 }
+            "maxSize": {
+              "$ref": "#/$defs/FileSize"
+            },
+            "types": {
+              "$ref": "#/$defs/MimeTypes"
+            },
+            "maxFiles": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
+        },
+        "securityHeaders": {
+          "type": "boolean"
         }
       }
     },
     "imports": {
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "type": "string"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "package"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
           },
-          {
-            "type": "object",
-            "required": ["path", "package"],
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1
-              },
-              "package": {
-                "type": "string",
-                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-              },
-              "requires": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "additionalProperties": false
+          "package": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "requires": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/StringList"
           }
-        ]
+        }
       }
     },
     "mongo": {
-      "type": "object",
-      "properties": {
-        "uri": {
-          "type": "string"
-        },
-        "database": {
-          "type": "string"
-        }
-      }
+      "$ref": "yaml-spec-v0.2.schema.json#/$defs/MongoConfig"
     },
     "datastores": {
       "type": "object",
@@ -156,24 +217,30 @@
     "policies": {
       "type": "object",
       "additionalProperties": {
-        "$ref": "#/$defs/PolicyConfig"
+        "$ref": "yaml-spec-v0.2.schema.json#/$defs/PolicyConfig"
       }
     },
     "ui": {
-      "type": "object"
+      "$ref": "ui.schema.json"
     },
     "deploy": {
-      "$ref": "#/$defs/DeployConfig"
+      "$ref": "yaml-spec-v0.2.schema.json#/$defs/DeployConfig"
     },
     "session": {
-      "$ref": "#/$defs/SessionConfig"
+      "$ref": "yaml-spec-v0.2.schema.json#/$defs/SessionConfig"
     }
   },
   "$defs": {
     "FileSize": {
       "oneOf": [
-        { "type": "integer", "minimum": 1 },
-        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?\\s*([kKmMgG]?[bB])?$" }
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?\\s*([kKmMgG]?[bB])?$"
+        }
       ]
     },
     "MimeTypes": {
@@ -188,78 +255,77 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "maxSize": { "$ref": "#/$defs/FileSize" },
-        "types": { "$ref": "#/$defs/MimeTypes" }
+        "maxSize": {
+          "$ref": "#/$defs/FileSize"
+        },
+        "types": {
+          "$ref": "#/$defs/MimeTypes"
+        }
       }
-    },
-    "SessionConfig": {
-      "type": "object",
-      "properties": {
-        "algorithm": { "type": "string", "enum": ["HS256", "RS256"], "default": "HS256" },
-        "ttl": { "type": "integer", "minimum": 1 },
-        "refresh": { "type": "boolean", "default": false },
-        "delivery": { "type": "string", "enum": ["token-url", "cookie"], "default": "token-url" }
-      },
-      "additionalProperties": false
-    },
-    "Symbol": {
-      "type": "string",
-      "pattern": "^\\$[A-Za-z_][A-Za-z0-9_]*$",
-      "description": "v0.3 $-sigil slug: a symbolic reference resolved against the explicit scope of its where, bind, with, or repository-query site (e.g. $userId)."
-    },
-    "WhereOperator": {
-      "type": "string",
-      "enum": ["=", "and", "!=", "<", "<=", ">", ">=", "in"],
-      "description": "v0.3 where-clause operators. '=' and 'and' are active. Reserved tokens '!=', '<', '<=', '>', '>=', and 'in' are rejected by the where parser with WHERE_OPERATOR_UNSUPPORTED."
     },
     "WhereExpression": {
       "type": "string",
       "pattern": "^[\\w$][\\w$.'\"\\s=<>!,()+\\\\-]*$",
-      "description": "v0.3 where binding form used as a given: value: '<collection> where <field> = <rhs> [and <field> = <rhs>]*'. The where parser is the authority on the grammar; this pattern only bounds the character set. Only '=' and 'and' are active in v0.3; the remaining WhereOperator tokens are reserved."
+      "description": "Where binding form used as a given: value: '<collection> where <field> = <rhs> [and <field> = <rhs>]*'. The where parser owns the grammar; this pattern only bounds the character set."
     },
     "SymbolBinding": {
       "type": "object",
       "minProperties": 1,
       "additionalProperties": {
-        "type": ["string", "number", "boolean"]
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
       },
-      "description": "v0.3 map of names to $-sigil symbols or scalar literals. Backs controller/access-rule bind: and service with:."
+      "description": "Map of names to $-sigil symbols or scalar literals, backing access-rule bind: and service with:."
     },
     "InputConfig": {
-      "description": "v0.3 declares the named inputs a service requires.",
+      "description": "Named inputs a service requires.",
       "oneOf": [
-        { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
         {
           "type": "object",
           "minProperties": 1,
           "additionalProperties": {
             "oneOf": [
-              { "type": "string", "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref"] },
-              { "$ref": "#/$defs/FieldConfig" }
+              {
+                "type": "string",
+                "enum": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "datetime",
+                  "enum",
+                  "array",
+                  "object",
+                  "ref"
+                ]
+              },
+              {
+                "$ref": "#/$defs/PayloadFieldConfig"
+              }
             ]
           }
         }
       ]
     },
-    "OperationFlags": {
-      "type": "object",
-      "properties": {
-        "list": { "type": "boolean" },
-        "get": { "type": "boolean" },
-        "create": { "type": "boolean" },
-        "update": { "type": "boolean" },
-        "replace": { "type": "boolean" },
-        "delete": { "type": "boolean" },
-        "register": { "type": "boolean" },
-        "login": { "type": "boolean" }
-      }
-    },
     "EntityConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["base", "auth"],
+          "enum": [
+            "base",
+            "auth"
+          ],
           "default": "base"
         },
         "extends": {
@@ -278,275 +344,637 @@
           }
         },
         "auth": {
-          "type": "object",
-          "properties": {
-            "identifier": { "type": "string" },
-            "via": {
-              "oneOf": [
-                { "type": "string" },
-                { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-                { "type": "array", "items": { "$ref": "#/$defs/ProviderBinding" }, "minItems": 1 }
-              ]
-            },
-            "roles": { "type": "string" },
-            "bindings": {
-              "type": "array",
-              "items": { "$ref": "#/$defs/ProviderBinding" }
-            }
-          }
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/EntityAuthConfig"
+        },
+        "roles": {
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/RolesConfig"
         }
       },
       "allOf": [
         {
           "if": {
-            "not": { "required": ["extends"] }
+            "not": {
+              "required": [
+                "extends"
+              ]
+            }
           },
           "then": {
-            "required": ["fields"]
+            "required": [
+              "fields"
+            ]
           }
         },
         {
           "if": {
-            "properties": { "type": { "const": "auth" } },
-            "required": ["type"]
+            "properties": {
+              "type": {
+                "const": "auth"
+              }
+            },
+            "required": [
+              "type"
+            ]
           },
           "then": {
-            "required": ["auth"]
+            "required": [
+              "auth"
+            ]
           }
         }
-
-      ]
-    },
-    "RolesConfig": {
-      "type": "object",
-      "required": ["values", "default"],
-      "properties": {
-        "values": {
-          "type": "array",
-          "items": { "type": "string" },
-          "minItems": 1
-        },
-        "default": { "type": "string" },
-        "hierarchy": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "ProviderBinding": {
-      "type": "object",
-      "required": ["provider"],
-      "properties": {
-        "provider": { "type": "string" },
-        "identifier": { "type": "string" },
-        "claim_mapping": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "auto_provision": { "type": "boolean" },
-        "relations": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "required": ["collection", "match"],
-            "additionalProperties": false,
-            "properties": {
-              "collection": { "type": "string" },
-              "match": { "type": "object", "additionalProperties": { "type": "string" } }
+      ],
+      "dependentSchemas": {
+        "roles": {
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "auth"
             }
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "ProviderConfig": {
-      "oneOf": [
-        { "$ref": "#/$defs/OIDCProviderConfig" },
-        { "$ref": "#/$defs/SAMLProviderConfig" }
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "oidc",
+            "saml"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "oidc"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/OIDCProviderConfig"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "saml"
+              }
+            }
+          },
+          "then": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/SAMLProviderConfig"
+          }
+        }
       ]
     },
     "OIDCProviderConfig": {
       "type": "object",
-      "required": ["type", "client_id"],
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "client_id",
+        "discovery_url"
+      ],
       "properties": {
-        "type": { "type": "string", "const": "oidc" },
-        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
-        "client_id": { "type": "string" },
-        "client_secret": { "type": "string" },
-        "discovery_url": { "type": "string", "description": "OIDC discovery document URL; issuer is derived from it automatically" },
-        "issuer": { "type": "string" },
-        "audiences": { "type": "array", "items": { "type": "string" }, "description": "Accepted token audiences; defaults to [client_id] when omitted" },
-        "pkce": { "type": "boolean", "default": false, "description": "Emit PKCE (S256 code_challenge on authorization, code_verifier on token exchange) for the OIDC client; enable to match a Keycloak client with Require PKCE" },
-        "dpop": { "type": "boolean", "default": false, "description": "Emit DPoP (RFC 9449): a client-held key pair and per-request DPoP proof on the token and userinfo calls, switching those from Bearer to DPoP-bound; enable to match a provider that requires sender-constrained tokens" }
+        "type": {
+          "const": "oidc"
+        },
+        "trust": {
+          "type": "string",
+          "enum": [
+            "app",
+            "idp"
+          ],
+          "default": "app"
+        },
+        "client_id": {
+          "type": "string"
+        },
+        "client_secret": {
+          "type": "string"
+        },
+        "discovery_url": {
+          "type": "string",
+          "description": "OIDC discovery document URL; issuer is derived from it automatically"
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "audiences": {
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/StringList",
+          "description": "Accepted token audiences; defaults to [client_id] when omitted"
+        },
+        "pkce": {
+          "type": "boolean",
+          "default": false,
+          "description": "Emit PKCE (S256 code_challenge on authorization, code_verifier on token exchange)"
+        },
+        "dpop": {
+          "type": "boolean",
+          "default": false,
+          "description": "Emit DPoP (RFC 9449) proofs on the token and userinfo calls, switching them from Bearer to DPoP-bound"
+        }
       },
       "if": {
-        "properties": { "trust": { "const": "idp" } },
-        "required": ["trust"]
+        "properties": {
+          "trust": {
+            "const": "idp"
+          }
+        },
+        "required": [
+          "trust"
+        ]
       },
-      "then": { "required": ["discovery_url"] },
-      "else": { "required": ["discovery_url"] },
-      "additionalProperties": false
-    },
-    "SAMLProviderConfig": {
-      "type": "object",
-      "required": ["type"],
-      "properties": {
-        "type": { "type": "string", "const": "saml" },
-        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
-        "idp_metadata_url": { "type": "string" },
-        "sp_entity_id": { "type": "string" },
-        "issuer": { "type": "string" },
-        "audience": { "type": "string" }
+      "then": {
+        "properties": {
+          "pkce": false,
+          "dpop": false,
+          "client_secret": false
+        }
       },
-      "if": {
-        "properties": { "trust": { "const": "idp" } },
-        "required": ["trust"]
-      },
-      "then": { "required": ["issuer", "audience"] },
-      "else": { "required": ["idp_metadata_url", "sp_entity_id"] },
-      "additionalProperties": false
+      "else": {
+        "properties": {
+          "issuer": false,
+          "audiences": false
+        }
+      }
     },
     "DtoConfig": {
       "type": "object",
-      "required": ["fields"],
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ],
       "properties": {
         "fields": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
+          "additionalProperties": {
+            "$ref": "#/$defs/PayloadFieldConfig"
+          }
         }
-      },
-      "additionalProperties": false
+      }
     },
-    "PolicyConfig": {
+    "FieldShape": {
+      "$comment": "The keys each field type accepts; FieldConfig, NestedFieldConfig and PayloadFieldConfig close it.",
       "type": "object",
-      "required": ["when"],
-      "properties": {
-        "given": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "params": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "when": {
-          "oneOf": [
-            { "type": "string" },
-            { "type": "array", "items": { "type": "string" } }
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "FieldConfig": {
-      "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
-          "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref", "id", "file"]
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "datetime",
+            "enum",
+            "array",
+            "object",
+            "ref",
+            "id",
+            "file"
+          ]
         },
-        "required": { "type": "boolean" },
-        "default": {},
-        "unique": { "type": "boolean" },
-        "min": { "type": "number" },
-        "max": { "type": "number" },
-        "minLength": { "type": "integer" },
-        "maxLength": { "type": "integer" },
-        "format": {
-          "enum": ["email", "e164", "uri", "uuidv7", "uuidv4"]
+        "required": {
+          "type": "boolean"
         },
-        "values": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "items": { "$ref": "#/$defs/FieldConfig" },
-        "properties": {
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
-        },
-        "additionalProperties": { "type": "boolean" },
-        "ref": { "type": "string" },
-        "readonly": { "type": "boolean" },
-        "maxSize": { "$ref": "#/$defs/FileSize" },
-        "types": { "$ref": "#/$defs/MimeTypes" },
-        "disposition": { "enum": ["attachment", "inline"] },
-        "maxItems": { "type": "integer", "minimum": 1 }
+        "readonly": {
+          "type": "boolean"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "type": { "const": "enum" } }, "required": ["type"] },
-          "then": { "required": ["values"] }
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "file"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "default": {}
+            }
+          }
         },
         {
-          "if": { "properties": { "type": { "const": "array" } }, "required": ["type"] },
-          "then": { "required": ["items"] }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "minLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "maxLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "format": {
+                "enum": [
+                  "email",
+                  "e164",
+                  "uri",
+                  "uuidv7",
+                  "uuidv4"
+                ]
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "type": { "const": "ref" } }, "required": ["type"] },
-          "then": { "required": ["ref"] }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "number"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "enum"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "values"
+            ],
+            "properties": {
+              "values": {
+                "$ref": "yaml-spec-v0.2.schema.json#/$defs/StringList",
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "$ref": "#/$defs/NestedFieldConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/NestedFieldConfig"
+                }
+              },
+              "additionalProperties": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ref"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "ref"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "id"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "uuidv7",
+                  "uuidv4"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "file"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "maxSize": {
+                "$ref": "#/$defs/FileSize"
+              },
+              "types": {
+                "$ref": "#/$defs/MimeTypes"
+              },
+              "disposition": {
+                "enum": [
+                  "attachment",
+                  "inline"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              },
+              "items": {
+                "properties": {
+                  "type": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          "then": {
+            "properties": {
+              "maxItems": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
         }
       ]
     },
-    "OperationConfig": {
-      "type": "object",
-      "properties": {
-        "query": {
-          "type": "object",
-          "properties": {
-            "command": { "type": "string" },
-            "collection": { "type": "string" },
-            "sql": { "type": "string" },
-            "params": { "type": "object" }
+    "FieldConfig": {
+      "$comment": "A top-level entity field.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "file"
+                }
+              }
+            }
           },
-          "additionalProperties": true
-        },
-        "handler": { "type": "string" }
+          "then": {
+            "properties": {
+              "unique": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "NestedFieldConfig": {
+      "$comment": "A field inside object properties or array items.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false
+    },
+    "PayloadFieldConfig": {
+      "$comment": "A DTO or service input field, which carries no persistence keys.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "datetime",
+            "enum",
+            "array",
+            "object",
+            "ref",
+            "file"
+          ]
+        }
       }
     },
     "DatastoreConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["mongodb", "mongo", "postgres", "postgresql", "filesystem", "s3"]
+          "enum": [
+            "mongodb",
+            "mongo",
+            "postgres",
+            "postgresql",
+            "filesystem",
+            "s3"
+          ]
         },
-        "uri": { "type": "string" },
-        "database": { "type": "string" },
-        "dsn": { "type": "string" },
-        "default": { "type": "boolean" },
-        "path": { "type": "string" },
-        "bucket": { "type": "string" },
-        "endpoint": { "type": "string" },
-        "region": { "type": "string" },
-        "accessKey": { "type": "string" },
-        "secretKey": { "type": "string" },
-        "prefix": { "type": "string" },
-        "files": { "$ref": "#/$defs/FileLimits" }
+        "uri": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string"
+        },
+        "dsn": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "accessKey": {
+          "type": "string"
+        },
+        "secretKey": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "files": {
+          "$ref": "#/$defs/FileLimits"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "type": { "const": "filesystem" } }, "required": ["type"] },
-          "then": { "required": ["path"] }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "filesystem"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
         },
         {
-          "if": { "properties": { "type": { "const": "s3" } }, "required": ["type"] },
-          "then": { "required": ["bucket"] }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "s3"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "bucket"
+            ]
+          }
         },
         {
-          "if": { "properties": { "type": { "enum": ["mongodb", "mongo", "postgres", "postgresql"] } } },
-          "then": { "not": { "required": ["files"] } }
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "mongodb",
+                  "mongo",
+                  "postgres",
+                  "postgresql"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "files"
+              ]
+            }
+          }
         }
       ]
     },
     "RepositoryConfig": {
       "type": "object",
+      "additionalProperties": false,
+      "allOf": [{ "$ref": "yaml-spec-v0.2.schema.json#/$defs/RepositoryLifecycleRules" }],
       "properties": {
-        "abstract": { "type": "boolean" },
-        "extends": { "type": "string" },
+        "softDelete": {
+          "type": "string"
+        },
+        "ttl": {
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/TtlConfig"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "extends": {
+          "type": "string"
+        },
         "entity": {
           "type": "string"
         },
@@ -560,43 +988,88 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["list", "get", "create", "update", "replace", "delete"]
+            "enum": [
+              "list",
+              "get",
+              "create",
+              "update",
+              "replace",
+              "delete"
+            ]
           }
         },
         "operations": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/$defs/OperationConfig"
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationConfig"
+          },
+          "propertyNames": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
           }
         }
       }
     },
     "ServiceConfig": {
       "type": "object",
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "handler",
+          "operation"
+        ]
+      },
       "properties": {
-        "abstract": { "type": "boolean" },
-        "extends": { "type": "string" },
-        "repository": { "type": "string" },
-        "input": { "$ref": "#/$defs/InputConfig" },
-        "with": { "$ref": "#/$defs/SymbolBinding" },
+        "abstract": {
+          "type": "boolean"
+        },
+        "extends": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "handler": {
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/InputConfig"
+        },
+        "with": {
+          "$ref": "#/$defs/SymbolBinding"
+        },
         "operations": {
           "type": "object",
           "additionalProperties": {
             "oneOf": [
-              { "type": "boolean" },
+              {
+                "type": "boolean"
+              },
               {
                 "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "handler"
+                ],
                 "properties": {
-                  "handler": { "type": "string" }
+                  "handler": {
+                    "type": "string"
+                  }
                 }
               }
             ]
+          },
+          "propertyNames": {
+            "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
           }
         }
       }
     },
     "ControllerConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "service": {
           "type": "string"
@@ -608,26 +1081,99 @@
           "$ref": "#/$defs/AccessConfig"
         },
         "operations": {
-          "type": "object"
-        },
-        "routes": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/$defs/RouteConfig"
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "$ref": "#/$defs/OperationOverride"
+              }
+            ]
           }
+        },
+        "routes": {
+          "type": "object"
+        }
+      },
+      "if": {
+        "required": [
+          "service"
+        ]
+      },
+      "then": {
+        "properties": {
+          "routes": {
+            "additionalProperties": {
+              "$ref": "#/$defs/RouteOverride"
+            }
+          },
+          "operations": {
+            "propertyNames": {
+              "$ref": "yaml-spec-v0.2.schema.json#/$defs/OperationName"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "routes": {
+            "additionalProperties": {
+              "$ref": "#/$defs/RouteConfig"
+            }
+          }
+        }
+      }
+    },
+    "OperationOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/HttpMethod"
+        },
+        "path": {
+          "type": "string"
+        },
+        "access": {
+          "$ref": "#/$defs/AccessConfig"
+        },
+        "pagination": {
+          "$ref": "#/$defs/PaginationConfig"
+        }
+      }
+    },
+    "RouteOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/AccessConfig"
+        },
+        "pagination": {
+          "$ref": "#/$defs/PaginationConfig"
         }
       }
     },
     "RouteConfig": {
       "type": "object",
-      "required": ["service", "method", "path"],
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "method",
+        "path"
+      ],
       "properties": {
-        "service": { "type": "string" },
-        "method": {
-          "type": "string",
-          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        "service": {
+          "type": "string"
         },
-        "path": { "type": "string" },
+        "method": {
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/HttpMethod"
+        },
+        "path": {
+          "type": "string"
+        },
         "access": {
           "$ref": "#/$defs/AccessConfig"
         },
@@ -637,46 +1183,105 @@
       }
     },
     "PaginationConfig": {
-      "description": "v0.3 controller pagination. Only the offset and keyset strategies and count none/exact are supported; cursor, range and count: estimated are named by the grammar so the parser can reject them by name (PAGINATION_UNSUPPORTED).",
+      "description": "Controller pagination.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["strategy", "size"],
+      "required": [
+        "strategy",
+        "size"
+      ],
       "properties": {
         "strategy": {
           "type": "string",
-          "enum": ["offset", "keyset", "cursor", "range"]
+          "enum": [
+            "offset",
+            "keyset"
+          ]
         },
         "size": {
           "type": "object",
-          "required": ["default", "max"],
+          "additionalProperties": false,
+          "required": [
+            "default",
+            "max"
+          ],
           "properties": {
-            "default": { "type": "integer", "minimum": 0 },
-            "max": { "type": "integer", "minimum": 1 }
+            "default": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         "count": {
           "type": "string",
-          "enum": ["none", "exact", "estimated"],
+          "enum": [
+            "none",
+            "exact"
+          ],
           "default": "none"
         },
         "onOverflow": {
           "type": "string",
-          "enum": ["clamp", "reject"],
+          "enum": [
+            "clamp",
+            "reject"
+          ],
           "default": "clamp"
         },
-        "envelope": { "type": "boolean", "default": false },
+        "envelope": {
+          "type": "boolean",
+          "default": false
+        },
         "sort": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["field"],
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
             "properties": {
-              "field": { "type": "string" },
-              "dir": { "type": "string", "enum": ["asc", "desc"], "default": "asc" }
+              "field": {
+                "type": "string"
+              },
+              "dir": {
+                "type": "string",
+                "enum": [
+                  "asc",
+                  "desc"
+                ],
+                "default": "asc"
+              }
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "keyset"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "size": {
+                "properties": {
+                  "default": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "AccessConfig": {
       "oneOf": [
@@ -687,84 +1292,36 @@
           "type": "array",
           "items": {
             "oneOf": [
-              { "type": "string" },
-              { "$ref": "#/$defs/AccessRule" }
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/AccessRule"
+              }
             ]
           }
         }
       ]
     },
-    "DeployConfig": {
-      "type": "object",
-      "required": ["runtime"],
-      "properties": {
-        "name": { "type": "string" },
-        "port": { "type": "integer", "default": 8000 },
-        "runtime": { "type": "string", "enum": ["docker", "systemd"] },
-        "services": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "anyOf": [
-              { "required": ["image"] },
-              { "required": ["build"] }
-            ],
-            "properties": {
-              "image": { "type": "string" },
-              "build": { "oneOf": [
-                { "type": "string" },
-                { "type": "object", "properties": {
-                  "context": { "type": "string" },
-                  "dockerfile": { "type": "string" },
-                  "args": { "type": "object", "additionalProperties": { "type": "string" } }
-                } }
-              ]},
-              "ports": { "type": "array", "items": { "oneOf": [{"type": "integer"}, {"type": "string"}] } },
-              "environment": { "oneOf": [
-                { "type": "object", "additionalProperties": { "type": "string" } },
-                { "type": "array", "items": { "type": "string" } }
-              ]},
-              "volumes": { "type": "array", "items": { "type": "string" } },
-              "depends_on": { "oneOf": [
-                { "type": "array", "items": { "type": "string" } },
-                { "type": "object" }
-              ]},
-              "command": { "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}] }
-            }
-          }
-        },
-        "include": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "mongo": {
-          "type": "object",
-          "properties": {
-            "local": { "type": "boolean", "default": false }
-          }
-        },
-        "docker": {
-          "type": "object",
-          "properties": {
-            "image": { "type": "string" }
-          }
-        },
-        "systemd": {
-          "type": "object",
-          "properties": {
-            "user": { "type": "string" },
-            "restart": { "type": "string" }
-          }
-        }
-      }
-    },
     "AccessRule": {
       "type": "object",
+      "additionalProperties": false,
       "anyOf": [
-        { "required": ["given"] },
-        { "required": ["then"] },
-        { "required": ["when"] },
-        { "required": ["role"] }
+        {
+          "required": [
+            "given"
+          ]
+        },
+        {
+          "required": [
+            "then"
+          ]
+        },
+        {
+          "required": [
+            "when"
+          ]
+        }
       ],
       "properties": {
         "given": {
@@ -772,27 +1329,41 @@
           "minProperties": 1,
           "additionalProperties": {
             "anyOf": [
-              { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" },
-              { "type": "string", "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$" },
-              { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$" },
-              { "$ref": "#/$defs/WhereExpression" }
+              {
+                "type": "string",
+                "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              {
+                "type": "string",
+                "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$"
+              },
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$"
+              },
+              {
+                "$ref": "#/$defs/WhereExpression"
+              }
             ]
           }
         },
         "when": {
-          "oneOf": [
-            { "type": "string" },
-            { "type": "array", "items": { "type": "string" }, "minItems": 1 }
-          ]
+          "$ref": "yaml-spec-v0.2.schema.json#/$defs/WhenConfig"
         },
         "then": {
           "type": "string",
-          "enum": ["allow", "deny"],
+          "enum": [
+            "allow",
+            "deny"
+          ],
           "default": "allow"
         },
-        "reason": { "type": "string" },
-        "role": { "type": "string" },
-        "bind": { "$ref": "#/$defs/SymbolBinding" }
+        "reason": {
+          "type": "string"
+        },
+        "bind": {
+          "$ref": "#/$defs/SymbolBinding"
+        }
       }
     }
   }

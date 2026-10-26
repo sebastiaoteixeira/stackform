@@ -1,0 +1,116 @@
+{% set MULTILINE_NAMES = ['content', 'body', 'description', 'excerpt', 'bio', 'summary'] %}
+{% set FORMAT_INPUT_TYPES = {'email': 'email', 'uri': 'url', 'e164': 'tel', 'password': 'password'} %}
+{% set CONTROL_CLASS = 'w-full bg-transparent outline-none text-wf-ink text-sm' %}
+{# The import the controls of `fields` need from the generated App, when one is an identity's roles field. #}
+{% macro control_imports(fields) %}
+{% if fields | selectattr('roles_of') | first %}
+import { RoleOptions } from '../__generated__/App';
+{% endif %}
+{% endmacro %}
+{# The element a field's control is: checkbox, select, textarea or input. #}
+{% macro control_kind(field) -%}
+{{ 'checkbox' if field.type == 'boolean' else 'select' if field.type == 'enum' else 'textarea' if field.type in ('object', 'array') or field.name in MULTILINE_NAMES else 'input' }}
+{%- endmacro %}
+{#
+  The control of one writable field. `values` names the form state and `setter`
+  its `(name, value) => void` updater; the generated `fields` module converts
+  what the control holds to the value the API accepts. `attributes` are added
+  to the control element as written.
+#}
+{% macro field_control(field, values='values', setter='setValue', id=none, attributes='') %}
+{% set config = field.config %}
+{% set kind = control_kind(field) %}
+{% set id = id or field.name %}
+{% set value = values ~ "[" ~ (field.name | tojson) ~ "]" %}
+{% set on_change %}{ (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {{ setter }}({{ field.name | tojson }}, e.target.value) }{% endset %}
+{% if kind == 'checkbox' %}
+<input
+  id="{{ id }}"
+  type="checkbox"
+  name="{{ field.name }}"
+  checked={ Boolean({{ value }}) }
+  onChange={ (e: React.ChangeEvent<HTMLInputElement>) => {{ setter }}({{ field.name | tojson }}, e.target.checked) }
+  className="w-4 h-4 accent-wf-accent"
+  {{ attributes }}
+/>
+{% elif kind == 'select' %}
+<select
+  id="{{ id }}"
+  name="{{ field.name }}"
+  value={ String({{ value }}) }
+  onChange={{ on_change }}
+  {% if field.required %}
+  required
+  {% endif %}
+  className="{{ CONTROL_CLASS }}"
+  {{ attributes }}
+>
+  <option value="">Select...</option>
+  {% if field.roles_of %}
+  <RoleOptions identity={{ field.roles_of | tojson }} />
+  {% else %}
+  {% for option in config['values'] %}
+  <option value={{ option | tojson }}>{{ option | title }}</option>
+  {% endfor %}
+  {% endif %}
+</select>
+{% elif kind == 'textarea' %}
+<textarea
+  id="{{ id }}"
+  name="{{ field.name }}"
+  value={ String({{ value }}) }
+  onChange={{ on_change }}
+  rows={ {{ 8 if field.name == 'content' or field.type in ('object', 'array') else 3 }} }
+  {% if field.type in ('object', 'array') %}
+  placeholder="JSON {{ field.type }}"
+  {% endif %}
+  {% for attribute in ('minLength', 'maxLength') if attribute in config %}
+  {{ attribute }}={ {{ config[attribute] }} }
+  {% endfor %}
+  {% if field.required %}
+  required
+  {% endif %}
+  className="{{ CONTROL_CLASS }} resize-none{% if field.type in ('object', 'array') %} font-mono{% endif %}"
+  {{ attributes }}
+/>
+{% else %}
+<input
+  id="{{ id }}"
+  type="{{ 'number' if field.type == 'number' else 'datetime-local' if field.type == 'datetime' else FORMAT_INPUT_TYPES.get(config.get('format'), 'text') }}"
+  name="{{ field.name }}"
+  value={ String({{ value }}) }
+  onChange={{ on_change }}
+  {% if field.type == 'number' %}
+  step="any"
+  {% endif %}
+  {% for attribute in ('min', 'max', 'minLength', 'maxLength') if attribute in config %}
+  {{ attribute }}={ {{ config[attribute] }} }
+  {% endfor %}
+  {% if field.required %}
+  required
+  {% endif %}
+  className="{{ CONTROL_CLASS }}"
+  {{ attributes }}
+/>
+{% endif %}
+{% endmacro %}
+{# The labelled input of one writable field; see `field_control`. #}
+{% macro field_input(field, values='values', setter='setValue', id_prefix='') %}
+{% set id = id_prefix ~ field.name %}
+{% set kind = control_kind(field) %}
+<div className="wf-field">
+  <label htmlFor="{{ id }}" className="block text-[11px] uppercase tracking-wide text-wf-ink-dim mb-1.5">
+    {{ field.name | title }}{% if field.required %}<span className="text-wf-danger ml-0.5">*</span>{% endif %}
+  </label>
+  {% if kind == 'checkbox' %}
+  <label className="inline-flex items-center gap-2 cursor-pointer">
+    {{ field_control(field, values, setter, id) }}
+    <span className="text-sm text-wf-ink-dim">{{ field.name | title }}</span>
+  </label>
+  {% else %}
+  <div className="wf-input{% if kind == 'textarea' %} !items-start !py-2{% endif %}">
+    {{ field_control(field, values, setter, id) }}
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}

@@ -1,0 +1,47 @@
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { useAuth } from './App';
+import { CREDENTIAL_FIELDS, ENTITY_FIELDS, formValues, payload } from './fields';
+import { callOperation, failure, readJson, saveOperation } from './records';
+
+/**
+ * The form state of one `entity` record: a new one, or the one `entityId`
+ * (by default the route's `:id`) names, which is loaded and edited through
+ * the entity's edit operation. A new identity also takes its credentials.
+ */
+export function useRecordForm<T = Record<string, unknown>>(entity: string, entityId?: string) {
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = entityId ?? routeId;
+  const fields = id ? ENTITY_FIELDS[entity] : { ...ENTITY_FIELDS[entity], ...CREDENTIAL_FIELDS[entity] };
+  const { token } = useAuth();
+  const [initial, setInitial] = useState(() => formValues(fields));
+  const [values, setValues] = useState(initial);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const start = (record?: Record<string, unknown>) => {
+    const started = formValues(fields, record);
+    setInitial(started);
+    setValues(started);
+  };
+
+  useEffect(() => {
+    start();
+    if (!id) return;
+    callOperation(entity, 'get', { id, headers })
+      .then(readJson)
+      .then(start)
+      .catch(() => undefined);
+  }, [entity, id, token]);
+
+  const setValue = (name: string, value: unknown) => setValues(prev => ({ ...prev, [name]: value }));
+
+  const submit = async (): Promise<T> => {
+    const operation = saveOperation(entity, id);
+    const res = await callOperation(entity, operation, { id, headers, body: JSON.stringify(payload(fields, values, initial)) });
+    if (!res.ok) throw await failure(res, `Failed to ${operation} ${entity}`);
+    return res.json();
+  };
+
+  return { values, setValue, mode: id ? 'edit' as const : 'create' as const, submit };
+}

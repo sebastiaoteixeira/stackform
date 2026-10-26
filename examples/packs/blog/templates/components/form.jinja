@@ -11,9 +11,11 @@ export function {{ view.name | pascal_case }}Page() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+{% if entity.access.create.anonymous != "allow" %}
   useEffect(() => {
     if (!isAuthenticated) navigate("/login", { replace: true })
   }, [isAuthenticated, navigate])
+{% endif %}
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -24,7 +26,7 @@ export function {{ view.name | pascal_case }}Page() {
       const data: Record<string, unknown> = {}
       form.forEach((value, key) => { data[key] = value })
       {% for field_name, field in entity.fields.items() %}
-      {% if field.type == "boolean" %}
+      {% if field.type == "boolean" and not field.readonly %}
       data["{{ field_name }}"] = form.has("{{ field_name }}")
       {% endif %}
       {% endfor %}
@@ -61,7 +63,7 @@ export function {{ view.name | pascal_case }}Page() {
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {% for field_name, field in entity.fields.items() %}
-        {% if field.type != "id" and field.type != "ref" and field.type != "datetime" and (field.required or field.default is none) %}
+        {% if not field.readonly and field.type not in ("id", "ref", "datetime") and (field.required or field.default is none) %}
         <div>
           {% if field.type == "boolean" %}
           <label className="flex items-center gap-3 cursor-pointer group">

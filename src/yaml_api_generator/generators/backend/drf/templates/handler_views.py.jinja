@@ -1,10 +1,10 @@
-from importlib import import_module
-
+{% from "handler_call.jinja" import run_operation %}
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 
 from api.conflicts import ConflictError
+from api.handler_requests import HandlerRequest, invoke, json_body
 from api.service_inputs import prepare_service_inputs, resolve_access_bind
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}{% for where_collection in route.where_collections %}
@@ -14,27 +14,31 @@ from api.service_inputs import prepare_service_inputs, resolve_access_bind
 from api.repositories.{{ where_collection }} import {{ where_collection | capitalize_collection }}Repository
 {% endfor %}
 {% if routes | selectattr("needs_auth") | list %}
+from api.access import AccessDenied, Decision, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, value_at
 from api.authentication.auth import _principal_has_role, resolve_principal
 from api.authentication.mongodb import get_database
 {% endif %}
 
 
-{% for route in routes %}
-class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(APIView):
+{% for path, path_routes in routes | groupby("relative_path") %}
+class {{ path_routes[0].view_name }}(APIView):
+{% for route in path_routes %}
+
     async def {{ route.method | lower }}(self, request, **path_params):
 {% if route.needs_auth %}
-        principal = resolve_principal(request, get_database())
-        if principal is None:
+        _resolved_principal = await resolve_principal(request.headers, get_database())
+{% if not route.admits_anonymous %}
+        if _resolved_principal is None:
             return Response(
                 {"detail": "Unauthorized"},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-{% else %}
-        principal = None
 {% endif %}
-        body = request.data if isinstance(request.data, dict) else {}
+{% else %}
+        _resolved_principal = None
+{% endif %}
+        body = json_body(request.body) or {}
 {% if route.access_rules %}
-        _resolved_principal = principal
         _request_body = body
         _request_path = path_params
         _request_query = dict(request.query_params)
@@ -50,53 +54,43 @@ class Handler{{ route.operation | capitalize_collection }}{{ loop.index }}View(A
 {% endfor %}
 {% endfor %}
 {% for symbol in ns_symbols.identity %}
-        {{ symbol }} = principal
+        {{ symbol }} = _resolved_principal
 {% endfor %}
 {% for symbol in ns_symbols.request %}
         {{ symbol | request_symbol_binding }}
 {% endfor %}
-        access_granted = False
-        access_bindings = {}
+        decisions = []
 {% for rule in route.access_rules %}
-        if not access_granted:
 {% for binding in rule.document_bindings %}
-            {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(get_database()).find_one(
-                resolve_access_bind({{ binding.where | py_literal }}, {**path_params, **locals()})
-            )
+        {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(get_database()).find_one(
+            resolve_access_bind({{ binding.where | py_literal }}, {**path_params, **locals()})
+        )
 {% endfor %}
-            if {% for binding in rule.document_bindings %}{{ binding.name }} is not None and {% endfor %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-                return Response({"detail": {{ (rule.reason or "Forbidden") | py_literal }}}, status=status.HTTP_403_FORBIDDEN)
-{% else %}
-                access_granted = True
-                access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+        decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-        if not access_granted:
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(decisions)]
+        except AccessDenied as exc:
+            code, detail = exc.refusal(_resolved_principal)
+            return Response({"detail": detail}, status=code)
         bound_inputs = resolve_access_bind(access_bindings, locals())
 {% else %}
         bound_inputs = {}
 {% endif %}
         try:
-            request.service_inputs = prepare_service_inputs(
+            service_inputs = prepare_service_inputs(
                 path_params,
                 body,
                 {{ route.service_input | py_literal }},
                 {{ route.service_forwarding | py_literal }},
                 bound_inputs,
             )
-        except ValueError as exc:
-            return Response(
-                {"detail": str(exc)},
-                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            )
-        module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
-        try:
-            result = await getattr(import_module(module_path), function_name)(request)
+{{ run_operation(route) }}
         except ConflictError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        return result if isinstance(result, Response) else Response(result)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+{% endfor %}
 
 
 {% endfor %}

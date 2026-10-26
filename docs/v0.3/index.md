@@ -4,7 +4,7 @@ description: Spec version 0.3 adds multi-file specs, a richer access-rule gramma
 ---
 
 Spec version 0.3 builds on [v0.2](/docs/v0.2). A spec opts in with
-`version: 0.3`; v0.2 specs keep working unchanged.
+`version: "0.3"`.
 
 ## Spec structure
 
@@ -16,12 +16,9 @@ Spec version 0.3 builds on [v0.2](/docs/v0.2). A spec opts in with
 ## Access rules and binding
 
 - [Access and binding grammar reference](/docs/v0.3/grammar-reference) — the complete rule grammar
-- [Access-rule `role:`](/docs/v0.3/access-role) — requiring a role on the long rule form
 - [Access-rule `bind:`](/docs/v0.3/controller-bind) — supplying trusted service inputs from a rule
 - [The `where` binding form](/docs/v0.3/given-where) — deriving repository filters from the principal
-- [Explainable access denials](/docs/v0.3/access-reason) — attaching a reason to a deny rule
-- [The removed access-rule `filter` key](/docs/v0.3/removed-filter-key)
-- [The removed access-rule `writeFields` key](/docs/v0.3/removed-write-fields-key)
+- [Explainable access denials](/docs/v0.3/access-reason) — a safe, rule-specific reason in a 403
 
 ## Services and data
 

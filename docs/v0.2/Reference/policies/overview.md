@@ -16,33 +16,23 @@ top-level `policies:` block and reference it as a term inside any access rule's
 > backend, and the `stackform run` dev server need no policy-aware runtime: they
 > evaluate the already-expanded rule. There is no new runtime primitive.
 
-## Why policies exist
+## Composition
 
-Before policies, the only way to reuse access logic was to repeat a rule across
-the `access:` list. But the `access:` list is an OR: every rule you add only
-**widens** access. There was no way to reuse a predicate that **narrows** access
--- to require a shared condition as one `and` term inside a single rule.
-
-Policies close that gap. A policy is a reusable predicate that composes BOTH
-ways:
-
-- **OR across rules** -- the existing model. Each entry in an `access:` list is a
-  separate rule; matching any one grants access.
-- **AND / OR / NOT within a single `when:`** -- the new model. A `policy:<name>`
-  term sits inside one rule's `when:` and combines with other terms, so reuse can
-  now tighten access, not only widen it.
+An `access:` list is an OR: each entry is a separate rule, and matching any one
+grants access, so adding a rule only **widens** access. A `policy:<name>` term sits
+inside one rule's `when:` and combines with `and`, `or`, and `not`, so a reused
+predicate can also **narrow** access.
 
 ```yaml
 access:
-  - when: "policy:isTrustiantAdmin"                 # OR: admins always pass
+  - when: "policy:isOrgAdmin and policy:ownOrg(risks)"
   - given: { user: identity:user, target: risks }
-    when: "policy:ownOrg(risks) and target.ownerId equals user.id"   # AND-tightened
+    when: "policy:ownOrg(risks) and target.ownerId equals user.id"
 ```
 
-The second rule reuses `ownOrg` and ANDs it with an extra term drawn from the
-rule's own `given:`. The OR-splice model could not express that "reuse AND an
-extra condition" shape -- splicing `ownOrg` as its own list entry would have
-granted access on `ownOrg` alone.
+Both rules reuse `ownOrg`. The first ANDs it with another policy; the second ANDs
+it with a term drawn from the rule's own `given:`. Neither grants access on
+`ownOrg` alone.
 
 ## The `policies:` block
 
@@ -51,13 +41,13 @@ top-level blocks, it is deep-merged across `include`d files.
 
 ```yaml
 policies:
-  isTrustiantAdmin:
+  isOrgAdmin:
     given: { user: identity:user }
-    when: "'trustiant-admin' in user.roles"
+    when: "user.record.role equals 'org-admin'"
   ownOrg:
     given: { user: identity:user }
     params: [target]
-    when: "'org-admin' in user.roles and target.organizationId equals user.record.organizationId"
+    when: "target.organizationId equals user.record.organizationId"
 ```
 
 ### Policy fields
@@ -100,15 +90,15 @@ binding   := identity:<entity> | request:<entity> | <collection> | <collection> 
   generation aborts with `POLICY_ARITY_MISMATCH`. Args bind to `params`
   positionally; there are no keyword or defaulted args.
 - A policy with no `params` is referenced **bare**, without parentheses:
-  `policy:isTrustiantAdmin`. Supplying args to a no-params policy is a
+  `policy:isOrgAdmin`. Supplying args to a no-params policy is a
   `POLICY_ARITY_MISMATCH`.
 - A reference to an undefined policy aborts with `POLICY_NOT_FOUND`.
 
 ```yaml
-when: "policy:isTrustiantAdmin"                      # bare, no params
+when: "policy:isOrgAdmin"                      # bare, no params
 when: "policy:ownOrg(request:riskCategory)"          # one positional arg
 when: "policy:ownOrg(riskCategories)"                # arg is a fetched document
-when: "policy:isTrustiantAdmin or policy:ownOrg(risks)"   # composed with or
+when: "policy:isOrgAdmin and policy:ownOrg(risks)"  # composed with and
 ```
 
 ## Param-arg record normalization
@@ -159,14 +149,49 @@ rule; a document symbol makes it a document rule. After expansion no
 ## Worked example
 
 ```yaml
+version: "0.2"
+
+entities:
+  user:
+    type: auth
+    auth:
+      identifier: email
+      via: password
+      roles: role
+    fields:
+      id: { type: id }
+      email: { type: string, required: true, unique: true }
+      organizationId: { type: string, required: true }
+      role: { type: enum, values: [org-admin, member], default: member }
+  riskCategory:
+    fields:
+      id: { type: id }
+      name: { type: string, required: true }
+      organizationId: { type: string, required: true }
+  risk:
+    fields:
+      id: { type: id }
+      title: { type: string, required: true }
+      organizationId: { type: string, required: true }
+      ownerId: { type: string, required: true }
+
+repositories:
+  users: { entity: user }
+  riskCategories: { entity: riskCategory }
+  risks: { entity: risk }
+
+services:
+  riskCategories: { repository: riskCategories }
+  risks: { repository: risks }
+
 policies:
-  isTrustiantAdmin:
+  isOrgAdmin:
     given: { user: identity:user }
-    when: "'trustiant-admin' in user.roles"
+    when: "user.record.role equals 'org-admin'"
   ownOrg:
     given: { user: identity:user }
     params: [target]
-    when: "'org-admin' in user.roles and target.organizationId equals user.record.organizationId"
+    when: "target.organizationId equals user.record.organizationId"
 
 controllers:
   riskCategories:
@@ -176,12 +201,10 @@ controllers:
     operations:
       create:
         access:
-          - when: "policy:isTrustiantAdmin"
-          - when: "policy:ownOrg(request:riskCategory)"
+          - when: "policy:isOrgAdmin and policy:ownOrg(request:riskCategory)"
       update:
         access:
-          - when: "policy:isTrustiantAdmin"
-          - when: "policy:ownOrg(riskCategories)"
+          - when: "policy:isOrgAdmin and policy:ownOrg(riskCategories)"
   risks:
     service: risks
     base_path: /risks
@@ -189,7 +212,7 @@ controllers:
     operations:
       delete:
         access:
-          - when: "policy:isTrustiantAdmin"
+          - when: "policy:isOrgAdmin and policy:ownOrg(risks)"
           - given: { user: identity:user, target: risks }
             when: "policy:ownOrg(risks) and target.ownerId equals user.id"
 ```
@@ -209,8 +232,8 @@ controllers:
   independent of the policy's `target` param -- policy and rule symbols never
   share scope.
 
-In each case `isTrustiantAdmin` is a separate OR rule: an admin passes
-regardless of org.
+An `org-admin` acts on the records of its own organization; any other member
+deletes only the risks it owns in its organization.
 
 ## Errors
 

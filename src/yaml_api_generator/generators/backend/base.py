@@ -1,12 +1,15 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Any
+from typing import Callable, ClassVar
 
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, StrictUndefined
 
 from yaml_api_generator.generators.backend.compile_context import CompileContext
+from yaml_api_generator.generators.backend.runtime_literals import py_constructor
 from yaml_api_generator.utils.strings import to_pascal_case
+
+from .utils import runtime_module_source
 
 
 @dataclass
@@ -41,16 +44,21 @@ def template_environment(*template_dirs: Path) -> Environment:
     token Undefined, which is valid Python syntax and therefore survives every
     syntax-level check the generated project is put through.
     """
-    return Environment(
+    env = Environment(
         loader=ChoiceLoader([FileSystemLoader(str(d)) for d in template_dirs]),
         keep_trailing_newline=True,
         trim_blocks=True,
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
+    env.filters["py_constructor"] = py_constructor
+    return env
 
 
 class CodeGenerator(ABC):
+    asgi_application: ClassVar[str] = "app:app"
+    """Import path an ASGI server loads to serve the generated backend."""
+
     @abstractmethod
     def generate(self, context: CompileContext, output_dir: Path) -> None: ...
 
@@ -137,6 +145,18 @@ class TemplateBasedGenerator(CodeGenerator):
                 class_names = [m.name for m in models]
                 return f"from .{col_name} import {', '.join(class_names)}"
             return None
+
+    @staticmethod
+    def _render_service_inputs(env: Environment, output_dir: Path, package: str) -> None:
+        """Write the field validator and the service-input helper built on it into ``package``."""
+        package_dir = output_dir / package
+        package_dir.mkdir(parents=True, exist_ok=True)
+        (package_dir / "fields.py").write_text(runtime_module_source("fields"))
+        (package_dir / "service_inputs.py").write_text(
+            env.get_template("service_inputs.py.jinja").render(
+                fields_module=f"{package}.fields" if package else "fields"
+            )
+        )
 
     def _render_single_file(
         self,

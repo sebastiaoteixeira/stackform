@@ -4,14 +4,15 @@ api:
   basePath: /api
   version: v1
   operations:
-    defaults: [list, get, create, update, replace, delete]
+    defaults: { list: true, get: true, create: true, update: true, replace: true, delete: true }
 
 entities:
   user:
     type: auth
-    via:
-      - provider: password
-        identifier: email
+    auth:
+      via:
+        - provider: password
+          identifier: email
     fields:
       id:
         type: id
@@ -42,7 +43,7 @@ entities:
         ref: user
 
 # CRUD is implicit. Custom operations added explicitly.
-# posts.by-author is available internally but NOT exposed via any controller.
+# posts.by_author is exposed through the my_posts service.
 repositories:
   users:
     entity: user
@@ -50,30 +51,29 @@ repositories:
   posts:
     entity: post
     operations:
-      by-author:
-        base: list
-        filter: { authorId: $principal }
+      by_author:
+        query:
+          command: find
+          filter: { authorId: "{{authorId}}" }
 
 # Services: business operations exposed to controllers.
 # Simple CRUD services delegate to a single repo operation.
-# login is a custom service with its own step pipeline.
 services:
   register:     { repository: users, operation: create }
   login:
     repository: users
-    steps: [validate, authenticate, issue-token]
 
-  list-users:   { repository: users, operation: list }
-  get-user:     { repository: users, operation: get }
-  update-user:  { repository: users, operation: update }
-  delete-user:  { repository: users, operation: delete }
+  list_users:   { repository: users, operation: list }
+  get_user:     { repository: users, operation: get }
+  update_user:  { repository: users, operation: update }
+  delete_user:  { repository: users, operation: delete }
 
-  list-posts:   { repository: posts, operation: list }
-  get-post:     { repository: posts, operation: get }
-  create-post:  { repository: posts, operation: create }
-  update-post:  { repository: posts, operation: update }
-  delete-post:  { repository: posts, operation: delete }
-  my-posts:     { repository: posts, operation: by-author }
+  list_posts:   { repository: posts, operation: list }
+  get_post:     { repository: posts, operation: get }
+  create_post:  { repository: posts, operation: create }
+  update_post:  { repository: posts, operation: update }
+  delete_post:  { repository: posts, operation: delete }
+  my_posts:     { repository: posts, operation: by_author }
 
 controllers:
   auth:
@@ -85,36 +85,36 @@ controllers:
   users:
     base_path: /api/v1/users
     routes:
-      list:   { service: list-users,   method: GET,    path: /,     access: authenticated }
-      get:    { service: get-user,     method: GET,    path: /{id}, access: authenticated }
-      update: { service: update-user,  method: PATCH,  path: /{id}, access: authenticated }
+      list:   { service: list_users,   method: GET,    path: /,     access: "*" }
+      get:    { service: get_user,     method: GET,    path: "/{id}", access: "*" }
+      update: { service: update_user,  method: PATCH,  path: "/{id}", access: "*" }
       delete:
-        service: delete-user
+        service: delete_user
         method: DELETE
         path: /{id}
         access:
           - given:
-              principal: identity:users
+              principal: identity:user
               document: users
             when: principal.sub equals document.id
 
   posts:
     base_path: /api/v1/posts
     routes:
-      list:     { service: list-posts,   method: GET,    path: /,      access: public }
-      get:      { service: get-post,     method: GET,    path: /{id},  access: public }
-      create:   { service: create-post,  method: POST,   path: /,      access: public }
-      update:   { service: update-post,  method: PATCH,  path: /{id},  access: authenticated }
+      list:     { service: list_posts,   method: GET,    path: /,      access: public }
+      get:      { service: get_post,     method: GET,    path: "/{id}",  access: public }
+      create:   { service: create_post,  method: POST,   path: /,      access: public }
+      update:   { service: update_post,  method: PATCH,  path: "/{id}",  access: "*" }
       delete:
-        service: delete-post
+        service: delete_post
         method: DELETE
         path: /{id}
         access:
           - given:
-              principal: identity:users
+              principal: identity:user
               document: posts
             when: principal.sub equals document.authorId
           - given:
-              principal: identity:users
+              principal: identity:user
             when: principal.record.role equals 'moderator'
-      my-posts: { service: my-posts,     method: GET,    path: /mine,  access: authenticated }
+      by-author: { service: my_posts, method: GET, path: "/by-author/{authorId}", access: "*" }

@@ -1,14 +1,13 @@
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from drf_spectacular.utils import extend_schema
 
-from api.authentication.auth import verify_password
+from api.authentication.auth import find_by_password
 from api.authentication.jwt_utils import create_jwt_token
 from api.authentication.mongodb import get_database
 
-{% for identity in auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
+{% for identity in auth.login_identities %}
 {% set class_name = identity.name | capitalize_collection %}
 
 class {{ class_name }}LoginView(APIView):
@@ -16,42 +15,20 @@ class {{ class_name }}LoginView(APIView):
     permission_classes = []
 
     @extend_schema(tags=["{{ identity.name | capitalize_collection }}"], auth=[])
-    def post(self, request):
+    async def post(self, request):
         identifier_value = request.data.get("{{ identity.identifier }}")
         password = request.data.get("password")
-
-        if not identifier_value or not password:
-            return Response(
-                {"detail": "Invalid credentials"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
-        db = get_database()
-        col = db["{{ identity.name }}"]
-        for doc in col.find({}):
-            if str(doc.get("{{ identity.identifier }}", "")) != str(identifier_value):
-                continue
-            stored_hash = doc["_auth"]["passwordHash"]
-            if not isinstance(stored_hash, str):
-                continue
-            if not verify_password(str(password), stored_hash):
-                continue
-
-            subject = doc.get("{{ identity.id_field }}")
-            if subject is None:
-                continue
-
-            token = create_jwt_token(str(subject), "{{ identity.name }}")
-            safe_user = {
-                k: v for k, v in doc.items()
-                if k not in ("password", "_id", "_auth")
-            }
-            return Response({"token": token, "user": safe_user})
-
-        return Response(
-            {"detail": "Invalid credentials"},
-            status=status.HTTP_401_UNAUTHORIZED,
+        doc = (
+            await find_by_password(get_database(), "{{ identity.name }}", str(identifier_value), str(password))
+            if identifier_value and password
+            else None
         )
+        subject = doc.get("{{ identity.id_field }}") if doc is not None else None
+        if subject is None:
+            return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-{% endif %}
+        token = create_jwt_token(str(subject), "{{ identity.name }}")
+        safe_user = {k: v for k, v in doc.items() if k not in ("_id", "_auth", "password", "apiKey")}
+        return Response({"token": token, "user": safe_user})
+
 {% endfor %}

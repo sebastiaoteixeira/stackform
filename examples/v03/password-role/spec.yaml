@@ -1,7 +1,6 @@
 version: "0.3"
 
 api:
-  name: v03-password-role
   basePath: /api
   version: v1
   operations:

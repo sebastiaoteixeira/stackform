@@ -38,11 +38,42 @@ For a bearer token whose `iss` matches the provider's issuer:
 - **Issuer** (`iss`) against the provider's configured issuer, or the issuer
   read from the discovery document when the spec omits it.
 - **Audience** (`aud`) against `audiences` when set, otherwise against
-  `client_id`.
+  `client_id`. See [Keycloak: putting the API in `aud`](#keycloak-putting-the-api-in-aud).
 
 Verification yields either a full claim set or nothing; there is no partial
 acceptance, and a token rejected here is never retried as an app token or an
 api key.
+
+## Keycloak: putting the API in `aud`
+
+A Keycloak access token names its audience only through protocol mappers, so
+by default its `aud` does not carry the API's client and verification fails
+with `Invalid IdP token`. Add an **Audience** mapper so every access token the
+clients receive names the API:
+
+1. In the realm, open **Client scopes** and create a scope, for example
+   `api-audience`.
+2. In its **Mappers** tab choose **Configure a new mapper**, then **Audience**.
+3. Set **Included Client Audience** to the API's client (the provider's
+   `client_id`), or **Included Custom Audience** to a value listed in
+   `audiences`, and turn **Add to access token** on.
+4. In each client that calls the API, open **Client scopes** and add
+   `api-audience` as a **Default** scope.
+
+Every access token those clients obtain then carries the API in `aud`:
+
+```yaml
+providers:
+  keycloak:
+    type: oidc
+    trust: idp
+    client_id: orders-api
+    discovery_url: https://sso.example.com/realms/main/.well-known/openid-configuration
+    audiences: [orders-api]
+```
+
+Linking the scope as **Optional** instead adds the audience only when the
+client requests `scope=api-audience`.
 
 ## Failure responses
 

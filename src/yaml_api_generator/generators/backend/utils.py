@@ -1,5 +1,6 @@
 """Shared utilities for backend generators."""
 
+from collections.abc import Iterable
 from importlib.resources import files
 from pathlib import Path
 
@@ -12,7 +13,11 @@ from .compile_context import CompileContext, IdentityCollectionDescriptor
 
 
 _RUNTIME_MODULES = frozenset(
-    {"dpop", "pagination", "files", "multipart", "file_requests", "filesystem_store", "s3_store"}
+    {
+        "access", "dpop", "saml", "claims", "provisioning", "pagination", "fields", "payloads", "files", "multipart",
+        "file_requests", "filesystem_store", "s3_store", "sql_types", "operations", "ids", "mongo_operations",
+        "sql_operations", "handler_requests", "security_headers", "lifecycle", "mongo_lifecycle", "sql_lifecycle",
+    }
 )
 
 
@@ -20,6 +25,17 @@ def runtime_module_source(name: str) -> str:
     if name not in _RUNTIME_MODULES:
         raise ValueError(f"Unknown runtime module: {name}")
     return files("yaml_api_generator.runtime").joinpath(f"{name}.py").read_text()
+
+
+def write_runtime_modules(directory: Path, names: Iterable[str]) -> None:
+    for name in names:
+        (directory / f"{name}.py").write_text(runtime_module_source(name))
+
+
+MONGO_RUNTIME_MODULES = (
+    "access", "pagination", "operations", "ids", "mongo_operations", "handler_requests", "lifecycle", "mongo_lifecycle",
+)
+SQL_RUNTIME_MODULES = ("sql_types", "sql_operations", "lifecycle", "sql_lifecycle")
 
 
 def write_environment_files(
@@ -103,3 +119,14 @@ def extract_identity_fields(context: CompileContext, col_name: str) -> list[str]
             seen.add(binding.identifier)
 
     return identity_fields
+
+
+def identity_service_context(context: CompileContext, col_name: str) -> dict:
+    """What a collection's service needs to know about the identity it may back."""
+    identity = find_identity(context, col_name)
+    return {
+        "is_identity_collection": identity is not None,
+        "password_via": identity is not None and identity.has_password,
+        "api_key_via": identity is not None and identity.has_api_key,
+        "identity_fields": extract_identity_fields(context, col_name),
+    }

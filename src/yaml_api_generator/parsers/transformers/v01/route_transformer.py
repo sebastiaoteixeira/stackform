@@ -1,11 +1,15 @@
 """Route and operations transformation for v0.1 specifications.
 
-Builds routes from collection operations and access policies.
+Builds routes from collection operations and access policies. A 0.1 ``when``
+names the route's record ``document`` without binding it, so the rule binds it
+here, as a 0.2 ``given: { document: <collection> }`` would.
 """
 
 from typing import Any
 
-from yaml_api_generator.ir import IRAccessRule, IRIdentityCollection, IROperations, IRRoute
+from yaml_api_generator.ir.api import AUTHENTICATED
+from yaml_api_generator.ir import IRAccessRule, IRDocumentBinding, IRIdentityCollection, IROperations, IRRoute
+from yaml_api_generator.ir.when import collect_roots
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 from yaml_api_generator.parsers.when_parser import parse_when_expr
 from yaml_api_generator.parsers.transformers.principal_resolver import resolve_principal
@@ -23,6 +27,8 @@ class RouteTransformer:
         "replace": ("PUT", "/{collection}/{id}"),
         "delete": ("DELETE", "/{collection}/{id}"),
     }
+    _SHARED_ACCESS = {"replace": "update"}
+    """Operations that, without access of their own, take another operation's."""
 
     def build_routes(
         self,
@@ -112,11 +118,13 @@ class RouteTransformer:
         for operation in self._OPERATION_NAMES:
             if not op_map[operation]:
                 continue
+            access_key = operation if operation in collection_access else self._SHARED_ACCESS.get(operation, operation)
             is_public, access_rules, access_errors = self._parse_access(
-                collection_access.get(operation),
-                f"collections.{collection}.access.{operation}",
+                collection_access.get(access_key),
+                f"collections.{collection}.access.{access_key}",
                 auth_entities,
                 entity_to_collection,
+                None if operation == "create" else IRDocumentBinding(collection=collection),
             )
             errors.extend(access_errors)
             method, path_template = self._ROUTE_MAPPING[operation]
@@ -138,13 +146,14 @@ class RouteTransformer:
         path: str,
         auth_entities: set[str],
         entity_to_collection: dict[str, str],
+        record: IRDocumentBinding | None,
     ) -> tuple[bool, list[IRAccessRule], list[ConfigError]]:
         if access is None:
             return True, [], []
         if isinstance(access, str):
-            return self._parse_access_items([access], path, auth_entities, entity_to_collection)
+            return self._parse_access_items([access], path, auth_entities, entity_to_collection, record)
         if isinstance(access, list):
-            return self._parse_access_items(access, path, auth_entities, entity_to_collection)
+            return self._parse_access_items(access, path, auth_entities, entity_to_collection, record)
         return True, [], []
 
     def _parse_access_items(
@@ -153,6 +162,7 @@ class RouteTransformer:
         path: str,
         auth_entities: set[str],
         entity_to_collection: dict[str, str],
+        record: IRDocumentBinding | None,
     ) -> tuple[bool, list[IRAccessRule], list[ConfigError]]:
         rules: list[IRAccessRule] = []
         errors: list[ConfigError] = []
@@ -175,29 +185,31 @@ class RouteTransformer:
             if when_raw is not None:
                 when_expr, when_errors = parse_when_expr(when_raw, f"{item_path}.when")
                 errors.extend(when_errors)
-            if self._is_bare_authenticated(resolved, when_expr, extras):
+            if self._is_bare_authenticated(resolved, when_expr):
                 continue
+            names_document = when_expr is not None and "document" in collect_roots(when_expr)
+            if names_document and record is None:
+                errors.append(ConfigError(
+                    code="ACCESS_RULE_INVALID",
+                    message="a create rule has no document to compare",
+                    path=f"{item_path}.when",
+                ))
             rules.append(
                 IRAccessRule(
-                    principal=resolved.principal or "",
+                    principal=resolved.principal or AUTHENTICATED,
                     required_role=resolved.required_role,
                     when=when_expr,
+                    document_symbols={"document": record} if names_document and record else {},
                     **extras,
                 )
             )
         return is_public, rules, errors
 
     @staticmethod
-    def _is_bare_authenticated(resolved, when_expr, extras: dict[str, Any]) -> bool:
+    def _is_bare_authenticated(resolved, when_expr) -> bool:
         """A plain 'authenticated' principal carries no identity, role, or constraint,
         so it adds nothing beyond requiring authentication; no rule is emitted."""
-        return (
-            resolved.principal is None
-            and resolved.required_role is None
-            and when_expr is None
-            and not extras.get("filter")
-            and not extras.get("write_fields")
-        )
+        return resolved.principal is None and resolved.required_role is None and when_expr is None
 
     @staticmethod
     def _unpack_item(item: Any) -> tuple[str | None, str | None, dict[str, Any]]:
@@ -205,10 +217,6 @@ class RouteTransformer:
             return item, None, {}
         if isinstance(item, dict):
             principal = item.get("principal")
-            extras = {
-                "filter": item.get("filter"),
-                "write_fields": item.get("writeFields", []),
-                "reason": item.get("reason"),
-            }
+            extras = {"reason": item.get("reason")}
             return (principal if isinstance(principal, str) else None), item.get("when"), extras
         return None, None, {}

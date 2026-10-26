@@ -145,9 +145,8 @@ async def test_builder_custom_handler_route_calls_handler():
 
     mod = types.ModuleType("myapp.handlers.items")
 
-    def custom_handler(ctx):
-        ctx.response = {"handled": True}
-        return ctx
+    def custom_handler(request):
+        return {"handled": True, "params": request.params}
 
     mod.custom_handler = custom_handler
     sys.modules["myapp.handlers.items"] = mod
@@ -164,7 +163,7 @@ async def test_builder_custom_handler_route_calls_handler():
     repo = InMemoryRepository()
     pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     result = await pipeline.run()
-    assert result.response == {"handled": True}
+    assert result.response == {"handled": True, "params": {}}
 
     del sys.modules["myapp.handlers.items"]
 
@@ -321,6 +320,7 @@ async def test_builder_update_with_document_rule_allows_matching_principal():
     route = RuntimeRouteDescriptor(
         method="PATCH",
         path="/items/{id}",
+        record_param="id",
         operation="update",
         collection="items",
         is_public=False,
@@ -362,6 +362,7 @@ async def test_builder_update_with_document_rule_denies_non_matching_principal()
     route = RuntimeRouteDescriptor(
         method="PATCH",
         path="/items/{id}",
+        record_param="id",
         operation="update",
         collection="items",
         is_public=False,
@@ -423,17 +424,3 @@ async def test_builder_identity_create_without_password_raises():
     pipeline = PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)
     with pytest.raises(ValueError):
         await pipeline.run(body={"email": "a@b.com"})  # missing password
-
-
-def test_builder_unsupported_operation_raises():
-    route = RuntimeRouteDescriptor(
-        method="POST",
-        path="/items",
-        operation="custom_op",
-        collection="items",
-        is_public=True,
-    )
-    rc = _make_runtime_context(routes=[route])
-    repo = InMemoryRepository()
-    with pytest.raises(ValueError, match="Unsupported operation"):
-        PipelineBuilder(rc, RepositoryRegistry.single(repo)).build_for_route(route)

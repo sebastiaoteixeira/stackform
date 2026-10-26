@@ -1,6 +1,7 @@
 {% set col_name = props.collection.value if props.collection else "items" %}
 {% set col_ref = col_name.split("[")[0] if "[" in col_name else col_name %}
 {% set lookup_field = col_name.split("[")[1].rstrip("]") if "[" in col_name else "id" %}
+{% set dated = collection.fields.values() | selectattr("resolved_type", "equalto", "datetime") | first %}
 import { useParams, Link } from "react-router-dom"
 import { use{{ col_ref | pascal_case }} } from "@/__generated__/hooks/use{{ col_ref | pascal_case }}"
 
@@ -25,7 +26,7 @@ function estimateReadingTime(text: string) {
 }
 
 export function {{ view.name | pascal_case }}Page() {
-  const { {{ lookup_field }} } = useParams()
+  const { {{ lookup_field }} } = useParams() as { {{ lookup_field }}: string }
   const { data: doc, loading, error } = use{{ col_ref | pascal_case }}({{ lookup_field }})
 
   if (loading) {
@@ -78,17 +79,15 @@ export function {{ view.name | pascal_case }}Page() {
       </Link>
 
       <header className="mb-10">
-        {% if collection %}
         <div className="flex gap-2 mb-4">
           {% for field_name, field in collection.fields.items() %}
           {% if field.resolved_type == "enum" %}
           <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-            {doc.{{ field.source_field_path[0] }}}
+            {doc.{{ field_name }}}
           </span>
           {% endif %}
           {% endfor %}
         </div>
-        {% endif %}
 
         {% if props.title and props.title.kind == "ref" %}
         <h1 className="text-4xl md:text-5xl font-serif font-bold text-gray-900 leading-tight mb-6">
@@ -97,15 +96,20 @@ export function {{ view.name | pascal_case }}Page() {
         {% endif %}
 
         <div className="flex items-center gap-4">
+          {% if props.author and props.author.kind == "ref" %}
           <div className="h-10 w-10 rounded-full bg-gray-900 flex items-center justify-center text-white font-medium text-sm">
-            {(doc.authorName || "A").charAt(0).toUpperCase()}
+            {String(doc.{{ props.author.value }} || "A").charAt(0).toUpperCase()}
           </div>
+          {% endif %}
           <div>
-            <p className="text-sm font-medium text-gray-900">{doc.authorName || "Anonymous"}</p>
+            {% if props.author and props.author.kind == "ref" %}
+            <p className="text-sm font-medium text-gray-900">{doc.{{ props.author.value }} || "Anonymous"}</p>
+            {% endif %}
             <div className="flex items-center gap-2 text-xs text-gray-400">
-              <time>{formatDate(doc.createdAt)}</time>
+              {% if dated %}
+              <time>{formatDate(doc.{{ dated.name }})}</time>
+              {% endif %}
               {% if props.body and props.body.kind == "ref" %}
-              <span aria-hidden="true">&middot;</span>
               <span>{estimateReadingTime(doc.{{ props.body.value }})}</span>
               {% endif %}
             </div>

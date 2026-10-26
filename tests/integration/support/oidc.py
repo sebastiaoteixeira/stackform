@@ -1,4 +1,4 @@
-"""A live OIDC issuer: discovery and JWKS over HTTP, and RS256 tokens signed with its key."""
+"""Live OIDC providers: an issuer of RS256 tokens behind discovery and JWKS, and an authorization server for app login."""
 
 import json
 import time
@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -68,6 +69,90 @@ def live_issuer(audience: str) -> Iterator[Issuer]:
     thread.start()
     try:
         yield issuer
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+
+class _AuthorizationServerHandler(BaseHTTPRequestHandler):
+    """Authorization-code flow for one confidential client: the token endpoint demands its secret."""
+
+    def __init__(self, server: "AuthorizationServer", *args) -> None:
+        self.authorization_server = server
+        super().__init__(*args)
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/.well-known/openid-configuration":
+            self._json(200, self.authorization_server.discovery())
+        elif parsed.path == "/authorize":
+            query = parse_qs(parsed.query)
+            self.send_response(302)
+            self.send_header("Location", f"{query['redirect_uri'][0]}?{urlencode({'code': 'code', 'state': query['state'][0]})}")
+            self.end_headers()
+        elif parsed.path == "/userinfo" and self.headers["Authorization"] == "Bearer access-token":
+            self._json(200, self.authorization_server.userinfo)
+        else:
+            self.send_error(404)
+
+    def do_POST(self) -> None:
+        form = parse_qs(self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode())
+        if self.path == "/token" and form.get("client_secret") == [self.authorization_server.client_secret]:
+            self._json(200, {"access_token": "access-token", "token_type": "Bearer"})
+        else:
+            self._json(401, {"error": "invalid_client"})
+
+    def _json(self, status: int, document: dict) -> None:
+        body = json.dumps(document).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+
+@dataclass
+class AuthorizationServer:
+    url: str
+    client_secret: str
+    userinfo: dict
+
+    @contextmanager
+    def asserting(self, claims: dict) -> Iterator["AuthorizationServer"]:
+        """Answer userinfo with ``claims`` over the current ones until the context exits."""
+        current = self.userinfo
+        self.userinfo = {**current, **claims}
+        try:
+            yield self
+        finally:
+            self.userinfo = current
+
+    @property
+    def discovery_url(self) -> str:
+        return f"{self.url}/.well-known/openid-configuration"
+
+    def discovery(self) -> dict[str, str]:
+        return {
+            "issuer": self.url,
+            "authorization_endpoint": f"{self.url}/authorize",
+            "token_endpoint": f"{self.url}/token",
+            "userinfo_endpoint": f"{self.url}/userinfo",
+        }
+
+
+@contextmanager
+def live_authorization_server(client_secret: str, userinfo: dict) -> Iterator[AuthorizationServer]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), lambda *args: _AuthorizationServerHandler(authorization_server, *args))
+    host, port = server.server_address
+    authorization_server = AuthorizationServer(f"http://{host}:{port}", client_secret, userinfo)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield authorization_server
     finally:
         server.shutdown()
         thread.join(timeout=5)

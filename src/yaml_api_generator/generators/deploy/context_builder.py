@@ -2,7 +2,7 @@ from collections import Counter
 
 from sqlalchemy.engine import make_url
 
-from ...ir import IRDocument, IRPostgres
+from ...ir import IRDocument, IRMongo, IRPostgres
 from ..backend.builders import build_context
 from ..backend.builders.settings_builder import build_settings_fields
 from .context import DeployContext, DeployDatastore, DockerDeployContext, SystemdDeployContext
@@ -11,6 +11,7 @@ from .file_deployments import build_file_deployments
 
 def build_deploy_context(
     ir: IRDocument,
+    application: str,
     host: str,
     ssh_user: str,
     ssh_key: str,
@@ -20,7 +21,6 @@ def build_deploy_context(
 
     deploy = ir.deploy
     name = deploy.name or "app"
-    mongo_db = ir.mongo.database
     context = build_context(ir)
     secret_fields = [f for f in build_settings_fields(context) if f.secret]
     file_deployments = build_file_deployments(context.file_stores)
@@ -34,8 +34,7 @@ def build_deploy_context(
         name=name,
         port=deploy.port,
         runtime=deploy.runtime,
-        mongo_local=deploy.mongo_local,
-        mongo_db=mongo_db,
+        application=application,
         env_vars=env_vars,
         has_auth=bool(ir.identityCollections),
         has_frontend=ir.has_ui,
@@ -80,16 +79,14 @@ def build_deploy_context(
 def _build_datastores(ir: IRDocument) -> tuple[DeployDatastore, ...]:
     base_names = {"postgres": "postgres", "mongodb": "mongodb", "mongo": "mongodb"}
     type_counts = Counter(base_names.get(ds.type, ds.type) for ds in ir.datastores.values())
-    seen: Counter = Counter()
     result: list[DeployDatastore] = []
 
     for name, ds in ir.datastores.items():
         base = base_names.get(ds.type, ds.type)
-        seen[base] += 1
         service = base if type_counts[base] == 1 else f"{base}-{name}"
         result.append(
             _postgres_datastore(service, ds) if isinstance(ds, IRPostgres)
-            else _mongo_datastore(service, ds)
+            else _mongo_datastore(service, ds, ir.deploy.mongo_local)
         )
     return tuple(result)
 
@@ -105,21 +102,21 @@ def _postgres_datastore(service: str, ds: IRPostgres) -> DeployDatastore:
         type="postgres",
         image="postgres:16",
         local=local,
-        app_env={"DATABASE_URL": f"postgresql+asyncpg://{user}:{password}@{service}:5432/{db}"},
+        app_env={"DATABASE_URL": f"postgresql+asyncpg://{user}:{password}@{service}:5432/{db}" if local else ds.dsn},
         service_env={"POSTGRES_DB": db, "POSTGRES_USER": user, "POSTGRES_PASSWORD": password},
         volume=f"{service}_data",
         volume_path="/var/lib/postgresql/data",
     )
 
 
-def _mongo_datastore(service: str, ds) -> DeployDatastore:
-    local = "localhost" in ds.uri or "127.0.0.1" in ds.uri
+def _mongo_datastore(service: str, ds: IRMongo, declared_local: bool | None) -> DeployDatastore:
+    local = ds.is_local if declared_local is None else declared_local
     return DeployDatastore(
         service=service,
         type="mongodb",
         image="mongo:8",
         local=local,
-        app_env={"MONGO_URI": f"mongodb://{service}:27017", "MONGO_DB": ds.database},
+        app_env={"MONGO_URI": f"mongodb://{service}:27017" if local else ds.uri, "MONGO_DB": ds.database},
         service_env={},
         volume=f"{service}_data",
         volume_path="/data/db",

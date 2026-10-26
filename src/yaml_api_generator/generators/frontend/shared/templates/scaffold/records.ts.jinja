@@ -1,0 +1,194 @@
+import { API_BASE_URL } from './config.ts';
+
+export type Operation = 'list' | 'get' | 'create' | 'update' | 'replace' | 'delete' | 'login' | 'register';
+
+interface Route {
+  method: string;
+  path: string;
+}
+
+interface Paging {
+  strategy: 'offset' | 'keyset';
+  size: number;
+  envelope: boolean;
+  sort: string[];
+}
+
+interface Projection {
+  entity: string;
+  key: string;
+  fields: Record<string, string[]>;
+}
+
+type Query = Record<string, string>;
+type Row = Record<string, unknown>;
+type Id = string | number;
+
+export const ROUTES: Record<string, Partial<Record<Operation, Route>>> = {
+{% for entity in entities.values() %}
+  {{ entity.name | tojson }}: {
+{% for operation, route in entity.routes.items() %}
+    {{ operation }}: { method: {{ route.method | tojson }}, path: {{ route.path | tojson }} },
+{% endfor %}
+  },
+{% endfor %}
+};
+
+const PAGING: Record<string, Paging> = {
+{% for entity in entities.values() if entity.pagination %}
+  {{ entity.name | tojson }}: {
+    strategy: {{ entity.pagination.strategy | tojson }},
+    size: {{ entity.pagination.size.max }},
+    envelope: {{ entity.pagination.envelope | tojson }},
+    sort: {{ entity.pagination.sort | map(attribute='field') | list | tojson }},
+  },
+{% endfor %}
+};
+
+/** UI collections: each field is a path from the entity, following refs before its last segment. */
+export const COLLECTIONS: Record<string, Projection> = {
+{% for collection in collections.values() %}
+  {{ collection.name | tojson }}: {
+    entity: {{ collection.entity | tojson }},
+    key: {{ entities[collection.entity].pk_field | tojson }},
+    fields: {
+{% for field in collection.fields.values() %}
+      {{ field.name | tojson }}: {{ field.source_field_path | tojson }},
+{% endfor %}
+    },
+  },
+{% endfor %}
+};
+
+const REFS: Record<string, Record<string, string>> = {
+{% for entity in entities.values() %}
+  {{ entity.name | tojson }}: {
+{% for field in entity.fields.values() if field.ref_entity %}
+    {{ field.name | tojson }}: {{ field.ref_entity | tojson }},
+{% endfor %}
+  },
+{% endfor %}
+};
+
+export interface OperationRequest extends RequestInit {
+  id?: Id;
+  query?: Query;
+}
+
+export async function callOperation(
+  entity: string,
+  operation: Operation,
+  { id, query, ...init }: OperationRequest = {},
+): Promise<Response> {
+  const route = ROUTES[entity]?.[operation];
+  if (!route) throw new Error(`${entity} does not serve ${operation}`);
+  const path = route.path.replace(/\{[^}]+\}/g, () => encodeURIComponent(String(id)));
+  const search = new URLSearchParams(query).toString();
+  return fetch(`${API_BASE_URL}${path}${search && `?${search}`}`, { ...init, method: route.method });
+}
+
+/** The operation that saves a record of `entity`: create without an `id`, else its edit operation. */
+export function saveOperation(entity: string, id?: Id): Operation {
+  return !id ? 'create' : ROUTES[entity].update ? 'update' : 'replace';
+}
+
+export async function readJson(res: Response): Promise<any> {
+  if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
+  return res.json();
+}
+
+interface Problem {
+  loc?: (string | number)[];
+  msg: string;
+}
+
+function described(detail: unknown): string {
+  if (!Array.isArray(detail)) return detail ? String(detail) : '';
+  return detail
+    .map(({ loc = [], msg }: Problem) => [loc.filter((part) => part !== 'body').join('.'), msg].filter(Boolean).join(': '))
+    .join('; ');
+}
+
+/** The error a refused request reports: its `detail`, a message or a list of validation problems, else `fallback`. */
+export async function failure(res: Response, fallback: string): Promise<Error> {
+  const { detail } = await res.json().catch(() => ({}));
+  return new Error(described(detail) || fallback);
+}
+
+function cursor(row: Row, sort: string[]): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(sort.map((field) => row[field] ?? null)));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+type Advance = (paging: Paging, body: any, rows: Row[], query: Query) => Query | null;
+
+const ADVANCE: Record<Paging['strategy'], Advance> = {
+  offset: (paging, _body, rows, query) =>
+    rows.length < paging.size ? null : { ...query, offset: String(Number(query.offset ?? 0) + rows.length) },
+  keyset: (paging, body, rows, query) => {
+    if (paging.envelope) return body.next ? { ...query, after: body.next } : null;
+    return rows.length < paging.size ? null : { ...query, after: cursor(rows[rows.length - 1], paging.sort) };
+  },
+};
+
+/** Every record the list operation serves, following its pagination to the last page. */
+export async function listRecords<T = any>(entity: string, headers: HeadersInit = {}): Promise<T[]> {
+  const paging: Paging | undefined = PAGING[entity];
+  const records: T[] = [];
+  for (let query: Query | null = paging ? { limit: String(paging.size) } : {}; query; ) {
+    const body = await readJson(await callOperation(entity, 'list', { headers, query }));
+    const rows: Row[] = paging?.envelope ? body.items : body;
+    records.push(...(rows as T[]));
+    query = paging ? ADVANCE[paging.strategy](paging, body, rows, query) : null;
+  }
+  return records;
+}
+
+export function displayValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+type Reader = (entity: string, id: Id) => Promise<Row | null>;
+
+const DENIED = new Set([401, 403]);
+
+/** Reads each referenced record once; one the caller may not read is null. */
+function reader(headers: HeadersInit): Reader {
+  const read = new Map<string, Promise<Row | null>>();
+  return (entity, id) => {
+    const key = `${entity}/${id}`;
+    if (!read.has(key)) {
+      read.set(key, callOperation(entity, 'get', { id, headers }).then((res) => (DENIED.has(res.status) ? null : readJson(res))));
+    }
+    return read.get(key)!;
+  };
+}
+
+async function resolve(entity: string, row: Row | null, [head, ...rest]: string[], read: Reader): Promise<unknown> {
+  const value = row?.[head];
+  if (!rest.length || value === null || value === undefined) return value;
+  const target = REFS[entity][head];
+  return resolve(target, await read(target, value as Id), rest, read);
+}
+
+async function project(collection: string, row: Row, read: Reader): Promise<Row> {
+  const { entity, key, fields } = COLLECTIONS[collection];
+  const values = await Promise.all(
+    Object.entries(fields).map(async ([name, path]) => [name, await resolve(entity, row, path, read)]),
+  );
+  return { [key]: row[key], ...Object.fromEntries(values) };
+}
+
+/** Every record of a UI collection, projected through its field paths; a path through a record the caller may not read has no value. */
+export async function listCollection<T = Row>(collection: string, headers: HeadersInit = {}): Promise<T[]> {
+  const read = reader(headers);
+  const rows = await listRecords<Row>(COLLECTIONS[collection].entity, headers);
+  return Promise.all(rows.map((row) => project(collection, row, read))) as Promise<T[]>;
+}
+
+/** One record of a UI collection, projected through its field paths. */
+export async function readCollection<T = Row>(collection: string, id: Id, headers: HeadersInit = {}): Promise<T> {
+  const { entity } = COLLECTIONS[collection];
+  return project(collection, await callOperation(entity, 'get', { id, headers }).then(readJson), reader(headers)) as Promise<T>;
+}

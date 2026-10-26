@@ -14,25 +14,60 @@ from yaml_api_generator.ir import (
     IRDeploySystemd,
     IRMongo,
     IRProvider,
+    IRRepository,
     IRRoute,
     IRService,
+    IRServiceBase,
 )
+from yaml_api_generator.constants import CRUD_OPERATIONS
 from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
 from .access_transformer import AccessTransformer
 from .file_transformer import LimitLayer
 
 
+_SESSION_OPERATIONS = frozenset({"login"})
+
+
+def _provides(repository: IRRepository | None, operation: str, declared) -> bool:
+    if repository is None:
+        return False
+    return (
+        operation in repository.crud
+        or operation in _SESSION_OPERATIONS
+        or (declared is not None and declared.query is not None)
+    )
+
+
+def _undeclared_operation(route_path: str, collection: str | None, operation: str) -> ConfigError:
+    return ConfigError(
+        code="REPOSITORY_OPERATION_UNDECLARED",
+        message=(
+            f"Route calls operation '{operation}', which no handler implements "
+            f"and repository '{collection}' does not provide"
+        ),
+        path=f"{route_path}.service",
+        hint=(
+            "Declare the operation under the repository's operations, list it in "
+            "the repository's crud, or give the service a handler"
+        ),
+    )
+
+
+def _unpaginated(route_path: str, operation: str) -> ConfigError:
+    return ConfigError(
+        code="PAGINATION_UNSUPPORTED",
+        message=f"Operation '{operation}' does not paginate; only a repository list does",
+        path=f"{route_path}.pagination",
+        hint="Remove pagination from this route",
+    )
+
+
 class RouteTransformer:
     """Builds routes from controllers and services."""
 
-    def __init__(
-        self,
-        access_transformer: AccessTransformer,
-        allow_service_inputs: bool = False,
-    ):
+    def __init__(self, access_transformer: AccessTransformer):
         self._access_transformer = access_transformer
-        self._allow_service_inputs = allow_service_inputs
 
     def transform_services(
         self,
@@ -59,31 +94,40 @@ class RouteTransformer:
         services: dict[str, IRService] = {}
         errors: list[ConfigError] = []
         for svc_name, svc_cfg in services_data.items():
-            if not isinstance(svc_cfg, dict):
+            if not isinstance(svc_cfg, dict) or svc_cfg.get("abstract"):
                 continue
             input_ir, forwarding = self._transform_input(svc_name, svc_cfg, dtos_data, errors)
             handler_ref = svc_cfg.get("handler")
-            inherits = svc_cfg.get("_inherits")
-            if handler_ref is not None:
-                services[svc_name] = IRService(
-                    name=svc_name,
-                    handler=self._resolve_handler_path(handler_ref, import_map),
-                    inherits=inherits,
-                    input=input_ir,
-                    forwarding=forwarding,
-                )
-            else:
-                services[svc_name] = IRService(
-                    name=svc_name,
-                    repository=svc_cfg.get("repository"),
-                    operation=svc_cfg.get("operation"),
-                    inherits=inherits,
-                    input=input_ir,
-                    forwarding=forwarding,
-                )
+            services[svc_name] = IRService(
+                name=svc_name,
+                repository=svc_cfg.get("repository"),
+                operation=svc_cfg.get("operation"),
+                handler=None if handler_ref is None else self._resolve_handler_path(handler_ref, import_map),
+                inherits=svc_cfg.get("_inherits"),
+                input=input_ir,
+                forwarding=forwarding,
+            )
         if errors:
             raise ConfigErrors(errors)
         return services
+
+    def transform_service_bases(
+        self, services_data: dict[str, Any], import_map: dict[str, str]
+    ) -> dict[str, IRServiceBase]:
+        """Build the abstract services that concrete services inherit as generated classes."""
+        return {
+            name: IRServiceBase(
+                name=name,
+                operations={
+                    operation: None if value is True else self._resolve_handler_path(value["handler"], import_map)
+                    for operation, value in cfg["operations"].items()
+                    if isinstance(value, dict) or (value is True and operation not in CRUD_OPERATIONS)
+                },
+                inherits=cfg.get("_inherits"),
+            )
+            for name, cfg in services_data.items()
+            if isinstance(cfg, dict) and cfg.get("abstract")
+        }
 
     def _transform_input(
         self,
@@ -98,16 +142,6 @@ class RouteTransformer:
         )
 
         input_ir = None
-        if not self._allow_service_inputs and ({"input", "with"} & svc_cfg.keys()):
-            errors.append(
-                ConfigError(
-                    code="SERVICE_INPUT_UNSUPPORTED",
-                    message="service input and with forwarding require spec version 0.3",
-                    path=f"services.{svc_name}",
-                    hint='Set version to "0.3"',
-                )
-            )
-            return None, {}
         if "input" in svc_cfg:
             input_ir, input_errors = parse_service_input(
                 svc_cfg["input"], dtos_data, f"services.{svc_name}.input"
@@ -126,6 +160,7 @@ class RouteTransformer:
         self,
         controllers_data: dict[str, Any],
         services: dict[str, IRService],
+        repositories: dict[str, IRRepository],
         api_data: dict[str, Any],
         repo_entity_map: dict[str, str],
         auth_entities: set[str],
@@ -134,9 +169,14 @@ class RouteTransformer:
     ) -> list[IRRoute]:
         """Transform controller routes to IR.
 
+        A route whose service names a repository handler operation dispatches to
+        that handler. Every other route must reach an operation its repository
+        provides.
+
         Args:
             controllers_data: Raw controller configurations from YAML
             services: Already-built service IR objects
+            repositories: Already-built repository IR objects
             api_data: API configuration data
             repo_entity_map: Repository name to entity name mapping
             auth_entities: Set of entity names marked as auth type
@@ -146,7 +186,8 @@ class RouteTransformer:
             List of route IR objects
 
         Raises:
-            ConfigErrors: If access rule parsing fails
+            ConfigErrors: If access rule parsing fails, a route reaches no
+                operation, or a route paginates anything but a repository list
         """
         base_path = api_data.get("basePath", "/api")
         version = api_data.get("version", "")
@@ -187,9 +228,18 @@ class RouteTransformer:
                 )
                 all_errors.extend(access_errors)
 
-                handler = service.handler
                 collection = service.repository
                 operation = service.operation or route_name
+                repository = repositories.get(collection)
+                declared = repository.operations.get(operation) if repository else None
+                handler = service.handler or (declared.handler if declared else None)
+                route_path = f"controllers.{ctrl_name}.routes.{route_name}"
+                if handler is None and not _provides(repository, operation, declared):
+                    all_errors.append(_undeclared_operation(route_path, collection, operation))
+                    continue
+                if route_cfg.get("pagination") is not None and (handler or operation != "list"):
+                    all_errors.append(_unpaginated(route_path, operation))
+                    continue
 
                 pagination = None
                 if pagination_parser is not None:
@@ -281,6 +331,7 @@ class RouteTransformer:
             version=api_data.get("version"),
             cors=cors,
             port=int(api_data.get("port", 8000)),
+            security_headers=api_data.get("securityHeaders", True),
             files=None if files is None else LimitLayer.parse(files, "api.files")[0].limits(),
             max_files=(files or {}).get("maxFiles"),
         )
@@ -302,7 +353,7 @@ class RouteTransformer:
     def build_deploy(
         self,
         deploy_data: Any,
-        mongo_config: dict[str, Any],
+        api: IRApi,
         providers: dict[str, IRProvider],
         datastores: dict[str, IRDatastore],
     ) -> IRDeploy | None:
@@ -310,7 +361,7 @@ class RouteTransformer:
 
         Args:
             deploy_data: Raw deployment configuration from YAML.
-            mongo_config: MongoDB configuration to determine if local.
+            api: Built API IR, whose port is the default deploy port.
             providers: Already-built provider IR objects (env vars resolved at build time).
             datastores: Already-built datastore IR objects (env vars resolved at build time).
 
@@ -335,9 +386,6 @@ class RouteTransformer:
             else None
         )
 
-        mongo_uri = mongo_config.get("uri", "mongodb://localhost:27017")
-        mongo_local = not mongo_config or "localhost" in mongo_uri or "127.0.0.1" in mongo_uri
-
         env_vars = self._collect_env_vars(deploy_data, providers, datastores)
 
         extra_services = tuple(
@@ -348,8 +396,8 @@ class RouteTransformer:
         return IRDeploy(
             runtime=str(runtime),
             name=deploy_data.get("name"),
-            port=int(deploy_data.get("port", 8000)),
-            mongo_local=mongo_local,
+            port=int(deploy_data.get("port", api.port)),
+            mongo_local=deploy_data.get("mongo", {}).get("local"),
             env_vars=tuple(env_vars),
             docker=docker,
             systemd=systemd,

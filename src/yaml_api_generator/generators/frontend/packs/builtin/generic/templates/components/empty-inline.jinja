@@ -1,19 +1,19 @@
 import { useState } from 'react';
 
 interface EmptyInlineProps {
-  columns: string[];
-  onCommit: (row: Record<string, string>) => void;
+  columns?: string[];
+  onCommit?: (row: Record<string, string>) => void;
   placeholder?: Record<string, string>;
 }
 
-export function EmptyInline({ columns, onCommit, placeholder = {} }: EmptyInlineProps) {
+export function EmptyInline({ columns = {{ collection.fields | list | tojson }}, onCommit, placeholder = {} }: EmptyInlineProps) {
   const [draft, setDraft] = useState<Record<string, string>>({});
 
-  const handleKeyDown = (e: React.KeyboardEvent, col: string) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       if (Object.values(draft).some(Boolean)) {
-        onCommit(draft);
+        onCommit?.(draft);
         setDraft({});
       }
     }
@@ -40,7 +40,7 @@ export function EmptyInline({ columns, onCommit, placeholder = {} }: EmptyInline
                     value={draft[col] ?? ''}
                     placeholder={placeholder[col] ?? col}
                     onChange={(e) => setDraft({ ...draft, [col]: e.target.value })}
-                    onKeyDown={(e) => handleKeyDown(e, col)}
+                    onKeyDown={handleKeyDown}
                     className="w-full px-3 py-2 text-sm bg-transparent outline-none border-[1.5px] border-transparent focus:border-wf-accent rounded-sm text-wf-ink placeholder:text-wf-ink-faint"
                   />
                 </td>
@@ -67,3 +67,5 @@ export function EmptyInline({ columns, onCommit, placeholder = {} }: EmptyInline
     </div>
   );
 }
+
+export default EmptyInline;

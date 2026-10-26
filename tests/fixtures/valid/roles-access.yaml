@@ -23,6 +23,12 @@ entities:
       identifier: email
       via: password
       roles: role
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }
@@ -35,10 +41,6 @@ entities:
       id: { type: id }
       title: { type: string, required: true }
       authorId: { type: ref, ref: user }
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 repositories:
   users:
     entity: user

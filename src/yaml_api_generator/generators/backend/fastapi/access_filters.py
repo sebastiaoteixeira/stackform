@@ -1,8 +1,8 @@
-"""Jinja filters that compile access rules into inline Python boolean expressions.
+"""Jinja filters that compile access rules into inline Python predicate expressions.
 
 At generation time, ``when`` predicates are fully known, so they are compiled
-directly into source strings that reference the runtime ``principal`` dict and
-the fetched ``document`` dict. No AST interpreter is needed in the generated app.
+directly into calls on the ``access`` runtime module shipped with the app. No AST
+interpreter is needed in the generated app.
 """
 
 from yaml_api_generator.generators.backend.compile_context import AccessRuleDescriptor, RouteDescriptor
@@ -35,79 +35,73 @@ def py_literal(value: object) -> str:
     return repr(value)
 
 
-def _safe_nested(root: str, path: tuple[str, ...]) -> str:
-    chain = "".join(f'.get("{p}", {{}})' for p in path[:-1])
-    return f'{root}{chain}.get("{path[-1]}")'
+class _RuleCompiler:
+    """Compiles a ``when`` expression to a call tree over the shipped ``access`` module.
+
+    The tree evaluates to a constant predicate for a loaded record and to a row
+    predicate when the record symbol is bound to ``access.Field``.
+    """
+
+    def __init__(self, request_roots: frozenset[str], whole_roots: frozenset[str]) -> None:
+        self._request_roots = request_roots
+        self._whole_roots = whole_roots
+        self._rules = {
+            Equals: lambda expr: f"equals({self._operand(expr.left)}, {self._operand(expr.right)})",
+            NotEquals: lambda expr: f"negate(equals({self._operand(expr.left)}, {self._operand(expr.right)}))",
+            And: lambda expr: f"conjoin({self.compile(expr.left)}, {self.compile(expr.right)})",
+            Or: lambda expr: f"disjoin({self.compile(expr.left)}, {self.compile(expr.right)})",
+            Not: lambda expr: f"negate({self.compile(expr.operand)})",
+            In: lambda expr: f"one_of({self._operand(expr.left)}, {tuple(expr.values)!r})",
+            NotIn: lambda expr: f"negate(one_of({self._operand(expr.left)}, {tuple(expr.values)!r}))",
+            IsNull: lambda expr: self._is_null(expr.operand),
+            IsNotNull: lambda expr: f"negate({self._is_null(expr.operand)})",
+        }
+
+    def compile(self, expr: WhenExpr) -> str:
+        rule = self._rules.get(type(expr))
+        return rule(expr) if rule else "NO_ROW"
+
+    def _is_null(self, operand: WhenExpr) -> str:
+        if isinstance(operand, FieldRef) and operand.path and operand.root in self._request_roots:
+            return f"constant(not has_path({operand.root}, {operand.path!r}))"
+        return f"is_null({self._operand(operand)})"
+
+    def _operand(self, expr: WhenExpr) -> str:
+        if isinstance(expr, StringLiteral):
+            return repr(expr.value)
+        if not isinstance(expr, FieldRef):
+            return "None"
+        if not expr.path and expr.root in self._whole_roots:
+            return expr.root
+        return f"value_at({expr.root}, {expr.path or ('sub',)!r})"
 
 
-def _operand_to_python(
-    expr: WhenExpr,
-    record_roots: frozenset[str],
-    wrapper_roots: frozenset[str],
-) -> str:
-    if isinstance(expr, StringLiteral):
-        return f'"{expr.value}"'
-    if isinstance(expr, FieldRef):
-        if expr.root in record_roots:
-            if not expr.path:
-                return expr.root
-            if len(expr.path) == 1:
-                return f'{expr.root}.get("{expr.path[0]}")'
-            return _safe_nested(expr.root, expr.path)
-        if expr.root in wrapper_roots:
-            return _safe_nested(expr.root, expr.path) if expr.path else expr.root
-        if not expr.path:
-            return f'{expr.root}.get("sub")'
-        if len(expr.path) == 1:
-            return f'{expr.root}.get("{expr.path[0]}")'
-        if len(expr.path) >= 2 and expr.path[0] == "record":
-            return f'{expr.root}.get("record", {{}}).get("{expr.path[1]}")'
-        nested = ".".join(f'get("{p}")' for p in expr.path)
-        return f"{expr.root}.{nested}"
-    return "None"
+def _caller_conditions(rule: AccessRuleDescriptor) -> list[str]:
+    """The rule's demand on the caller: an identity of its collection, holding its role."""
+    if not rule.principal.startswith("identity:"):
+        return []
+    checks = [
+        "principal is not None",
+        f'principal.get("identity_collection") == {rule.principal.removeprefix("identity:")!r}',
+        *([f"_principal_has_role(principal, {rule.required_role!r})"] if rule.required_role is not None else []),
+    ]
+    return [f"constant({' and '.join(checks)})"]
 
 
-def _when_to_python(
-    expr: WhenExpr,
-    record_roots: frozenset[str],
-    wrapper_roots: frozenset[str],
-) -> str:
-    operand = lambda e: _operand_to_python(e, record_roots, wrapper_roots)
-    recurse = lambda e: _when_to_python(e, record_roots, wrapper_roots)
-    if isinstance(expr, Equals):
-        return f"_values_equal({operand(expr.left)}, {operand(expr.right)})"
-    if isinstance(expr, NotEquals):
-        return f"(not _values_equal({operand(expr.left)}, {operand(expr.right)}))"
-    if isinstance(expr, And):
-        return f"({recurse(expr.left)} and {recurse(expr.right)})"
-    if isinstance(expr, Or):
-        return f"({recurse(expr.left)} or {recurse(expr.right)})"
-    if isinstance(expr, Not):
-        return f"(not {recurse(expr.operand)})"
-    if isinstance(expr, In):
-        return f"any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r})"
-    if isinstance(expr, NotIn):
-        return f"(not any(_values_equal({operand(expr.left)}, _v) for _v in {tuple(expr.values)!r}))"
-    if isinstance(expr, IsNull):
-        return f"({operand(expr.operand)} is None)"
-    if isinstance(expr, IsNotNull):
-        return f"({operand(expr.operand)} is not None)"
-    return "False"
-
-
-def rule_to_python(rule: AccessRuleDescriptor) -> str:
-    """Compile a single access rule to an inline Python boolean expression."""
-    record_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_record_shaped)
-    wrapper_roots = frozenset(sym.name for sym in rule.request_symbols if sym.is_whole)
-    conditions: list[str] = []
-    if rule.principal.startswith("identity:"):
-        collection = rule.principal.removeprefix("identity:")
-        conditions.append(f'principal.get("identity_collection") == "{collection}"')
-    if rule.required_role is not None:
-        conditions.append(f'_principal_has_role(principal, "{rule.required_role}")')
-    if rule.when is not None:
-        conditions.append(_when_to_python(rule.when, record_roots, wrapper_roots))
-    return " and ".join(conditions) if conditions else "True"
+def rule_to_predicate(rule: AccessRuleDescriptor) -> str:
+    """Compile an access rule to a Python expression of the predicate it admits."""
+    compiler = _RuleCompiler(
+        request_roots=frozenset(sym.name for sym in rule.request_symbols),
+        whole_roots=frozenset(
+            sym.name for sym in rule.request_symbols if sym.is_record_shaped or sym.is_whole
+        ),
+    )
+    conditions = [
+        *_caller_conditions(rule),
+        *(f"constant({symbol} is not None)" for symbol in rule.document_symbols),
+        *([compiler.compile(rule.when)] if rule.when is not None else []),
+    ]
+    return f"all_of({', '.join(conditions)})"
 
 
 def role_hierarchies_py(hierarchies: dict[str, dict[str, set[str]]]) -> str:
@@ -136,7 +130,7 @@ def request_symbol_binding(symbol) -> str:
     if symbol.is_whole:
         parts = ", ".join(f'"{part}": {source}' for part, source in _PART_SOURCE.items())
         return f"{symbol.name} = {{{parts}}}"
-    return f"{symbol.name} = {_PART_SOURCE[symbol.effective_part]}"
+    return f"{symbol.name} = {_PART_SOURCE[symbol.part]}"
 
 
 def needs_request_rule(rule: AccessRuleDescriptor) -> bool:
@@ -150,8 +144,13 @@ def needs_post_fetch(route: RouteDescriptor) -> bool:
     )
 
 
+def principal_dependency(route: RouteDescriptor) -> str:
+    """The FastAPI dependency resolving the caller of ``route``."""
+    return "get_optional_principal" if route.admits_anonymous else "require_principal"
+
+
 def is_unconditional(rule: AccessRuleDescriptor) -> bool:
-    return not rule.principal and rule.when is None and rule.required_role is None
+    return rule.admits_anonymous and rule.when is None
 
 
 def needs_document_rule(rule: AccessRuleDescriptor) -> bool:

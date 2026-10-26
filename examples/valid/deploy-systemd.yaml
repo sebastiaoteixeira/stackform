@@ -48,12 +48,10 @@ repositories:
         query:
           command: find
           filter: { level: "{{level}}" }
-          options: { sort: { timestamp: -1 }, limit: 100 }
       recent:
         query:
           command: find
           filter: { timestamp: { $gte: "{{start_time}}" } }
-          options: { sort: { timestamp: -1 } }
 
   metrics:
     entity: metric
@@ -63,7 +61,6 @@ repositories:
         query:
           command: find
           filter: { name: "{{name}}" }
-          options: { sort: { timestamp: -1 }, limit: 50 }
       aggregate_by_name:
         query:
           command: aggregate

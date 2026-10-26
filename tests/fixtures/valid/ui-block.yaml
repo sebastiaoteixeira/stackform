@@ -1,11 +1,10 @@
 version: "0.1"
 ui:
-  dashboard:
-    title: My Dashboard
-    widgets:
-      - type: chart
-      - type: table
-  theme: dark
+  frontend:
+    pack: generic
+  config:
+    app_name: My Dashboard
+    require_auth: false
 collections:
   posts:
     fields:

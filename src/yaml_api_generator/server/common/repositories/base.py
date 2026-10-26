@@ -2,6 +2,7 @@ import operator
 from abc import ABC, abstractmethod
 from typing import Any
 
+from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from ..pagination import Page, Primitives, expand_bound
 
 
@@ -44,16 +45,14 @@ class BaseRepository(ABC):
     def register_id_field(self, collection_name: str, id_field: str) -> None:
         pass
 
-    async def run_operation(
-        self,
-        collection_name: str,
-        query: dict[str, Any],
-        bindings: dict[str, Any],
-    ) -> Any:
-        """Execute a declarative custom operation. Overridden per backend."""
+    async def run_operation(self, collection_name: str, query: dict[str, Any]) -> Any:
+        """Execute a declared operation query whose bindings are already resolved."""
         raise NotImplementedError(
             f"{type(self).__name__} does not support custom operations"
         )
+
+    async def purge_expired(self) -> None:
+        """Erase the rows whose time to live has passed."""
 
     @abstractmethod
     def connect(self) -> None:
@@ -64,15 +63,19 @@ class BaseRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
+    async def list(
+        self, collection_name: str, predicate: Predicate = EVERY_ROW
+    ) -> list[dict[str, Any]]:
+        """The records of ``collection_name`` that ``predicate`` admits."""
         raise NotImplementedError
 
     async def paginate(
         self,
         collection_name: str,
         primitives: Primitives,
+        predicate: Predicate = EVERY_ROW,
     ) -> Page:
-        documents = await self.list(collection_name)
+        documents = await self.list(collection_name, predicate)
         total = len(documents) if primitives.count == "exact" else None
         rows = [
             document
@@ -155,9 +158,10 @@ class BaseRepository(ABC):
         )
         if existing is None:
             return await self.create(collection_name, payload)
-        document_id = existing.get(self._id_field(collection_name))
-        updated = await self.update(collection_name, str(document_id), payload)
-        return updated if updated is not None else {**existing, **payload}
+        id_field = self._id_field(collection_name)
+        changes = {field: value for field, value in payload.items() if field != id_field}
+        updated = await self.update(collection_name, str(existing.get(id_field)), changes)
+        return updated if updated is not None else {**existing, **changes}
 
     def _id_field(self, collection_name: str) -> str:
         return "id"

@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from yaml_api_generator.ir.pack_manifest import (
+    NO_CONFIG,
     OutputConfig,
     Pack,
     PackManifest,
@@ -93,5 +94,5 @@ def _load_manifest(manifest_path: Path) -> PackManifest:
             pages_dir=dir_struct.get("pages", "src/pages"),
             hooks_dir=dir_struct.get("hooks", "src/__generated__/hooks"),
         ),
-        config_schema=raw.get("config_schema", {}),
+        config_schema=raw.get("config_schema", NO_CONFIG),
     )

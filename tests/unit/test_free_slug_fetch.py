@@ -12,6 +12,8 @@ from typing import Any
 import pytest
 
 from tests.unit.support.repositories import InMemoryRepository
+from yaml_api_generator.ir.api import IRCollection, IRRoute
+from yaml_api_generator.parsers.transformers.v02.record_location import id_param, last_param, locate_records
 from yaml_api_generator.server.common.repositories import RepositoryRegistry
 from yaml_api_generator.server.common.repositories.base import BaseRepository
 from yaml_api_generator.server.common.request_context import RequestContext
@@ -29,7 +31,6 @@ from yaml_api_generator.server.common.steps.repositories import (
     RepositoryGetStep,
     RepositoryReplaceStep,
     RepositoryUpdateStep,
-    record_locator,
 )
 from yaml_api_generator.server.fastapi.factory import register_fastapi_routes
 
@@ -60,31 +61,48 @@ def _ctx(
 # --- token derivation -----------------------------------------------------
 
 
-def test_record_locator_v02_id_token_unchanged():
-    locator = record_locator("/api/v1/items/{id}", "id")
-    assert locator == RecordLocator("id", "id", ())
-    assert not locator.is_scoped
-    assert locator.criteria({"id": "i1"}) == {"id": "i1"}
+def _located(path: str, record_param, operation: str = "get", fields=("orgId",)) -> IRRoute:
+    collection = IRCollection(
+        name="c", entity_name="C", type="data", idField="id", idFormat="uuidv7",
+        fields=dict.fromkeys(fields, {"type": "string"}),
+    )
+    route = IRRoute(method="GET", path=path, operation=operation, collection="c")
+    [located] = locate_records([route], {"c": collection}, record_param)
+    return located
 
 
-def test_record_locator_renamed_single_token_maps_to_id_field():
-    locator = record_locator("/api/v1/categories/{categoryId}", "id")
-    assert locator == RecordLocator("id", "categoryId", ())
-    assert not locator.is_scoped
-    assert locator.criteria({"categoryId": "c1"}) == {"id": "c1"}
+def test_v02_routes_name_their_record_by_id():
+    route = _located("/api/v1/items/{id}", id_param)
+    assert (route.record_param, route.scope) == ("id", ())
 
 
-def test_record_locator_multi_token_scopes_by_parents():
-    locator = record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
-    assert locator == RecordLocator("id", "memberId", (("orgId", "orgId"),))
+def test_v02_renamed_token_names_no_record():
+    assert _located("/api/v1/categories/{categoryId}", id_param).record_param is None
+
+
+def test_v03_final_token_names_the_record():
+    route = _located("/api/v1/categories/{categoryId}", last_param)
+    assert (route.record_param, route.scope) == ("categoryId", ())
+
+
+def test_v03_preceding_collection_fields_scope_the_record():
+    route = _located("/api/v1/orgs/{orgId}/members/{memberId}", last_param)
+    assert (route.record_param, route.scope) == ("memberId", ("orgId",))
+
+
+def test_list_routes_are_scoped_without_a_record():
+    route = _located("/api/v1/orgs/{orgId}/members", last_param, operation="list")
+    assert (route.record_param, route.scope) == (None, ("orgId",))
+
+
+def test_record_locator_criteria_join_scope_and_id():
+    locator = RecordLocator("id", "memberId", ("orgId",))
     assert locator.is_scoped
     assert locator.criteria({"orgId": "o1", "memberId": "m1"}) == {"orgId": "o1", "id": "m1"}
 
 
 def test_record_locator_honours_custom_id_field():
-    locator = record_locator("/api/v1/countries/{code}", "code")
-    assert locator == RecordLocator("code", "code", ())
-    assert locator.criteria({"code": "PT"}) == {"code": "PT"}
+    assert RecordLocator("code", "code").criteria({"code": "PT"}) == {"code": "PT"}
 
 
 # --- single-record steps: renamed token -----------------------------------
@@ -95,7 +113,7 @@ async def test_get_step_renamed_token_fetches_record():
     repo = InMemoryRepository({"assetCategories": [{"id": "c1", "title": "Books"}]})
     repo.register_id_field("assetCategories", "id")
     step = RepositoryGetStep(
-        "assetCategories", "id", record_locator("/api/v1/categories/{categoryId}", "id")
+        "assetCategories", "id", RecordLocator("id", "categoryId")
     )
     result = await step(_ctx(repo, {"categoryId": "c1"}, collection="assetCategories"))
     assert result.response["title"] == "Books"
@@ -106,7 +124,7 @@ async def test_delete_step_renamed_token_removes_record():
     repo = InMemoryRepository({"assetCategories": [{"id": "c1", "title": "Books"}]})
     repo.register_id_field("assetCategories", "id")
     step = RepositoryDeleteStep(
-        "assetCategories", "id", record_locator("/api/v1/categories/{categoryId}", "id")
+        "assetCategories", "id", RecordLocator("id", "categoryId")
     )
     result = await step(
         _ctx(repo, {"categoryId": "c1"}, collection="assetCategories", operation="delete")
@@ -128,7 +146,7 @@ async def test_get_step_multi_token_fetches_by_all_tokens():
     )
     repo.register_id_field("members", "id")
     step = RepositoryGetStep(
-        "members", "id", record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
+        "members", "id", RecordLocator("id", "memberId", ("orgId",))
     )
     result = await step(
         _ctx(repo, {"orgId": "o1", "memberId": "m1"}, collection="members")
@@ -141,7 +159,7 @@ async def test_get_step_multi_token_wrong_parent_is_404():
     repo = InMemoryRepository({"members": [{"id": "m1", "orgId": "o1", "name": "Ada"}]})
     repo.register_id_field("members", "id")
     step = RepositoryGetStep(
-        "members", "id", record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
+        "members", "id", RecordLocator("id", "memberId", ("orgId",))
     )
     with pytest.raises(NotFoundError):
         await step(_ctx(repo, {"orgId": "o2", "memberId": "m1"}, collection="members"))
@@ -152,7 +170,7 @@ async def test_update_step_multi_token_scoped_mutates_matching_record():
     repo = InMemoryRepository({"members": [{"id": "m1", "orgId": "o1", "name": "old"}]})
     repo.register_id_field("members", "id")
     step = RepositoryUpdateStep(
-        "members", "id", False, record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
+        "members", "id", RecordLocator("id", "memberId", ("orgId",))
     )
     result = await step(
         _ctx(
@@ -171,7 +189,7 @@ async def test_replace_step_multi_token_wrong_parent_is_404():
     repo = InMemoryRepository({"members": [{"id": "m1", "orgId": "o1", "name": "old"}]})
     repo.register_id_field("members", "id")
     step = RepositoryReplaceStep(
-        "members", "id", False, record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
+        "members", "id", RecordLocator("id", "memberId", ("orgId",))
     )
     with pytest.raises(NotFoundError):
         await step(
@@ -192,7 +210,7 @@ async def test_replace_step_multi_token_wrong_parent_is_404():
 async def test_update_step_v02_id_token_mutates_record():
     repo = InMemoryRepository({"items": [{"id": "i1", "title": "old"}]})
     repo.register_id_field("items", "id")
-    step = RepositoryUpdateStep("items", "id", False)
+    step = RepositoryUpdateStep("items", "id")
     result = await step(
         _ctx(repo, {"id": "i1"}, collection="items", operation="update", body={"title": "new"})
     )
@@ -204,7 +222,7 @@ async def test_update_step_renamed_token_mutates_record():
     repo = InMemoryRepository({"assetCategories": [{"id": "c1", "title": "old"}]})
     repo.register_id_field("assetCategories", "id")
     step = RepositoryUpdateStep(
-        "assetCategories", "id", False, record_locator("/api/v1/categories/{categoryId}", "id")
+        "assetCategories", "id", RecordLocator("id", "categoryId")
     )
     result = await step(
         _ctx(
@@ -222,7 +240,7 @@ async def test_update_step_renamed_token_mutates_record():
 async def test_replace_step_v02_id_token_replaces_record():
     repo = InMemoryRepository({"items": [{"id": "i1", "title": "old", "extra": "drop"}]})
     repo.register_id_field("items", "id")
-    step = RepositoryReplaceStep("items", "id", False)
+    step = RepositoryReplaceStep("items", "id")
     result = await step(
         _ctx(
             repo,
@@ -243,7 +261,7 @@ async def test_replace_step_renamed_token_replaces_record():
     )
     repo.register_id_field("assetCategories", "id")
     step = RepositoryReplaceStep(
-        "assetCategories", "id", False, record_locator("/api/v1/categories/{categoryId}", "id")
+        "assetCategories", "id", RecordLocator("id", "categoryId")
     )
     result = await step(
         _ctx(
@@ -276,7 +294,7 @@ async def test_missing_renamed_token_names_the_token():
     repo = InMemoryRepository({"assetCategories": []})
     repo.register_id_field("assetCategories", "id")
     step = RepositoryGetStep(
-        "assetCategories", "id", record_locator("/api/v1/categories/{categoryId}", "id")
+        "assetCategories", "id", RecordLocator("id", "categoryId")
     )
     with pytest.raises(ValueError, match="^Missing route parameter: categoryId$"):
         await step(_ctx(repo, {}, collection="assetCategories"))
@@ -287,7 +305,7 @@ async def test_missing_parent_token_names_the_token():
     repo = InMemoryRepository({"members": []})
     repo.register_id_field("members", "id")
     step = RepositoryGetStep(
-        "members", "id", record_locator("/api/v1/orgs/{orgId}/members/{memberId}", "id")
+        "members", "id", RecordLocator("id", "memberId", ("orgId",))
     )
     with pytest.raises(ValueError, match="^Missing route parameter: orgId$"):
         await step(_ctx(repo, {"memberId": "m1"}, collection="members"))
@@ -357,6 +375,7 @@ def test_fastapi_renamed_token_get_fetches():
         operation="get",
         collection="assetCategories",
         is_public=True,
+        record_param="categoryId",
     )
     repo = InMemoryRepository({"assetCategories": [{"id": "c1", "title": "Books"}]})
     client = TestClient(
@@ -377,6 +396,8 @@ def test_fastapi_multi_token_get_fetches_by_all_tokens():
         operation="get",
         collection="members",
         is_public=True,
+        record_param="memberId",
+        scope=("orgId",),
     )
     repo = InMemoryRepository({"members": [{"id": "m1", "orgId": "o1", "name": "Ada"}]})
     client = TestClient(
@@ -399,6 +420,7 @@ def test_fastapi_v02_id_token_get_regression():
         operation="get",
         collection="items",
         is_public=True,
+        record_param="id",
     )
     repo = InMemoryRepository({"items": [{"id": "i1", "title": "kept"}]})
     client = TestClient(

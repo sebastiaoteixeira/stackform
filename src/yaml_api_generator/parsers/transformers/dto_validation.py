@@ -1,56 +1,37 @@
-"""Semantic checks for top-level ``dto`` declarations in a v0.2 spec.
+"""Semantic checks for top-level ``dto`` declarations.
 
-A DTO carries fields and validators only; persistence-shaped attributes belong
-to entities, never to request-bound payload types. The schema accepts a DTO
-field as a plain ``FieldConfig``, so these checks reject the persistence subset
-the spec forbids:
+The schema types a DTO field as a payload field, so persistence attributes
+(``type: id``, ``unique``) never reach these checks:
 
-- DTO_FORBIDS_PERSISTENCE_ATTR: a DTO field declares ``type: id``, ``unique`` or
-  ``format``.
-- DTO_NOT_FOUND: a DTO field references a type that is neither a declared entity
+- DTO_NOT_FOUND: a DTO field, at any nesting depth, references a type that is neither a declared entity
   nor a declared DTO.
 - FILE_FIELD_CONTEXT_INVALID: a DTO field is, or contains, a ``type: file`` node.
 """
 
 from typing import Any
 
+from yaml_api_generator.parsers.transformers.field_maps import field_maps, spec_fields
 from yaml_api_generator.parsers.transformers.file_validation import file_context_errors
+from yaml_api_generator.parsers.transformers.ref_validation import field_refs
 from yaml_api_generator.parsers.yaml_parser import ConfigError
-
-_FORBIDDEN_ATTRS = ("unique", "format")
 
 
 def validate_spec_dtos(spec: dict[str, Any]) -> list[ConfigError]:
-    errors: list[ConfigError] = []
-    dtos = spec.get("dto") or {}
-    known_refs = frozenset((spec.get("entities") or {}).keys() | dtos.keys())
-    for dto_name, dto in dtos.items():
-        if not isinstance(dto, dict):
-            continue
-        for field_name, field in (dto.get("fields") or {}).items():
-            if not isinstance(field, dict):
-                continue
-            base = f"dto.{dto_name}.fields.{field_name}"
-            errors.extend(file_context_errors(field, base, "DTOs"))
-            if field.get("type") == "id":
-                errors.append(_forbidden("type: id", base))
-            for attr in _FORBIDDEN_ATTRS:
-                if attr in field:
-                    errors.append(_forbidden(attr, f"{base}.{attr}"))
-            ref = field.get("ref")
-            if field.get("type") == "ref" and ref is not None and ref not in known_refs:
-                errors.append(ConfigError(
-                    code="DTO_NOT_FOUND",
-                    message=f"DTO field references undeclared type '{ref}'",
-                    path=f"{base}.ref",
-                ))
-    return errors
-
-
-def _forbidden(attr: str, path: str) -> ConfigError:
-    return ConfigError(
-        code="DTO_FORBIDS_PERSISTENCE_ATTR",
-        message=f"DTO field declares persistence attribute '{attr}'",
-        path=path,
-        hint="DTOs carry validation only; move persistence attrs to an entity",
-    )
+    known_refs = frozenset((spec.get("entities") or {}).keys() | (spec.get("dto") or {}).keys())
+    return [
+        *(
+            error
+            for path, field in spec_fields(spec, ("dto",))
+            for error in file_context_errors(field, path, "DTOs")
+        ),
+        *(
+            ConfigError(
+                code="DTO_NOT_FOUND",
+                message=f"DTO field references undeclared type '{target}'",
+                path=path,
+            )
+            for base, fields in field_maps(spec, ("dto",))
+            for path, target in field_refs(fields, base)
+            if target not in known_refs
+        ),
+    ]

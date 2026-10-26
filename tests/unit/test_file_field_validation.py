@@ -13,9 +13,9 @@ def _errors(name: str):
 
 
 @pytest.mark.parametrize("fixture, expected", [
-    ("files-limit-on-non-file.yaml", ("FIELD_CONSTRAINT_INVALID", "entities.document.fields.title")),
-    ("files-max-items-on-non-file-array.yaml", ("FIELD_CONSTRAINT_INVALID", "entities.document.fields.tags")),
-    ("files-unique-file.yaml", ("FIELD_CONSTRAINT_INVALID", "entities.document.fields.avatar")),
+    ("files-limit-on-non-file.yaml", ("SCHEMA_VALIDATION_ERROR", "entities.document.fields.title")),
+    ("files-max-items-on-non-file-array.yaml", ("SCHEMA_VALIDATION_ERROR", "entities.document.fields.tags")),
+    ("files-unique-file.yaml", ("SCHEMA_VALIDATION_ERROR", "entities.document.fields.avatar")),
     ("files-nested.yaml", ("FILE_FIELD_NESTED", "entities.document.fields.profile.properties.avatar")),
     ("files-in-dto.yaml", ("FILE_FIELD_CONTEXT_INVALID", "dto.upload.fields.blob")),
     ("files-in-service-input.yaml", ("FILE_FIELD_CONTEXT_INVALID", "services.notify.input.blob")),

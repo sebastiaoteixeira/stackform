@@ -164,9 +164,9 @@ the generated MongoDB repository passes `criteria` as the filter. A custom
 development-server repository must implement the abstract method, and a custom
 generated repository must retain the collection-specific operation.
 
-## v0.2 is unchanged
+## In v0.2
 
-The `where` binding form is available only under `version: "0.3"`. A
-`version: "0.2"` document binding (`<collection>` or `<collection> by <param>`)
-keeps its implicit primary-key / `{id}` fetch and existing behavior; the word
-`where` carries no special meaning in v0.2.
+The `where` binding form is v0.3 only. A `version: "0.2"` document binding
+(`<collection>` or `<collection> by <param>`) fetches the record by its primary
+key from the `{id}` path parameter, and the word `where` carries no special
+meaning.

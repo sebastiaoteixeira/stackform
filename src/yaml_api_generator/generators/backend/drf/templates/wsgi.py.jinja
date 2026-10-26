@@ -1,13 +1,8 @@
 """
-WSGI config for generated Django project.
+WSGI entry point kept for Django tooling only.
 
-Note: This project uses async views for optimal MongoDB performance.
-ASGI (asgi.py) is recommended for deployment to maintain full async benefits.
-WSGI will work but with reduced concurrency as async views are wrapped to sync.
-
-For production deployments, use:
-- ASGI: uvicorn, daphne, or hypercorn (recommended)
-- WSGI: gunicorn or uWSGI (compatibility mode)
+The API views are async and share a loop-bound MongoDB client, so serve
+project.asgi:application with an ASGI server such as uvicorn.
 """
 import os
 

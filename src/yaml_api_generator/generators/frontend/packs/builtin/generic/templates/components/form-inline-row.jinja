@@ -1,58 +1,20 @@
-{% macro inline_field(field, formData='editData', handler='handleFieldChange') %}
-{% set is_enum = field.type == 'enum' %}
-{% set is_boolean = field.type == 'boolean' %}
-{% set input_type = 'number' if field.type == 'number' else ('datetime-local' if field.type == 'datetime' else 'text') %}
-<div className="wf-field">
-  <label htmlFor="inline-{{ field.name }}" className="block text-[11px] uppercase tracking-wide text-wf-ink-dim mb-1">
-    {{ field.name | title }}{% if field.required %}<span className="text-wf-danger ml-0.5">*</span>{% endif %}
-  </label>
-  {% if is_boolean %}
-  <label className="inline-flex items-center gap-2 cursor-pointer">
-    <input
-      id="inline-{{ field.name }}"
-      type="checkbox"
-      name="{{ field.name }}"
-      checked={ !!{{ formData }}.{{ field.name }} }
-      onChange={ (e: React.ChangeEvent<HTMLInputElement>) => {{ handler }}({ target: { name: '{{ field.name }}', value: e.target.checked } } as any) }
-      className="w-4 h-4 accent-wf-accent"
-    />
-    <span className="text-sm text-wf-ink-dim">{{ field.name | title }}</span>
-  </label>
-  {% elif is_enum and field.enum_values %}
-  <div className="wf-input">
-    <select
-      id="inline-{{ field.name }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    >
-      <option value="">Select...</option>
-      {% for val in field.enum_values %}
-      <option value="{{ val }}">{{ val | title }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  {% else %}
-  <div className="wf-input">
-    <input
-      id="inline-{{ field.name }}"
-      type="{{ input_type }}"
-      name="{{ field.name }}"
-      value={ ({{ formData }}.{{ field.name }} as string) || ''}
-      onChange={ {{ handler }} }
-      {% if field.required %}required{% endif %}
-      className="w-full bg-transparent outline-none text-wf-ink text-sm"
-    />
-  </div>
-  {% endif %}
-</div>
-{% endmacro %}
+{% from 'macros/access.jinja' import allowed %}
+{% from 'macros/field_input.jinja' import field_input, control_imports %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set role_names = roles.values() | list %}
+{% set role_fields = [] %}
+{% for name in role_names %}
+{% if name in entity.fields %}{% if role_fields.append(entity.fields[name]) %}{% endif %}{% endif %}
+{% endfor %}
+{% set other_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | rejectattr('name', 'in', role_names) | list %}
+{% set display_fields = (role_fields + other_fields)[:4] %}
+{% set edit_fields = display_fields | rejectattr('name', 'in', ['content', 'body', 'description', 'excerpt', 'bio']) | list %}
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { displayValue, listRecords } from '../__generated__/records';
+import { useRecordForm } from '../__generated__/useRecordForm';
+{{ control_imports(edit_fields) }}
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -66,22 +28,18 @@ export default function {{ view.name | pascal_case }}() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const { token } = useAuth();
   const navigate = useNavigate();
+  const { values, setValue, submit } = useRecordForm<{{ entity.name | pascal_case }}>({{ entity.name | tojson }}, editingId ?? undefined);
 
   useEffect(() => {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        return res.json();
-      })
+    listRecords('{{ entity.name }}', headers)
       .then(data => {
-        setItems(Array.isArray(data) ? data : []);
+        setItems(data);
         setLoading(false);
       })
       .catch(err => {
@@ -90,19 +48,9 @@ export default function {{ view.name | pascal_case }}() {
       });
   }, [token]);
 
-  const startEdit = (item: {{ entity.name | pascal_case }}) => {
-    setEditingId(item.{{ entity.pk_field }});
-    setEditData({ ...item });
-  };
+  const startEdit = (item: {{ entity.name | pascal_case }}) => setEditingId(item.{{ entity.pk_field }});
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditData({});
-  };
-
-  const handleFieldChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => setEditData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const cancelEdit = () => setEditingId(null);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,21 +58,7 @@ export default function {{ view.name | pascal_case }}() {
     setSaving(true);
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${editingId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(editData),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || 'Failed to save');
-      }
-
-      const updated = await res.json();
+      const updated = await submit();
       setItems(prev => prev.map(i => i.{{ entity.pk_field }} === editingId ? updated : i));
       cancelEdit();
     } catch (err: unknown) {
@@ -153,15 +87,6 @@ export default function {{ view.name | pascal_case }}() {
     );
   }
 
-  {% set roles = props.field_roles.value if props.field_roles is defined else {} %}
-  {% set role_names = roles.values() | list %}
-  {% set role_fields = [] %}
-  {% for name in role_names %}
-  {% if name in entity.fields %}{% if role_fields.append(entity.fields[name]) %}{% endif %}{% endif %}
-  {% endfor %}
-  {% set other_fields = entity.fields.values() | rejectattr('name', 'equalto', entity.pk_field) | rejectattr('readonly') | rejectattr('name', 'in', role_names) | list %}
-  {% set display_fields = (role_fields + other_fields)[:4] %}
-  {% set edit_fields = display_fields | rejectattr('name', 'in', ['content', 'body', 'description', 'excerpt', 'bio']) | list %}
   {% set col_count = [edit_fields | length, 4] | min %}
 
   return (
@@ -171,12 +96,14 @@ export default function {{ view.name | pascal_case }}() {
         <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
         <span className="wf-mono">{items.length} records</span>
         <div className="flex-1" />
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table with inline-edit rows */}
@@ -212,7 +139,7 @@ export default function {{ view.name | pascal_case }}() {
                         >
                           {% for field in edit_fields %}
                           {% if loop.index0 < 4 %}
-                          {{ inline_field(field) }}
+                          {{ field_input(field, id_prefix='inline-') }}
                           {% endif %}
                           {% endfor %}
                         </div>
@@ -236,9 +163,9 @@ export default function {{ view.name | pascal_case }}() {
                     {% for field in display_fields %}
                     <td>
                       {% if field.type == 'enum' %}
-                      <span className="wf-badge">{String(item.{{ field.name }} || '—')}</span>
+                      <span className="wf-badge">{displayValue(item.{{ field.name }})}</span>
                       {% else %}
-                      {String(item.{{ field.name }} || '—')}
+                      {displayValue(item.{{ field.name }})}
                       {% endif %}
                     </td>
                     {% endfor %}
@@ -271,9 +198,11 @@ export default function {{ view.name | pascal_case }}() {
             <div className="text-center p-12 border-[1.5px] border-dashed border-wf-line rounded-lg max-w-md">
               <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
               <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+              {% call allowed(entity, 'create') %}
               <button onClick={() => navigate('{{ view.path }}/new')} className="wf-btn wf-btn-primary">
                 + New {{ entity.name | title }}
               </button>
+              {% endcall %}
             </div>
           </div>
         )}

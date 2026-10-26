@@ -4,17 +4,22 @@ Coordinates specialized transformers to convert v0.1 YAML specifications into IR
 """
 
 from dataclasses import replace
+from operator import attrgetter
 from typing import Any
 
 from yaml_api_generator.ir import (
     IRApi,
+    IRCors,
     IRDocument,
-    IRMongo,
+    IRPagination,
     IRRepository,
     IRService,
 )
-from yaml_api_generator.parsers.yaml_parser import ConfigErrors
+from yaml_api_generator.parsers.yaml_parser import ConfigError, ConfigErrors
 
+from ..v02.datastore_transformer import parse_datastores
+from ..v03.pagination import parse_pagination
+from ..v02.record_location import id_param, locate_records
 from .collection_transformer import CollectionTransformer
 from .identity_transformer import IdentityTransformer
 from .route_transformer import RouteTransformer
@@ -65,10 +70,10 @@ class V01Transformer:
             identity_collections,
             defaults,
         )
-        api_ir = IRApi(
-            basePath=api.get("basePath", "/api"),
-            version=api.get("version"),
-        )
+        api_ir = self._build_api(api, resolved.get("security", {}))
+        pagination, pagination_errors = self._build_pagination(api.get("pagination", {}))
+        if pagination_errors:
+            raise ConfigErrors(pagination_errors)
         route_prefix = api_ir.basePath.rstrip("/")
         if api_ir.version:
             route_prefix = f"{route_prefix}/{api_ir.version}"
@@ -90,23 +95,49 @@ class V01Transformer:
                 route,
                 path=f"{route_prefix}{route.path}",
                 service=f"{route.operation}-{route.collection}",
+                pagination=pagination if route.operation == "list" else None,
             )
             if route.collection is not None
             else route
             for route in routes
         ]
 
-        mongo_data = resolved.get("mongo", {})
+        datastores, default_datastore, _ = parse_datastores(resolved)
         return IRDocument(
             version=str(resolved["version"]),
             api=api_ir,
             collections=collections,
             repositories=repositories,
             services=services,
-            routes=routes,
+            routes=sorted(locate_records(routes, collections, id_param), key=attrgetter("precedence")),
             identityCollections=identity_collections,
-            mongo=IRMongo(
-                uri=mongo_data.get("uri", "mongodb://localhost:27017"),
-                database=mongo_data.get("database", "yaml_api"),
+            mongo=datastores[default_datastore],
+            datastores=datastores,
+            default_datastore=default_datastore,
+        )
+
+    @staticmethod
+    def _build_api(api: dict[str, Any], security: dict[str, Any]) -> IRApi:
+        cors = security.get("cors")
+        return IRApi(
+            basePath=api.get("basePath", "/api"),
+            version=api.get("version"),
+            cors=None if cors is None else IRCors(
+                origins=cors.get("allowedOrigins", []),
+                methods=cors.get("allowedMethods", ["*"]),
+                credentials=cors.get("allowCredentials", False),
             ),
+            security_headers=security.get("headers", {}).get("enableStandard", True),
+        )
+
+    @staticmethod
+    def _build_pagination(pagination: dict[str, Any]) -> tuple[IRPagination | None, list[ConfigError]]:
+        maximum = pagination.get("maxPageSize", 100)
+        return parse_pagination(
+            {
+                "strategy": "offset",
+                "size": {"default": pagination.get("defaultPageSize", min(20, maximum)), "max": maximum},
+            },
+            None,
+            "api.pagination",
         )

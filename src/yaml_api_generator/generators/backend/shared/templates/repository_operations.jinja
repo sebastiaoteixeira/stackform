@@ -1,0 +1,7 @@
+{% macro operation_methods(operations) %}
+{% for op in operations if op.query %}
+
+    async def {{ op.name }}(self, bindings: dict[str, Any]) -> Any:
+        return await self.run_operation({{ op.query | py_literal }}, bindings)
+{% endfor %}
+{% endmacro %}

@@ -1,8 +1,9 @@
-from importlib import import_module
+{% from "handler_call.jinja" import call_with_request %}
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from dependencies.handler_requests import HandlerRequest, invoke
 from dependencies.service_inputs import prepare_service_inputs, resolve_access_bind
 {% set ns_where = namespace(collections=[]) %}
 {% for route in routes %}{% for where_collection in route.where_collections %}
@@ -11,11 +12,13 @@ from dependencies.service_inputs import prepare_service_inputs, resolve_access_b
 {% for where_collection in ns_where.collections %}
 from dependencies.repositories import get_{{ where_collection }}_repository
 {% endfor %}
-{% if routes | selectattr("needs_auth") | list %}
-from dependencies.auth import require_principal
+{% set principal_dependencies = routes | selectattr("needs_auth") | map("principal_dependency") | unique | sort | list %}
+{% if principal_dependencies %}
+from dependencies.auth import {{ principal_dependencies | join(", ") }}
 {% endif %}
 {% if routes | selectattr("access_rules") | list %}
-from dependencies.authorization import _principal_has_role, _values_equal
+from dependencies.access import AccessDenied, Decision, all_of, conjoin, constant, decide, disjoin, equals, has_path, is_null, negate, one_of, value_at
+from dependencies.authorization import _principal_has_role
 {% endif %}
 
 
@@ -24,7 +27,7 @@ router = APIRouter(tags=["Handlers"])
 {% for route in routes %}
 @router.{{ route.method | lower }}("{{ route.relative_path }}")
 async def {{ route.operation | py_identifier }}_{{ loop.index }}(
-    request: Request{% if route.needs_auth %}, principal: dict[str, Any] = Depends(require_principal){% endif %}{% for where_collection in route.where_collections %}, _where_{{ where_collection }}_repo=Depends(get_{{ where_collection }}_repository){% endfor %}
+    request: Request{% if route.needs_auth %}, principal: dict[str, Any]{{ " | None" if route.admits_anonymous }} = Depends({{ route | principal_dependency }}){% endif %}{% for where_collection in route.where_collections %}, _where_{{ where_collection }}_repo=Depends(get_{{ where_collection }}_repository){% endfor %}
 ) -> Any:
     body: dict[str, Any] = {}
     try:
@@ -52,25 +55,19 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
 {% for symbol in ns_symbols.request %}
     {{ symbol | request_symbol_binding }}
 {% endfor %}
-    _access_granted = False
-    _access_bindings = {}
+    _decisions = []
 {% for rule in route.access_rules %}
-    if not _access_granted:
 {% for binding in rule.document_bindings %}
-        {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
-            resolve_access_bind({{ binding.where | py_literal }}, {**dict(request.path_params), **locals()})
-        )
+    {{ binding.name }} = await _where_{{ binding.collection }}_repo.find_one(
+        resolve_access_bind({{ binding.where | py_literal }}, {**dict(request.path_params), **locals()})
+    )
 {% endfor %}
-        if {% for binding in rule.document_bindings %}{{ binding.name }} is not None and {% endfor %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            raise HTTPException(status_code=403, detail={{ (rule.reason or "Forbidden") | py_literal }})
-{% else %}
-            _access_granted = True
-            _access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+    _decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-    if not _access_granted:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        _access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(_decisions)]
+    except AccessDenied as exc:
+        raise HTTPException(*exc.refusal(principal)) from exc
     bound_inputs = resolve_access_bind(_access_bindings, locals())
 {% else %}
     bound_inputs = {}
@@ -85,9 +82,6 @@ async def {{ route.operation | py_identifier }}_{{ loop.index }}(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    request.state.service_inputs = service_inputs
-    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
-    return await getattr(import_module(module_path), function_name)(request)
-
+{{ call_with_request("invoke(" ~ (route.handler | py_literal) ~ ", _request)", "principal" if route.needs_auth else "None", "body", "service_inputs") }}
 
 {% endfor %}

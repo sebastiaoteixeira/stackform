@@ -37,7 +37,6 @@ repositories:
         query:
           command: find
           filter: { category: "{{category}}" }
-          options: { sort: { price: 1 } }
       price_range:
         query:
           command: find
@@ -47,7 +46,6 @@ repositories:
         query:
           command: find
           filter: { stock: { $lt: 10 } }
-          options: { sort: { stock: 1 } }
       search_name:
         query:
           command: find
@@ -76,7 +74,6 @@ repositories:
         query:
           command: find
           filter: { customer_id: "{{customer_id}}" }
-          options: { sort: { created_at: -1 } }
       by_status:
         query:
           command: find
@@ -85,12 +82,10 @@ repositories:
         query:
           command: find
           filter: { created_at: { $gte: "{{start_date}}" } }
-          options: { sort: { created_at: -1 }, limit: 100 }
       high_value:
         query:
           command: find
           filter: { total: { $gte: 1000 } }
-          options: { sort: { total: -1 } }
       customer_total:
         query:
           command: aggregate
@@ -115,7 +110,6 @@ repositories:
         query:
           command: find
           filter: { user_id: "{{user_id}}" }
-          options: { sort: { timestamp: -1 }, limit: 100 }
       count_events:
         query:
           command: countDocuments
@@ -130,7 +124,7 @@ repositories:
       distinct_users:
         query:
           command: distinct
-          field: user_id
+          key: user_id
           filter: { event_name: "{{event}}" }
 
 services:

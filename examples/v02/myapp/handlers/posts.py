@@ -1,4 +1,4 @@
-from yaml_api_generator.runtime.context import RequestContext
+from yaml_api_generator.server.common.request_context import RequestContext
 
 
 async def publish(ctx: RequestContext) -> RequestContext:

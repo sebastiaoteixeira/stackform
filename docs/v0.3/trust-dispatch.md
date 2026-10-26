@@ -26,13 +26,14 @@ validated by another.
 
 ## Provider requirements
 
-`trust: idp` is only valid on `oidc` and `saml` providers. JWT bearer dispatch
-applies to OIDC providers; SAML providers use their browser-based flow and are
-not treated as JWT issuer verifiers. On such a provider
-the app mints no token of its own, so app-signing fields (`algorithm`,
-`secret`, `ttl`, `refresh`, `delivery`) are rejected. The issuer is derived from
-the discovery document, and the accepted audience defaults to the provider's
-`client_id` unless `audiences` is set explicitly.
+`trust` is an `oidc` provider key; a `saml` provider has no `trust` and is never
+a JWT issuer verifier. Under `trust: idp` the provider takes `issuer` and
+`audiences` and rejects `client_secret`, `pkce` and `dpop`; under `trust: app`
+it rejects `issuer` and `audiences`. Each violation is a
+`SCHEMA_VALIDATION_ERROR`. The issuer is derived from the discovery document
+unless `issuer` is set. The accepted audience is `audiences`, or the provider's
+`client_id` when `audiences` is omitted, in which case generation reports the
+warning `TRUST_IDP_AUDIENCE_DEFAULTED`.
 
 ## Signing the app's own tokens
 

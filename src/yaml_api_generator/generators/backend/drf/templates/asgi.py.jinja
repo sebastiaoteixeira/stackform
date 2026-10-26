@@ -1,7 +1,44 @@
+{% set create_mongo_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
 import os
 
 from django.core.asgi import get_asgi_application
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
 
-application = get_asgi_application()
+django_application = get_asgi_application()
+
+from api.authentication.mongodb import close_db, get_database{% if create_mongo_indexes %}, initialize_indexes{% endif %}  # noqa: E402
+from api.lifecycle import Purger  # noqa: E402
+{% for name in ctx.expiring_collections %}
+from api.repositories.{{ name }} import {{ name | capitalize_collection }}Repository  # noqa: E402
+{% endfor %}
+
+
+def _expiring_repositories() -> list:
+    db = get_database()
+    return [
+{% for name in ctx.expiring_collections %}
+        {{ name | capitalize_collection }}Repository(db),
+{% endfor %}
+    ]
+
+
+async def application(scope, receive, send):
+    """Django's ASGI handler rejects lifespan, so the database lifecycle is served here."""
+    if scope["type"] != "lifespan":
+        await django_application(scope, receive, send)
+        return
+    purger = Purger(repository.purge_expired for repository in _expiring_repositories())
+    while True:
+        message = await receive()
+        if message["type"] == "lifespan.startup":
+{% if create_mongo_indexes %}
+            await initialize_indexes({{ ctx.mongo_unique_indexes | tojson }})
+{% endif %}
+            purger.start()
+            await send({"type": "lifespan.startup.complete"})
+        elif message["type"] == "lifespan.shutdown":
+            await purger.stop()
+            await close_db()
+            await send({"type": "lifespan.shutdown.complete"})
+            return

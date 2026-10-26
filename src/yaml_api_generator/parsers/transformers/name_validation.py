@@ -67,48 +67,46 @@ def validate_name(name: str, path: str, *, field: bool = False) -> ConfigError |
     return None
 
 
-# Top-level spec sections whose keys are emitted verbatim as Python identifiers,
-# module names, attributes or classes. Provider names are excluded: they are only
-# used as route-path segments and as identifiers after sanitization (py_identifier),
-# so hyphenated names such as ``my-oidc`` are valid.
-_NAME_BEARING_SECTIONS = ("entities", "repositories", "services", "controllers")
+# Top-level spec sections, besides the model section, whose keys are emitted
+# verbatim as Python identifiers, module names, attributes or classes. Provider
+# names are excluded: they are only used as route-path segments and as identifiers
+# after sanitization (py_identifier), so hyphenated names such as ``my-oidc`` are valid.
+_NAME_BEARING_SECTIONS = ("repositories", "services", "controllers")
 
 
-def validate_spec_names(spec: dict[str, Any]) -> list[ConfigError]:
-    """Validate every name-bearing key in a user-authored v0.2 spec.
+def validate_spec_names(spec: dict[str, Any], section: str = "entities") -> list[ConfigError]:
+    """Validate every name-bearing key in a user-authored spec.
 
-    Operates on the pre-desugar spec so that only author-supplied names are
-    checked; field names are validated per entity in addition to the top-level
-    section keys.
+    ``section`` is the model section (``collections`` in v0.1). Operates on the
+    pre-desugar spec so that only author-supplied names are checked; field names
+    are validated per model in addition to the top-level section keys.
     """
-    errors: list[ConfigError] = []
-    for section in _NAME_BEARING_SECTIONS:
-        data = spec.get(section)
-        if not isinstance(data, dict):
-            continue
-        for name in data:
-            error = validate_name(str(name), f"{section}.{name}")
-            if error is not None:
-                errors.append(error)
-    for entity_name, entity in (spec.get("entities") or {}).items():
-        if not isinstance(entity, dict):
-            continue
-        for field_name in entity.get("fields", {}):
-            error = validate_name(
-                str(field_name),
-                f"entities.{entity_name}.fields.{field_name}",
-                field=True,
-            )
-            if error is not None:
-                errors.append(error)
-    errors.extend(_pascal_case_collisions(spec.get("entities") or {}))
-    return errors
+    models = spec.get(section) or {}
+    return [
+        *(
+            error
+            for name_section in (section, *_NAME_BEARING_SECTIONS)
+            if isinstance(spec.get(name_section), dict)
+            for name in spec[name_section]
+            if (error := validate_name(str(name), f"{name_section}.{name}")) is not None
+        ),
+        *(
+            error
+            for model_name, model in models.items()
+            if isinstance(model, dict)
+            for field_name in model.get("fields", {})
+            if (error := validate_name(
+                str(field_name), f"{section}.{model_name}.fields.{field_name}", field=True
+            )) is not None
+        ),
+        *_pascal_case_collisions(section, models),
+    ]
 
 
-def _pascal_case_collisions(entities: dict[str, Any]) -> list[ConfigError]:
-    """Reject distinct entity names that map to the same PascalCase class.
+def _pascal_case_collisions(section: str, entities: dict[str, Any]) -> list[ConfigError]:
+    """Reject distinct model names that map to the same PascalCase class.
 
-    Each entity becomes a generated model class named ``to_pascal_case(name)``.
+    Each model becomes a generated model class named ``to_pascal_case(name)``.
     The conversion is many-to-one (``userProfile`` and ``user_profile`` both
     yield ``UserProfile``), so colliding names would emit two classes with the
     same name and clobber each other in the generated package's imports.
@@ -125,7 +123,7 @@ def _pascal_case_collisions(entities: dict[str, Any]) -> list[ConfigError]:
                     f"entity '{name}' and '{prior}' both map to the model class "
                     f"'{class_name}'"
                 ),
-                path=f"entities.{name}",
+                path=f"{section}.{name}",
                 hint="Rename one entity so their PascalCase model names differ",
             ))
         else:

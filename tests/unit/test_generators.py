@@ -1,9 +1,14 @@
 from yaml_api_generator.generators.backend.fastapi.generator import FastAPIGenerator
 from yaml_api_generator.generators.backend.drf.generator import DRFGenerator
 from yaml_api_generator.generators.backend.raw.generator import RawASGIGenerator
-from yaml_api_generator.generators.backend.fastapi.type_mapper import python_type
-from yaml_api_generator.generators.backend.drf.type_mapper import drf_field
-from yaml_api_generator.generators.backend.compile_context import AppConfig, AuthConfig, CompileContext, FieldDescriptor
+from yaml_api_generator.generators.backend.fastapi.type_mapper import PayloadModule
+from yaml_api_generator.generators.backend.compile_context import (
+    AppConfig,
+    AuthConfig,
+    CompileContext,
+    FieldDescriptor,
+    ModelDescriptor,
+)
 from yaml_api_generator.generators.backend.builders.settings_builder import build_settings_fields
 from yaml_api_generator.generators.backend.context_builder import build_context
 from yaml_api_generator.ir.api import IROIDCProvider, IRSAMLProvider
@@ -108,43 +113,31 @@ def test_fastapi_cors_middleware_when_configured(tmp_path):
     assert "CORSMiddleware" in app_content
 
 
-def test_fastapi_type_mapper_all_field_types():
-    fields = [
-        FieldDescriptor(name="s", type="string", required=True, is_optional=False),
-        FieldDescriptor(name="n", type="number", required=True, is_optional=False),
-        FieldDescriptor(name="b", type="boolean", required=True, is_optional=False),
-        FieldDescriptor(name="d", type="datetime", required=True, is_optional=False),
-        FieldDescriptor(
-            name="e",
-            type="enum",
-            required=True,
-            is_optional=False,
-            enum_values=["a", "b"],
-        ),
-        FieldDescriptor(
-            name="a",
-            type="array",
-            required=True,
-            is_optional=False,
-            array_item_type="string",
-        ),
-        FieldDescriptor(name="o", type="object", required=True, is_optional=False),
-        FieldDescriptor(
-            name="r",
-            type="ref",
-            required=True,
-            is_optional=False,
-            ref_collection="users",
-        ),
-    ]
-    assert python_type(fields[0]) == "str"
-    assert python_type(fields[1]) == "float"
-    assert python_type(fields[2]) == "bool"
-    assert python_type(fields[3]) == "datetime"
-    assert "Literal['a', 'b']" in python_type(fields[4])
-    assert python_type(fields[5]) == "list[str]"
-    assert python_type(fields[6]) == "dict[str, Any]"
-    assert python_type(fields[7]) == "str"
+def test_fastapi_payload_module_maps_every_field_type():
+    fields = {
+        "s": {"type": "string", "required": True},
+        "n": {"type": "number", "required": True},
+        "b": {"type": "boolean", "required": True},
+        "d": {"type": "datetime", "required": True},
+        "e": {"type": "enum", "values": ["a", "b"], "required": True},
+        "a": {"type": "array", "items": {"type": "string"}, "required": True},
+        "o": {"type": "object", "required": True},
+        "r": {"type": "ref", "ref": "users", "required": True},
+    }
+    model = ModelDescriptor(
+        "ItemsFields", "items", "fields", [FieldDescriptor(n, c) for n, c in fields.items()]
+    )
+    (declaration,) = PayloadModule([model]).declarations
+    assert {a.name: a.annotation for a in declaration.attributes} == {
+        "s": "str",
+        "n": "Annotated[float, Field(strict=True)]",
+        "b": "Annotated[bool, Field(strict=True)]",
+        "d": "Timestamp",
+        "e": "Literal['a', 'b']",
+        "a": "list[str]",
+        "o": "dict[str, Any]",
+        "r": "str",
+    }
 
 
 def test_drf_project_scaffold(tmp_path):
@@ -179,51 +172,8 @@ def test_drf_views_per_collection(tmp_path):
     gen.generate(ctx, tmp_path)
     assert (tmp_path / "api" / "views" / "posts.py").exists()
     content = (tmp_path / "api" / "views" / "posts.py").read_text()
-    assert "ListView" in content or "DetailView" in content
-
-
-def test_drf_when_expression_to_python():
-    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
-    from yaml_api_generator.ir.when import Equals, FieldRef
-
-    expr = Equals(
-        left=FieldRef(root="principal", path=("sub",)),
-        right=FieldRef(root="document", path=("authorId",)),
-    )
-    result = _when_to_python(expr)
-    assert 'principal.get("sub")' in result
-    assert 'document.get("authorId")' in result
-    assert "==" in result
-
-
-def test_drf_in_expression_to_python():
-    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
-    from yaml_api_generator.ir.when import In, FieldRef
-
-    expr = In(
-        left=FieldRef(root="principal", path=("record", "role")),
-        values=("admin", "editor"),
-    )
-    result = _when_to_python(expr)
-    assert 'principal.get("record", {}).get("role")' in result
-    assert "in ('admin', 'editor')" in result
-    assert eval(result, {"principal": {"record": {"role": "admin"}}}) is True
-    assert eval(result, {"principal": {"record": {"role": "viewer"}}}) is False
-
-
-def test_drf_not_in_expression_to_python():
-    from yaml_api_generator.generators.backend.drf.generator import _when_to_python
-    from yaml_api_generator.ir.when import NotIn, FieldRef
-
-    expr = NotIn(
-        left=FieldRef(root="document", path=("status",)),
-        values=("draft", "archived"),
-    )
-    result = _when_to_python(expr)
-    assert 'document.get("status")' in result
-    assert "not in ('draft', 'archived')" in result
-    assert eval(result, {"document": {"status": "published"}}) is True
-    assert eval(result, {"document": {"status": "draft"}}) is False
+    assert "class PostsView(APIView)" in content
+    assert "class PostsByIdView(APIView)" in content
 
 
 def test_drf_access_rule_enforcement_in_views(tmp_path):
@@ -236,18 +186,11 @@ def test_drf_access_rule_enforcement_in_views(tmp_path):
     assert len(posts_view) > 0
 
 
-def test_drf_type_mapper_with_constraints():
-    field = FieldDescriptor(
-        name="score",
-        type="number",
-        required=True,
-        is_optional=False,
-        constraints={"min": 0, "max": 100},
-    )
-    result = drf_field(field)
-    assert "serializers.FloatField" in result
-    assert "min_value=0" in result
-    assert "max_value=100" in result
+def test_drf_serializers_declare_payload_properties(tmp_path):
+    DRFGenerator().generate(_ctx_from_fixture("basic-crud.yaml"), tmp_path)
+    serializers = next((tmp_path / "api" / "serializers").glob("[!_]*.py")).read_text()
+    assert "(PayloadSerializer):" in serializers
+    assert "properties = {" in serializers
 
 
 def test_raw_asgi_app_file(tmp_path):
@@ -323,24 +266,25 @@ def test_oidc_callback_redirects_with_code_not_token(tmp_path):
     gen = FastAPIGenerator()
     gen.generate(ctx, tmp_path)
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
+    exchange_src = (tmp_path / "routes" / "external_login.py").read_text()
     assert "?code={code}" in oidc_src
     assert "?token=" not in oidc_src
-    assert '@router.post("/auth/exchange")' in oidc_src
-    assert "redeem_login_code(code)" in oidc_src
-    assert 'issue_login_code(str(subject), "users", "mongo")' in oidc_src
+    assert '@router.post("/auth/exchange")' in exchange_src
+    assert "redeem_login_code(code)" in exchange_src
+    assert 'issue_login_code(str(record["id"]), "users", "mongo")' in oidc_src
 
 
 def test_oidc_callback_uses_repository_not_raw_datastore(tmp_path):
-    """User lookup/provisioning goes through the injected repository, so the
-    callback is datastore-agnostic instead of hardcoding the Mongo client."""
+    """Sign-in goes through the shared provisioning runtime over the collection repository,
+    so the callback is datastore-agnostic instead of hardcoding the Mongo client."""
     ctx = _ctx_from_fixture("auth-oidc.yaml")
     gen = FastAPIGenerator()
     gen.generate(ctx, tmp_path)
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
     assert "get_database" not in oidc_src
     assert "insert_one" not in oidc_src and "find_one" not in oidc_src
-    assert "Depends(get_users_repository)" in oidc_src
-    assert 'repo.upsert_by("email"' in oidc_src
+    assert "from dependencies.repositories import repository" in oidc_src
+    assert '_users_keycloak_binding.sign_in(claims, repository, "users")' in oidc_src
 
 
 def test_oidc_login_codes_stored_in_collection_datastore(tmp_path):
@@ -418,7 +362,7 @@ def test_oidc_login_codes_use_sql_backend_for_sql_identity(tmp_path):
     assert "_MongoLoginCodes" not in store_src
     assert "metadata" in store_src and "returning(" in store_src
     oidc_src = (tmp_path / "routes" / "oidc_routes.py").read_text()
-    assert 'issue_login_code(str(subject), "users", "sql")' in oidc_src
+    assert 'issue_login_code(str(record["id"]), "users", "sql")' in oidc_src
 
 
 def test_shared_service_provider_defined_exactly_once(tmp_path):
@@ -462,7 +406,7 @@ def test_public_only_routes_omit_dead_auth_imports(tmp_path):
 
 def test_build_settings_fields_skips_saml_provider_client_secret():
     oidc = IROIDCProvider(name="keycloak", client_id="app", client_secret="s3cr3t", trust="app")
-    saml = IRSAMLProvider(name="corp-saml", trust="app")
+    saml = IRSAMLProvider(name="corp-saml")
     auth = AuthConfig(
         enabled=True,
         identity_collections=[],

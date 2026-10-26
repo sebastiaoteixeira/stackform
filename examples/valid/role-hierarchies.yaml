@@ -3,6 +3,10 @@ version: "0.2"
 api:
   basePath: /api
   version: v1
+  operations:
+    auth:
+      register: true
+      login: true
 
 mongo:
   uri: mongodb://localhost:27017
@@ -62,16 +66,6 @@ entities:
         values: [public, restricted, private]
         default: public
       created_by: { type: string, required: true }
-
-roles:
-  admin_user:
-    super_admin: [admin, moderator]
-    admin: [moderator]
-    moderator: [support]
-  regular_user:
-    premium: [standard]
-    standard: [trial]
-    trial: [guest]
 
 repositories:
   admins:

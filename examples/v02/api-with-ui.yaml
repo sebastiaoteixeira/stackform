@@ -30,6 +30,12 @@ entities:
         - provider: password
           identifier: email
       roles: role
+    roles:
+      values: [admin, moderator, user]
+      default: user
+      hierarchy:
+        admin: [moderator]
+        moderator: [user]
     fields:
       id: { type: id }
       email: { type: string, required: true, unique: true }
@@ -49,11 +55,6 @@ entities:
         type: enum
         values: [draft, published, archived]
         default: draft
-
-roles:
-  user:
-    admin: [moderator]
-    moderator: [user]
 
 repositories:
   users:
@@ -129,6 +130,7 @@ ui:
         collection: post-feed[id]
         title: $title
         body: $content
+        author: $authorName
     write-post:
       path: /posts/new
       component: form

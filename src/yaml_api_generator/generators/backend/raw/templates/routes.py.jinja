@@ -1,5 +1,5 @@
+{% from "handler_call.jinja" import run_operation %}
 from typing import Any
-from uuid import UUID
 
 from repositories.{{ collection_name }} import {{ collection_name | capitalize_collection }}Repository
 {% set ns_where = namespace(collections=[]) %}
@@ -11,7 +11,11 @@ from repositories.{{ where_collection }} import {{ where_collection | capitalize
 {% endfor %}
 from services.{{ collection_name }} import {{ collection_name | capitalize_collection }}Service
 from services.exceptions import NotFoundError, ValidationError
-from service_inputs import RawRequest, prepare_service_inputs, resolve_access_bind, resolve_bindings
+{% if identity %}
+from access import Roles
+{% endif %}
+from handler_requests import HandlerRequest
+from service_inputs import prepare_service_inputs, resolve_access_bind
 {% if routes | selectattr("pagination") | list %}
 from pagination import build_response, map_request
 {% endif %}
@@ -19,37 +23,16 @@ from pagination import build_response, map_request
 from dependencies.auth import resolve_principal
 {% endif %}
 import validation
-
-
-try:
-    from bson import ObjectId
-    _IDISH = (UUID, ObjectId)
-except ImportError:
-    _IDISH = (UUID,)
-
-
-def _values_equal(left: Any, right: Any) -> bool:
-    if left is None or right is None:
-        return left is None and right is None
-    if isinstance(left, bool) or isinstance(right, bool):
-        return isinstance(left, bool) and isinstance(right, bool) and left is right
-    if left == right:
-        return True
-    return str(left) == str(right) if isinstance(left, _IDISH) or isinstance(right, _IDISH) else False
+from access import EVERY_ROW, AccessDenied, Decision, Field, all_of, conjoin, constant, decide, disjoin, equals, has_path, held_roles, is_null, matching, negate, one_of, row_filter, value_at
 
 
 ROLE_HIERARCHIES = {{ auth.role_hierarchies | role_hierarchies_py }}
 
 
 def _principal_has_role(principal: dict, required_role: str) -> bool:
-    roles = principal.get("roles", [])
-    if required_role in roles:
-        return True
-    hierarchy = ROLE_HIERARCHIES.get(principal.get("identity_collection", ""), {})
-    return any(required_role in hierarchy.get(role, set()) for role in roles)
+    return required_role in held_roles(principal, ROLE_HIERARCHIES)
 
 
-{% set crud_op_names = ["list", "get", "create", "update", "replace", "delete", "login"] %}
 {% macro record_criteria(route) %}{{ "{" }}{% for field, param in route.record_criteria %}"{{ field }}": url_params["{{ param }}"]{% if not loop.last %}, {% endif %}{% endfor %}{{ "}" }}{% endmacro %}
 {% macro authorization_locals(route) %}
 {% if route.access_rules %}
@@ -76,45 +59,54 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% endif %}
 {% endmacro %}
 
-{% macro authorize_rules(route, current_document) %}
+{# Collects one decision per rule, then admits a record or filters rows #}
+{% macro authorize_rules(route, current_document, rows=false) %}
 {% if route.needs_auth and route.access_rules %}
 {{ authorization_locals(route) }}
-    access_granted = False
-    access_bindings = {}
+    decisions = []
 {% for rule in route.access_rules %}
-    if not access_granted:
 {% for binding in rule.document_bindings %}
 {% if binding.uses_where %}
-        {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
-            resolve_access_bind({{ binding.where | py_literal }}, {**url_params, **locals()})
-        )
+    {{ binding.name }} = await {{ binding.collection | capitalize_collection }}Repository(db).find_one(
+        resolve_access_bind({{ binding.where | py_literal }}, {**url_params, **locals()})
+    )
 {% else %}
-        {{ binding.name }} = {{ current_document }}
+    {{ binding.name }} = {{ current_document }}
 {% endif %}
 {% endfor %}
-{% if rule is needs_current_document_rule %}
-        document = {{ current_document }}
-{% endif %}
-        if {% for binding in rule.document_bindings if binding.uses_where %}{{ binding.name }} is not None and {% endfor %}{% if rule is needs_current_document_rule %}{{ current_document }} is not None and {% endif %}{{ rule | rule_to_python }}:
-{% if rule.effect == "deny" %}
-            return 403, {"detail": {{ (rule.reason or "Forbidden") | py_literal }}}
-{% else %}
-            access_granted = True
-            access_bindings = {{ rule.bind | py_literal }}
-{% endif %}
+    decisions.append(Decision({{ rule.effect | py_literal }}, {{ rule | rule_to_predicate }}, {{ rule.reason | py_literal }}))
 {% endfor %}
-    if not access_granted:
-        return 403, {"detail": "Forbidden"}
+{% if rows %}
+    access_bindings = {}
+{% endif %}
+    try:
+{% if rows %}
+        rows = row_filter(decisions)
+{% else %}
+        access_bindings = {{ route.access_rules | map(attribute="bind") | list | py_literal }}[decide(decisions)]
+{% endif %}
+    except AccessDenied as exc:
+        status, detail = exc.refusal(principal)
+        return status, {"detail": detail}
+{% elif rows %}
+    rows = EVERY_ROW
 {% endif %}
 {% endmacro %}
 
 {% macro pre_fetch_authorize(route) %}
-{% if not (route is needs_post_fetch) %}
+{% if route.operation == "list" %}
+{{ authorize_rules(route, "Field(())", rows=true) }}
+{% if route.record_parent_params %}
+    rows = conjoin(rows, matching({{ record_criteria(route) }}))
+{% endif %}
+{% elif not (route is needs_post_fetch) %}
 {{ authorize_rules(route, "None") }}
 {% elif route.access_rules %}
     access_bindings = {}
 {% endif %}
 {% endmacro %}
+
+{% macro bound(route, record) %}{{ "{**" ~ record ~ ", **bound_inputs}" if route.binds_inputs else record }}{% endmacro %}
 
 {% macro bind_inputs(route) %}
 {% if route.access_rules %}
@@ -131,50 +123,32 @@ def _principal_has_role(principal: dict, required_role: str) -> bool:
 {% endmacro %}
 {% for route in routes %}
 {% if route.operation != "login" %}
-{% set handler_name = "handle_" ~ route.operation ~ "_" ~ collection_name %}
-async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
+async def {{ route.handler_name }}(url_params: dict, body: dict | None, headers: dict[str, str], db: Any, query: dict[str, Any] | None = None, cookies: dict[str, str] | None = None) -> tuple[int, Any]:
     repo = {{ collection_name | capitalize_collection }}Repository(db)
     service = {{ collection_name | capitalize_collection }}Service(repo)
     principal = None
 {% if route.needs_auth %}
     principal = await resolve_principal(headers, db)
+{% if not route.admits_anonymous %}
     if principal is None:
         return 401, {"detail": "Unauthorized"}
+{% endif %}
 {% endif %}
 {{ pre_fetch_authorize(route) }}
 {{ bind_inputs(route) }}
     service_inputs = prepare_service_inputs(url_params, body, {{ route.service_input | py_literal }}, {{ route.service_forwarding | py_literal }}, bound_inputs)
-    params = {**url_params, **service_inputs}
-{% if route.handler %}
-    from importlib import import_module
-    module_path, function_name = "{{ route.handler }}".rsplit(".", 1)
-    request = RawRequest(
-        url_params,
-        body,
-        headers,
-        principal,
-        service_inputs,
-        query,
-        cookies,
-    )
-    result = await getattr(import_module(module_path), function_name)(request)
-    return 200, result
-{% elif route.operation not in crud_op_names %}
-{% set query = repo_queries[route.operation] %}
-    bindings = {**params, "params": params, "body": body or {}}
-    resolved = resolve_bindings({{ query | py_literal }}, bindings)
-    result = await repo.{{ route.operation }}(**{key: value for key, value in resolved.items() if key not in ("command", "collection")})
-    return 200, result
+{% if route.runs_operation %}
+{{ run_operation(route) }}
 {% else %}
     try:
 {% if route.operation == "list" %}
 {% if route.pagination %}
         pagination_config = {{ route.pagination | pagination_config | py_literal }}
         pagination_query = query or {}
-        page = await service.list(map_request(pagination_config, pagination_query))
+        page = await service.list(map_request(pagination_config, pagination_query), rows)
         return 200, build_response(pagination_config, page, pagination_query)
 {% else %}
-        documents = await service.list()
+        documents = await service.list(None, rows)
         return 200, documents
 {% endif %}
 {% elif route.operation == "get" %}
@@ -188,13 +162,19 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% elif route.operation == "create" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ collection_name }}_create(body)
+        data = {{ bound(route, "validation." ~ (route.typed_body_model or route.body_model) ~ ".conform(body)") }}
+{% if route.record_parent_params %}
+        data = {**data, **{{ record_criteria(route) }}}
+{% endif %}
+{% if identity %}
+        data = {{ identity.role_store | py_literal }}.granted(data, held_roles(principal, ROLE_HIERARCHIES))
+{% endif %}
         document = await service.create(data)
         return 200, document
 {% elif route.operation == "update" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ collection_name }}_update(body)
+        data = {{ bound(route, "validation." ~ (route.typed_body_model or route.body_model) ~ ".conform(body)") }}
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})
@@ -202,6 +182,9 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
         existing = await service.get(url_params["{{ route.record_id_param }}"])
 {% endif %}
 {{ post_fetch_authorize(route, "existing") | indent(4, true) }}
+{% endif %}
+{% if identity %}
+        data = {{ identity.role_store | py_literal }}.revised(data, held_roles(principal, ROLE_HIERARCHIES))
 {% endif %}
 {% if route.record_parent_params %}
         document = await service.update_by({{ record_criteria(route) }}, data)
@@ -212,7 +195,7 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
 {% elif route.operation == "replace" %}
         if body is None:
             return 422, {"detail": "Request body is required"}
-        data = validation.validate_{{ collection_name }}_replace(body)
+        data = {{ bound(route, "validation." ~ (route.typed_body_model or route.body_model) ~ ".conform(body)") }}
 {% if route is needs_post_fetch %}
 {% if route.record_parent_params %}
         existing = await service.get_by({{ record_criteria(route) }})
@@ -220,6 +203,9 @@ async def {{ handler_name }}(url_params: dict, body: dict | None, headers: dict[
         existing = await service.get(url_params["{{ route.record_id_param }}"])
 {% endif %}
 {{ post_fetch_authorize(route, "existing") | indent(4, true) }}
+{% endif %}
+{% if identity %}
+        data = {{ identity.role_store | py_literal }}.revised(data, held_roles(principal, ROLE_HIERARCHIES))
 {% endif %}
 {% if route.record_parent_params %}
         document = await service.replace_by({{ record_criteria(route) }}, data)

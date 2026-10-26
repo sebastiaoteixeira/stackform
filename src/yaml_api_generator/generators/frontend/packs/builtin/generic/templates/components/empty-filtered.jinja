@@ -4,15 +4,15 @@ interface ActiveFilter {
 }
 
 interface EmptyFilteredProps {
-  activeFilters: ActiveFilter[];
-  onRemoveFilter: (key: string) => void;
-  onClearAll: () => void;
+  activeFilters?: ActiveFilter[];
+  onRemoveFilter?: (key: string) => void;
+  onClearAll?: () => void;
   onNewRecord?: () => void;
   entityLabel?: string;
 }
 
 export function EmptyFiltered({
-  activeFilters,
+  activeFilters = [],
   onRemoveFilter,
   onClearAll,
   onNewRecord,
@@ -31,7 +31,7 @@ export function EmptyFiltered({
             >
               {f.label}
               <button
-                onClick={() => onRemoveFilter(f.key)}
+                onClick={() => onRemoveFilter?.(f.key)}
                 className="hover:text-wf-accent-ink leading-none"
                 aria-label={`Remove ${f.label} filter`}
               >
@@ -71,3 +71,5 @@ export function EmptyFiltered({
     </div>
   );
 }
+
+export default EmptyFiltered;

@@ -10,6 +10,11 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from conflicts import ConflictError
+from dependencies.ids import generate_id
+from dependencies.mongo_lifecycle import MongoLifecycle, scoped
+from dependencies.mongo_operations import run_mongo, with_identity
+from dependencies.operations import present, present_value, resolve
+from dependencies.access import EVERY_ROW, Predicate
 from dependencies.pagination import Page, Primitives, expand_bound
 
 
@@ -85,10 +90,12 @@ class RepositoryBase:
     COLLECTION: str
     ID_FIELD: str
     ID_FORMAT: str = "natural"
+    LIFECYCLE: dict[str, Any] = {}
 
     def __init__(self, db: AsyncDatabase) -> None:
         self._db = db
         self._col = db[self.COLLECTION]
+        self._lifecycle = MongoLifecycle(self.LIFECYCLE)
         self._generate_id = make_id_generator(self.ID_FORMAT)
 
     def _match_filter(self, document_id: str) -> dict[str, Any]:
@@ -101,17 +108,25 @@ class RepositoryBase:
         conditions.append({self.ID_FIELD: document_id})
         return {"$or": conditions}
 
+    def _new_identity(self, data: dict[str, Any]) -> dict[str, Any]:
+        if self.ID_FIELD in data:
+            return {self.ID_FIELD: data[self.ID_FIELD]}
+        return {self.ID_FIELD: self._generate_id()} if self._generate_id is not None else {}
+
     def _normalize(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
         """Hide the datastore's own identifier; the service layer hides domain-internal fields."""
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if k != "_id"}
+        return {k: present_value(v) for k, v in doc.items() if k != "_id"}
+
+    async def purge_expired(self) -> None:
+        await self._lifecycle.expire(self._col)
 
     async def find_by(self, field: str, value: Any) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one({field: value}))
+        return await self.find_one({field: value})
 
     async def find_one(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one(dict(criteria)))
+        return self._normalize(await self._col.find_one(self._lifecycle.visible(criteria)))
 
     @_translate_conflict
     async def update_by(
@@ -121,7 +136,9 @@ class RepositoryBase:
         if not changes:
             return await self.find_one(criteria)
         doc = await self._col.find_one_and_update(
-            dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+            self._lifecycle.visible(criteria),
+            self._lifecycle.stored_update({"$set": changes}),
+            return_document=ReturnDocument.AFTER,
         )
         return self._normalize(doc)
 
@@ -129,45 +146,52 @@ class RepositoryBase:
     async def replace_by(
         self, criteria: dict[str, Any], data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        replacement = {**data, **criteria}
+        replacement = self._lifecycle.stored({**data, **criteria})
         doc = await self._col.find_one_and_replace(
-            dict(criteria), replacement, return_document=ReturnDocument.AFTER
+            self._lifecycle.visible(criteria), replacement, return_document=ReturnDocument.AFTER
         )
         return self._normalize(doc)
 
     async def delete_by(self, criteria: dict[str, Any]) -> dict[str, Any] | None:
-        return self._normalize(await self._col.find_one_and_delete(dict(criteria)))
+        return self._normalize(await self._lifecycle.remove(self._col, criteria))
 
     @_translate_conflict
     async def insert(self, data: dict[str, Any]) -> dict[str, Any]:
         if self._generate_id is not None:
             data[self.ID_FIELD] = self._generate_id()
-        await self._col.insert_one(data)
-        return self._normalize(data)
+        document = self._lifecycle.stored(data)
+        await self._col.insert_one(document)
+        return self._normalize(document)
 
     @_translate_conflict
     async def upsert_by(self, key_field: str, data: dict[str, Any]) -> dict[str, Any]:
         if data.get(key_field) is None:
             raise ValueError(f"upsert_by requires a non-null value for key field '{key_field}'")
-        on_insert = {self.ID_FIELD: self._generate_id()} if self._generate_id is not None else {}
+        changes = {field: value for field, value in data.items() if field != self.ID_FIELD}
         doc = await self._col.find_one_and_update(
             {key_field: data.get(key_field)},
-            {"$set": data, "$setOnInsert": on_insert},
+            self._lifecycle.stored_update({"$set": changes, "$setOnInsert": self._new_identity(data)}),
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
         return self._normalize(doc)
 
+    @_translate_conflict
+    async def run_operation(self, query: dict[str, Any], bindings: dict[str, Any]) -> Any:
+        identified = with_identity(query, self.ID_FIELD, self.ID_FORMAT)
+        confined = scoped(resolve(identified, bindings), self.LIFECYCLE)
+        return present(await run_mongo(self._col, confined, generate_id), self.ID_FIELD)
+
 
 class ListOp:
-    async def list(self) -> list[dict[str, Any]]:
-        cursor = self._col.find({})
+    async def list(self, predicate: Predicate = EVERY_ROW) -> list[dict[str, Any]]:
+        cursor = self._col.find(self._lifecycle.visible(predicate.mongo()))
         docs = await cursor.to_list(length=None)
         return [self._normalize(d) for d in docs]
 
-    async def paginate(self, primitives: Primitives) -> Page:
-        query = _pagination_filter(primitives)
-        cursor = self._col.find(query)
+    async def paginate(self, primitives: Primitives, predicate: Predicate = EVERY_ROW) -> Page:
+        query = {"$and": [predicate.mongo(), _pagination_filter(primitives)]}
+        cursor = self._col.find(self._lifecycle.visible(query))
         if primitives.sort:
             cursor = cursor.sort(
                 [(key.field, -1 if key.descending else 1) for key in primitives.sort]
@@ -178,7 +202,7 @@ class ListOp:
             cursor = cursor.limit(primitives.limit)
         documents = await cursor.to_list(length=None)
         total = (
-            await self._col.count_documents({})
+            await self._col.count_documents(self._lifecycle.visible(predicate.mongo()))
             if primitives.count == "exact"
             else None
         )
@@ -187,8 +211,7 @@ class ListOp:
 
 class GetOp:
     async def get(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one(self._match_filter(document_id))
-        return self._normalize(doc)
+        return await self.find_one(self._match_filter(document_id))
 
 
 class CreateOp:
@@ -197,14 +220,8 @@ class CreateOp:
 
 
 class UpdateOp:
-    @_translate_conflict
     async def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_update(
-            self._match_filter(document_id),
-            {"$set": data},
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._normalize(doc)
+        return await self.update_by(self._match_filter(document_id), data)
 
 
 class ReplaceOp:
@@ -212,8 +229,8 @@ class ReplaceOp:
     async def replace(self, document_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         data[self.ID_FIELD] = document_id
         doc = await self._col.find_one_and_replace(
-            self._match_filter(document_id),
-            data,
+            self._lifecycle.visible(self._match_filter(document_id)),
+            self._lifecycle.stored(data),
             return_document=ReturnDocument.AFTER,
         )
         return self._normalize(doc)
@@ -221,5 +238,4 @@ class ReplaceOp:
 
 class DeleteOp:
     async def delete(self, document_id: str) -> dict[str, Any] | None:
-        doc = await self._col.find_one_and_delete(self._match_filter(document_id))
-        return self._normalize(doc)
+        return await self.delete_by(self._match_filter(document_id))

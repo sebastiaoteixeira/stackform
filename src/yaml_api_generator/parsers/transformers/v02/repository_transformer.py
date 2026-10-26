@@ -3,16 +3,35 @@
 Validates CRUD operations, query commands, and operation definitions.
 """
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
+from dataclasses import asdict
 from typing import Any
 
-from yaml_api_generator.ir import CRUD_OPERATIONS, IROperation, IRRepository
+from yaml_api_generator.ir import CRUD_OPERATIONS, IRCollection, IROperation, IRRepository
 from yaml_api_generator.parsers.yaml_parser import ConfigError
+from yaml_api_generator.runtime.mongo_operations import with_identity
 from .datastore_transformer import resolve_binding
 
 
 def _identity_handler(handler: str | None) -> str | None:
     return handler
+
+
+def _targeted(query: Any, collections: Mapping[str, IRCollection]) -> Any:
+    """A query naming a collection inserts with that collection's ids and keeps to its lifecycle.
+
+    An undeclared collection assigns no ids and has no lifecycle.
+    """
+    if not isinstance(query, dict) or "collection" not in query:
+        return query
+    target = collections.get(query["collection"])
+    if target is None:
+        return {**query, "identity": None, "lifecycle": {}}
+    return {"lifecycle": asdict(target.lifecycle), **with_identity(query, target.idField, target.idFormat)}
+
+
+def _including_deleted(query: Any, include_deleted: bool) -> Any:
+    return {**query, "includeDeleted": True} if include_deleted and isinstance(query, dict) else query
 
 
 class RepositoryTransformer:
@@ -53,6 +72,7 @@ class RepositoryTransformer:
         datastore_types: dict[str, str] | None = None,
         handler_resolver: Callable[[str | None], str | None] = _identity_handler,
         file_datastore_names: Collection[str] = frozenset(),
+        collections: Mapping[str, IRCollection] | None = None,
     ) -> tuple[dict[str, IRRepository], list[ConfigError]]:
         """Transform repository configurations to IR.
 
@@ -165,7 +185,11 @@ class RepositoryTransformer:
                                 ))
 
                 ops_dict[op_name] = IROperation(
-                    name=op_name, query=query, handler=handler_resolver(handler)
+                    name=op_name,
+                    query=_including_deleted(
+                        _targeted(query, collections or {}), op_cfg.get("includeDeleted", False)
+                    ),
+                    handler=handler_resolver(handler),
                 )
 
             if entity is None and not ops_dict and not abstract:

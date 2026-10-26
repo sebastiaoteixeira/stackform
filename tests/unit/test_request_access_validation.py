@@ -1,3 +1,5 @@
+import pytest
+
 from yaml_api_generator.parsers.transformers.access_validation import (
     validate_spec_access,
 )
@@ -95,29 +97,14 @@ def test_request_referencing_create_rule_valid():
     assert _access_codes(access, op_name="create") == set()
 
 
-# ---- DTO_FORBIDS_PERSISTENCE_ATTR ----
+# ---- DTO fields ----
 
 def _dto_codes(dto) -> set[str]:
     return {e.code for e in validate_spec_dtos({"entities": _ENTITIES, "dto": dto})}
 
 
-def test_dto_forbids_id_type():
-    dto = {"d": {"fields": {"x": {"type": "id"}}}}
-    assert "DTO_FORBIDS_PERSISTENCE_ATTR" in _dto_codes(dto)
-
-
-def test_dto_forbids_unique():
-    dto = {"d": {"fields": {"x": {"type": "string", "unique": True}}}}
-    assert "DTO_FORBIDS_PERSISTENCE_ATTR" in _dto_codes(dto)
-
-
-def test_dto_forbids_format():
-    dto = {"d": {"fields": {"x": {"type": "string", "format": "email"}}}}
-    assert "DTO_FORBIDS_PERSISTENCE_ATTR" in _dto_codes(dto)
-
-
 def test_dto_clean_fields_valid():
-    dto = {"d": {"fields": {"x": {"type": "string", "required": True}}}}
+    dto = {"d": {"fields": {"x": {"type": "string", "required": True, "format": "email"}}}}
     assert _dto_codes(dto) == set()
 
 
@@ -135,7 +122,7 @@ def test_dto_ref_to_entity_resolves():
 
 # ---- REQUEST_PATH_PARAM_NOT_DECLARED (post-desugar route) ----
 
-def _request_path_codes(route_path, when) -> set[str]:
+def _request_path_codes(route_path, when, binding="request") -> set[str]:
     spec = {
         "controllers": {
             "c": {
@@ -144,7 +131,7 @@ def _request_path_codes(route_path, when) -> set[str]:
                     "r": {
                         "path": route_path,
                         "access": [
-                            {"given": {"req": "request"}, "when": when}
+                            {"given": {"req": binding}, "when": when}
                         ],
                     }
                 },
@@ -162,3 +149,22 @@ def test_request_path_param_not_declared():
 def test_request_path_param_declared_valid():
     codes = _request_path_codes("/orgs/{orgId}", "req.path.orgId equals 'a'")
     assert codes == set()
+
+
+@pytest.mark.parametrize(
+    ("binding", "when", "codes"),
+    [
+        ("request:createMembership", "req.path.missing equals 'a'", {"REQUEST_PATH_PARAM_NOT_DECLARED"}),
+        ("request.path", "req.missing is null", {"REQUEST_PATH_PARAM_NOT_DECLARED"}),
+        ("request.path", "req.orgId equals 'a'", set()),
+        ("request.body", "req.missing equals 'a'", set()),
+    ],
+    ids=["typed-request", "path-part", "path-part-declared", "body-part"],
+)
+def test_request_path_params_resolve_through_every_binding(binding, when, codes):
+    assert _request_path_codes("/orgs/{orgId}", when, binding) == codes
+
+
+def test_dto_nested_ref_to_undeclared_type():
+    dto = {"d": {"fields": {"x": {"type": "array", "items": {"type": "ref", "ref": "ghost"}}}}}
+    assert "DTO_NOT_FOUND" in _dto_codes(dto)

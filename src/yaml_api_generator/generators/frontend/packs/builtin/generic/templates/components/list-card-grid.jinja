@@ -1,7 +1,14 @@
+{% from 'macros/access.jinja' import allowed %}
+{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
+{% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
+{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
+{% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
+{% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
+{% set author_field = entity.fields[roles.author] if roles.author is defined else none %}
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { {% if title_field or status_field or author_field %}displayValue, {% endif %}listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -9,13 +16,6 @@ interface {{ entity.name | pascal_case }} {
   {{ field.name }}: {% if field.type == 'string' %}string{% elif field.type == 'number' %}number{% elif field.type == 'boolean' %}boolean{% else %}any{% endif %};
   {% endfor %}
 }
-
-{% set roles = props.field_roles.value if props.field_roles is defined else {} %}
-{% set image_field = entity.fields[roles.image] if roles.image is defined else none %}
-{% set title_field = entity.fields[roles.title] if roles.title is defined else none %}
-{% set status_field = entity.fields[roles.status] if roles.status is defined else none %}
-{% set date_field = entity.fields[roles.date] if roles.date is defined else none %}
-{% set author_field = entity.fields[roles.author] if roles.author is defined else none %}
 
 export default function {{ view.name | pascal_case }}() {
   const [items, setItems] = useState<{{ entity.name | pascal_case }}[]>([]);
@@ -29,15 +29,9 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        }
-        return res.json();
-      })
+    listRecords('{{ entity.name }}', headers)
       .then(data => {
-        setItems(Array.isArray(data) ? data : []);
+        setItems(data);
         setLoading(false);
       })
       .catch(err => {
@@ -74,9 +68,11 @@ export default function {{ view.name | pascal_case }}() {
           </div>
           <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
           <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+          {% call allowed(entity, 'create') %}
           <button onClick={() => navigate('{{ view.path }}/new')} className="wf-btn wf-btn-primary">
             + New {{ entity.name | title }}
           </button>
+          {% endcall %}
         </div>
       </div>
     );
@@ -116,12 +112,14 @@ export default function {{ view.name | pascal_case }}() {
           </button>
         </div>
 
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       <div className="flex-1 overflow-auto px-6 pb-6">
@@ -156,13 +154,13 @@ export default function {{ view.name | pascal_case }}() {
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <h3 className="font-title text-base text-wf-ink line-clamp-2 leading-snug">
                       {% if title_field %}
-                      {String(item.{{ title_field.name }} || '—')}
+                      {displayValue(item.{{ title_field.name }})}
                       {% else %}
                       <span className="wf-mono text-sm">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span>
                       {% endif %}
                     </h3>
                     {% if status_field %}
-                    <span className="wf-badge shrink-0">{String(item.{{ status_field.name }} || '—')}</span>
+                    <span className="wf-badge shrink-0">{displayValue(item.{{ status_field.name }})}</span>
                     {% endif %}
                   </div>
 
@@ -173,7 +171,7 @@ export default function {{ view.name | pascal_case }}() {
                     </span>
                     {% endif %}
                     {% if author_field %}
-                    <span className="truncate max-w-[80px]">{String(item.{{ author_field.name }} || '—')}</span>
+                    <span className="truncate max-w-[80px]">{displayValue(item.{{ author_field.name }})}</span>
                     {% endif %}
                   </div>
                 </div>
@@ -211,13 +209,13 @@ export default function {{ view.name | pascal_case }}() {
                   >
                     <td className="font-medium text-wf-ink">
                       {% if title_field %}
-                      {String(item.{{ title_field.name }} || '—')}
+                      {displayValue(item.{{ title_field.name }})}
                       {% else %}
                       <span className="wf-mono">{String(item.{{ entity.pk_field }}).slice(0, 8)}…</span>
                       {% endif %}
                     </td>
                     {% if status_field %}
-                    <td><span className="wf-badge">{String(item.{{ status_field.name }} || '—')}</span></td>
+                    <td><span className="wf-badge">{displayValue(item.{{ status_field.name }})}</span></td>
                     {% endif %}
                     {% if date_field %}
                     <td>
@@ -227,7 +225,7 @@ export default function {{ view.name | pascal_case }}() {
                     </td>
                     {% endif %}
                     {% if author_field %}
-                    <td className="text-wf-ink-dim">{String(item.{{ author_field.name }} || '—')}</td>
+                    <td className="text-wf-ink-dim">{displayValue(item.{{ author_field.name }})}</td>
                     {% endif %}
                   </tr>
                 ))}

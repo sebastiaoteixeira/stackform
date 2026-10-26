@@ -52,10 +52,9 @@ class DockerDeployGenerator(DeployGenerator):
         roles_app_templates.mkdir(parents=True, exist_ok=True)
         self._render(env, "roles/app/templates/env.j2.jinja", ctx, roles_app_templates / "env.j2")
 
-        if ctx.mongo_local:
-            roles_mongodb_tasks = output_dir / "roles" / "mongodb" / "tasks"
-            roles_mongodb_tasks.mkdir(parents=True, exist_ok=True)
-            self._render(env, "roles/mongodb/tasks/main.yml.jinja", ctx, roles_mongodb_tasks / "main.yml")
+        roles_docker_tasks = output_dir / "roles" / "docker" / "tasks"
+        roles_docker_tasks.mkdir(parents=True, exist_ok=True)
+        self._render(env, "roles/docker/tasks/main.yml.jinja", ctx, roles_docker_tasks / "main.yml")
 
     def _stage_build_contexts(
         self,

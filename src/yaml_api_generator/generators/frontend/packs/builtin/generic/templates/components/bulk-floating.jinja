@@ -1,7 +1,8 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { callOperation, displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -32,12 +33,8 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        return res.json();
-      })
-      .then(data => { setItems(Array.isArray(data) ? data : []); setLoading(false); })
+    listRecords('{{ entity.name }}', headers)
+      .then(data => { setItems(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [token]);
 
@@ -60,7 +57,7 @@ export default function {{ view.name | pascal_case }}() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     await Promise.all([...selectedIds].map(id =>
-      fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}/${id}`, { method: 'DELETE', headers })
+      callOperation('{{ entity.name }}', 'delete', { id, headers })
     ));
     setItems(prev => prev.filter(i => !selectedIds.has(i.{{ entity.pk_field }})));
     setSelectedIds(new Set());
@@ -92,12 +89,14 @@ export default function {{ view.name | pascal_case }}() {
         <h1 className="font-title text-2xl text-wf-ink">{{ entity.name | title }}</h1>
         <span className="wf-mono">{items.length} records</span>
         <div className="flex-1" />
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table */}
@@ -145,9 +144,9 @@ export default function {{ view.name | pascal_case }}() {
                   {% for field in display_fields %}
                   <td>
                     {% if field.type == 'enum' %}
-                    <span className="wf-badge">{String(item.{{ field.name }} ?? '—')}</span>
+                    <span className="wf-badge">{displayValue(item.{{ field.name }})}</span>
                     {% else %}
-                    {String(item.{{ field.name }} ?? '—')}
+                    {displayValue(item.{{ field.name }})}
                     {% endif %}
                   </td>
                   {% endfor %}
@@ -190,6 +189,7 @@ export default function {{ view.name | pascal_case }}() {
 
           <span className="w-px h-5 bg-white/20" />
 
+          {% call allowed(entity, 'delete') %}
           <button
             onClick={handleBulkDelete}
             className="text-sm font-medium hover:text-red-300 transition-colors"
@@ -197,6 +197,7 @@ export default function {{ view.name | pascal_case }}() {
           >
             Delete
           </button>
+          {% endcall %}
 
           <span className="w-px h-5 bg-white/20" />
 

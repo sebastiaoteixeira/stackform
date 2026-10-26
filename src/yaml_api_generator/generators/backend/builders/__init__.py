@@ -52,6 +52,7 @@ class ContextBuilder:
             api_version=document.api.version,
             cors=cors,
             port=document.api.port,
+            security_headers=document.api.security_headers,
         )
 
         identity_map = document.identityCollections
@@ -71,11 +72,21 @@ class ContextBuilder:
                 "fields": col.fields,
                 "datastore": datastore,
                 "datastore_type": ds.type if ds is not None else "mongodb",
+                "lifecycle": col.lifecycle,
             }
 
         datastore_types = {n: c["datastore_type"] for n, c in raw_collections.items()}
         auth = self._auth.build_auth_config(
-            identity_map, document.collections, document.providers, datastore_types
+            identity_map,
+            document.collections,
+            document.providers,
+            datastore_types,
+            requires_principal=any(route.needs_auth for route in routes),
+            login_paths={
+                route.collection: route.relative_path
+                for route in routes
+                if route.operation == "login"
+            },
         )
         repository_operations = self._repository.build_repository_operations(document.repositories)
 
@@ -109,7 +120,7 @@ class ContextBuilder:
             collections=raw_collections,
             session=SessionConfig(
                 algorithm=document.session.algorithm,
-                ttl=document.session.ttl,
+                ttl=document.session.access_ttl,
                 refresh=document.session.refresh,
                 delivery=document.session.delivery,
             ),
@@ -118,6 +129,7 @@ class ContextBuilder:
             repository_abstract=repository_abstract,
             repository_inherits=repository_inherits,
             services=dict(document.services),
+            service_bases=dict(document.service_bases),
             dto_models=dto_models,
             vendored_requirements=document.vendored_requirements,
             sql_schema_managed=managed.sql,

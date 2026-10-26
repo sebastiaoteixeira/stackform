@@ -1,7 +1,6 @@
 version: "0.3"
 
 api:
-  name: v03-crud-pagination
   basePath: /api
   operations:
     defaults:

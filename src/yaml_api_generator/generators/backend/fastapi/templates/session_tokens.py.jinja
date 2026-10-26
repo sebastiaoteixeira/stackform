@@ -1,5 +1,10 @@
 {% if ctx.session.refresh %}
+{% set uses_sql = auth.identity_collections | selectattr("is_sql") | list | length > 0 %}
+{% set uses_mongo = auth.identity_collections | rejectattr("is_sql") | list | length > 0 %}
+"""Access tokens, and single-use refresh tokens recorded in the datastore of the identity they sign in."""
+
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 from dependencies.jwt_utils import (
@@ -7,44 +12,100 @@ from dependencies.jwt_utils import (
     create_refresh_token,
     decode_refresh_token,
 )
-from dependencies.mongodb import get_database
 from settings import settings
 
 REFRESH_COLLECTION = "_refresh_tokens"
+{% if uses_mongo %}
+
+from dependencies.mongodb import get_database as _get_mongo
 
 
-def _refresh_records():
-    return get_database()[REFRESH_COLLECTION]
+class _MongoRefreshRecords:
+    async def add(self, record: dict[str, Any]) -> None:
+        await _get_mongo()[REFRESH_COLLECTION].insert_one({**record, "used": False, "revoked": False})
+
+    async def spend(self, jti: str) -> dict[str, Any] | None:
+        return await _get_mongo()[REFRESH_COLLECTION].find_one_and_update(
+            {"jti": jti, "used": False, "revoked": False},
+            {"$set": {"used": True}},
+        )
+
+    async def revoke(self, sid: str) -> None:
+        await _get_mongo()[REFRESH_COLLECTION].update_many({"sid": sid}, {"$set": {"revoked": True}})
+{% endif %}
+{% if uses_sql %}
+
+import sqlalchemy as sa
+
+from dependencies.postgres import metadata, get_database as _get_pg
+
+_refresh_table = sa.Table(
+    REFRESH_COLLECTION,
+    metadata,
+    sa.Column("jti", sa.String, primary_key=True),
+    sa.Column("sid", sa.String, nullable=False, index=True),
+    sa.Column("sub", sa.String, nullable=False),
+    sa.Column("identity_collection", sa.String, nullable=False),
+    sa.Column("used", sa.Boolean, nullable=False),
+    sa.Column("revoked", sa.Boolean, nullable=False),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+)
 
 
-async def _mint_refresh_token(sub: str, identity_collection: str, sid: str) -> str:
-    jti = uuid4().hex
-    await _refresh_records().insert_one({
-        "jti": jti,
-        "sid": sid,
-        "sub": sub,
-        "identity_collection": identity_collection,
-        "used": False,
-        "revoked": False,
-        "expires_at": datetime.now(timezone.utc)
-        + timedelta(seconds=settings.JWT_REFRESH_TTL_SECONDS),
-    })
-    return create_refresh_token(sub, identity_collection, jti, sid)
+class _SqlRefreshRecords:
+    async def add(self, record: dict[str, Any]) -> None:
+        async with _get_pg().begin() as conn:
+            await conn.execute(sa.insert(_refresh_table).values(**record, used=False, revoked=False))
+
+    async def spend(self, jti: str) -> dict[str, Any] | None:
+        table = _refresh_table
+        async with _get_pg().begin() as conn:
+            row = (await conn.execute(
+                sa.update(table)
+                .where(table.c.jti == jti, table.c.used.is_(False), table.c.revoked.is_(False))
+                .values(used=True)
+                .returning(table.c.sub, table.c.identity_collection, table.c.sid)
+            )).first()
+        return dict(row._mapping) if row is not None else None
+
+    async def revoke(self, sid: str) -> None:
+        async with _get_pg().begin() as conn:
+            await conn.execute(sa.update(_refresh_table).where(_refresh_table.c.sid == sid).values(revoked=True))
+{% endif %}
+
+_records = {
+{% if uses_mongo %}    "mongo": _MongoRefreshRecords(),
+{% endif %}{% if uses_sql %}    "sql": _SqlRefreshRecords(),
+{% endif %}}
+
+_IDENTITY_RECORDS = {
+{% for identity in auth.identity_collections %}
+    {{ identity.name | py_literal }}: _records["{{ 'sql' if identity.is_sql else 'mongo' }}"],
+{% endfor %}
+}
 
 
 async def issue_session(
     sub: str, identity_collection: str, sid: str | None = None
 ) -> dict[str, str]:
+    jti, sid = uuid4().hex, sid or uuid4().hex
+    await _IDENTITY_RECORDS[identity_collection].add({
+        "jti": jti,
+        "sid": sid,
+        "sub": sub,
+        "identity_collection": identity_collection,
+        "expires_at": datetime.now(timezone.utc)
+        + timedelta(seconds=settings.JWT_REFRESH_TTL_SECONDS),
+    })
     return {
         "token": create_jwt_token(sub, identity_collection),
-        "refresh_token": await _mint_refresh_token(
-            sub, identity_collection, sid or uuid4().hex
-        ),
+        "refresh_token": create_refresh_token(sub, identity_collection, jti, sid),
     }
 
 
 async def revoke_session(sid: str) -> None:
-    await _refresh_records().update_many({"sid": sid}, {"$set": {"revoked": True}})
+    for records in _records.values():
+        await records.revoke(sid)
 
 
 async def rotate_session(refresh_token: str) -> dict[str, str] | None:
@@ -52,10 +113,7 @@ async def rotate_session(refresh_token: str) -> dict[str, str] | None:
     claims = decode_refresh_token(refresh_token)
     if claims is None:
         return None
-    record = await _refresh_records().find_one_and_update(
-        {"jti": claims["jti"], "used": False, "revoked": False},
-        {"$set": {"used": True}},
-    )
+    record = await _IDENTITY_RECORDS[claims["identity_collection"]].spend(claims["jti"])
     if record is None:
         await revoke_session(claims["sid"])
         return None

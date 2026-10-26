@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qs, urlparse
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from yaml_api_generator.ir import IRProviderBinding
 from yaml_api_generator.ir.api import IROIDCProvider
@@ -18,7 +19,8 @@ from yaml_api_generator.server.common.server_context import (
     RuntimeIdentityDescriptor,
 )
 from yaml_api_generator.server.common.auth.session_tokens import SessionTokens
-from yaml_api_generator.server.fastapi.factory import register_provider_routes
+from yaml_api_generator.server.fastapi.factory import _ExternalLogin, register_provider_routes
+from tests.unit.support.repositories import InMemoryRepository
 
 
 _DISCOVERY_URL = "https://idp.test/.well-known/openid-configuration"
@@ -156,17 +158,18 @@ async def test_app_callback_does_not_expose_idp_token(monkeypatch):
     monkeypatch.setattr(oidc, "_exchange_code", AsyncMock(return_value={"access_token": "any"}))
     monkeypatch.setattr(oidc, "_fetch_userinfo", AsyncMock(return_value={"email": "alice@example.com", "sub": "u1"}))
 
-    fake_repo = MagicMock()
-    fake_repo.list = AsyncMock(return_value=[{"id": "local-uid", "email": "alice@example.com"}])
+    monkeypatch.setenv("FRONTEND_URL", "http://frontend.test")
+    repo = InMemoryRepository({"users": [{"id": "local-uid", "email": "alice@example.com"}]})
+    registry = RepositoryRegistry(repositories={"m": repo}, bindings={}, default="m")
+    login = _ExternalLogin(collection, registry, {"users": collection})
 
     from yaml_api_generator.server.common.auth import login_codes as lc_module
 
-    result = await oidc.handle_callback(
-        provider, binding, collection, repo=fake_repo,
-        code="auth-code", callback_url="http://localhost/cb",
-    )
+    claims = await oidc.fetch_claims(provider, code="auth-code", callback_url="http://localhost/cb")
+    response = await login.redirect(Request({"type": "http", "headers": []}), claims, binding)
+    code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
 
-    redeemed = lc_module.login_codes.redeem(result)
+    redeemed = lc_module.login_codes.redeem(code)
     assert redeemed is not None
     subject, collection_name, idp_token = redeemed
     assert subject == "local-uid"

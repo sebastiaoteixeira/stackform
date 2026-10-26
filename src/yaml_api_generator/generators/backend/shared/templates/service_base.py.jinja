@@ -1,0 +1,8 @@
+{% from "service_operations.jinja" import operation_imports, operation_methods %}
+{{ operation_imports(custom_operations, module_prefix ~ "handler_requests", generated_base) }}
+
+class {{ collection_name | capitalize_collection }}Service{% if generated_base %}({{ generated_base.class_name }}){% endif %}:
+{% if not custom_operations %}
+    pass
+{% endif %}
+{{ operation_methods(custom_operations) }}

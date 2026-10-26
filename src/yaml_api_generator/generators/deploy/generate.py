@@ -15,13 +15,14 @@ _BACKENDS: dict[str, Type[DeployGenerator]] = {
 
 def generate_deploy(
     ir: IRDocument,
+    application: str,
     host: str,
     ssh_user: str,
     ssh_key: str,
     output_dir: str,
     spec_dir: str | Path,
 ) -> None:
-    ctx = build_deploy_context(ir, host, ssh_user, ssh_key)
+    ctx = build_deploy_context(ir, application, host, ssh_user, ssh_key)
     backend_cls = _BACKENDS.get(ctx.runtime)
     if backend_cls is None:
         raise ValueError(f"no backend for runtime: {ctx.runtime}")

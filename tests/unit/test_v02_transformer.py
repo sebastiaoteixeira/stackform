@@ -144,7 +144,7 @@ def test_74_id_format_uuidv4_parsed_from_yaml():
 def test_77_id_format_invalid_string():
     with pytest.raises(ConfigErrors) as exc_info:
         load_and_generate_ir(str(INVALID_DIR / "invalid-id-format.yaml"))
-    assert any(e.code == "ID_FORMAT_INVALID" for e in exc_info.value.errors)
+    assert any(e.code == "SCHEMA_VALIDATION_ERROR" for e in exc_info.value.errors)
 
 
 def test_78_operations_normalization_repo_overrides_defaults(tmp_path):
@@ -558,6 +558,10 @@ def test_103_unscoped_role_with_multiple_auth_entities_raises_ambiguous_error(tm
     api:
       basePath: /api
       version: v1
+      operations:
+        auth:
+          register: true
+          login: true
     mongo:
       uri: mongodb://localhost:27017
       database: testdb
@@ -808,25 +812,10 @@ def test_111_document_binding_in_rule_resolved(tmp_path):
 # ---- Role Hierarchy ----
 
 
-def test_113_roles_hierarchy_unknown_entity():
+def test_113_top_level_roles_rejected_by_schema():
     with pytest.raises(ConfigErrors) as exc_info:
         load_and_generate_ir(str(INVALID_DIR / "roles-unknown-entity.yaml"))
-    assert any(e.code == "ROLES_UNKNOWN_ENTITY" for e in exc_info.value.errors)
-
-
-def test_114_empty_roles_section_produces_empty_hierarchies():
-    config = {
-        "version": "0.2",
-        "api": {"operations": {"defaults": {}}},
-        "entities": {"post": {"fields": {"id": {"type": "id"}, "title": {"type": "string"}}}},
-        "repositories": {"posts": {"entity": "post"}},
-        "services": {},
-        "controllers": {},
-        "mongo": {},
-        "roles": {},
-    }
-    ir = V02Transformer().transform(config)
-    assert ir.role_hierarchies == {}
+    assert {e.code for e in exc_info.value.errors} == {"SCHEMA_VALIDATION_ERROR"}
 
 
 # ---- Route Building ----

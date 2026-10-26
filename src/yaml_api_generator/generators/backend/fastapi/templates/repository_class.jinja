@@ -1,0 +1,22 @@
+{% from "repository_operations.jinja" import operation_methods %}
+{% macro repository_class(class_name, root, crud, generated_base, abstract, operations) %}
+{% set ns = namespace(bases=[]) %}
+{% if not abstract %}{% for op in crud %}{% set _ = ns.bases.append((op | capitalize) ~ "Op") %}{% endfor %}{% endif %}
+{% if generated_base %}{% set _ = ns.bases.append(generated_base.class_name) %}{% endif %}
+{% if not abstract %}{% set _ = ns.bases.append(root) %}{% endif %}
+class {{ class_name }}Repository{% if ns.bases %}({{ ns.bases | join(", ") }}){% endif %}:
+{% if not abstract %}
+    COLLECTION = "{{ collection_name }}"
+    ID_FIELD = "{{ id_field }}"
+    ID_FORMAT = "{{ id_field_format }}"
+{% if root == "SQLRepositoryBase" %}
+    TABLE = {{ collection_name }}_table
+{% endif %}
+{% if lifecycle.removal or lifecycle.expiry %}
+    LIFECYCLE = {{ lifecycle | py_constructor }}
+{% endif %}
+{% elif not operations %}
+    pass
+{% endif %}
+{{ operation_methods(operations) }}
+{%- endmacro %}

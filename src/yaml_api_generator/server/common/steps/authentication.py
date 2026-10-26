@@ -2,13 +2,15 @@ import base64
 from typing import Any
 
 from yaml_api_generator.ir.api import IROIDCProvider, IRProviderBinding
-from ..auth import idp, oidc, verify_password
+from yaml_api_generator.runtime.access import Roles, role_names
+from yaml_api_generator.runtime.claims import resolve_claim_path
+from ..auth import hash_api_key, idp, provisioning, verify_password
 from ..auth.jwt import SessionTokens
 from ..auth.utils import extract_bearer_token, extract_api_key, extract_basic_credentials
 from ..request_context import RequestContext
 from ..server_context import RuntimeCollectionDescriptor, RuntimeIdentityDescriptor
 from ..repositories import BaseRepository, RepositoryRegistry
-from ..utils.field_access import get_nested_field, resolve_claim_path
+from ..utils.field_access import get_nested_field
 from ..utils.document_matcher import find_document_with_password
 from . import Step
 from .authorization import UnauthorizedError
@@ -74,12 +76,15 @@ async def _resolve_idp_principal(
                 return _build_service_principal(claims, identity, binding)
 
             collection = collections[collection_name]
-            record = await oidc.resolve_record(
-                claims, binding, collection, registry.for_collection(collection_name),
-                is_idp=True,
-                collections=collections,
-                registry=registry,
-            )
+            try:
+                record = await provisioning.provider_binding(binding).sign_in(
+                    claims,
+                    provisioning.records_of(registry, collections),
+                    collection_name,
+                    collection.id_field,
+                )
+            except provisioning.REFUSALS as error:
+                raise UnauthorizedError(str(error)) from error
             if record is None:
                 raise UnauthorizedError("User not found and auto-provisioning is disabled")
             return _build_principal(
@@ -114,17 +119,11 @@ def _build_service_principal(
     binding: IRProviderBinding | None = None,
 ) -> dict[str, Any]:
     sub = str(claims["sub"])
-    roles = _roles_from_claims(claims, identity, binding)
-    roles_list: list[str] = []
-    if isinstance(roles, list):
-        roles_list = [str(r) for r in roles]
-    elif isinstance(roles, str):
-        roles_list = [roles]
     return {
         "sub": sub,
         "client_id": claims.get("azp") or claims.get("client_id") or sub,
         "is_service": True,
-        "roles": roles_list,
+        "roles": role_names(_roles_from_claims(claims, identity, binding)),
         "record": None,
         "identity_collection": None,
     }
@@ -147,7 +146,7 @@ async def _resolve_jwt_principal(
         return None
 
     identity = identity_collections.get(collection_name)
-    if identity is None or not identity.has_password:
+    if identity is None:
         return None
 
     id_field = identity_id_fields.get(collection_name)
@@ -227,8 +226,8 @@ async def _resolve_identity_for_collection(
             return await _find_principal(
                 repository,
                 collection_name=identity.name,
-                field_name="_auth.apiKey",
-                field_value=token,
+                field_name="apiKey",
+                field_value=hash_api_key(token),
                 id_field=id_field,
                 identity=identity,
             )
@@ -342,19 +341,6 @@ def _build_principal(
         "record": record,
     }
 
-    if roles is None:
-        roles_config = identity.roles if identity is not None else None
-        roles_field = identity.roles_field if identity is not None else None
-        auth_data = document.get("_auth")
-        if roles_config is not None and isinstance(auth_data, dict):
-            roles = auth_data.get("roles")
-        elif roles_field is not None:
-            roles = document.get(roles_field)
-        else:
-            roles = document.get("roles") or document.get("role")
-
-    if isinstance(roles, list):
-        principal["roles"] = [str(role) for role in roles]
-    elif isinstance(roles, str):
-        principal["roles"] = [roles]
+    store = identity.role_store if identity is not None else Roles()
+    principal["roles"] = store.of(document) if roles is None else role_names(roles)
     return principal

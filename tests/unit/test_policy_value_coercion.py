@@ -1,4 +1,3 @@
-import types
 import uuid
 
 import pytest
@@ -8,35 +7,12 @@ from yaml_api_generator.server.common.utils.value_compare import values_equal
 from yaml_api_generator.server.common.when_eval import evaluate_when_with_symbols
 from yaml_api_generator.ir.when import Equals, FieldRef
 from yaml_api_generator.generators.backend.fastapi import access_filters
+from yaml_api_generator.runtime import access
+from yaml_api_generator.runtime.access import EVERY_ROW, NO_ROW
 from yaml_api_generator.generators.backend.compile_context import (
     AccessRuleDescriptor,
     RequestSymbolDescriptor,
 )
-
-
-def _exec_values_equal():
-    source = (
-        "from typing import Any\n"
-        "from uuid import UUID\n"
-        "try:\n"
-        "    from bson import ObjectId\n"
-        "    _IDISH = (UUID, ObjectId)\n"
-        "except ImportError:\n"
-        "    _IDISH = (UUID,)\n"
-        "def _values_equal(left: Any, right: Any) -> bool:\n"
-        "    if left is None or right is None:\n"
-        "        return left is None and right is None\n"
-        "    if isinstance(left, bool) or isinstance(right, bool):\n"
-        "        return isinstance(left, bool) and isinstance(right, bool) and left is right\n"
-        "    if left == right:\n"
-        "        return True\n"
-        "    if isinstance(left, _IDISH) or isinstance(right, _IDISH):\n"
-        "        return str(left) == str(right)\n"
-        "    return False\n"
-    )
-    module = types.ModuleType("authorization_fragment")
-    exec(compile(source, "<authz>", "exec"), module.__dict__)
-    return module._values_equal
 
 
 class TestDevValuesEqual:
@@ -97,29 +73,7 @@ class TestDevValuesEqual:
         assert evaluate_when_with_symbols(expr, symbols) is False
 
 
-class TestEmittedValuesEqual:
-    def test_emitted_values_equal_coerces_uuid_string(self):
-        emitted = _exec_values_equal()
-        u = uuid.uuid4()
-        assert emitted(u, str(u)) is True
-
-    def test_emitted_values_equal_unequal(self):
-        emitted = _exec_values_equal()
-        assert emitted(uuid.uuid4(), str(uuid.uuid4())) is False
-
-    def test_emitted_values_equal_none(self):
-        emitted = _exec_values_equal()
-        assert emitted(None, "x") is False
-
-    def test_emitted_values_equal_no_type_confusion(self):
-        emitted = _exec_values_equal()
-        assert emitted("1", 1) is False
-        assert emitted("True", True) is False
-        assert emitted(True, 1) is False
-        assert emitted(True, True) is True
-
-
-class TestRuleToPythonRegression:
+class TestRuleToPredicateRegression:
     def test_target_body_field_equals_user_record_field_grants(self):
         rule = AccessRuleDescriptor(
             principal="user",
@@ -129,24 +83,17 @@ class TestRuleToPythonRegression:
                 right=FieldRef(root="user", path=("record", "id")),
             ),
             request_symbols=[
-                RequestSymbolDescriptor(name="target", part=None, type_name="Membership")
+                RequestSymbolDescriptor(name="target", part="body", type_name="Membership")
             ],
             document_symbols=[],
         )
         binding = access_filters.request_symbol_binding(rule.request_symbols[0])
         assert binding == "target = _request_body"
-        expr = access_filters.rule_to_python(rule)
-        assert "_values_equal(" in expr
-        assert 'target.get("ownerId")' in expr
-        assert 'user.get("record", {}).get("id")' in expr
+        expr = access_filters.rule_to_predicate(rule)
 
         oid = ObjectId()
-        scope = {
-            "target": {"ownerId": str(oid)},
-            "user": {"record": {"id": oid}},
-            "_values_equal": _exec_values_equal(),
-        }
-        assert eval(expr, scope) is True
+        scope = {**vars(access), "target": {"ownerId": str(oid)}, "user": {"record": {"id": oid}}}
+        assert eval(expr, scope) == EVERY_ROW
 
         scope["user"] = {"record": {"id": ObjectId()}}
-        assert eval(expr, scope) is False
+        assert eval(expr, scope) == NO_ROW

@@ -65,8 +65,4 @@ class FileBuilder:
             field=document.collections[route.collection].files[route.field],
             item=route.item,
             source=source,
-            writable=not any(
-                rule.write_fields and route.field not in rule.write_fields
-                for rule in route.source.access_rules or ()
-            ),
         )

@@ -31,10 +31,11 @@ Edit the `.env` file with your configuration:
 {% for name, value in ctx.env_vars.items() %}
 {{ name }}={{ value or "your_value_here" }}
 {% endfor %}
-{% if ctx.mongo_local %}
-MONGO_URI=mongodb://mongodb:27017
-MONGO_DB={{ ctx.mongo_db }}
-{% endif %}
+{% for ds in ctx.datastores %}
+{% for name, value in ds.app_env.items() %}
+{{ name }}={{ value }}
+{% endfor %}
+{% endfor %}
 ```
 
 ### {% if ctx.has_frontend %}3{% else %}2{% endif %}. Start Services
@@ -48,9 +49,9 @@ This will start:
 {% if ctx.has_frontend %}
 - Frontend on port 3000
 {% endif %}
-{% if ctx.mongo_local %}
-- MongoDB on internal network (not exposed externally)
-{% endif %}
+{% for ds in ctx.local_datastores %}
+- {{ ds.service }} on internal network (not exposed externally)
+{% endfor %}
 
 ### {% if ctx.has_frontend %}4{% else %}3{% endif %}. Check Status
 
@@ -61,7 +62,8 @@ docker compose logs -f
 
 ## Services
 
-- **app**: Backend API service (FastAPI)
+- **app**: Backend API service
+  - ASGI application: `{{ ctx.application }}`
   - Port: {{ ctx.port }}
   - Built from: `backend/`
   {% if ctx.has_auth %}
@@ -74,11 +76,12 @@ docker compose logs -f
   - API proxy: `/api` -> `http://app:{{ ctx.port }}`
 {% endif %}
 
-{% if ctx.mongo_local %}
-- **mongodb**: MongoDB database
-  - Internal port: 27017
-  - Data volume: `mongo_data`
-{% endif %}
+{% for ds in ctx.local_datastores %}
+- **{{ ds.service }}**: {{ ds.type }} database (`{{ ds.image }}`)
+  {% if ds.volume %}
+  - Data volume: `{{ ds.volume }}`
+  {% endif %}
+{% endfor %}
 
 ## Development
 
@@ -158,9 +161,9 @@ docker compose logs app
 ```
 
 Common issues:
-{% if ctx.mongo_local %}
-- MongoDB not ready: Wait a few seconds and restart
-{% endif %}
+{% for ds in ctx.local_datastores %}
+- {{ ds.service }} not ready: Wait a few seconds and restart
+{% endfor %}
 - Missing environment variables: Check `.env` file
 - Port already in use: Change port in docker-compose.yml
 
@@ -174,10 +177,10 @@ Common issues:
 
 ### Database connection errors
 
-{% if ctx.mongo_local %}
-- MongoDB service should be running: `docker compose ps mongodb`
-- Connection string should be: `mongodb://mongodb:27017`
+{% for ds in ctx.datastores %}
+{% if ds.local %}
+- {{ ds.service }} should be running: `docker compose ps {{ ds.service }}`
 {% else %}
-- Check your external MongoDB connection string in `.env`
-- Ensure network connectivity from container to MongoDB
+- Check the external {{ ds.type }} connection string in `.env` and network connectivity from the container
 {% endif %}
+{% endfor %}

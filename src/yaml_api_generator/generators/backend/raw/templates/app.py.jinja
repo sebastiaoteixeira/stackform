@@ -8,7 +8,11 @@ from conflicts import ConflictError
 from settings import settings
 
 {% set create_mongo_indexes = ctx.mongo_unique_indexes and not ctx.mongo_schema_managed %}
-from dependencies.mongodb import connect_db, close_db, get_database{% if create_mongo_indexes %}, initialize_indexes{% endif %}
+from lifecycle import Purger
+from dependencies.mongodb import connect_db, close_db, get_database{{ ", initialize_indexes" if create_mongo_indexes }}
+{% for name in ctx.expiring_collections %}
+from repositories.{{ name }} import {{ name | capitalize_collection }}Repository
+{% endfor %}
 
 {% set collections = routes | map(attribute='collection') | unique | select | list %}
 {% for col_name in collections %}
@@ -18,7 +22,7 @@ from routes.{{ col_name }} import *
 {% if handler_routes %}
 from routes.handlers import *
 {% endif %}
-{% if ctx.auth.has_password_auth %}
+{% if ctx.auth.login_identities %}
 from routes.login import *
 {% endif %}
 {% if ctx.session.uses_asymmetric %}
@@ -37,25 +41,26 @@ def _path_to_regex(path: str) -> str:
     return re.sub(r"\{(\w+)\}", _replace, path)
 
 
-{% set crud_routes = routes | rejectattr("operation", "equalto", "login") | list %}
-ROUTES: dict[str, list[tuple[re.Pattern[str], Any]]] = {}
-{% for route in crud_routes %}
-{% if route.collection %}
-{% set handler_name = "handle_" ~ route.operation ~ "_" ~ route.collection %}
-ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ handler_name }}))
-{% endif %}
+# Each route: path pattern, handler, and whether its body is a record that must be JSON
+ROUTES: dict[str, list[tuple[re.Pattern[str], Any, bool]]] = {}
+{% for route in routes if route.operation != "login" %}
+ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), {{ route.handler_name }}, {{ (route.body_model is not none) | py_literal }}))
 {% endfor %}
-{% for route in handler_routes %}
-ROUTES.setdefault("{{ route.method }}", []).append((re.compile(r"^" + _PREFIX + r"{{ route.relative_path | path_to_regex }}$"), handle_custom_{{ loop.index }}))
-{% endfor %}
-{% for identity in ctx.auth.identity_collections %}
-{% if identity.has_password and identity.identifier %}
-ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"/{{ identity.name }}/login$"), handle_login_{{ identity.name }}))
-{% endif %}
+{% for identity in ctx.auth.login_identities %}
+ROUTES.setdefault("POST", []).append((re.compile(r"^" + _PREFIX + r"{{ identity.login_path | path_to_regex }}$"), handle_login_{{ identity.name }}, True))
 {% endfor %}
 {% if ctx.session.uses_asymmetric %}
-ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), handle_jwks))
+ROUTES.setdefault("GET", []).append((re.compile(r"^/\.well-known/jwks\.json$"), handle_jwks, False))
 {% endif %}
+
+
+def _expiring_repositories() -> list:
+    db = get_database()
+    return [
+{% for name in ctx.expiring_collections %}
+        {{ name | capitalize_collection }}Repository(db),
+{% endfor %}
+    ]
 
 
 class ASGIApp:
@@ -75,8 +80,11 @@ class ASGIApp:
 {% if create_mongo_indexes %}
                 await initialize_indexes({{ ctx.mongo_unique_indexes | tojson }})
 {% endif %}
+                self._purger = Purger(repository.purge_expired for repository in _expiring_repositories())
+                self._purger.start()
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
+                await self._purger.stop()
                 await close_db()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
@@ -85,21 +93,23 @@ class ASGIApp:
         method = scope["method"].upper()
         path = scope["path"]
 
-        handler, url_params = self._match_route(method, path)
+        handler, url_params, record_body = self._match_route(method, path)
         if handler is None:
             await self._send_json(send, 404, {"detail": "Not found"})
             return
 
         body = await self._read_body(receive)
         if body is _INVALID_JSON:
-            await self._send_json(send, 400, {"detail": "Invalid JSON body"})
-            return
+            if record_body:
+                await self._send_json(send, 400, {"detail": "Invalid JSON body"})
+                return
+            body = None
 
         headers = {
             k.decode("latin-1"): v.decode("latin-1")
             for k, v in scope.get("headers", [])
         }
-        parsed_query = parse_qs(scope.get("query_string", b"").decode("utf-8"))
+        parsed_query = parse_qs(scope.get("query_string", b"").decode("utf-8"), keep_blank_values=True)
         query = {
             key: values[0] if len(values) == 1 else values
             for key, values in parsed_query.items()
@@ -124,13 +134,13 @@ class ASGIApp:
         await self._send_json(send, status, data)
 
     @staticmethod
-    def _match_route(method: str, path: str) -> tuple[Any, dict[str, str]]:
+    def _match_route(method: str, path: str) -> tuple[Any, dict[str, str], bool]:
         entries = ROUTES.get(method, [])
-        for pattern, handler in entries:
+        for pattern, handler, record_body in entries:
             match = pattern.match(path)
             if match:
-                return handler, match.groupdict()
-        return None, {}
+                return handler, match.groupdict(), record_body
+        return None, {}, False
 
     @staticmethod
     async def _read_body(receive: Any) -> dict[str, Any] | None:
@@ -162,6 +172,24 @@ class ASGIApp:
 
 
 app = ASGIApp()
+{% if ctx.app.cors %}
+
+from starlette.middleware.cors import CORSMiddleware
+
+app = CORSMiddleware(
+    app,
+    allow_origins={{ ctx.app.cors.origins }},
+    allow_methods={{ ctx.app.cors.methods }},
+    allow_headers={{ ctx.app.cors.headers }},
+    allow_credentials={{ ctx.app.cors.credentials }},
+)
+{% endif %}
+{% if ctx.app.security_headers %}
+
+from security_headers import SecurityHeadersMiddleware
+
+app = SecurityHeadersMiddleware(app)
+{% endif %}
 
 if __name__ == "__main__":
     import uvicorn

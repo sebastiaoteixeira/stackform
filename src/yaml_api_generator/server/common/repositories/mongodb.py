@@ -1,5 +1,6 @@
+from collections.abc import Iterable
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Iterator
 
 from bson import ObjectId
@@ -7,8 +8,13 @@ from bson.errors import InvalidId
 from pymongo import AsyncMongoClient, ReturnDocument
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
+from yaml_api_generator.ir import IRCollection
+from yaml_api_generator.runtime.ids import generate_id
+from yaml_api_generator.runtime.mongo_lifecycle import MongoLifecycle, scoped
+from yaml_api_generator.runtime.mongo_operations import run_mongo
+from yaml_api_generator.runtime.operations import present_value
 from .base import BaseRepository, ConflictError
-from .bindings import resolve
+from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from ..pagination import Page, Primitives, expand_bound
 
 
@@ -93,11 +99,17 @@ class MongoRepositoryConfig:
 
 
 class MongoRepository(BaseRepository):
-    def __init__(self, config: MongoRepositoryConfig, manage_indexes: bool = True):
+    def __init__(
+        self,
+        config: MongoRepositoryConfig,
+        collections: Iterable[IRCollection] = (),
+        manage_indexes: bool = True,
+    ):
         self._config = config
         self._client: Any | None = None
         self._db: Any | None = None
         self._id_fields: dict[str, str] = {}
+        self._lifecycles = {c.name: asdict(c.lifecycle) for c in collections}
         self.manage_indexes = manage_indexes
 
     def register_id_field(self, collection_name: str, id_field: str) -> None:
@@ -127,15 +139,23 @@ class MongoRepository(BaseRepository):
             partialFilterExpression=unique_index_partial_filter(field_name),
         )
 
-    async def list(self, collection_name: str) -> list[dict[str, Any]]:
-        cursor = self.collection(collection_name).find({})
+    async def purge_expired(self) -> None:
+        """MongoDB erases expired rows itself, through the TTL index each lifecycle keeps in place."""
+        for name in self._lifecycles:
+            await self._lifecycle(name).expire(self.collection(name))
+
+    async def list(
+        self, collection_name: str, predicate: Predicate = EVERY_ROW
+    ) -> list[dict[str, Any]]:
+        cursor = self.collection(collection_name).find(self._visible(collection_name, predicate.mongo()))
         documents = await cursor.to_list(length=None)
         return [self._normalize_document_required(document) for document in documents]
 
-    async def paginate(self, collection_name: str, primitives: Primitives) -> Page:
+    async def paginate(
+        self, collection_name: str, primitives: Primitives, predicate: Predicate = EVERY_ROW
+    ) -> Page:
         target = self.collection(collection_name)
-        bound_clauses = _mongo_bounds(primitives.bounds)
-        query = {"$and": bound_clauses} if bound_clauses else {}
+        query = self._visible(collection_name, {"$and": [predicate.mongo(), *_mongo_bounds(primitives.bounds)]})
         cursor = target.find(query)
         if primitives.sort:
             cursor = cursor.sort(
@@ -149,21 +169,23 @@ class MongoRepository(BaseRepository):
         rows = [self._normalize_document_required(d) for d in documents]
         total = None
         if primitives.count == "exact":
-            total = await target.count_documents({})
+            total = await target.count_documents(self._visible(collection_name, predicate.mongo()))
         return Page(rows=rows, total=total)
 
     async def get(
         self, collection_name: str, document_id: str
     ) -> dict[str, Any] | None:
         document = await self.collection(collection_name).find_one(
-            self._match_filter(document_id, collection_name)
+            self._visible(collection_name, self._match_filter(document_id, collection_name))
         )
         return self._normalize_document(document)
 
     async def find_one(
         self, collection_name: str, criteria: dict[str, Any]
     ) -> dict[str, Any] | None:
-        document = await self.collection(collection_name).find_one(dict(criteria))
+        document = await self.collection(collection_name).find_one(
+            self._visible(collection_name, criteria)
+        )
         return self._normalize_document(document)
 
     async def update_by(
@@ -177,7 +199,9 @@ class MongoRepository(BaseRepository):
             return await self.find_one(collection_name, criteria)
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_update(
-                dict(criteria), {"$set": changes}, return_document=ReturnDocument.AFTER
+                self._visible(collection_name, criteria),
+                self._lifecycle(collection_name).stored_update({"$set": changes}),
+                return_document=ReturnDocument.AFTER,
             )
         return self._normalize_document(document)
 
@@ -187,27 +211,30 @@ class MongoRepository(BaseRepository):
         criteria: dict[str, Any],
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
-        replacement = {**payload, **criteria}
+        replacement = self._lifecycle(collection_name).stored({**payload, **criteria})
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_replace(
-                dict(criteria), replacement, return_document=ReturnDocument.AFTER
+                self._visible(collection_name, criteria),
+                replacement,
+                return_document=ReturnDocument.AFTER,
             )
         return self._normalize_document(document)
 
     async def delete_by(
         self, collection_name: str, criteria: dict[str, Any]
     ) -> dict[str, Any] | None:
-        document = await self.collection(collection_name).find_one_and_delete(
-            dict(criteria)
+        document = await self._lifecycle(collection_name).remove(
+            self.collection(collection_name), criteria
         )
         return self._normalize_document(document)
 
     async def create(
         self, collection_name: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
+        document = self._lifecycle(collection_name).stored(payload)
         with _as_conflict():
-            inserted = await self.collection(collection_name).insert_one(payload)
-        created = dict(payload)
+            inserted = await self.collection(collection_name).insert_one(document)
+        created = dict(document)
         created.setdefault("_id", str(inserted.inserted_id))
         return self._normalize_document_required(created)
 
@@ -222,7 +249,9 @@ class MongoRepository(BaseRepository):
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_update(
                 {key_field: payload.get(key_field)},
-                {"$set": update_fields, "$setOnInsert": on_insert},
+                self._lifecycle(collection_name).stored_update(
+                    {"$set": update_fields, "$setOnInsert": on_insert}
+                ),
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
@@ -234,13 +263,9 @@ class MongoRepository(BaseRepository):
         document_id: str,
         payload: dict[str, Any],
     ) -> dict[str, Any] | None:
-        with _as_conflict():
-            document = await self.collection(collection_name).find_one_and_update(
-                self._match_filter(document_id, collection_name),
-                {"$set": payload},
-                return_document=ReturnDocument.AFTER,
-            )
-        return self._normalize_document(document)
+        return await self.update_by(
+            collection_name, self._match_filter(document_id, collection_name), payload
+        )
 
     async def replace(
         self,
@@ -251,8 +276,8 @@ class MongoRepository(BaseRepository):
         payload[self._id_fields.get(collection_name, "id")] = document_id
         with _as_conflict():
             document = await self.collection(collection_name).find_one_and_replace(
-                self._match_filter(document_id, collection_name),
-                payload,
+                self._visible(collection_name, self._match_filter(document_id, collection_name)),
+                self._lifecycle(collection_name).stored(payload),
                 return_document=ReturnDocument.AFTER,
             )
         return self._normalize_document(document)
@@ -260,80 +285,23 @@ class MongoRepository(BaseRepository):
     async def delete(
         self, collection_name: str, document_id: str
     ) -> dict[str, Any] | None:
-        document = await self.collection(collection_name).find_one_and_delete(
-            self._match_filter(document_id, collection_name)
+        return await self.delete_by(
+            collection_name, self._match_filter(document_id, collection_name)
         )
-        return self._normalize_document(document)
 
-    async def run_operation(
-        self,
-        collection_name: str,
-        query: dict[str, Any],
-        bindings: dict[str, Any],
-    ) -> Any:
+    async def run_operation(self, collection_name: str, query: dict[str, Any]) -> Any:
         with _as_conflict():
-            return await self._run_operation(collection_name, query, bindings)
-
-    async def _run_operation(
-        self,
-        collection_name: str,
-        query: dict[str, Any],
-        bindings: dict[str, Any],
-    ) -> Any:
-        command = query.get("command")
-        target = self.collection(query.get("collection") or collection_name)
-        get = lambda field: resolve(query.get(field), bindings)
-
-        if command == "find":
-            cursor = target.find(get("filter") or {})
-            docs = await cursor.to_list(length=None)
-            return [self._normalize_document_required(d) for d in docs]
-        if command == "findOne":
-            return self._normalize_document(await target.find_one(get("filter") or {}))
-        if command == "aggregate":
-            cursor = await target.aggregate(get("pipeline") or [])
-            docs = await cursor.to_list(length=None)
-            return [self._normalize_document_required(d) for d in docs]
-        if command == "countDocuments":
-            return await target.count_documents(get("filter") or {})
-        if command == "estimatedDocumentCount":
-            return await target.estimated_document_count()
-        if command == "distinct":
-            return await target.distinct(query.get("key"), get("filter") or {})
-        if command == "insertOne":
-            document = get("document") or {}
-            await target.insert_one(document)
-            return self._normalize_document_required(document)
-        if command == "insertMany":
-            documents = get("documents") or []
-            await target.insert_many(documents)
-            return [self._normalize_document_required(d) for d in documents]
-        if command in ("updateOne", "findOneAndUpdate"):
-            doc = await target.find_one_and_update(
-                get("filter") or {}, get("update") or {}, return_document=ReturnDocument.AFTER
+            return await run_mongo(
+                self.collection(collection_name),
+                scoped(query, self._lifecycles.get(collection_name, {})),
+                generate_id,
             )
-            return self._normalize_document(doc)
-        if command in ("replaceOne", "findOneAndReplace"):
-            doc = await target.find_one_and_replace(
-                get("filter") or {}, get("replacement") or {}, return_document=ReturnDocument.AFTER
-            )
-            return self._normalize_document(doc)
-        if command in ("deleteOne", "findOneAndDelete"):
-            return self._normalize_document(await target.find_one_and_delete(get("filter") or {}))
-        if command == "updateMany":
-            result = await target.update_many(get("filter") or {}, get("update") or {})
-            return {"matched": result.matched_count, "modified": result.modified_count}
-        if command == "deleteMany":
-            result = await target.delete_many(get("filter") or {})
-            return {"deleted": result.deleted_count}
-
-        raise ValueError(f"Unsupported query command: {command}")
 
     @staticmethod
     def _normalize_document(document: dict[str, Any] | None) -> dict[str, Any] | None:
         if document is None:
             return None
-        normalized = dict(document)
+        normalized = {key: present_value(value) for key, value in document.items()}
         if "_id" in normalized:
             normalized["_id"] = str(normalized["_id"])
         return normalized
@@ -344,6 +312,12 @@ class MongoRepository(BaseRepository):
         if normalized is None:
             raise RuntimeError("Expected document")
         return normalized
+
+    def _lifecycle(self, collection_name: str) -> MongoLifecycle:
+        return MongoLifecycle(self._lifecycles.get(collection_name))
+
+    def _visible(self, collection_name: str, criteria: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._lifecycle(collection_name).visible(criteria)
 
     def _match_filter(self, document_id: str, collection_name: str | None = None) -> dict[str, Any]:
         id_field = self._id_fields.get(collection_name, "id") if collection_name else "id"

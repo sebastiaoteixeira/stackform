@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 
@@ -94,15 +95,24 @@ def needs_document(expr: WhenExpr) -> bool:
     return False
 
 
-def collect_roots(expr: WhenExpr) -> set[str]:
+def field_refs(expr: WhenExpr) -> Iterator[FieldRef]:
     if isinstance(expr, FieldRef):
-        return {expr.root}
-    if isinstance(expr, StringLiteral):
-        return set()
-    if isinstance(expr, (Equals, NotEquals, And, Or)):
-        return collect_roots(expr.left) | collect_roots(expr.right)
-    if isinstance(expr, (In, NotIn)):
-        return collect_roots(expr.left)
-    if isinstance(expr, (Not, IsNull, IsNotNull)):
-        return collect_roots(expr.operand)
-    return set()
+        yield expr
+    for field in fields(expr):
+        child = getattr(expr, field.name)
+        if isinstance(child, WhenExpr):
+            yield from field_refs(child)
+
+
+def collect_roots(expr: WhenExpr) -> set[str]:
+    return {ref.root for ref in field_refs(expr)}
+
+
+def map_operands(expr: WhenExpr, transform: Callable[[WhenExpr], WhenExpr]) -> WhenExpr:
+    """Rebuild ``expr`` with ``transform`` applied to each direct sub-expression."""
+    children = {
+        field.name: transform(getattr(expr, field.name))
+        for field in fields(expr)
+        if isinstance(getattr(expr, field.name), WhenExpr)
+    }
+    return replace(expr, **children) if children else expr

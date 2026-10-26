@@ -22,7 +22,6 @@ from tests.unit.support.repositories import InMemoryRepository
 def _make_ir(
     collections: dict | None = None,
     identity: dict | None = None,
-    role_hierarchies: dict | None = None,
     routes: list | None = None,
 ) -> IRDocument:
     cols = collections or {
@@ -41,7 +40,6 @@ def _make_ir(
         collections=cols,
         routes=routes or [],
         identityCollections=identity or {},
-        role_hierarchies=role_hierarchies or {},
         mongo=IRMongo(),
         repositories={},
     )

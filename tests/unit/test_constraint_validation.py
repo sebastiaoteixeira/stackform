@@ -3,6 +3,7 @@ import pytest
 from yaml_api_generator.parsers.transformers.constraint_validation import (
     validate_spec_constraints,
 )
+from yaml_api_generator.parsers.transformers.field_defaults import canonicalize_defaults
 from yaml_api_generator.parsers.yaml_parser import ConfigErrors, load_and_generate_ir
 
 
@@ -30,26 +31,6 @@ def test_string_min_length_greater_than_max_length_rejected():
     )
 
 
-@pytest.mark.parametrize("key", ["minLength", "maxLength"])
-def test_negative_length_rejected(key):
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "string", key: -1})
-
-
-@pytest.mark.parametrize("key", ["min", "max"])
-def test_numeric_constraint_on_non_numeric_rejected(key):
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "string", key: 1})
-
-
-@pytest.mark.parametrize("key", ["minLength", "maxLength", "format"])
-def test_string_constraint_on_non_string_rejected(key):
-    value = "email" if key == "format" else 1
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "number", key: value})
-
-
-def test_empty_enum_rejected():
-    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "enum", "values": []})
-
-
 def test_default_outside_enum_rejected():
     assert "FIELD_CONSTRAINT_INVALID" in _codes(
         {"type": "enum", "values": ["a", "b"], "default": "c"}
@@ -67,6 +48,11 @@ def test_default_type_mismatch_rejected(field_type, default):
     assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": field_type, "default": default})
 
 
+def test_dto_field_checked():
+    errors = validate_spec_constraints({"dto": {"d": {"fields": {"n": {"type": "number", "max": 1, "default": 2}}}}})
+    assert [error.path for error in errors] == ["dto.d.fields.n"]
+
+
 def test_error_path_points_at_field():
     errors = _errors({"type": "number", "min": 10, "max": 1})
     assert errors[0].path == "entities.post.fields.value"
@@ -81,7 +67,7 @@ def test_nested_array_item_constraint_rejected():
 def test_nested_object_property_constraint_rejected():
     field = {
         "type": "object",
-        "properties": {"name": {"type": "string", "minLength": -1}},
+        "properties": {"name": {"type": "string", "minLength": 3, "maxLength": 1}},
     }
     errors = _errors(field)
     assert errors[0].path == "entities.post.fields.value.properties.name"
@@ -131,6 +117,32 @@ def test_valid_string_constraints_accepted():
     ) == set()
 
 
+# ---- Defaults conform to their own field config ----
+
+@pytest.mark.parametrize("field", [
+    {"type": "string", "format": "email", "default": "not-an-email"},
+    {"type": "string", "maxLength": 2, "default": "long"},
+    {"type": "number", "min": 5, "default": 1},
+    {"type": "array", "items": {"type": "string", "maxLength": 1}, "default": ["ab"]},
+    {"type": "array", "items": {"type": "number"}, "default": ["x"]},
+    {"type": "object", "properties": {"a": {"type": "number"}}, "default": {"b": 1}},
+    {"type": "object", "properties": {"a": {"type": "number", "required": True}}, "default": {}},
+    {"type": "object", "properties": {"a": {"type": "number", "max": 1}}, "default": {"a": 2}},
+])
+def test_default_violating_its_own_config_rejected(field):
+    assert "FIELD_CONSTRAINT_INVALID" in _codes(field)
+
+
+@pytest.mark.parametrize("field", [
+    {"type": "string", "format": "email", "default": "a@b.co"},
+    {"type": "array", "items": {"type": "string", "maxLength": 1}, "default": ["a"]},
+    {"type": "object", "properties": {"a": {"type": "number", "required": True}}, "default": {"a": 1}},
+    {"type": "object", "default": {"free": "form"}},
+])
+def test_default_satisfying_its_own_config_accepted(field):
+    assert _codes(field) == set()
+
+
 # ---- End to end ----
 
 def test_invalid_constraint_rejected_end_to_end(tmp_path):
@@ -159,3 +171,25 @@ def test_invalid_constraint_rejected_end_to_end(tmp_path):
     with pytest.raises(ConfigErrors) as exc_info:
         load_and_generate_ir(str(yaml_file))
     assert "FIELD_CONSTRAINT_INVALID" in {e.code for e in exc_info.value.errors}
+
+
+# ---- Defaults reach every consumer in canonical form ----
+
+def test_defaults_are_canonicalized_at_every_depth():
+    spec = _spec({
+        "type": "object",
+        "properties": {
+            "at": {"type": "datetime", "default": "2024-01-01T01:00:00+01:00"},
+            "port": {"type": "number", "default": "8080"},
+        },
+        "default": {"port": 1},
+    })
+    canonicalize_defaults(spec)
+    field = spec["entities"]["post"]["fields"]["value"]
+    assert field["properties"]["at"]["default"] == "2024-01-01T00:00:00+00:00"
+    assert field["properties"]["port"]["default"] == 8080.0
+    assert field["default"] == {"port": 1, "at": "2024-01-01T00:00:00+00:00"}
+
+
+def test_env_string_default_is_bounded_like_its_type():
+    assert "FIELD_CONSTRAINT_INVALID" in _codes({"type": "number", "max": 1, "default": "42"})

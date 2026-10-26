@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Any
 
+from yaml_api_generator.runtime.access import EVERY_ROW, Predicate
 from yaml_api_generator.server.common.repositories.base import BaseRepository
 
 Document = dict[str, Any]
@@ -23,8 +24,10 @@ class InMemoryRepository(BaseRepository):
     def documents(self, collection_name: str) -> list[Document]:
         return self._data.setdefault(collection_name, [])
 
-    async def list(self, collection_name: str) -> list[Document]:
-        return [dict(doc) for doc in self.documents(collection_name)]
+    async def list(
+        self, collection_name: str, predicate: Predicate = EVERY_ROW
+    ) -> list[Document]:
+        return [dict(doc) for doc in self.documents(collection_name) if predicate.matches(doc)]
 
     async def get(self, collection_name: str, document_id: str) -> Document | None:
         index = self._index_of(collection_name, document_id)

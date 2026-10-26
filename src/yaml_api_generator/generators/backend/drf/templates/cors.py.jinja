@@ -1,0 +1,12 @@
+from corsheaders.middleware import CorsMiddleware
+
+
+class RequestedHeadersCorsMiddleware(CorsMiddleware):
+    """Allows every header a preflight requests, since a literal wildcard is void on credentialed requests."""
+
+    def add_response_headers(self, request, response):
+        response = super().add_response_headers(request, response)
+        requested = request.headers.get("access-control-request-headers")
+        if request.method == "OPTIONS" and requested and response.has_header("access-control-allow-origin"):
+            response["access-control-allow-headers"] = requested
+        return response

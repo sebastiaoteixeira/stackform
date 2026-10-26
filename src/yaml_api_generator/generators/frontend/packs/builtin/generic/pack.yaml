@@ -8,6 +8,16 @@ components:
   # List variants (V1-V5)
   table:
     props:
+      field_roles: &field_roles
+        type: object
+        additionalProperties: false
+        properties:
+          title: { type: string }
+          status: { type: string }
+          date: { type: string }
+          image: { type: string }
+          author: { type: string }
+          content: { type: string }
       collection: { type: collection, required: true }
       columns: { type: array }
       searchable: { type: boolean, default: true }
@@ -17,6 +27,7 @@ components:
 
   list-table:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       columns: { type: array }
       searchable: { type: boolean, default: true }
@@ -26,17 +37,20 @@ components:
 
   list-split-pane:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       preview: { type: boolean, default: true }
 
   list-grouped:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       groupBy: { type: string }
       collapsible: { type: boolean, default: true }
 
   list-card-grid:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       columns: { type: number, default: 4 }
       searchable: { type: boolean, default: true }
@@ -49,25 +63,30 @@ components:
   # Detail variants (V1-V5)
   detail-two-column:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
 
   detail-tabbed:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       tabs: { type: array, default: [fields, relations, activity, json] }
 
   detail-article:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       public: { type: boolean, default: false }
 
   detail-drawer:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       onClose: { type: function }
 
   detail-schema:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
 
   # Form variants (V1-V5)
@@ -90,11 +109,13 @@ components:
 
   form-preview:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       mode: { type: string, default: create }
 
   form-inline-row:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       record: { type: object }
 
@@ -126,6 +147,7 @@ components:
   # Empty state variants (V1-V5)
   empty-centered:
     props:
+      collection: { type: collection, required: true }
       title: { type: string }
       message: { type: string }
       action_label: { type: string }
@@ -138,11 +160,13 @@ components:
 
   empty-import:
     props:
+      collection: { type: collection, required: true }
       title: { type: string }
       options: { type: array }
 
   empty-filtered:
     props:
+      collection: { type: collection, required: true }
       filters: { type: array }
       message: { type: string }
 
@@ -153,30 +177,35 @@ components:
   # Delete modal variants (V1-V5)
   delete-simple:
     props:
+      collection: { type: collection, required: true }
       entity: { type: string }
       onConfirm: { type: function }
       onCancel: { type: function }
 
   delete-type-confirm:
     props:
+      collection: { type: collection, required: true }
       entity: { type: string }
       confirm_text: { type: string }
       onConfirm: { type: function }
 
   delete-bulk-cascade:
     props:
+      collection: { type: collection, required: true }
       count: { type: number }
       relations: { type: array }
       onConfirm: { type: function }
 
   delete-soft:
     props:
+      collection: { type: collection, required: true }
       entity: { type: string }
       onArchive: { type: function }
       onDelete: { type: function }
 
   toast-undo:
     props:
+      collection: { type: collection, required: true }
       message: { type: string }
       duration: { type: number, default: 8 }
       onUndo: { type: function }
@@ -184,54 +213,72 @@ components:
   # Filter/Search variants (V1-V5)
   filter-toolbar:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       fields: { type: array }
       active_filters: { type: object }
 
   filter-builder:
     props:
+      collection: { type: collection, required: true }
       fields: { type: array }
       rules: { type: array }
 
   filter-facets:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       fields: { type: array }
       facets: { type: object }
 
   filter-column:
     props:
+      collection: { type: collection, required: true }
       column: { type: string }
       values: { type: array }
 
   command-palette:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       collections: { type: array }
       actions: { type: array }
 
   # Bulk action variants (V1-V5)
   bulk-floating:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       selected: { type: array }
       actions: { type: array }
 
   bulk-toolbar:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       selected: { type: array }
       total: { type: number }
       actions: { type: array }
 
   bulk-edit-drawer:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       selected: { type: array }
       fields: { type: array }
 
   bulk-progress:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       action: { type: string }
       current: { type: number }
       total: { type: number }
 
   context-menu:
     props:
+      collection: { type: collection, required: true }
+      field_roles: *field_roles
       selected: { type: array }
       actions: { type: array }
 
@@ -260,6 +307,7 @@ components:
   # Composition components
   crud:
     props:
+      field_roles: *field_roles
       collection: { type: collection, required: true }
       list: { type: component, default: list-table }
       form: { type: component, default: form-stacked }
@@ -310,7 +358,6 @@ components:
       onClear: { type: function }
 
 scaffold:
-  - routing
   - package.json
   - vite.config.ts
   - tsconfig.json
@@ -321,7 +368,11 @@ scaffold:
   - App
   - api
   - config.ts
+  - records.ts
+  - access.ts
   - auth.tsx
+  - fields.ts
+  - useRecordForm.ts
   - index.css
   - tailwind.config.js
   - postcss.config.js
@@ -339,3 +390,62 @@ output:
     components: src/components
     pages: src/pages
     hooks: src/__generated__/hooks
+
+config_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    app_name: { type: string }
+    require_auth: { type: boolean }
+    fonts:
+      type: object
+      additionalProperties: false
+      properties:
+        ui: { type: string }
+        hand: { type: string }
+        mono: { type: string }
+        import_from_google: { type: boolean }
+        use_handwritten_titles: { type: boolean }
+    colors:
+      type: object
+      additionalProperties: false
+      properties:
+          bg: { type: string }
+          surface: { type: string }
+          ink: { type: string }
+          ink_dim: { type: string }
+          ink_faint: { type: string }
+          line: { type: string }
+          line_strong: { type: string }
+          fill: { type: string }
+          accent: { type: string }
+          accent_soft: { type: string }
+          accent_ink: { type: string }
+          success: { type: string }
+          success_soft: { type: string }
+          warn: { type: string }
+          warn_soft: { type: string }
+          danger: { type: string }
+          danger_soft: { type: string }
+          radius: { type: string }
+    colors_dark:
+      type: object
+      additionalProperties: false
+      properties:
+          bg: { type: string }
+          surface: { type: string }
+          ink: { type: string }
+          ink_dim: { type: string }
+          ink_faint: { type: string }
+          line: { type: string }
+          line_strong: { type: string }
+          fill: { type: string }
+          accent: { type: string }
+          accent_soft: { type: string }
+          accent_ink: { type: string }
+          success: { type: string }
+          success_soft: { type: string }
+          warn: { type: string }
+          warn_soft: { type: string }
+          danger: { type: string }
+          danger_soft: { type: string }

@@ -1,7 +1,8 @@
+{% from 'macros/access.jinja' import allowed %}
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../__generated__/App';
-import { API_BASE_URL } from '../__generated__/config';
+import { Allowed, useAuth } from '../__generated__/App';
+import { displayValue, listRecords } from '../__generated__/records';
 
 interface {{ entity.name | pascal_case }} {
   {{ entity.pk_field }}: string;
@@ -22,15 +23,9 @@ export default function {{ view.name | pascal_case }}() {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch(`${API_BASE_URL}/{{ entity.repository_name | kebab_case }}`, { headers })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(res.status === 401 ? 'Authentication required' : `Error: ${res.status}`);
-        }
-        return res.json();
-      })
+    listRecords('{{ entity.name }}', headers)
       .then(data => {
-        setItems(Array.isArray(data) ? data : []);
+        setItems(data);
         setLoading(false);
       })
       .catch(err => {
@@ -84,12 +79,14 @@ export default function {{ view.name | pascal_case }}() {
           </div>
           <h3 className="font-title text-xl text-wf-ink mb-2">No {{ entity.name | lower }}s yet</h3>
           <p className="text-wf-ink-dim text-sm mb-4">Create your first record to get started.</p>
+          {% call allowed(entity, 'create') %}
           <button
             onClick={() => navigate('{{ view.path }}/new')}
             className="wf-btn wf-btn-primary"
           >
             + New {{ entity.name | title }}
           </button>
+          {% endcall %}
         </div>
       </div>
     );
@@ -112,12 +109,14 @@ export default function {{ view.name | pascal_case }}() {
         <button className="wf-btn">
           Sort ↓
         </button>
+        {% call allowed(entity, 'create') %}
         <button
           onClick={() => navigate('{{ view.path }}/new')}
           className="wf-btn wf-btn-primary"
         >
           + New
         </button>
+        {% endcall %}
       </div>
 
       {/* Table */}
@@ -170,10 +169,10 @@ export default function {{ view.name | pascal_case }}() {
                   <td>
                     {% if field.type == 'enum' %}
                     <span className="wf-badge">
-                      {String(item.{{ field.name }} || '—')}
+                      {displayValue(item.{{ field.name }})}
                     </span>
                     {% else %}
-                    {String(item.{{ field.name }} || '—')}
+                    {displayValue(item.{{ field.name }})}
                     {% endif %}
                   </td>
                   {% endfor %}

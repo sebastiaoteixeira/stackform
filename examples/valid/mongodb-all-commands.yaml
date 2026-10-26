@@ -45,7 +45,6 @@ repositories:
         query:
           command: find
           filter: { category: "{{category}}" }
-          options: { sort: { price: 1 } }
       find_one_by_name:
         query:
           command: findOne
@@ -57,7 +56,7 @@ repositories:
       distinct_categories:
         query:
           command: distinct
-          field: category
+          key: category
           filter: {}
       aggregate_stats:
         query:
@@ -101,13 +100,11 @@ repositories:
           command: findOneAndUpdate
           filter: { id: "{{id}}" }
           update: { $inc: { stock: "{{amount}}" } }
-          options: { returnDocument: "after" }
       find_and_replace:
         query:
           command: findOneAndReplace
           filter: { id: "{{id}}" }
           replacement: "{{product}}"
-          options: { returnDocument: "after" }
       find_and_delete:
         query:
           command: findOneAndDelete
@@ -125,7 +122,6 @@ repositories:
         query:
           command: find
           filter: { customer_id: "{{customer_id}}" }
-          options: { sort: { created_at: -1 } }
       by_status:
         query:
           command: find
@@ -137,7 +133,7 @@ repositories:
       distinct_customers:
         query:
           command: distinct
-          field: customer_id
+          key: customer_id
           filter: {}
       customer_totals:
         query:

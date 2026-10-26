@@ -24,7 +24,6 @@ from yaml_api_generator.server.common.steps.authorization import (
 _SPEC = """
 version: "{version}"
 api:
-  name: access-reason
   basePath: /api
 mongo:
   uri: mongodb://localhost:27017
@@ -101,18 +100,16 @@ def _load(tmp_path, version="0.3"):
         pytest.fail("\n".join(f"{error.code}: {error.message}" for error in exc.errors))
 
 
-def test_reason_is_enabled_only_for_v03_contexts(tmp_path):
-    v03 = _load(tmp_path, "0.3")
-    v02 = _load(tmp_path, "0.2")
+@pytest.mark.parametrize("version", ["0.2", "0.3"])
+def test_reason_is_carried_in_every_version(tmp_path, version):
+    ir = _load(tmp_path, version)
 
-    assert build_runtime_context(v03).routes[0].access_rules[0].reason == (
+    assert build_runtime_context(ir).routes[0].access_rules[0].reason == (
         "Blocked accounts cannot create posts."
     )
-    assert build_context(v03).routes[0].access_rules[0].reason == (
+    assert build_context(ir).routes[0].access_rules[0].reason == (
         "Blocked accounts cannot create posts."
     )
-    assert build_runtime_context(v02).routes[0].access_rules[0].reason is None
-    assert build_context(v02).routes[0].access_rules[0].reason is None
 
 
 def test_post_fetch_deny_surfaces_only_the_matching_rule_reason():
@@ -183,7 +180,7 @@ def test_generated_fastapi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        from dependencies.auth import require_principal
+        from dependencies.auth import get_optional_principal
         from dependencies.services import get_posts_service
         from routes._handlers import router as handlers_router
         from routes.posts import router
@@ -208,7 +205,7 @@ def test_generated_fastapi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
         app = FastAPI()
         app.include_router(router)
         app.include_router(handlers_router)
-        app.dependency_overrides[require_principal] = principal
+        app.dependency_overrides[get_optional_principal] = principal
         app.dependency_overrides[get_posts_service] = Service
         client = TestClient(app)
 
@@ -282,7 +279,7 @@ def test_generated_raw_asgi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
         posts.resolve_principal = principal
         database = Database()
 
-        result = asyncio.run(posts.handle_create_posts(
+        result = asyncio.run(posts.handle_post_posts_(
             {{}},
             {{"title": "Post", "ownerId": "blocked"}},
             {{}},
@@ -291,13 +288,13 @@ def test_generated_raw_asgi_surfaces_prefetch_and_postfetch_reasons(tmp_path):
         assert result == (403, {{"detail": "Blocked accounts cannot create posts."}})
 
         current["sub"] = "u1"
-        result = asyncio.run(posts.handle_get_posts(
+        result = asyncio.run(posts.handle_get_posts__id_(
             {{"id": "p1"}}, None, {{}}, database
         ))
         assert result == (403, {{"detail": "Only the owner may read this post."}})
 
         current["sub"] = "u2"
-        status, document = asyncio.run(posts.handle_get_posts(
+        status, document = asyncio.run(posts.handle_get_posts__id_(
             {{"id": "p1"}}, None, {{}}, database
         ))
         assert status == 200

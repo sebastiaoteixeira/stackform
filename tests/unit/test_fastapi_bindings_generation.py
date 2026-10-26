@@ -37,48 +37,17 @@ _SPEC = """
 """
 
 
-def test_bindings_module_emitted_for_custom_operations(tmp_path):
+def test_custom_operation_route_calls_the_repository_method(tmp_path):
     spec_path = tmp_path / "spec.yaml"
     spec_path.write_text(textwrap.dedent(_SPEC))
-    result = load_and_generate_ir(str(spec_path))
-    ctx = build_context(result.ir)
-    gen = FastAPIGenerator()
     out = tmp_path / "out"
-    gen.generate(ctx, out)
+    FastAPIGenerator().generate(build_context(load_and_generate_ir(str(spec_path)).ir), out)
 
-    assert (out / "dependencies" / "bindings.py").exists()
+    assert (out / "dependencies" / "operations.py").exists()
+    assert (out / "dependencies" / "mongo_operations.py").exists()
+    repository = (out / "repositories" / "posts.py").read_text()
+    assert "async def byOrg(self, bindings: dict[str, Any]) -> Any:" in repository
+    assert "'$principal.record.orgId'" in repository
     route_content = (out / "routes" / "posts.py").read_text()
-    assert "resolve_filter" in route_content
-    assert "dependencies.bindings" in route_content
-
-
-def test_bindings_module_absent_without_custom_operations(tmp_path):
-    spec_path = tmp_path / "spec.yaml"
-    spec_path.write_text(textwrap.dedent("""
-        version: "0.2"
-        api: { basePath: "" }
-        mongo:
-          uri: mongodb://localhost:27017
-          database: testdb
-        entities:
-          post:
-            fields:
-              id: { type: id }
-              title: { type: string }
-        repositories:
-          posts: { entity: post }
-        services:
-          posts: { repository: posts }
-        controllers:
-          posts:
-            base_path: /posts
-            routes:
-              list: { service: posts, method: GET, path: "", access: public }
-    """))
-    result = load_and_generate_ir(str(spec_path))
-    ctx = build_context(result.ir)
-    gen = FastAPIGenerator()
-    out = tmp_path / "out"
-    gen.generate(ctx, out)
-
-    assert not (out / "dependencies" / "bindings.py").exists()
+    assert "svc.byOrg(_request)" in route_content
+    assert "self._repo.byOrg(request.bindings)" in (out / "services" / "posts.py").read_text()

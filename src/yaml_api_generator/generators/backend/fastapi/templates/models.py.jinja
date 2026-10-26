@@ -1,57 +1,27 @@
-{% set ns = namespace(need_datetime=false, need_literal=false, need_any=false) %}
-{% for field in all_fields %}
-{% if field.type == "datetime" %}{% set ns.need_datetime = true %}{% endif %}
-{% if field.type == "enum" and field.enum_values %}{% set ns.need_literal = true %}{% endif %}
-{% if field.type == "object" or (field.type == "array" and "Any" in (field | python_annotation)) %}{% set ns.need_any = true %}{% endif %}
+{% for line in module.imports %}
+{{ line }}
 {% endfor %}
-{% if ns.need_datetime %}
-from datetime import datetime
+{% for declaration in module.declarations %}
+
+{% if declaration.attributes is defined %}
+
+class {{ declaration.name }}({{ declaration.base }}):
+{% if declaration.readonly %}
+    _readonly = frozenset({{ declaration.readonly | sort | list | py_literal }})
 {% endif %}
-{% if ns.need_any or ns.need_literal %}
-from typing import {% if ns.need_any %}Any{% endif %}{% if ns.need_any and ns.need_literal %}, {% endif %}{% if ns.need_literal %}Literal{% endif %}
-
+{% if declaration.server_defaults %}
+    _server_defaults = {{ declaration.server_defaults | py_literal }}
 {% endif %}
+{% for attribute in declaration.attributes %}
+    {{ attribute.name }}: {{ attribute.annotation }}{% if attribute.default is not none %} = {{ attribute.default }}{% endif %}
 
-from pydantic import BaseModel{% if all_fields | selectattr("constraints") | list %}, Field{% endif %}
-
-{% for model in models %}
-
-class {{ model.name }}(BaseModel):
-{% if not model.fields %}
+{% else %}
+{% if not declaration.readonly %}
     pass
 {% endif %}
-{% for field in model.fields %}
-{% set annotation = field | python_annotation %}
-{% if field.constraints %}
-{% set field_args = [] %}
-{% if field.required and not field.is_optional %}
-{% set _ = field_args.append("...") %}
-{% elif field.is_optional %}
-{% set _ = field_args.append("None") %}
-{% elif field.default is not none %}
-{% set _ = field_args.append(field.default.__repr__()) %}
-{% endif %}
-{% if field.constraints.get("min") is not none %}
-{% set _ = field_args.append("ge=" ~ field.constraints["min"]) %}
-{% endif %}
-{% if field.constraints.get("max") is not none %}
-{% set _ = field_args.append("le=" ~ field.constraints["max"]) %}
-{% endif %}
-{% if field.constraints.get("min_length") is not none %}
-{% set _ = field_args.append("min_length=" ~ field.constraints["min_length"]) %}
-{% endif %}
-{% if field.constraints.get("max_length") is not none %}
-{% set _ = field_args.append("max_length=" ~ field.constraints["max_length"]) %}
-{% endif %}
-    {{ field.name }}: {{ annotation }} = Field({{ field_args | join(", ") }})
-{% else %}
-{% if field.required and not field.is_optional %}
-    {{ field.name }}: {{ annotation }}
-{% elif field.is_optional %}
-    {{ field.name }}: {{ annotation }} = {{ field.default.__repr__() if field.default is not none else "None" }}
-{% else %}
-    {{ field.name }}: {{ annotation }} = {{ field.default.__repr__() }}
-{% endif %}
-{% endif %}
 {% endfor %}
+{% else %}
+
+{{ declaration.name }} = partial({{ declaration.base }}, "{{ declaration.name }}")
+{% endif %}
 {% endfor %}

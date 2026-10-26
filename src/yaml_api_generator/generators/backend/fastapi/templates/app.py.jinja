@@ -33,6 +33,8 @@ from dependencies.postgres import connect_db as connect_pg, close_db as close_pg
 from dependencies.files import FileError
 from dependencies.file_stores import close_file_stores, open_file_stores
 {% endif %}
+from dependencies.lifecycle import Purger
+from dependencies.repositories import expiring_repositories
 from routes import api_router
 {% if ctx.auth.uses_jwt and ctx.session.uses_asymmetric %}
 from routes.jwks import router as jwks_router
@@ -53,7 +55,10 @@ async def lifespan(app: FastAPI):
 {% if ctx.has_files %}
     await open_file_stores()
 {% endif %}
+    purger = Purger(repository.purge_expired for repository in expiring_repositories())
+    purger.start()
     yield
+    await purger.stop()
 {% if ctx.has_files %}
     await close_file_stores()
 {% endif %}
@@ -90,24 +95,11 @@ async def _file_handler(_: Request, exc: FileError) -> JSONResponse:
 
 {% endif %}
 
-{% if ctx.app.cors %}
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins={{ ctx.app.cors.origins }},
-    allow_methods={{ ctx.app.cors.methods }},
-    allow_headers={{ ctx.app.cors.headers }},
-    allow_credentials={{ ctx.app.cors.credentials }},
-)
-{% endif %}
-
 {% if ctx.auth.has_idp_auth %}
 import logging as _logging
 
 from fastapi import HTTPException as _HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware as _BaseHTTPMiddleware
-from dependencies.mongodb import get_database as _get_database
 from dependencies.auth import _resolve_idp_principal as _resolve_idp, _find_idp_provider_for_issuer as _find_idp_provider
 from dependencies import idp_auth as _idp_auth
 
@@ -122,7 +114,7 @@ class _IdpProvisioningMiddleware(_BaseHTTPMiddleware):
                 token_issuer = _idp_auth.unverified_issuer(bearer_token)
                 if token_issuer is not None and await _find_idp_provider(token_issuer) is not None:
                     try:
-                        request.state.principal = await _resolve_idp(bearer_token, _get_database())
+                        request.state.principal = await _resolve_idp(bearer_token)
                     except _HTTPException as _exc:
                         return JSONResponse(status_code=_exc.status_code, content={"detail": _exc.detail})
                     except Exception:
@@ -144,6 +136,24 @@ class _CsrfMiddleware(_CsrfBase):
         return await call_next(request)
 
 app.add_middleware(_CsrfMiddleware)
+{% endif %}
+
+{% if ctx.app.cors %}
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins={{ ctx.app.cors.origins }},
+    allow_methods={{ ctx.app.cors.methods }},
+    allow_headers={{ ctx.app.cors.headers }},
+    allow_credentials={{ ctx.app.cors.credentials }},
+)
+{% endif %}
+
+{% if ctx.app.security_headers %}
+from dependencies.security_headers import SecurityHeadersMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
 {% endif %}
 
 app.include_router(api_router, prefix="{{ ctx.app.base_path }}{% if ctx.app.api_version %}/{{ ctx.app.api_version }}{% endif %}")

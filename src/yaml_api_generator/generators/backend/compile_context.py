@@ -18,40 +18,23 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ...ir.api import IRFileField, IRPagination, IRProvider, IRRolesConfig, IRService
+from ...constants import CRUD_OPERATIONS
+from ...ir.api import (
+    CallerDemand,
+    IRFileField,
+    IRPagination,
+    IRProvider,
+    IRProviderBinding,
+    IRRolesConfig,
+    IRService,
+    IRServiceBase,
+)
 from ...ir.when import WhenExpr
-from ...utils.strings import to_py_identifier
+from ...runtime.access import Roles
+from ...utils.strings import to_pascal_case, to_py_identifier
 
 FILE_REQUIREMENTS = ("python-multipart", "puremagic", "anyio")
-
-
-@dataclass(frozen=True)
-class ProviderRelationDescriptor:
-    fk_field: str
-    collection: str
-    id_field: str
-    match: dict[str, str]
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "fk_field": self.fk_field,
-            "collection": self.collection,
-            "id_field": self.id_field,
-            "match": self.match,
-        }
-
-
-@dataclass(frozen=True)
-class ProviderBindingDescriptor:
-    provider: str
-    identifier: str
-    claim_mapping: dict[str, str]
-    auto_provision: bool
-    relations: list[ProviderRelationDescriptor]
-
-    @property
-    def relations_data(self) -> list[dict[str, Any]]:
-        return [r.as_dict() for r in self.relations]
+SAML_REQUIREMENTS = ("python3-saml", "python-multipart")
 
 
 @dataclass(frozen=True)
@@ -162,29 +145,25 @@ class S3StoreDescriptor(FileStoreDescriptor):
 @dataclass(frozen=True)
 class FieldDescriptor:
     name: str
-    type: str
-    required: bool
-    is_optional: bool
-    default: Any | None = None
-    constraints: dict[str, Any] = field(default_factory=dict)
-    enum_values: list[str] | None = None
-    array_item_type: str | None = None
-    ref_collection: str | None = None
+    config: dict[str, Any]
 
 
 @dataclass(frozen=True)
 class ModelDescriptor:
+    """A payload model; ``base`` names the model whose fields it extends."""
+
     name: str
     collection: str
     operation: str
     fields: list[FieldDescriptor]
+    base: str | None = None
+
 
 
 @dataclass(frozen=True)
 class DocumentBindingDescriptor:
     name: str
     collection: str
-    id_param: str | None = None
     where: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -200,26 +179,21 @@ class RequestSymbolDescriptor:
     name: str
     part: str | None
     type_name: str | None = None
-    raw: bool = False
 
     @property
     def is_whole(self) -> bool:
-        return self.part is None and self.raw
-
-    @property
-    def effective_part(self) -> str:
-        return self.part or "body"
+        return self.part is None
 
     @property
     def is_record_shaped(self) -> bool:
         return not self.is_whole
 
     def binds(self, part: str) -> bool:
-        return self.is_whole or self.effective_part == part
+        return self.part in (None, part)
 
 
 @dataclass(frozen=True)
-class AccessRuleDescriptor:
+class AccessRuleDescriptor(CallerDemand):
     principal: str
     required_role: str | None = None
     identity_symbols: list[str] = field(default_factory=list)
@@ -258,6 +232,11 @@ class RouteDescriptor:
     service_input: dict[str, Any] = field(default_factory=dict)
     service_forwarding: dict[str, dict[str, Any]] = field(default_factory=dict)
     pagination: IRPagination | None = None
+    admits_anonymous: bool = False
+
+    @property
+    def binds_inputs(self) -> bool:
+        return any(rule.bind for rule in self.access_rules or ())
 
     @property
     def request_symbols(self) -> list[RequestSymbolDescriptor]:
@@ -284,6 +263,27 @@ class RouteDescriptor:
         return [*parents, (self.id_field, self.record_id_param)]
 
     @property
+    def runs_operation(self) -> bool:
+        """Whether the route runs a handler or a declared repository operation instead of a generated step."""
+        return self.operation != "login" and (
+            self.handler is not None or self.operation not in CRUD_OPERATIONS
+        )
+
+    @property
+    def handler_name(self) -> str:
+        """Function name unique to this method and path across the whole API."""
+        return to_py_identifier(f"handle_{self.method.lower()}{self.relative_path}")
+
+    @property
+    def view_name(self) -> str:
+        """Class name of the view serving every method on this route's path; ``/reports/{id}`` is ``ReportsByIdView``."""
+        segments = (
+            f"By{to_pascal_case(segment[1:-1])}" if segment.startswith("{") else to_pascal_case(segment)
+            for segment in self.relative_path.split("/")
+        )
+        return f"{''.join(segments)}View"
+
+    @property
     def django_path(self) -> str:
         path = self.relative_path.lstrip("/")
         return re.sub(r"\{(\w+)\}", r"<str:\1>", path)
@@ -300,7 +300,6 @@ class FileRouteDescriptor:
     field: IRFileField
     item: bool
     source: RouteDescriptor
-    writable: bool = True
 
     @property
     def handler_name(self) -> str:
@@ -311,13 +310,24 @@ class FileRouteDescriptor:
 @dataclass(frozen=True)
 class IdentityCollectionDescriptor:
     name: str
-    bindings: list[ProviderBindingDescriptor]
+    bindings: tuple[IRProviderBinding, ...]
     id_field: str
     roles: IRRolesConfig | None = None
     roles_field: str | None = None
     issues_jwt: bool = False
     datastore_type: str = "mongodb"
     id_format: str = "uuidv7"
+    login: bool = True
+    default_role: str | None = None
+    declared_login_path: str | None = None
+
+    @property
+    def login_path(self) -> str:
+        return self.declared_login_path or f"/{self.name}/login"
+
+    @property
+    def refresh_path(self) -> str:
+        return f"{self.login_path.removesuffix('/login')}/refresh"
 
     @property
     def is_sql(self) -> bool:
@@ -336,7 +346,15 @@ class IdentityCollectionDescriptor:
         password_binding = self.get_binding("password")
         return password_binding.identifier if password_binding else None
 
-    def get_binding(self, provider: str) -> "ProviderBindingDescriptor | None":
+    @property
+    def serves_login(self) -> bool:
+        return self.login and bool(self.identifier)
+
+    @property
+    def role_store(self) -> Roles:
+        return Roles(self.roles_field, self.default_role)
+
+    def get_binding(self, provider: str) -> IRProviderBinding | None:
         return next((b for b in self.bindings if b.provider == provider), None)
 
 
@@ -366,13 +384,29 @@ class AuthConfig:
     role_hierarchies: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
     @property
+    def has_external_login(self) -> bool:
+        """An app-trust OIDC or SAML provider: the app runs its login flow and issues one-time codes."""
+        return self.has_app_oidc_auth or self.has_saml_auth
+
+    @property
+    def login_identities(self) -> list[IdentityCollectionDescriptor]:
+        return [identity for identity in self.identity_collections if identity.serves_login]
+
+    @property
     def uses_jwt(self) -> bool:
         """JWT helpers and JWT_SECRET are needed whenever the app mints its own tokens.
 
-        Password login and app-trust OIDC/SAML callbacks issue bearer JWTs.
+        Password login and external login callbacks issue bearer JWTs.
         Pure idp-trust providers never mint a session token.
         """
-        return self.has_password_auth or self.has_app_oidc_auth or self.has_saml_auth
+        return self.has_password_auth or self.has_external_login
+
+    @property
+    def requirements(self) -> tuple[str, ...]:
+        return (
+            *(("httpx",) if self.has_oidc_auth or self.has_saml_auth else ()),
+            *(SAML_REQUIREMENTS if self.has_saml_auth else ()),
+        )
 
 
 @dataclass(frozen=True)
@@ -405,6 +439,7 @@ class AppConfig:
     api_version: str | None
     cors: CorsConfig | None = None
     port: int = 8000
+    security_headers: bool = True
 
 
 @dataclass(frozen=True)
@@ -425,6 +460,7 @@ class CompileContext:
     repository_inherits: dict[str, str] = field(default_factory=dict)
     # IR services keyed by their expanded flat name (e.g. "list-posts").
     services: dict[str, IRService] = field(default_factory=dict)
+    service_bases: dict[str, IRServiceBase] = field(default_factory=dict)
     dto_models: list[ModelDescriptor] = field(default_factory=list)
     vendored_requirements: tuple[str, ...] = ()
     sql_schema_managed: bool = False
@@ -450,6 +486,13 @@ class CompileContext:
         return tuple(dict.fromkeys(("files", "multipart", "file_requests", *store_modules))) if self.has_files else ()
 
     @property
+    def expiring_collections(self) -> tuple[str, ...]:
+        return tuple(
+            name for name, collection in self.collections.items()
+            if collection["lifecycle"].expiry is not None
+        )
+
+    @property
     def datastore_types(self) -> set[str]:
         return {ds["type"] for ds in self.datastores.values()}
 
@@ -471,3 +514,14 @@ class CompileContext:
 
     def collection_datastore_type(self, collection: str) -> str:
         return self.collections.get(collection, {}).get("datastore_type", "mongodb")
+
+    def service_base(self, repository: str) -> IRServiceBase | None:
+        """The abstract service that the services of ``repository`` extend."""
+        return next(
+            (
+                self.service_bases[service.inherits]
+                for service in self.services.values()
+                if service.repository == repository and service.inherits
+            ),
+            None,
+        )

@@ -1,4 +1,11 @@
+{% from 'macros/field_input.jinja' import field_input %}
+{% set entity = context.account_entity %}
+{% if entity %}
+{% set login_fields = ([entity.auth_identifier] + (entity.credential_fields | map(attribute='name') | list)) if entity.serves_login else [] %}
 import { useState } from 'react';
+import { SIGNUP_FIELDS, formValues, payload } from './fields';
+
+const FIELDS = SIGNUP_FIELDS[{{ entity.name | tojson }}];
 
 interface AuthProps {
   mode?: 'login' | 'register';
@@ -15,19 +22,17 @@ export function Auth({
   onToggleMode,
   appName = '{{ pack_config.app_name or "App" }}',
   providers = [],
-  defaultRole
+  defaultRole{% if entity.roles %} = '{{ entity.roles.default }}'{% endif %}
 }: AuthProps) {
-  const [formData, setFormData] = useState({ email: '', password: '', name: '' });
+  const [values, setValues] = useState(() => formValues(FIELDS));
   const [rememberMe, setRememberMe] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit?.(formData);
+    onSubmit?.(payload(FIELDS, mode === 'login' ? { {% for name in login_fields %}{{ name | tojson }}: values[{{ name | tojson }}], {% endfor %}} : values));
   };
 
-  const handleFieldChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const setValue = (name: string, value: unknown) => setValues(prev => ({ ...prev, [name]: value }));
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-wf-bg px-4">
@@ -51,53 +56,11 @@ export function Auth({
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {mode === 'register' && (
-              <div className="flex flex-col gap-1.5">
-                <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
-                  Display name
-                  <span className="text-wf-danger font-title">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleFieldChange}
-                  required
-                  className="wf-input"
-                />
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
-                Email
-                <span className="text-wf-danger font-title">*</span>
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleFieldChange}
-                required
-                className="wf-input"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-1 text-wf-ink-dim text-sm">
-                Password
-                <span className="text-wf-danger font-title">*</span>
-              </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleFieldChange}
-                required
-                placeholder={mode === 'register' ? 'min 8 chars' : undefined}
-                className="wf-input"
-              />
-            </div>
+{% for field in entity.signup_fields %}
+            {% if field.name not in login_fields %}{mode === 'register' && ({% endif %}
+            {{ field_input(field, id_prefix='auth-') }}
+            {% if field.name not in login_fields %})}{% endif %}
+{% endfor %}
 
             {mode === 'register' && defaultRole && (
               <div className="bg-wf-fill border border-dashed border-wf-line rounded-wf p-3">
@@ -155,20 +118,23 @@ export function Auth({
             </>
           )}
 
-          <div className="mt-5 pt-5 border-t border-dashed border-wf-line text-center">
-            <p className="text-sm text-wf-ink-dim">
-              {mode === 'login' ? 'New here?' : 'Already have an account?'}{' '}
-              <button
-                onClick={onToggleMode}
-                type="button"
-                className="text-wf-accent hover:text-wf-accent-ink font-title"
-              >
-                {mode === 'login' ? 'Create account' : 'Sign in'}
-              </button>
-            </p>
-          </div>
+          {onToggleMode && (
+            <div className="mt-5 pt-5 border-t border-dashed border-wf-line text-center">
+              <p className="text-sm text-wf-ink-dim">
+                {mode === 'login' ? 'New here?' : 'Already have an account?'}{' '}
+                <button
+                  onClick={onToggleMode}
+                  type="button"
+                  className="text-wf-accent hover:text-wf-accent-ink font-title"
+                >
+                  {mode === 'login' ? 'Create account' : 'Sign in'}
+                </button>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
+{% endif %}

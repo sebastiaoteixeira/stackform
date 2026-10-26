@@ -3,7 +3,100 @@
   "$id": "yaml-spec-v0.2.schema.json",
   "title": "YAML API Generator Structure Spec v0.2",
   "type": "object",
-  "required": ["version", "entities"],
+  "required": [
+    "version",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "$comment": "A record datastore replaces the mongo block, so declaring both is ambiguous",
+      "if": {
+        "required": [
+          "datastores"
+        ],
+        "properties": {
+          "datastores": {
+            "not": {
+              "additionalProperties": {
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "filesystem",
+                      "s3"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mongo": {
+            "not": {},
+            "errorMessage": "mongo and a record datastore are mutually exclusive: declare MongoDB under datastores instead"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "deploy.mongo configures the MongoDB service, which a spec whose record datastores are all PostgreSQL does not have",
+      "if": {
+        "required": [
+          "datastores",
+          "deploy"
+        ],
+        "properties": {
+          "datastores": {
+            "additionalProperties": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "not": {
+                    "enum": [
+                      "mongodb",
+                      "mongo"
+                    ]
+                  }
+                }
+              }
+            },
+            "not": {
+              "additionalProperties": {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "filesystem",
+                      "s3"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "deploy": {
+            "properties": {
+              "mongo": {
+                "not": {},
+                "errorMessage": "deploy.mongo requires a MongoDB datastore, and every record datastore is PostgreSQL"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "version": {
       "type": "string",
@@ -11,6 +104,7 @@
     },
     "api": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "basePath": {
           "type": "string"
@@ -24,35 +118,13 @@
           "maximum": 65535
         },
         "operations": {
-          "type": "object",
-          "properties": {
-            "defaults": {
-              "$ref": "#/$defs/OperationFlags"
-            },
-            "auth": {
-              "$ref": "#/$defs/OperationFlags"
-            }
-          }
+          "$ref": "#/$defs/ApiOperations"
         },
         "cors": {
-          "type": "object",
-          "properties": {
-            "origins": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "methods": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "headers": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "credentials": {
-              "type": "boolean"
-            }
-          }
+          "$ref": "#/$defs/CorsConfig"
+        },
+        "securityHeaders": {
+          "type": "boolean"
         }
       }
     },
@@ -63,15 +135,7 @@
       }
     },
     "mongo": {
-      "type": "object",
-      "properties": {
-        "uri": {
-          "type": "string"
-        },
-        "database": {
-          "type": "string"
-        }
-      }
+      "$ref": "#/$defs/MongoConfig"
     },
     "datastores": {
       "type": "object",
@@ -122,7 +186,7 @@
       }
     },
     "ui": {
-      "type": "object"
+      "$ref": "ui.schema.json"
     },
     "deploy": {
       "$ref": "#/$defs/DeployConfig"
@@ -132,35 +196,130 @@
     }
   },
   "$defs": {
+    "ApiOperations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaults": {
+          "$ref": "#/$defs/CrudFlags"
+        },
+        "auth": {
+          "$ref": "#/$defs/AuthFlags"
+        }
+      }
+    },
+    "CrudFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "list": {
+          "type": "boolean"
+        },
+        "get": {
+          "type": "boolean"
+        },
+        "create": {
+          "type": "boolean"
+        },
+        "update": {
+          "type": "boolean"
+        },
+        "replace": {
+          "type": "boolean"
+        },
+        "delete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AuthFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "register": {
+          "type": "boolean"
+        },
+        "login": {
+          "type": "boolean"
+        }
+      }
+    },
+    "CorsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origins": {
+          "$ref": "#/$defs/StringList"
+        },
+        "methods": {
+          "$ref": "#/$defs/StringList"
+        },
+        "headers": {
+          "$ref": "#/$defs/StringList"
+        },
+        "credentials": {
+          "type": "boolean"
+        }
+      }
+    },
+    "StringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "MongoConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uri": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string"
+        }
+      }
+    },
     "SessionConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "algorithm": { "type": "string", "enum": ["HS256", "RS256"], "default": "HS256" },
-        "ttl": { "type": "integer", "minimum": 1 },
-        "refresh": { "type": "boolean", "default": false },
-        "delivery": { "type": "string", "enum": ["token-url", "cookie"], "default": "token-url" }
-      },
-      "additionalProperties": false
-    },
-    "OperationFlags": {
-      "type": "object",
-      "properties": {
-        "list": { "type": "boolean" },
-        "get": { "type": "boolean" },
-        "create": { "type": "boolean" },
-        "update": { "type": "boolean" },
-        "replace": { "type": "boolean" },
-        "delete": { "type": "boolean" },
-        "register": { "type": "boolean" },
-        "login": { "type": "boolean" }
+        "algorithm": {
+          "type": "string",
+          "enum": [
+            "HS256",
+            "RS256"
+          ],
+          "default": "HS256"
+        },
+        "ttl": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "refresh": {
+          "type": "boolean",
+          "default": false
+        },
+        "delivery": {
+          "type": "string",
+          "enum": [
+            "token-url",
+            "cookie"
+          ],
+          "default": "token-url"
+        }
       }
     },
     "EntityConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["base", "auth"],
+          "enum": [
+            "base",
+            "auth"
+          ],
           "default": "base"
         },
         "extends": {
@@ -179,244 +338,742 @@
           }
         },
         "auth": {
-          "type": "object",
-          "properties": {
-            "identifier": { "type": "string" },
-            "via": {
-              "oneOf": [
-                { "type": "string" },
-                { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-                { "type": "array", "items": { "$ref": "#/$defs/ProviderBinding" }, "minItems": 1 }
-              ]
-            },
-            "roles": { "type": "string" }
-          },
-          "additionalProperties": false
+          "$ref": "#/$defs/EntityAuthConfig"
+        },
+        "roles": {
+          "$ref": "#/$defs/RolesConfig"
         }
       },
       "allOf": [
         {
           "if": {
-            "not": { "required": ["extends"] }
+            "not": {
+              "required": [
+                "extends"
+              ]
+            }
           },
           "then": {
-            "required": ["fields"]
+            "required": [
+              "fields"
+            ]
           }
         },
         {
           "if": {
-            "properties": { "type": { "const": "auth" } },
-            "required": ["type"]
+            "properties": {
+              "type": {
+                "const": "auth"
+              }
+            },
+            "required": [
+              "type"
+            ]
           },
           "then": {
-            "required": ["auth"]
+            "required": [
+              "auth"
+            ]
           }
         }
-
-      ]
+      ],
+      "dependentSchemas": {
+        "roles": {
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "auth"
+            }
+          }
+        }
+      }
+    },
+    "EntityAuthConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "via": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ProviderBinding"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "roles": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "not": {
+          "required": [
+            "identifier"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "via": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "identifier"
+              ]
+            }
+          }
+        }
+      }
     },
     "RolesConfig": {
       "type": "object",
-      "required": ["values", "default"],
+      "additionalProperties": false,
+      "required": [
+        "values",
+        "default"
+      ],
       "properties": {
         "values": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "minItems": 1
         },
-        "default": { "type": "string" },
+        "default": {
+          "type": "string"
+        },
         "hierarchy": {
           "type": "object",
           "additionalProperties": {
-            "type": "array",
-            "items": { "type": "string" }
+            "$ref": "#/$defs/StringList"
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "ProviderBinding": {
       "type": "object",
-      "required": ["provider"],
+      "additionalProperties": false,
+      "required": [
+        "provider"
+      ],
       "properties": {
-        "provider": { "type": "string" },
-        "identifier": { "type": "string" },
+        "provider": {
+          "type": "string"
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1
+        },
         "claim_mapping": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
-        "auto_provision": { "type": "boolean" },
+        "auto_provision": {
+          "type": "boolean"
+        },
         "relations": {
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "required": ["collection", "match"],
             "additionalProperties": false,
+            "required": [
+              "collection",
+              "match"
+            ],
             "properties": {
-              "collection": { "type": "string" },
-              "match": { "type": "object", "additionalProperties": { "type": "string" } }
+              "collection": {
+                "type": "string"
+              },
+              "match": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "ProviderConfig": {
-      "oneOf": [
-        { "$ref": "#/$defs/OIDCProviderConfig" },
-        { "$ref": "#/$defs/SAMLProviderConfig" }
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "oidc",
+            "saml"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "oidc"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/OIDCProviderConfig"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "saml"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/SAMLProviderConfig"
+          }
+        }
       ]
     },
     "OIDCProviderConfig": {
       "type": "object",
-      "required": ["type", "client_id"],
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "client_id",
+        "discovery_url"
+      ],
       "properties": {
-        "type": { "type": "string", "const": "oidc" },
-        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
-        "client_id": { "type": "string" },
-        "client_secret": { "type": "string" },
-        "discovery_url": { "type": "string", "description": "OIDC discovery document URL; issuer is derived from it automatically" },
-        "issuer": { "type": "string" },
-        "audiences": { "type": "array", "items": { "type": "string" }, "description": "Accepted token audiences; defaults to [client_id] when omitted" }
+        "type": {
+          "const": "oidc"
+        },
+        "trust": {
+          "type": "string",
+          "enum": [
+            "app",
+            "idp"
+          ],
+          "default": "app"
+        },
+        "client_id": {
+          "type": "string"
+        },
+        "client_secret": {
+          "type": "string"
+        },
+        "discovery_url": {
+          "type": "string",
+          "description": "OIDC discovery document URL; issuer is derived from it automatically"
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "audiences": {
+          "$ref": "#/$defs/StringList",
+          "description": "Accepted token audiences; defaults to [client_id] when omitted"
+        }
       },
       "if": {
-        "properties": { "trust": { "const": "idp" } },
-        "required": ["trust"]
+        "properties": {
+          "trust": {
+            "const": "idp"
+          }
+        },
+        "required": [
+          "trust"
+        ]
       },
-      "then": { "required": ["discovery_url"] },
-      "else": { "required": ["discovery_url"] },
-      "additionalProperties": false
+      "then": {
+        "properties": {
+          "client_secret": false
+        }
+      },
+      "else": {
+        "properties": {
+          "issuer": false,
+          "audiences": false
+        }
+      }
     },
     "SAMLProviderConfig": {
       "type": "object",
-      "required": ["type"],
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "idp_metadata_url",
+        "sp_entity_id"
+      ],
       "properties": {
-        "type": { "type": "string", "const": "saml" },
-        "trust": { "type": "string", "enum": ["app", "idp"], "default": "app" },
-        "idp_metadata_url": { "type": "string" },
-        "sp_entity_id": { "type": "string" },
-        "issuer": { "type": "string" },
-        "audience": { "type": "string" }
-      },
-      "if": {
-        "properties": { "trust": { "const": "idp" } },
-        "required": ["trust"]
-      },
-      "then": { "required": ["issuer", "audience"] },
-      "else": { "required": ["idp_metadata_url", "sp_entity_id"] },
-      "additionalProperties": false
+        "type": {
+          "const": "saml"
+        },
+        "idp_metadata_url": {
+          "type": "string"
+        },
+        "sp_entity_id": {
+          "type": "string"
+        }
+      }
     },
     "DtoConfig": {
       "type": "object",
-      "required": ["fields"],
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ],
       "properties": {
         "fields": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
+          "additionalProperties": {
+            "$ref": "#/$defs/PayloadFieldConfig"
+          }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "PolicyConfig": {
       "type": "object",
-      "required": ["when"],
+      "additionalProperties": false,
+      "required": [
+        "when"
+      ],
       "properties": {
         "given": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "params": {
-          "type": "array",
-          "items": { "type": "string" }
+          "$ref": "#/$defs/StringList"
         },
         "when": {
-          "oneOf": [
-            { "type": "string" },
-            { "type": "array", "items": { "type": "string" } }
-          ]
+          "$ref": "#/$defs/WhenConfig"
         }
-      },
-      "additionalProperties": false
+      }
     },
-    "FieldConfig": {
-      "type": "object",
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "enum": ["string", "number", "boolean", "datetime", "enum", "array", "object", "ref", "id"]
+    "WhenConfig": {
+      "oneOf": [
+        {
+          "type": "string"
         },
-        "required": { "type": "boolean" },
-        "default": {},
-        "unique": { "type": "boolean" },
-        "min": { "type": "number" },
-        "max": { "type": "number" },
-        "minLength": { "type": "integer" },
-        "maxLength": { "type": "integer" },
-        "format": {
-          "enum": ["email", "e164", "uri", "uuidv7", "uuidv4"]
-        },
-        "values": {
+        {
           "type": "array",
-          "items": { "type": "string" }
-        },
-        "items": { "$ref": "#/$defs/FieldConfig" },
-        "properties": {
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/FieldConfig" }
-        },
-        "additionalProperties": { "type": "boolean" },
-        "ref": { "type": "string" },
-        "readonly": { "type": "boolean" }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "type": { "const": "enum" } }, "required": ["type"] },
-          "then": { "required": ["values"] }
-        },
-        {
-          "if": { "properties": { "type": { "const": "array" } }, "required": ["type"] },
-          "then": { "required": ["items"] }
-        },
-        {
-          "if": { "properties": { "type": { "const": "ref" } }, "required": ["type"] },
-          "then": { "required": ["ref"] }
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
         }
       ]
     },
+    "FieldShape": {
+      "$comment": "The keys each field type accepts; FieldConfig, NestedFieldConfig and PayloadFieldConfig close it.",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "datetime",
+            "enum",
+            "array",
+            "object",
+            "ref",
+            "id"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "default": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "minLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "maxLength": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "format": {
+                "enum": [
+                  "email",
+                  "e164",
+                  "uri",
+                  "uuidv7",
+                  "uuidv4"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "number"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "enum"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "values"
+            ],
+            "properties": {
+              "values": {
+                "$ref": "#/$defs/StringList",
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "$ref": "#/$defs/NestedFieldConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/NestedFieldConfig"
+                }
+              },
+              "additionalProperties": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ref"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "ref"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "id"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "uuidv7",
+                  "uuidv4"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "FieldConfig": {
+      "$comment": "A top-level entity field.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false,
+      "properties": {
+        "unique": {
+          "type": "boolean"
+        }
+      }
+    },
+    "NestedFieldConfig": {
+      "$comment": "A field inside object properties or array items.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false
+    },
+    "PayloadFieldConfig": {
+      "$comment": "A DTO or service input field, which carries no persistence keys.",
+      "$ref": "#/$defs/FieldShape",
+      "unevaluatedProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "datetime",
+            "enum",
+            "array",
+            "object",
+            "ref"
+          ]
+        }
+      }
+    },
     "OperationConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "query": {
-          "type": "object",
-          "properties": {
-            "command": { "type": "string" },
-            "collection": { "type": "string" },
-            "sql": { "type": "string" },
-            "params": { "type": "object" }
-          },
-          "additionalProperties": true
+          "$ref": "#/$defs/QueryConfig"
         },
-        "handler": { "type": "string" }
+        "handler": {
+          "type": "string"
+        },
+        "includeDeleted": {
+          "type": "boolean"
+        }
+      },
+      "dependentRequired": {
+        "includeDeleted": ["query"]
       }
+    },
+    "TtlConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "seconds"],
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "RepositoryLifecycleRules": {
+      "dependentRequired": {
+        "softDelete": ["entity"],
+        "ttl": ["entity"]
+      },
+      "if": {
+        "anyOf": [
+          { "required": ["softDelete"] },
+          { "required": ["ttl"] }
+        ]
+      },
+      "then": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "if": {
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "anyOf": [
+                      { "required": ["sql"] },
+                      {
+                        "required": ["command"],
+                        "properties": { "command": { "enum": ["bulkWrite", "estimatedDocumentCount"] } }
+                      }
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": ["includeDeleted"],
+                "properties": { "includeDeleted": { "const": true } }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "not": { "required": ["includeDeleted"] }
+            }
+          }
+        }
+      }
+    },
+    "QueryConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "collection": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "sql": {
+          "type": "string"
+        },
+        "filter": {},
+        "pipeline": {},
+        "document": {},
+        "documents": {},
+        "update": {},
+        "replacement": {},
+        "requests": {},
+        "params": {
+          "type": "object"
+        }
+      },
+      "description": "Repository query. Values other than the names may be a {{placeholder}} resolved from the request at call time."
     },
     "DatastoreConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["mongodb", "mongo", "postgres", "postgresql"]
+          "enum": [
+            "mongodb",
+            "mongo",
+            "postgres",
+            "postgresql"
+          ]
         },
-        "uri": { "type": "string" },
-        "database": { "type": "string" },
-        "dsn": { "type": "string" },
-        "default": { "type": "boolean" }
+        "uri": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string"
+        },
+        "dsn": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        }
       }
     },
     "RepositoryConfig": {
       "type": "object",
+      "additionalProperties": false,
+      "allOf": [{ "$ref": "#/$defs/RepositoryLifecycleRules" }],
       "properties": {
-        "abstract": { "type": "boolean" },
-        "extends": { "type": "string" },
+        "softDelete": {
+          "type": "string"
+        },
+        "ttl": {
+          "$ref": "#/$defs/TtlConfig"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "extends": {
+          "type": "string"
+        },
         "entity": {
           "type": "string"
         },
@@ -427,41 +1084,82 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["list", "get", "create", "update", "replace", "delete"]
+            "enum": [
+              "list",
+              "get",
+              "create",
+              "update",
+              "replace",
+              "delete"
+            ]
           }
         },
         "operations": {
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/OperationConfig"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/OperationName"
           }
         }
       }
     },
     "ServiceConfig": {
       "type": "object",
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "handler",
+          "operation"
+        ]
+      },
       "properties": {
-        "abstract": { "type": "boolean" },
-        "extends": { "type": "string" },
-        "repository": { "type": "string" },
+        "abstract": {
+          "type": "boolean"
+        },
+        "extends": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "handler": {
+          "type": "string"
+        },
         "operations": {
           "type": "object",
           "additionalProperties": {
             "oneOf": [
-              { "type": "boolean" },
+              {
+                "type": "boolean"
+              },
               {
                 "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "handler"
+                ],
                 "properties": {
-                  "handler": { "type": "string" }
+                  "handler": {
+                    "type": "string"
+                  }
                 }
               }
             ]
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/OperationName"
           }
         }
       }
     },
     "ControllerConfig": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "service": {
           "type": "string"
@@ -473,30 +1171,107 @@
           "$ref": "#/$defs/AccessConfig"
         },
         "operations": {
-          "type": "object"
-        },
-        "routes": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/$defs/RouteConfig"
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "$ref": "#/$defs/OperationOverride"
+              }
+            ]
           }
+        },
+        "routes": {
+          "type": "object"
+        }
+      },
+      "if": {
+        "required": [
+          "service"
+        ]
+      },
+      "then": {
+        "properties": {
+          "routes": {
+            "additionalProperties": {
+              "$ref": "#/$defs/RouteOverride"
+            }
+          },
+          "operations": {
+            "propertyNames": {
+              "$ref": "#/$defs/OperationName"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "routes": {
+            "additionalProperties": {
+              "$ref": "#/$defs/RouteConfig"
+            }
+          }
+        }
+      }
+    },
+    "OperationOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/HttpMethod"
+        },
+        "path": {
+          "type": "string"
+        },
+        "access": {
+          "$ref": "#/$defs/AccessConfig"
+        }
+      }
+    },
+    "RouteOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/AccessConfig"
         }
       }
     },
     "RouteConfig": {
       "type": "object",
-      "required": ["service", "method", "path"],
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "method",
+        "path"
+      ],
       "properties": {
-        "service": { "type": "string" },
-        "method": {
-          "type": "string",
-          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        "service": {
+          "type": "string"
         },
-        "path": { "type": "string" },
+        "method": {
+          "$ref": "#/$defs/HttpMethod"
+        },
+        "path": {
+          "type": "string"
+        },
         "access": {
           "$ref": "#/$defs/AccessConfig"
         }
       }
+    },
+    "HttpMethod": {
+      "type": "string",
+      "enum": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ]
     },
     "AccessConfig": {
       "oneOf": [
@@ -507,113 +1282,302 @@
           "type": "array",
           "items": {
             "oneOf": [
-              { "type": "string" },
-              { "$ref": "#/$defs/AccessRule" }
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/AccessRule"
+              }
             ]
           }
         }
       ]
     },
-    "DeployConfig": {
-      "type": "object",
-      "required": ["runtime"],
-      "properties": {
-        "name": { "type": "string" },
-        "port": { "type": "integer", "default": 8000 },
-        "runtime": { "type": "string", "enum": ["docker", "systemd"] },
-        "services": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "anyOf": [
-              { "required": ["image"] },
-              { "required": ["build"] }
-            ],
-            "properties": {
-              "image": { "type": "string" },
-              "build": { "oneOf": [
-                { "type": "string" },
-                { "type": "object", "properties": {
-                  "context": { "type": "string" },
-                  "dockerfile": { "type": "string" },
-                  "args": { "type": "object", "additionalProperties": { "type": "string" } }
-                } }
-              ]},
-              "ports": { "type": "array", "items": { "oneOf": [{"type": "integer"}, {"type": "string"}] } },
-              "environment": { "oneOf": [
-                { "type": "object", "additionalProperties": { "type": "string" } },
-                { "type": "array", "items": { "type": "string" } }
-              ]},
-              "volumes": { "type": "array", "items": { "type": "string" } },
-              "depends_on": { "oneOf": [
-                { "type": "array", "items": { "type": "string" } },
-                { "type": "object" }
-              ]},
-              "command": { "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}] }
-            }
-          }
-        },
-        "include": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "mongo": {
-          "type": "object",
-          "properties": {
-            "local": { "type": "boolean", "default": false }
-          }
-        },
-        "docker": {
-          "type": "object",
-          "properties": {
-            "image": { "type": "string" }
-          }
-        },
-        "systemd": {
-          "type": "object",
-          "properties": {
-            "user": { "type": "string" },
-            "restart": { "type": "string" }
-          }
-        }
-      }
-    },
     "AccessRule": {
       "type": "object",
+      "additionalProperties": false,
       "anyOf": [
-        { "required": ["given"] },
-        { "required": ["then"] },
-        { "required": ["when"] }
+        {
+          "required": [
+            "given"
+          ]
+        },
+        {
+          "required": [
+            "then"
+          ]
+        },
+        {
+          "required": [
+            "when"
+          ]
+        }
       ],
       "properties": {
         "given": {
           "type": "object",
           "minProperties": 1,
           "additionalProperties": {
-            "oneOf": [
-              { "type": "string", "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$" },
-              { "type": "string", "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$" },
-              { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$" }
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^identity:[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              {
+                "type": "string",
+                "pattern": "^request(\\.(body|path|query|header|cookie))?(:[A-Za-z_][A-Za-z0-9_]*)?$"
+              },
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\s+by\\s+[A-Za-z_][A-Za-z0-9_]*)?$"
+              }
             ]
           }
         },
         "when": {
-          "oneOf": [
-            { "type": "string" },
-            { "type": "array", "items": { "type": "string" }, "minItems": 1 }
-          ]
+          "$ref": "#/$defs/WhenConfig"
         },
         "then": {
           "type": "string",
-          "enum": ["allow", "deny"],
+          "enum": [
+            "allow",
+            "deny"
+          ],
           "default": "allow"
         },
-        "filter": { "type": "string" },
-        "writeFields": {
-          "type": "array",
-          "items": { "type": "string" }
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "DeployConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
         },
-        "reason": { "type": "string" }
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "runtime": {
+          "type": "string",
+          "enum": [
+            "docker",
+            "systemd"
+          ]
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/DeployService"
+          }
+        },
+        "include": {
+          "$ref": "#/$defs/StringList"
+        },
+        "mongo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local": {
+              "type": "boolean"
+            }
+          }
+        },
+        "docker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "type": "string"
+            }
+          }
+        },
+        "systemd": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "user": {
+              "type": "string"
+            },
+            "restart": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "DeployService": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "image"
+          ]
+        },
+        {
+          "required": [
+            "build"
+          ]
+        }
+      ],
+      "properties": {
+        "image": {
+          "type": "string"
+        },
+        "build": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "context": {
+                  "type": "string"
+                },
+                "dockerfile": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "environment": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            {
+              "$ref": "#/$defs/StringList"
+            }
+          ]
+        },
+        "volumes": {
+          "$ref": "#/$defs/StringList"
+        },
+        "depends_on": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StringList"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "condition"
+                ],
+                "properties": {
+                  "condition": {
+                    "enum": [
+                      "service_started",
+                      "service_healthy",
+                      "service_completed_successfully"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "command": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/StringList"
+            }
+          ]
+        }
+      }
+    },
+    "OperationName": {
+      "description": "An operation name, which becomes a method of the generated repository and service classes",
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+      "not": {
+        "enum": [
+          "False",
+          "None",
+          "True",
+          "and",
+          "as",
+          "assert",
+          "async",
+          "await",
+          "break",
+          "class",
+          "continue",
+          "def",
+          "del",
+          "elif",
+          "else",
+          "except",
+          "finally",
+          "for",
+          "from",
+          "global",
+          "if",
+          "import",
+          "in",
+          "is",
+          "lambda",
+          "nonlocal",
+          "not",
+          "or",
+          "pass",
+          "raise",
+          "return",
+          "try",
+          "while",
+          "with",
+          "yield",
+          "COLLECTION",
+          "DEFAULT_ROLE",
+          "IDENTITY_FIELDS",
+          "ID_FIELD",
+          "ID_FORMAT",
+          "TABLE",
+          "delete_by",
+          "find_by",
+          "find_one",
+          "get_by",
+          "insert",
+          "paginate",
+          "replace_by",
+          "run_operation",
+          "update_by",
+          "upsert_by"
+        ]
       }
     }
   }
